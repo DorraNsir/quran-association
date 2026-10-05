@@ -3,11 +3,12 @@ import Link from "next/link"
 
 import { EmptyState } from "@/components/shared/empty-state"
 import { SectionCard } from "@/components/shared/info-list"
+import { Button } from "@/components/ui/button"
 import {
   countActiveStudentsByGroup,
   fullName,
-  groupLocation,
-  indexById,
+  indexLookups,
+  locationLabel,
   weekdayOf,
   type Lookups,
 } from "@/lib/domain"
@@ -26,15 +27,15 @@ export function TodaySessions({
   students: Student[]
 }) {
   const day = weekdayOf(today)
-  const branchesById = indexById(lookups.branches)
-  const teachersById = indexById(lookups.teachers)
+  const { branchesById, roomsById, groupsById, teachersById } = indexLookups(lookups)
   const counts = countActiveStudentsByGroup(students)
 
-  const sessions = lookups.groups
-    .filter((g) => g.status === "ACTIVE")
-    .flatMap((group) =>
-      group.schedule.filter((slot) => slot.day === day).map((slot) => ({ group, slot }))
-    )
+  const sessions = lookups.schedules
+    .filter((slot) => slot.day === day)
+    .flatMap((slot) => {
+      const group = groupsById.get(slot.groupId)
+      return group?.status === "ACTIVE" ? [{ group, slot }] : []
+    })
     .sort((a, b) => a.slot.start.localeCompare(b.slot.start))
 
   return (
@@ -43,7 +44,12 @@ export function TodaySessions({
       icon={CalendarCheck2}
       className="lg:col-span-2"
       action={
-        <span className="text-xs text-muted-foreground">{countLabels.sessions(sessions.length)}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">{countLabels.sessions(sessions.length)}</span>
+          <Button asChild variant="ghost" size="sm" className="text-primary">
+            <Link href="/admin/calendar">الرزنامة</Link>
+          </Button>
+        </div>
       }
     >
       {sessions.length === 0 ? (
@@ -70,7 +76,7 @@ export function TodaySessions({
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
                         <MapPin className="size-3.5" aria-hidden />
-                        {groupLocation(group, branchesById)}
+                        {locationLabel(slot, branchesById, roomsById)}
                       </span>
                       {supervisor && (
                         <span className="inline-flex items-center gap-1">

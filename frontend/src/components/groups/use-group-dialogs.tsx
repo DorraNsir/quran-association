@@ -6,9 +6,10 @@ import { toast } from "sonner"
 
 import type { RowAction } from "@/components/shared/actions-menu"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
-import type { Lookups } from "@/lib/domain"
+import { schedulesOf, type Lookups } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { labels } from "@/lib/i18n"
+import { checkGroupSessions } from "@/lib/scheduling"
 import type { Group, Student } from "@/types/domain"
 
 import { GroupFormSheet, type GroupSaveResult } from "./group-form-sheet"
@@ -39,8 +40,10 @@ export function useGroupDialogs({
     if (!open) setState((s) => (s ? { ...s, open: false } : s))
   }
 
-  const membersOf = (group: Group) =>
-    students.filter((s) => s.groupId === group.id).map((s) => s.id)
+  const unchanged = (group: Group) => ({
+    studentIds: students.filter((s) => s.groupId === group.id).map((s) => s.id),
+    schedules: schedulesOf(group.id, lookups.schedules),
+  })
 
   function commit(result: GroupSaveResult, message: string, isNew = false) {
     onChange?.(result, isNew)
@@ -51,7 +54,20 @@ export function useGroupDialogs({
   function run(kind: GroupAction, group?: Group) {
     if (kind === "activate") {
       if (!group) return
-      commit({ group: { ...group, status: "ACTIVE" }, studentIds: membersOf(group) }, `تم تفعيل ${group.name}`)
+      const activated: Group = { ...group, status: "ACTIVE" }
+      // A paused group's old slots may now collide with other groups
+      const drafts = schedulesOf(group.id, lookups.schedules).map((s) => ({ ...s, key: s.id }))
+      const blocked = [...checkGroupSessions(drafts, activated, lookups).values()].some(
+        (c) => c.conflicts.length > 0
+      )
+      if (blocked) {
+        toast.error(`لا يمكن تفعيل ${group.name} بمواعيدها الحالية`, {
+          description: "بعض حصصها تتعارض مع مجموعات أخرى. عدّل المواعيد أولًا.",
+        })
+        setState({ kind: "edit", group: activated, key: Date.now(), open: true })
+        return
+      }
+      commit({ group: activated, ...unchanged(group) }, `تم تفعيل ${group.name}`)
       return
     }
     setState({ kind, group, key: Date.now(), open: true })
@@ -99,7 +115,7 @@ export function useGroupDialogs({
             commit(
               {
                 group: { ...group, status: state.kind === "archive" ? "ARCHIVED" : "INACTIVE" },
-                studentIds: membersOf(group),
+                ...unchanged(group),
               },
               state.kind === "archive" ? `تمت أرشفة ${group.name}` : `تم إيقاف ${group.name} مؤقتًا`
             )

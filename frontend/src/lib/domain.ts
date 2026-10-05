@@ -5,11 +5,13 @@ import type {
   Group,
   ID,
   ISODate,
+  Room,
   ScheduleSlot,
   Student,
   Teacher,
   TeachingRole,
   Weekday,
+  WeeklySchedule,
 } from "@/types/domain"
 
 /** Pure helpers over domain data. They take data as arguments so they
@@ -49,7 +51,7 @@ export function weekdayOf(date: ISODate): Weekday {
   return JS_DAY_TO_WEEKDAY[new Date(date).getUTCDay()]
 }
 
-export function sortSlots(schedule: ScheduleSlot[]) {
+export function sortSlots<S extends ScheduleSlot>(schedule: S[]): S[] {
   return [...schedule].sort(
     (a, b) =>
       WEEK_ORDER.indexOf(a.day) - WEEK_ORDER.indexOf(b.day) ||
@@ -64,8 +66,22 @@ export function weeklyMinutes(schedule: ScheduleSlot[]) {
   )
 }
 
-export function roomName(branch: Branch | undefined, roomId: ID) {
-  return branch?.rooms.find((room) => room.id === roomId)?.name ?? "—"
+export function roomName(roomsById: Map<ID, Room>, roomId: ID) {
+  return roomsById.get(roomId)?.name ?? "—"
+}
+
+export function roomsOfBranch(branchId: ID, rooms: Room[]) {
+  return rooms.filter((r) => r.branchId === branchId)
+}
+
+/** A group's weekly sessions, in week order. */
+export function schedulesOf(groupId: ID, schedules: WeeklySchedule[]) {
+  return sortSlots(schedules.filter((s) => s.groupId === groupId))
+}
+
+/** Supervisor + assistants: everyone who must be free when the group meets. */
+export function groupTeacherIds(group: Pick<Group, "supervisorId" | "assistantIds">) {
+  return [group.supervisorId, ...group.assistantIds.filter((id) => id !== group.supervisorId)]
 }
 
 export function teachingRoleIn(group: Group, teacherId: ID): TeachingRole | null {
@@ -113,30 +129,81 @@ export function countActiveStudentsByGroup(students: Student[]) {
   return counts
 }
 
-/** Calendar of a teacher across all their groups, for schedule previews. */
-export function teacherWeeklySlots(teacherId: ID, groups: Group[]) {
+/** A teacher's sessions across all their groups, for schedule previews and workload. */
+export function teacherWeeklySlots(teacherId: ID, groups: Group[], schedules: WeeklySchedule[]) {
   return teacherAssignments(teacherId, groups).flatMap(({ group, role }) =>
-    group.schedule.map((slot) => ({ slot, group, role }))
+    schedulesOf(group.id, schedules).map((slot) => ({ slot, group, role }))
   )
 }
 
 /** Reference data most admin screens need to resolve ids into names. */
 export interface Lookups {
   branches: Branch[]
+  rooms: Room[]
   groups: Group[]
   teachers: Teacher[]
+  schedules: WeeklySchedule[]
 }
 
-export function indexLookups({ branches, groups, teachers }: Lookups) {
+export function indexLookups({ branches, rooms, groups, teachers }: Lookups) {
   return {
     branchesById: indexById(branches),
+    roomsById: indexById(rooms),
     groupsById: indexById(groups),
     teachersById: indexById(teachers),
   }
 }
 
-/** "Branch · Room" label for a group. */
-export function groupLocation(group: Group, branchesById: Map<ID, Branch>) {
-  const branch = branchesById.get(group.branchId)
-  return `${branch?.name ?? "—"} · ${roomName(branch, group.roomId)}`
+/** "Branch · Room" label for anything with a branchId and roomId (a group or a session). */
+export function locationLabel(
+  where: { branchId: ID; roomId: ID },
+  branchesById: Map<ID, Branch>,
+  roomsById: Map<ID, Room>
+) {
+  return `${branchesById.get(where.branchId)?.name ?? "—"} · ${roomName(roomsById, where.roomId)}`
+}
+
+/** Sessions of active groups held in a room — what "using a room" means. */
+export function activeSessionsIn(
+  where: { roomId?: ID; branchId?: ID },
+  { schedules, groups }: Pick<Lookups, "schedules" | "groups">
+) {
+  const groupsById = indexById(groups)
+  return schedules.filter(
+    (s) =>
+      (where.roomId === undefined || s.roomId === where.roomId) &&
+      (where.branchId === undefined || s.branchId === where.branchId) &&
+      groupsById.get(s.groupId)?.status === "ACTIVE"
+  )
+}
+
+export function branchStats(branchId: ID, lookups: Lookups) {
+  const branchRooms = roomsOfBranch(branchId, lookups.rooms)
+  const sessions = activeSessionsIn({ branchId }, lookups)
+  return {
+    rooms: branchRooms.length,
+    activeRooms: branchRooms.filter((r) => r.status === "ACTIVE").length,
+    /** Active groups that meet in this branch (home branch or any session) */
+    activeGroups: new Set([
+      ...lookups.groups.filter((g) => g.branchId === branchId && g.status === "ACTIVE").map((g) => g.id),
+      ...sessions.map((s) => s.groupId),
+    ]).size,
+    weeklySessions: sessions.length,
+    weeklyMinutes: weeklyMinutes(sessions),
+  }
+}
+
+/**
+ * Where a session happens, relative to its group's usual location:
+ * nothing if it's the usual room, the room if same branch, else "branch · room".
+ */
+export function sessionPlace(
+  session: WeeklySchedule,
+  group: Pick<Group, "branchId" | "roomId">,
+  branchesById: Map<ID, Branch>,
+  roomsById: Map<ID, Room>
+) {
+  if (session.roomId === group.roomId) return null
+  if (session.branchId === group.branchId) return roomName(roomsById, session.roomId)
+  return locationLabel(session, branchesById, roomsById)
 }

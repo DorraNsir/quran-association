@@ -1,4 +1,5 @@
 import type {
+  ConflictType,
   Gender,
   RecordStatus,
   Role,
@@ -61,6 +62,16 @@ export const labels = {
     SAT: "سبت",
     SUN: "أحد",
   } satisfies Record<Weekday, string>,
+  /** French (later): ROOM "Cette salle est déjà occupée pendant cette période." /
+   *  TEACHER "Cet enseignant est déjà affecté à un autre groupe pendant cette période." */
+  conflict: {
+    ROOM: { title: "تعارض في القاعة", message: "هذه القاعة مستخدمة خلال هذا الوقت." },
+    TEACHER: {
+      title: "تعارض في المعلم",
+      message: "هذا المعلم مرتبط بمجموعة أخرى خلال هذا الوقت.",
+    },
+    GROUP: { title: "تداخل في حصص المجموعة", message: "للمجموعة حصة أخرى خلال هذا الوقت." },
+  } satisfies Record<ConflictType, { title: string; message: string }>,
   common: {
     all: "الكل",
     view: "عرض",

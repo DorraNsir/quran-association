@@ -69,15 +69,17 @@ export function FilterSelect({
   onValueChange,
   options,
   allLabel,
+  disabled,
 }: {
   label: string
   value: string
   onValueChange: (value: string) => void
   options: FilterOption[]
   allLabel: string
+  disabled?: boolean
 }) {
   return (
-    <Select value={value} onValueChange={onValueChange}>
+    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
       <SelectTrigger
         aria-label={label}
         className={cn(
@@ -107,7 +109,7 @@ export function FilterBar({
   onReset,
   resultLabel,
 }: {
-  search: React.ReactNode
+  search?: React.ReactNode
   children?: React.ReactNode
   hasActiveFilters: boolean
   onReset: () => void
@@ -116,7 +118,7 @@ export function FilterBar({
   return (
     <div className="mb-4 flex flex-col gap-3">
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-        <div className="lg:max-w-xs lg:flex-1">{search}</div>
+        {search && <div className="lg:max-w-xs lg:flex-1">{search}</div>}
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
           {children}
         </div>

@@ -9,6 +9,7 @@ import {
   countActiveStudentsByGroup,
   fullName,
   indexById,
+  schedulesOf,
   teacherAssignments,
   weeklyMinutes,
   type Lookups,
@@ -118,7 +119,9 @@ export function TeacherWorkload({ lookups }: { lookups: Lookups }) {
         teacher,
         supervising: assignments.filter((a) => a.role === "SUPERVISOR").length,
         assisting: assignments.filter((a) => a.role === "ASSISTANT").length,
-        minutes: weeklyMinutes(assignments.flatMap((a) => a.group.schedule)),
+        minutes: weeklyMinutes(
+          assignments.flatMap((a) => schedulesOf(a.group.id, lookups.schedules))
+        ),
       }
     })
     .sort((a, b) => b.minutes - a.minutes)

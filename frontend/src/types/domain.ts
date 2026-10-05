@@ -20,6 +20,7 @@ export type StudentStatus = RecordStatus
 export type TeacherStatus = Extract<RecordStatus, "ACTIVE" | "INACTIVE">
 export type GroupStatus = RecordStatus
 export type BranchStatus = Extract<RecordStatus, "ACTIVE" | "INACTIVE">
+export type RoomStatus = Extract<RecordStatus, "ACTIVE" | "INACTIVE">
 
 export type Gender = "MALE" | "FEMALE"
 
@@ -28,18 +29,21 @@ export type TeachingRole = "SUPERVISOR" | "ASSISTANT"
 
 export type Weekday = "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN"
 
+/** Rooms only need to be identifiable — no capacity or equipment by design. */
 export interface Room {
   id: ID
   branchId: ID
   name: string
+  status: RoomStatus
 }
 
+/** Rooms reference their branch (Room.branchId); a branch does not embed them. */
 export interface Branch {
   id: ID
   name: string
   address: string
+  phone?: string
   status: BranchStatus
-  rooms: Room[]
 }
 
 /**
@@ -74,6 +78,7 @@ export interface Teacher {
   qualification?: string
 }
 
+/** A time window on a weekday — the part of a schedule that can overlap. */
 export interface ScheduleSlot {
   day: Weekday
   start: TimeOfDay
@@ -81,19 +86,42 @@ export interface ScheduleSlot {
 }
 
 /**
+ * One recurring weekly session of a group (a group usually has 2–3).
+ * Teachers are not stored here: they come from the group's assignments.
+ * branchId is kept alongside roomId for filtering, and always matches room.branchId.
+ */
+export interface WeeklySchedule extends ScheduleSlot {
+  id: ID
+  groupId: ID
+  branchId: ID
+  roomId: ID
+}
+
+export type ConflictType = "ROOM" | "TEACHER" | "GROUP"
+
+/** Why a candidate session cannot be scheduled (frontend UX check only). */
+export interface ScheduleConflict {
+  type: ConflictType
+  /** The existing session it collides with */
+  schedule: WeeklySchedule
+  /** For TEACHER conflicts: the teachers booked in both groups */
+  teacherIds: ID[]
+}
+/**
  * Teaching assignments live on the group: exactly one supervisor,
- * zero or more assistants. Group membership lives on the student.
+ * zero or more assistants. Group membership lives on the student,
+ * and weekly sessions live in WeeklySchedule (by groupId).
  */
 export interface Group {
   id: ID
   name: string
   /** Target audience, e.g. "أطفال 7–10 سنوات" */
   audience: string
+  /** Usual location — the default for new sessions; each session has its own room */
   branchId: ID
   roomId: ID
   supervisorId: ID
   assistantIds: ID[]
-  schedule: ScheduleSlot[]
   status: GroupStatus
   createdAt: ISODate
 }

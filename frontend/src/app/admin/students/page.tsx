@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 
 import { StudentsView } from "@/components/students/students-view"
 import { fullName } from "@/lib/domain"
-import { branches, groups, students, teachers } from "@/lib/mock"
+import { groups, lookups, students } from "@/lib/mock"
 
 export const metadata: Metadata = { title: "الطلبة" }
 
@@ -16,7 +16,7 @@ export default async function StudentsPage(props: PageProps<"/admin/students">) 
     <StudentsView
       initialStudents={sorted}
       initialGroupId={initialGroupId}
-      lookups={{ branches, groups, teachers }}
+      lookups={lookups}
     />
   )
 }

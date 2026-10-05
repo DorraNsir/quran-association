@@ -2,9 +2,18 @@
  * Mock data for the frontend validation phase.
  * Pages import from here; later these imports are replaced by API calls.
  */
-export { branches } from "./branches"
-export { teachers, currentUser } from "./teachers"
-export { groups } from "./groups"
+import type { Lookups } from "@/lib/domain"
+
+import { branches, rooms } from "./branches"
+import { groups } from "./groups"
+import { schedules } from "./schedules"
+import { teachers } from "./teachers"
+
+export { branches, rooms, groups, schedules, teachers }
+export { currentUser } from "./teachers"
 export { students } from "./students"
 export { recentActivity } from "./activity"
 export { MOCK_TODAY } from "./reference-date"
+
+/** The one reference-data bundle every screen resolves ids against. */
+export const lookups: Lookups = { branches, rooms, groups, teachers, schedules }

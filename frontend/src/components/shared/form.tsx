@@ -30,6 +30,7 @@ export function FormSheet({
   onSubmit,
   submitLabel = labels.common.save,
   pending = false,
+  submitDisabled = false,
   children,
 }: {
   open: boolean
@@ -39,6 +40,8 @@ export function FormSheet({
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
   submitLabel?: string
   pending?: boolean
+  /** e.g. while a scheduling conflict is unresolved */
+  submitDisabled?: boolean
   children: React.ReactNode
 }) {
   const dir = useDirection()
@@ -60,7 +63,7 @@ export function FormSheet({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {labels.common.cancel}
             </Button>
-            <Button type="submit" disabled={pending} className="min-w-24">
+            <Button type="submit" disabled={pending || submitDisabled} className="min-w-24">
               {pending && <Loader2 className="animate-spin" />}
               {submitLabel}
             </Button>

@@ -24,23 +24,25 @@ import { PhoneLink, SectionCard } from "@/components/shared/info-list"
 import { Breadcrumbs } from "@/components/shared/page-header"
 import { MetaItem, ProfileHeader } from "@/components/shared/profile"
 import { ProfileTabs } from "@/components/shared/profile-tabs"
-import { ScheduleSummary, WeeklySchedule } from "@/components/shared/schedule"
+import { ScheduleSummary, WeeklyScheduleGrid } from "@/components/shared/schedule"
 import { StatCard } from "@/components/shared/stat-card"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import {
   fullName,
   groupTeachers,
-  indexById,
+  indexLookups,
   roomName,
+  schedulesOf,
+  sessionPlace,
   studentsInGroup,
   weeklyMinutes,
 } from "@/lib/domain"
 import { formatDate, formatDuration } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { branches, groups, students, teachers } from "@/lib/mock"
+import { groups, lookups, schedules, students } from "@/lib/mock"
 import { cn } from "@/lib/utils"
-import type { Teacher, TeachingRole } from "@/types/domain"
+import type { Teacher, TeachingRole, WeeklySchedule } from "@/types/domain"
 
 export function generateStaticParams() {
   return groups.map((g) => ({ id: g.id }))
@@ -78,16 +80,20 @@ export default async function GroupDetailsPage(props: PageProps<"/admin/groups/[
   const group = groups.find((g) => g.id === id)
   if (!group) notFound()
 
-  const branch = indexById(branches).get(group.branchId)
-  const room = roomName(branch, group.roomId)
-  const { supervisor, assistants } = groupTeachers(group, indexById(teachers))
+  const { branchesById, roomsById, teachersById } = indexLookups(lookups)
+  const branch = branchesById.get(group.branchId)
+  const room = roomName(roomsById, group.roomId)
+  const sessions = schedulesOf(group.id, schedules)
+  /** Each session's room — shown even when it's the usual one, since this is the group's own page */
+  const placeOf = (s: WeeklySchedule) =>
+    sessionPlace(s, group, branchesById, roomsById) ?? roomName(roomsById, s.roomId)
+  const { supervisor, assistants } = groupTeachers(group, teachersById)
   const members = studentsInGroup(group.id, students)
   const activeMembers = members.filter((s) => s.status === "ACTIVE")
-  const minutes = weeklyMinutes(group.schedule)
+  const minutes = weeklyMinutes(sessions)
   const recentMembers = [...members]
     .sort((a, b) => b.registrationDate.localeCompare(a.registrationDate))
     .slice(0, 5)
-  const lookups = { branches, groups, teachers }
 
   const team = (
     <div className="grid gap-3 sm:grid-cols-2">
@@ -104,11 +110,11 @@ export default async function GroupDetailsPage(props: PageProps<"/admin/groups/[
   )
 
   const weekly = (
-    <WeeklySchedule
-      entries={group.schedule.map((slot) => ({
+    <WeeklyScheduleGrid
+      entries={sessions.map((slot) => ({
         slot,
         title: group.name,
-        subtitle: room,
+        subtitle: placeOf(slot),
         emphasis: true,
       }))}
     />
@@ -148,7 +154,7 @@ export default async function GroupDetailsPage(props: PageProps<"/admin/groups/[
                     hint={members.length > activeMembers.length ? `من أصل ${members.length}` : undefined} />
                   <StatCard label="فريق التدريس" value={1 + assistants.length} icon={UsersRound}
                     hint={`مشرف و${assistants.length} مساعد`} />
-                  <StatCard label="الحصص أسبوعيًا" value={group.schedule.length} icon={CalendarClock} />
+                  <StatCard label="الحصص أسبوعيًا" value={sessions.length} icon={CalendarClock} />
                   <StatCard label="الساعات أسبوعيًا" value={formatDuration(minutes)} icon={Clock} />
                 </div>
                 <div className="grid gap-6 lg:grid-cols-3">
@@ -156,10 +162,10 @@ export default async function GroupDetailsPage(props: PageProps<"/admin/groups/[
                     {team}
                   </SectionCard>
                   <SectionCard title="المواعيد" icon={CalendarClock}>
-                    <ScheduleSummary schedule={group.schedule} />
+                    <ScheduleSummary schedule={sessions} detail={placeOf} />
                     <p className="mt-4 flex items-center gap-1.5 text-sm text-muted-foreground">
                       <MapPin className="size-4" aria-hidden />
-                      {branch?.name} · {room}
+                      المكان المعتاد: {branch?.name} · {room}
                     </p>
                   </SectionCard>
                 </div>
@@ -209,11 +215,16 @@ export default async function GroupDetailsPage(props: PageProps<"/admin/groups/[
             label: "المواعيد",
             icon: <CalendarClock aria-hidden />,
             content: (
-              <SectionCard title="البرنامج الأسبوعي" icon={CalendarClock}>
+              <SectionCard
+                title="البرنامج الأسبوعي"
+                icon={CalendarClock}
+                action={
+                  <Button asChild variant="ghost" size="sm" className="text-primary">
+                    <Link href={`/admin/calendar?group=${group.id}`}>عرض في الرزنامة</Link>
+                  </Button>
+                }
+              >
                 {weekly}
-                <p className="mt-4 text-xs text-muted-foreground">
-                  الحصص الاستثنائية والعطل والتحقق من التعارضات ستُدار من وحدة الرزنامة.
-                </p>
               </SectionCard>
             ),
           },

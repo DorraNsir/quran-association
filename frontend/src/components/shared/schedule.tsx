@@ -8,11 +8,14 @@ import { cn } from "@/lib/utils"
 import type { ScheduleSlot } from "@/types/domain"
 
 /** Compact one-line-per-slot schedule for tables and cards. */
-export function ScheduleSummary({
+export function ScheduleSummary<S extends ScheduleSlot>({
   schedule,
+  detail,
   className,
 }: {
-  schedule: ScheduleSlot[]
+  schedule: S[]
+  /** Extra info per row, e.g. the session's room */
+  detail?: (slot: S) => React.ReactNode
   className?: string
 }) {
   if (schedule.length === 0) {
@@ -26,6 +29,7 @@ export function ScheduleSummary({
           <span dir="ltr" className="tabular-nums">
             {formatTimeRange(slot.start, slot.end)}
           </span>
+          {detail && <span className="truncate text-muted-foreground">{detail(slot)}</span>}
         </li>
       ))}
     </ul>
@@ -46,7 +50,7 @@ export interface ScheduleEntry {
  * Week view: seven columns on large screens, a stacked day list on small
  * screens (only days with sessions are shown there).
  */
-export function WeeklySchedule({
+export function WeeklyScheduleGrid({
   entries,
   emptyLabel = "لا توجد حصص مبرمجة",
 }: {

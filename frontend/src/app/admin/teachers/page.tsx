@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 
 import { TeachersView } from "@/components/teachers/teachers-view"
-import { branches, currentUser, groups, teachers } from "@/lib/mock"
+import { currentUser, lookups, teachers } from "@/lib/mock"
 
 export const metadata: Metadata = { title: "المعلمون" }
 
@@ -13,7 +13,7 @@ export default function TeachersPage() {
   return (
     <TeachersView
       initialTeachers={teachers}
-      lookups={{ branches, groups, teachers }}
+      lookups={lookups}
       adminTeacherIds={adminTeacherIds}
     />
   )

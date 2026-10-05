@@ -18,8 +18,10 @@ import {
   branches,
   currentUser,
   groups,
+  lookups,
   MOCK_TODAY,
   recentActivity,
+  rooms,
   students,
   teachers,
 } from "@/lib/mock"
@@ -35,12 +37,13 @@ function registeredSince(days: number) {
 }
 
 export default function DashboardPage() {
-  const lookups = { branches, groups, teachers }
   const activeStudents = students.filter((s) => s.status === "ACTIVE").length
   const activeTeachers = teachers.filter((t) => t.status === "ACTIVE").length
   const activeGroups = groups.filter((g) => g.status === "ACTIVE").length
   const activeBranches = branches.filter((b) => b.status === "ACTIVE")
-  const rooms = activeBranches.reduce((n, b) => n + b.rooms.length, 0)
+  const activeRooms = rooms.filter(
+    (r) => r.status === "ACTIVE" && activeBranches.some((b) => b.id === r.branchId)
+  ).length
   const newStudents = registeredSince(30)
 
   return (
@@ -76,7 +79,8 @@ export default function DashboardPage() {
           label="الفروع"
           value={branches.length}
           icon={Building2}
-          hint={`${activeBranches.length} نشطة · ${countLabels.rooms(rooms)} متاحة`}
+          href="/admin/branches"
+          hint={`${activeBranches.length} نشطة · ${countLabels.rooms(activeRooms)} متاحة`}
         />
       </section>
 

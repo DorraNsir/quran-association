@@ -19,21 +19,25 @@ import { EmptyState } from "@/components/shared/empty-state"
 import { InfoList, PhoneLink, SectionCard } from "@/components/shared/info-list"
 import { Breadcrumbs } from "@/components/shared/page-header"
 import { MetaItem, ProfileHeader } from "@/components/shared/profile"
-import { ScheduleSummary, WeeklySchedule } from "@/components/shared/schedule"
+import { ScheduleSummary, WeeklyScheduleGrid } from "@/components/shared/schedule"
 import { TeacherProfileActions } from "@/components/teachers/teacher-profile-actions"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   countActiveStudentsByGroup,
   fullName,
-  groupLocation,
-  indexById,
+  indexLookups,
+  locationLabel,
   roomName,
+  schedulesOf,
+  sessionPlace,
   teacherAssignments,
+  teacherWeeklySlots,
   weeklyMinutes,
 } from "@/lib/domain"
 import { countLabels, formatDate, formatDuration } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { branches, currentUser, groups, students, teachers } from "@/lib/mock"
+import { currentUser, groups, lookups, schedules, students, teachers } from "@/lib/mock"
 import { cn } from "@/lib/utils"
 
 export function generateStaticParams() {
@@ -52,12 +56,13 @@ export default async function TeacherProfilePage(props: PageProps<"/admin/teache
   if (!teacher) notFound()
 
   const name = fullName(teacher)
-  const branchesById = indexById(branches)
+  const { branchesById, roomsById } = indexLookups(lookups)
   const studentCounts = countActiveStudentsByGroup(students)
   const assignments = teacherAssignments(teacher.id, groups)
   const supervising = assignments.filter((a) => a.role === "SUPERVISOR").length
   const assisting = assignments.length - supervising
-  const minutes = weeklyMinutes(assignments.flatMap((a) => a.group.schedule))
+  const weeklySlots = teacherWeeklySlots(teacher.id, groups, schedules)
+  const minutes = weeklyMinutes(weeklySlots.map((e) => e.slot))
   const isAdmin = currentUser.teacherId === teacher.id && currentUser.roles.includes("ADMIN")
 
   return (
@@ -117,10 +122,13 @@ export default async function TeacherProfilePage(props: PageProps<"/admin/teache
                       </div>
                       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <MapPin className="size-3.5" aria-hidden />
-                        {groupLocation(group, branchesById)}
+                        {locationLabel(group, branchesById, roomsById)}
                       </p>
                       <div className="flex items-end justify-between gap-2 border-t pt-3">
-                        <ScheduleSummary schedule={group.schedule} />
+                        <ScheduleSummary
+                          schedule={schedulesOf(group.id, schedules)}
+                          detail={(s) => sessionPlace(s, group, branchesById, roomsById)}
+                        />
                         <span className="text-xs whitespace-nowrap text-muted-foreground">
                           {countLabels.students(studentCounts.get(group.id) ?? 0)}
                         </span>
@@ -182,17 +190,24 @@ export default async function TeacherProfilePage(props: PageProps<"/admin/teache
         </div>
       </div>
 
-      <SectionCard title="البرنامج الأسبوعي" icon={CalendarClock} className="mt-6">
-        <WeeklySchedule
-          entries={assignments.flatMap(({ group, role }) =>
-            group.schedule.map((slot) => ({
-              slot,
-              title: group.name,
-              subtitle: `${labels.teachingRole[role]} · ${roomName(branchesById.get(group.branchId), group.roomId)}`,
-              href: `/admin/groups/${group.id}`,
-              emphasis: role === "SUPERVISOR",
-            }))
-          )}
+      <SectionCard
+        title="البرنامج الأسبوعي"
+        icon={CalendarClock}
+        className="mt-6"
+        action={
+          <Button asChild variant="ghost" size="sm" className="text-primary">
+            <Link href={`/admin/calendar?teacher=${teacher.id}`}>عرض في الرزنامة</Link>
+          </Button>
+        }
+      >
+        <WeeklyScheduleGrid
+          entries={weeklySlots.map(({ slot, group, role }) => ({
+            slot,
+            title: group.name,
+            subtitle: `${labels.teachingRole[role]} · ${branchesById.get(slot.branchId)?.name ?? ""} · ${roomName(roomsById, slot.roomId)}`,
+            href: `/admin/groups/${group.id}`,
+            emphasis: role === "SUPERVISOR",
+          }))}
         />
       </SectionCard>
     </>

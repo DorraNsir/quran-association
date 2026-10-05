@@ -20,7 +20,7 @@ import { PageHeader } from "@/components/shared/page-header"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { fullName, teacherAssignments, weeklyMinutes, type Lookups } from "@/lib/domain"
+import { fullName, teacherAssignments, teacherWeeklySlots, weeklyMinutes, type Lookups } from "@/lib/domain"
 import { countLabels, formatDuration } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import type { ID, Teacher } from "@/types/domain"
@@ -53,7 +53,7 @@ export function TeachersView({
 
   const assignmentsOf = (t: Teacher) => teacherAssignments(t.id, lookups.groups)
   const weeklyLoad = (t: Teacher) =>
-    weeklyMinutes(assignmentsOf(t).flatMap(({ group }) => group.schedule))
+    weeklyMinutes(teacherWeeklySlots(t.id, lookups.groups, lookups.schedules).map((e) => e.slot))
 
   const digits = query.replace(/\D/g, "")
   const filtered = teachers.filter((t) => {

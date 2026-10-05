@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useFormState } from "@/hooks/use-form-state"
-import { ageOn, groupLocation, indexLookups, type Lookups } from "@/lib/domain"
+import { ageOn, indexLookups, locationLabel, type Lookups } from "@/lib/domain"
 import { labels } from "@/lib/i18n"
 import { MOCK_TODAY, newMockId } from "@/lib/mock/reference-date"
 import {
@@ -97,7 +97,7 @@ export function StudentFormSheet({
 }) {
   const form = useFormState(`student-${student?.id ?? "new"}`, toValues(student), validate)
   const { values, setField } = form
-  const { branchesById, groupsById } = indexLookups(lookups)
+  const { branchesById, roomsById, groupsById } = indexLookups(lookups)
   const age = ageFrom(values.dateOfBirth)
   const isMinor = age !== null && age < 18
   const selectedGroup = groupsById.get(values.groupId)
@@ -213,7 +213,7 @@ export function StudentFormSheet({
           label="المجموعة"
           required
           className="sm:col-span-2"
-          description={selectedGroup ? groupLocation(selectedGroup, branchesById) : undefined}
+          description={selectedGroup ? locationLabel(selectedGroup, branchesById, roomsById) : undefined}
           {...form.field("groupId")}
         >
           <GroupSelect

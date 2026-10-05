@@ -20,7 +20,7 @@ import { ProfileTabs } from "@/components/shared/profile-tabs"
 import { StudentOverview } from "@/components/students/student-overview"
 import { StudentProfileActions } from "@/components/students/student-profile-actions"
 import { ageOn, fullName } from "@/lib/domain"
-import { branches, groups, MOCK_TODAY, students, teachers } from "@/lib/mock"
+import { groups, lookups, MOCK_TODAY, students } from "@/lib/mock"
 
 export function generateStaticParams() {
   return students.map((s) => ({ id: s.id }))
@@ -37,7 +37,6 @@ export default async function StudentProfilePage(props: PageProps<"/admin/studen
   const student = students.find((s) => s.id === id)
   if (!student) notFound()
 
-  const lookups = { branches, groups, teachers }
   const group = groups.find((g) => g.id === student.groupId)
   const name = fullName(student)
 

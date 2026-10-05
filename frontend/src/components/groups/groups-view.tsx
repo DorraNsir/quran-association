@@ -23,7 +23,9 @@ import { Card } from "@/components/ui/card"
 import {
   countActiveStudentsByGroup,
   fullName,
-  groupLocation,
+  locationLabel,
+  schedulesOf,
+  sessionPlace,
   groupTeachers,
   indexLookups,
   type Lookups,
@@ -31,7 +33,7 @@ import {
 import { countLabels } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import type { Group, Student } from "@/types/domain"
+import type { Group, Student, WeeklySchedule } from "@/types/domain"
 
 import { groupActions, useGroupDialogs } from "./use-group-dialogs"
 
@@ -46,19 +48,24 @@ export function GroupsView({
 }) {
   const [groups, setGroups] = useState(lookups.groups)
   const [students, setStudents] = useState(initialStudents)
+  const [schedules, setSchedules] = useState(lookups.schedules)
   const [query, setQuery] = useState("")
   const [branchId, setBranchId] = useState(ALL)
   const [status, setStatus] = useState(ALL)
   const [view, setView] = useState<ViewMode>("cards")
 
-  const liveLookups = { ...lookups, groups }
-  const { branchesById, teachersById } = indexLookups(liveLookups)
+  const liveLookups = { ...lookups, groups, schedules }
+  const { branchesById, roomsById, teachersById } = indexLookups(liveLookups)
+  const sessionsOf = (g: Group) => schedulesOf(g.id, schedules)
+  /** Sessions normally happen in the group's usual room; show the room only when it differs. */
+  const placeOf = (g: Group) => (s: WeeklySchedule) => sessionPlace(s, g, branchesById, roomsById)
   const studentCounts = countActiveStudentsByGroup(students)
 
   const { run, dialogs } = useGroupDialogs({
     lookups: liveLookups,
     students,
-    onChange: ({ group, studentIds }, isNew) => {
+    onChange: ({ group, studentIds, schedules: sessions }, isNew) => {
+      setSchedules((prev) => [...prev.filter((s) => s.groupId !== group.id), ...sessions])
       setGroups((prev) => (isNew ? [...prev, group] : prev.map((g) => (g.id === group.id ? group : g))))
       setStudents((prev) =>
         prev.map((s) => (studentIds.includes(s.id) ? { ...s, groupId: group.id } : s))
@@ -115,7 +122,7 @@ export function GroupsView({
       id: "place",
       header: "الفرع والقاعة",
       className: "hidden lg:table-cell",
-      cell: (g) => <span className="text-sm text-muted-foreground">{groupLocation(g, branchesById)}</span>,
+      cell: (g) => <span className="text-sm text-muted-foreground">{locationLabel(g, branchesById, roomsById)}</span>,
     },
     {
       id: "students",
@@ -143,7 +150,7 @@ export function GroupsView({
         )
       },
     },
-    { id: "schedule", header: "المواعيد", cell: (g) => <ScheduleSummary schedule={g.schedule} /> },
+    { id: "schedule", header: "المواعيد", cell: (g) => <ScheduleSummary schedule={sessionsOf(g)} detail={placeOf(g)} /> },
     { id: "status", header: "الحالة", cell: (g) => <StatusBadge status={g.status} /> },
     {
       id: "actions",
@@ -245,7 +252,10 @@ export function GroupsView({
               <li key={group.id}>
                 <GroupCard
                   group={group}
-                  location={groupLocation(group, branchesById)}
+                  location={locationLabel(group, branchesById, roomsById)}
+                  schedule={
+                    <ScheduleSummary schedule={sessionsOf(group)} detail={placeOf(group)} />
+                  }
                   studentCount={studentCounts.get(group.id) ?? 0}
                   team={groupTeachers(group, teachersById)}
                   actions={<ActionsMenu label={`إجراءات ${group.name}`} actions={groupActions(group, run)} />}
@@ -263,12 +273,14 @@ export function GroupsView({
 function GroupCard({
   group,
   location,
+  schedule,
   studentCount,
   team,
   actions,
 }: {
   group: Group
   location: string
+  schedule: React.ReactNode
   studentCount: number
   team: ReturnType<typeof groupTeachers>
   actions: React.ReactNode
@@ -318,7 +330,7 @@ function GroupCard({
       </div>
 
       <div className="mt-auto border-t bg-muted/30 px-4 py-3">
-        <ScheduleSummary schedule={group.schedule} />
+        {schedule}
       </div>
     </Card>
   )

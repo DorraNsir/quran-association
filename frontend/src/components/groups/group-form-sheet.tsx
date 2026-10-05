@@ -13,14 +13,15 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useFormState } from "@/hooks/use-form-state"
-import { fullName, indexById, type Lookups } from "@/lib/domain"
+import { fullName, indexById, roomsOfBranch, schedulesOf, type Lookups } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { MOCK_TODAY, newMockId } from "@/lib/mock/reference-date"
+import { checkGroupSessions, type SessionDraft } from "@/lib/scheduling"
 import { requiredText } from "@/lib/validation"
-import type { Group, GroupStatus, ID, ScheduleSlot, Student } from "@/types/domain"
+import type { Group, GroupStatus, ID, Student, WeeklySchedule } from "@/types/domain"
 
-import { ScheduleEditor, scheduleSlotError } from "./schedule-editor"
+import { draftError, ScheduleEditor } from "./schedule-editor"
 
 interface GroupFormValues {
   name: string
@@ -30,13 +31,32 @@ interface GroupFormValues {
   supervisorId: string
   assistantIds: string[]
   studentIds: string[]
-  schedule: ScheduleSlot[]
+  sessions: SessionDraft[]
   status: GroupStatus
 }
 
 export interface GroupSaveResult {
   group: Group
   studentIds: ID[]
+  /** Replaces all of the group's weekly sessions */
+  schedules: WeeklySchedule[]
+}
+
+/** Id used for conflict checks while a new group has no id yet. */
+const DRAFT_GROUP_ID = "draft-group"
+
+function toDraftGroup(v: GroupFormValues, group?: Group): Group {
+  return {
+    id: group?.id ?? DRAFT_GROUP_ID,
+    createdAt: group?.createdAt ?? MOCK_TODAY,
+    name: v.name.trim(),
+    audience: v.audience.trim(),
+    branchId: v.branchId,
+    roomId: v.roomId,
+    supervisorId: v.supervisorId,
+    assistantIds: v.assistantIds.filter((id) => id !== v.supervisorId),
+    status: v.status,
+  }
 }
 
 function SimpleSelect({
@@ -90,6 +110,9 @@ export function GroupFormSheet({
   const currentMembers = group ? students.filter((s) => s.groupId === group.id).map((s) => s.id) : []
   const otherNames = lookups.groups.filter((g) => g.id !== group?.id).map((g) => g.name.trim())
 
+  const sessionChecks = (v: GroupFormValues) =>
+    checkGroupSessions(v.sessions, toDraftGroup(v, group), lookups)
+
   const form = useFormState<GroupFormValues>(
     `group-${group?.id ?? "new"}`,
     {
@@ -100,7 +123,9 @@ export function GroupFormSheet({
       supervisorId: group?.supervisorId ?? "",
       assistantIds: group?.assistantIds ?? [],
       studentIds: currentMembers,
-      schedule: group?.schedule ?? [],
+      sessions: group
+        ? schedulesOf(group.id, lookups.schedules).map((s) => ({ ...s, key: `saved:${s.id}` }))
+        : [],
       status: group?.status ?? "ACTIVE",
     },
     (v) => ({
@@ -109,37 +134,41 @@ export function GroupFormSheet({
       branchId: v.branchId ? undefined : "اختر الفرع",
       roomId: v.roomId ? undefined : "اختر القاعة",
       supervisorId: v.supervisorId ? undefined : "لكل مجموعة معلم مشرف واحد",
-      schedule: v.schedule.some((slot, i) => scheduleSlotError(slot, v.schedule, i))
-        ? "راجع مواعيد الحصص"
-        : undefined,
+      sessions:
+        v.sessions.some((row) => draftError(row)) ||
+        [...sessionChecks(v).values()].some((c) => c.conflicts.length > 0)
+          ? "راجع مواعيد الحصص: توجد بيانات ناقصة أو تعارضات"
+          : undefined,
     })
   )
   const { values, setField } = form
 
   const groupsById = indexById(lookups.groups)
   const branch = lookups.branches.find((b) => b.id === values.branchId)
+  const branchRooms = roomsOfBranch(values.branchId, lookups.rooms).filter(
+    (r) => r.status === "ACTIVE" || r.id === values.roomId
+  )
   const activeTeachers = lookups.teachers.filter(
     (t) => t.status === "ACTIVE" || t.id === values.supervisorId || values.assistantIds.includes(t.id)
   )
   const moving = values.studentIds.filter((id) => !currentMembers.includes(id)).length
 
-  const submit = form.handleSubmit((v) =>
+  const submit = form.handleSubmit((v) => {
+    const saved = { ...toDraftGroup(v, group), id: group?.id ?? newMockId("g") }
     onSave({
-      group: {
-        id: group?.id ?? newMockId("g"),
-        createdAt: group?.createdAt ?? MOCK_TODAY,
-        name: v.name.trim(),
-        audience: v.audience.trim(),
-        branchId: v.branchId,
-        roomId: v.roomId,
-        supervisorId: v.supervisorId,
-        assistantIds: v.assistantIds.filter((id) => id !== v.supervisorId),
-        schedule: v.schedule,
-        status: v.status,
-      },
+      group: saved,
       studentIds: v.studentIds,
+      schedules: v.sessions.map(({ day, start, end, branchId, roomId, id }) => ({
+        id: id ?? newMockId("ws"),
+        groupId: saved.id,
+        day,
+        start,
+        end,
+        branchId,
+        roomId,
+      })),
     })
-  )
+  })
 
   return (
     <FormSheet
@@ -171,19 +200,23 @@ export function GroupFormSheet({
         </FormField>
       </FormSection>
 
-      <FormSection title="المكان">
+      <FormSection title="المكان المعتاد" description="يُقترح تلقائيًا لكل يوم دراسة جديد، ويمكن تغييره لكل حصة.">
         <FormField label="الفرع" required {...form.field("branchId")}>
           <SimpleSelect
             id={form.field("branchId").id}
             value={values.branchId}
             onValueChange={(v) => {
+              // Radix also reports programmatic value changes — only a real switch resets the room
+              if (v === values.branchId) return
               setField("branchId", v)
               setField("roomId", "")
               form.touch("branchId")
             }}
             placeholder="اختر الفرع"
             invalid={Boolean(form.field("branchId").error)}
-            options={lookups.branches.map((b) => ({ value: b.id, label: b.name }))}
+            options={lookups.branches
+              .filter((b) => b.status === "ACTIVE" || b.id === values.branchId)
+              .map((b) => ({ value: b.id, label: b.name }))}
           />
         </FormField>
         <FormField
@@ -202,7 +235,7 @@ export function GroupFormSheet({
             placeholder="اختر القاعة"
             disabled={!branch}
             invalid={Boolean(form.field("roomId").error)}
-            options={(branch?.rooms ?? []).map((r) => ({ value: r.id, label: r.name }))}
+            options={branchRooms.map((r) => ({ value: r.id, label: r.name }))}
           />
         </FormField>
       </FormSection>
@@ -278,12 +311,24 @@ export function GroupFormSheet({
 
       <FormSection
         title="المواعيد الأسبوعية"
-        description="سيُضاف التحقق من تعارض القاعات والمعلمين مع وحدة الرزنامة."
+        description={
+          values.status === "ACTIVE"
+            ? "يُتحقَّق مباشرة من توفّر القاعة ومن عدم ارتباط المعلمين بمجموعة أخرى في نفس الوقت."
+            : "المجموعة غير نشطة: لا تحجز حصصها القاعات ولا المعلمين، لذلك لا يُتحقَّق من التعارضات."
+        }
       >
+        {form.field("sessions").error && (
+          <p role="alert" className="text-sm text-destructive sm:col-span-2">
+            {form.field("sessions").error}
+          </p>
+        )}
         <ScheduleEditor
-          id={form.field("schedule").id}
-          value={values.schedule}
-          onChange={(slots) => setField("schedule", slots)}
+          id={form.field("sessions").id}
+          rows={values.sessions}
+          onChange={(rows) => setField("sessions", rows)}
+          lookups={lookups}
+          checks={sessionChecks(values)}
+          defaultLocation={{ branchId: values.branchId, roomId: values.roomId }}
           showErrors={form.submitted}
         />
       </FormSection>

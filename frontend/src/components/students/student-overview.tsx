@@ -21,9 +21,10 @@ import { Button } from "@/components/ui/button"
 import {
   ageOn,
   fullName,
-  groupLocation,
   groupTeachers,
   indexLookups,
+  locationLabel,
+  schedulesOf,
   type Lookups,
 } from "@/lib/domain"
 import { formatDate, formatElapsed } from "@/lib/format"
@@ -32,7 +33,7 @@ import { MOCK_TODAY } from "@/lib/mock/reference-date"
 import type { Student } from "@/types/domain"
 
 export function StudentOverview({ student, lookups }: { student: Student; lookups: Lookups }) {
-  const { branchesById, groupsById, teachersById } = indexLookups(lookups)
+  const { branchesById, roomsById, groupsById, teachersById } = indexLookups(lookups)
   const group = groupsById.get(student.groupId)
   const age = ageOn(student.dateOfBirth, MOCK_TODAY)
   const team = group ? groupTeachers(group, teachersById) : null
@@ -115,7 +116,7 @@ export function StudentOverview({ student, lookups }: { student: Student; lookup
               <p className="text-sm text-muted-foreground">{group.audience}</p>
               <p className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
                 <MapPin className="size-4" aria-hidden />
-                {groupLocation(group, branchesById)}
+                {locationLabel(group, branchesById, roomsById)}
               </p>
             </div>
             <div className="space-y-3 border-t pt-4">
@@ -137,7 +138,7 @@ export function StudentOverview({ student, lookups }: { student: Student; lookup
                 <ShieldCheck className="size-3.5" aria-hidden />
                 مواعيد الحصص
               </p>
-              <ScheduleSummary schedule={group.schedule} />
+              <ScheduleSummary schedule={schedulesOf(group.id, lookups.schedules)} />
             </div>
           </div>
         ) : (

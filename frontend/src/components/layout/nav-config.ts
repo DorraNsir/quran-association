@@ -1,5 +1,6 @@
 import {
   BookOpenCheck,
+  Building2,
   CalendarDays,
   ClipboardCheck,
   ClipboardList,
@@ -42,7 +43,8 @@ export const adminNav: NavSection[] = [
       { label: "الطلبة", href: "/admin/students", icon: GraduationCap, ready: true },
       { label: "المعلمون", href: "/admin/teachers", icon: UsersRound, ready: true },
       { label: "المجموعات", href: "/admin/groups", icon: Users, ready: true },
-      { label: "الرزنامة", href: "/admin/calendar", icon: CalendarDays, ready: false },
+      { label: "الفروع والقاعات", href: "/admin/branches", icon: Building2, ready: true },
+      { label: "الرزنامة", href: "/admin/calendar", icon: CalendarDays, ready: true },
       { label: "الحضور", href: "/admin/attendance", icon: ClipboardCheck, ready: false },
       { label: "متابعة الحفظ", href: "/admin/progress", icon: BookOpenCheck, ready: false },
     ],

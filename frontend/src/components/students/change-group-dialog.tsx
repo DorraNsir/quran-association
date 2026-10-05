@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { fullName, groupLocation, indexLookups, type Lookups } from "@/lib/domain"
+import { fullName, indexLookups, locationLabel, schedulesOf, type Lookups } from "@/lib/domain"
 import { labels } from "@/lib/i18n"
 import type { ID, Student } from "@/types/domain"
 
@@ -33,7 +33,7 @@ export function ChangeGroupDialog({
   onConfirm: (groupId: ID) => void
 }) {
   const [targetId, setTargetId] = useState("")
-  const { branchesById, groupsById, teachersById } = indexLookups(lookups)
+  const { branchesById, roomsById, groupsById, teachersById } = indexLookups(lookups)
   const current = groupsById.get(student.groupId)
   const target = groupsById.get(targetId)
   const supervisor = target && teachersById.get(target.supervisorId)
@@ -53,7 +53,7 @@ export function ChangeGroupDialog({
             <p className="text-xs text-muted-foreground">المجموعة الحالية</p>
             <p className="font-medium">{current?.name ?? "—"}</p>
             {current && (
-              <p className="text-xs text-muted-foreground">{groupLocation(current, branchesById)}</p>
+              <p className="text-xs text-muted-foreground">{locationLabel(current, branchesById, roomsById)}</p>
             )}
           </div>
 
@@ -78,7 +78,7 @@ export function ChangeGroupDialog({
               </p>
               <p className="flex items-center gap-2 text-muted-foreground">
                 <MapPin className="size-3.5" aria-hidden />
-                {groupLocation(target, branchesById)}
+                {locationLabel(target, branchesById, roomsById)}
               </p>
               {supervisor && (
                 <p className="flex items-center gap-2 text-muted-foreground">
@@ -86,7 +86,7 @@ export function ChangeGroupDialog({
                   {labels.teachingRole.SUPERVISOR}: {fullName(supervisor)}
                 </p>
               )}
-              <ScheduleSummary schedule={target.schedule} className="pt-1" />
+              <ScheduleSummary schedule={schedulesOf(target.id, lookups.schedules)} className="pt-1" />
             </div>
           )}
         </div>
