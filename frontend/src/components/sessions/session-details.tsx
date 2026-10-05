@@ -83,7 +83,7 @@ export function SessionDetails({ row, today }: { row: SessionRow; today: ISODate
     <>
       <Breadcrumbs
         className="mb-4"
-        items={[{ label: "الحصص", href: "/admin/sessions" }, { label: `${group?.name ?? ""} — ${formatDate(session.date)}` }]}
+        items={[{ label: "الحصص", href: "/admin/sessions" }, { label: `${group?.name ?? ""} (${row.branch?.name ?? ""}) — ${formatDate(session.date)}` }]}
       />
       <SessionHeader
         row={row}
@@ -170,6 +170,11 @@ export function SessionDetails({ row, today }: { row: SessionRow; today: ISODate
                   icon: BookOpen,
                 },
                 {
+                  label: "الحلقة",
+                  value: `${row.branch?.name ?? ""} · ${row.room?.name ?? ""}`,
+                  icon: Users,
+                },
+                {
                   label: "من البرنامج الأسبوعي",
                   value: (
                     <>
@@ -212,7 +217,7 @@ export function SessionDetails({ row, today }: { row: SessionRow; today: ISODate
           <DialogHeader>
             <DialogTitle>إلغاء حصة {formatDate(session.date)}؟</DialogTitle>
             <DialogDescription>
-              يُلغى هذا التاريخ فقط. البرنامج الأسبوعي لـ{group?.name} وبقية الحصص لا تتغيّر.
+              يُلغى هذا التاريخ فقط لحلقة {row.branch?.name} من {group?.name}. البرنامج الأسبوعي وبقية الحصص والحلقات الأخرى لا تتغيّر.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">

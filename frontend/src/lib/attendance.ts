@@ -14,13 +14,13 @@ import type {
 export const ATTENDANCE_STATUSES: AttendanceStatus[] = ["PRESENT", "ABSENT", "EXCUSED", "LATE"]
 
 /**
- * Who is expected in a session: active members of the group who were
- * already registered on that date. (The prototype tracks only the current
- * group; membership history will come with the API.)
+ * Who is expected in a session: active members of the session's CLASS
+ * (not the whole pedagogical group) who were registered on that date.
+ * The prototype knows only the current class; membership history comes with the API.
  */
-export function rosterFor(session: Pick<Session, "groupId" | "date">, students: Student[]) {
+export function rosterFor(session: Pick<Session, "groupClassId" | "date">, students: Student[]) {
   return students.filter(
-    (s) => s.groupId === session.groupId && s.status === "ACTIVE" && s.registrationDate <= session.date
+    (s) => s.groupClassId === session.groupClassId && s.status === "ACTIVE" && s.registrationDate <= session.date
   )
 }
 

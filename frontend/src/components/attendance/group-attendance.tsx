@@ -6,12 +6,13 @@ import { useState } from "react"
 
 import { useSessionRows } from "@/components/sessions/use-session-rows"
 import { EmptyState } from "@/components/shared/empty-state"
+import { FilterSelect } from "@/components/shared/filters"
 import { SectionCard } from "@/components/shared/info-list"
 import { PeriodFilter, resolvePeriod, type Period } from "@/components/shared/period-filter"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { summarize } from "@/lib/attendance"
 import { isWithin, weekdayOf } from "@/lib/dates"
-import { fullName, type Lookups } from "@/lib/domain"
+import { classesOf, fullName, indexLookups, studentClass, type Lookups } from "@/lib/domain"
 import { countLabels, formatShortDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -33,21 +34,36 @@ export function GroupAttendance({
   today: ISODate
 }) {
   const [period, setPeriod] = useState<Period>({ preset: "year" })
+  const [classId, setClassId] = useState("all")
   const range = resolvePeriod(period, today)
+  const indexes = indexLookups(lookups)
+  const classes = classesOf(groupId, lookups.groupClasses)
+  /** "Branch — supervisor": distinguishes this group's classes */
+  const classTag = (groupClassId: ID) => {
+    const v = studentClass({ groupClassId }, indexes)
+    return v ? `${v.branch?.name ?? ""} — ${v.supervisor ? fullName(v.supervisor) : "—"}` : ""
+  }
+  const inClass = (groupClassId?: ID) => (classId === "all" ? classes.some((c) => c.id === groupClassId) : groupClassId === classId)
   const rows = useSessionRows(lookups, students, today).filter(
-    (r) => r.session.groupId === groupId && r.session.date <= today && isWithin(r.session.date, range)
+    (r) => inClass(r.session.groupClassId) && r.session.date <= today && isWithin(r.session.date, range)
   )
   const records = rows.flatMap((r) => r.records)
   const summary = summarize(records)
   const held = rows.filter((r) => r.session.status === "COMPLETED").length
   const cancelled = rows.filter((r) => r.session.status === "CANCELLED").length
   const pending = rows.filter((r) => r.progress.state === "NOT_RECORDED" || r.progress.state === "PARTIAL").length
-  const members = students.filter((s) => s.groupId === groupId && s.status === "ACTIVE")
+  const members = students.filter((s) => inClass(s.groupClassId) && s.status === "ACTIVE")
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <PeriodFilter value={period} onChange={setPeriod} />
+        <div className="flex flex-wrap items-center gap-2">
+          <PeriodFilter value={period} onChange={setPeriod} />
+          {classes.length > 1 && (
+            <FilterSelect label="الحلقة" allLabel={`كل الحلقات (${classes.length})`} value={classId} onValueChange={setClassId}
+              options={classes.map((c) => ({ value: c.id, label: classTag(c.id) }))} />
+          )}
+        </div>
         <p className="text-sm text-muted-foreground">
           {countLabels.sessions(held)} منجزة ·{" "}
           {pending > 0 && <span className="text-warning">{countLabels.sessions(pending)} بحضور غير مكتمل · </span>}
@@ -69,8 +85,11 @@ export function GroupAttendance({
                     href={`/admin/sessions/${r.session.id}`}
                     className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/60"
                   >
-                    <span className="text-sm font-medium">
+                    <span className="min-w-0 text-sm font-medium">
                       {labels.weekdayShort[weekdayOf(r.session.date)]} {formatShortDate(r.session.date)}
+                      {classes.length > 1 && (
+                        <span className="block truncate text-xs font-normal text-muted-foreground">{classTag(r.session.groupClassId)}</span>
+                      )}
                     </span>
                     {r.progress.state === "COMPLETE" ? (
                       <span className="flex gap-2 text-xs tabular-nums text-muted-foreground">
@@ -111,7 +130,8 @@ export function GroupAttendance({
                       <tr key={student.id}>
                         <td className="px-6 py-2">
                           <Link href={`/admin/students/${student.id}`} className="hover:opacity-80">
-                            <PersonCell name={fullName(student)} photoUrl={student.photoUrl} size="sm" />
+                            <PersonCell name={fullName(student)} photoUrl={student.photoUrl} size="sm"
+                              secondary={classes.length > 1 ? classTag(student.groupClassId) : undefined} />
                           </Link>
                         </td>
                         <td className="px-2 text-center tabular-nums">{s.present}</td>

@@ -1,12 +1,20 @@
 import { GroupBadge } from "@/components/shared/badges"
-import type { TeacherAssignment } from "@/lib/domain"
+import { classesOf, type TeacherAssignment } from "@/lib/domain"
 import { labels } from "@/lib/i18n"
+import type { GroupClass } from "@/types/domain"
 
 /**
- * Groups a teacher works in, split by responsibility so the supervisor /
+ * Classes a teacher works in, split by responsibility so the supervisor /
  * assistant distinction is readable at a glance (label + badge style + icon).
+ * When a group has several classes, the branch is added to tell them apart.
  */
-export function TeacherAssignments({ assignments }: { assignments: TeacherAssignment[] }) {
+export function TeacherAssignments({
+  assignments,
+  groupClasses,
+}: {
+  assignments: TeacherAssignment[]
+  groupClasses: GroupClass[]
+}) {
   if (assignments.length === 0) {
     return <span className="text-sm text-muted-foreground">بدون مجموعات</span>
   }
@@ -23,11 +31,15 @@ export function TeacherAssignments({ assignments }: { assignments: TeacherAssign
             {role === "SUPERVISOR" ? "مشرف على" : "مساعد في"}
             <span className="sr-only"> ({labels.teachingRole[role]})</span>
           </dt>
-          {items.map(({ group }) => (
-            <dd key={group.id}>
-              <GroupBadge name={group.name} href={`/admin/groups/${group.id}`} role={role} />
-            </dd>
-          ))}
+          {items.map(({ groupClass, group, branch }) => {
+            const several = classesOf(groupClass.groupId, groupClasses).length > 1
+            const name = `${group?.name ?? "—"}${several ? ` · ${branch?.name ?? ""}` : ""}`
+            return (
+              <dd key={groupClass.id}>
+                <GroupBadge name={name} href={`/admin/groups/${groupClass.groupId}`} role={role} />
+              </dd>
+            )
+          })}
         </div>
       ))}
     </dl>

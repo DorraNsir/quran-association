@@ -6,16 +6,18 @@ import { SectionCard } from "@/components/shared/info-list"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import {
-  countActiveStudentsByGroup,
+  countActiveStudentsByClass,
+  describeClass,
   fullName,
-  indexById,
-  schedulesOf,
+  indexLookups,
+  isRunning,
+  studentClass,
   teacherAssignments,
+  teacherWeeklySlots,
   weeklyMinutes,
   type Lookups,
 } from "@/lib/domain"
 import { formatDateTime, formatDuration, formatShortDate } from "@/lib/format"
-import { labels } from "@/lib/i18n"
 import type { ActivityEntry, Student } from "@/types/domain"
 
 function ViewAll({ href }: { href: string }) {
@@ -26,42 +28,41 @@ function ViewAll({ href }: { href: string }) {
   )
 }
 
-/** "How are students distributed, and who leads each group?" */
+/** "How are students distributed, and who leads each class?" — one row per running class. */
 export function GroupsOverview({ lookups, students }: { lookups: Lookups; students: Student[] }) {
-  const teachersById = indexById(lookups.teachers)
-  const branchesById = indexById(lookups.branches)
-  const counts = countActiveStudentsByGroup(students)
-  const rows = lookups.groups
-    .filter((g) => g.status === "ACTIVE")
-    .map((g) => ({ group: g, count: counts.get(g.id) ?? 0 }))
+  const indexes = indexLookups(lookups)
+  const counts = countActiveStudentsByClass(students)
+  const rows = lookups.groupClasses
+    .filter((c) => isRunning(c, indexes.groupsById))
+    .map((c) => ({ view: describeClass(c, indexes), count: counts.get(c.id) ?? 0 }))
     .sort((a, b) => b.count - a.count)
   const max = Math.max(1, ...rows.map((r) => r.count))
 
   return (
-    <SectionCard title="نظرة على المجموعات النشطة" icon={BookOpen} className="lg:col-span-2" action={<ViewAll href="/admin/groups" />}>
+    <SectionCard title="نظرة على الحلقات النشطة" icon={BookOpen} className="lg:col-span-2" action={<ViewAll href="/admin/groups" />}>
       <div className="-mx-6 overflow-x-auto">
         <table className="w-full text-sm">
-          <caption className="sr-only">المجموعات النشطة وعدد طلبتها</caption>
+          <caption className="sr-only">الحلقات النشطة وعدد طلبتها</caption>
           <thead>
             <tr className="border-b text-xs text-muted-foreground">
               <th scope="col" className="px-6 pb-2 text-start font-medium">المجموعة</th>
-              <th scope="col" className="px-2 pb-2 text-start font-medium">{labels.teachingRole.SUPERVISOR}</th>
+              <th scope="col" className="px-2 pb-2 text-start font-medium">المدرس المشرف</th>
               <th scope="col" className="hidden px-2 pb-2 text-start font-medium sm:table-cell">الفرع</th>
               <th scope="col" className="px-6 pb-2 text-start font-medium">الطلبة النشطون</th>
             </tr>
           </thead>
           <tbody className="divide-y">
-            {rows.map(({ group, count }) => {
-              const supervisor = teachersById.get(group.supervisorId)
+            {rows.map(({ view, count }) => {
+              const { groupClass, group, supervisor, branch } = view
               return (
-                <tr key={group.id}>
+                <tr key={groupClass.id}>
                   <td className="px-6 py-2.5">
-                    <Link href={`/admin/groups/${group.id}`} className="font-medium hover:text-primary">
-                      {group.name}
+                    <Link href={`/admin/groups/${groupClass.groupId}`} className="font-medium hover:text-primary">
+                      {group?.name}
                     </Link>
                   </td>
                   <td className="px-2 py-2.5 text-muted-foreground">{supervisor ? fullName(supervisor) : "—"}</td>
-                  <td className="hidden px-2 py-2.5 text-muted-foreground sm:table-cell">{branchesById.get(group.branchId)?.name}</td>
+                  <td className="hidden px-2 py-2.5 text-muted-foreground sm:table-cell">{branch?.name}</td>
                   <td className="px-6 py-2.5">
                     <div className="flex items-center gap-2">
                       <span className="w-5 text-end tabular-nums">{count}</span>
@@ -82,7 +83,7 @@ export function GroupsOverview({ lookups, students }: { lookups: Lookups; studen
 
 /** "Who registered recently, and where were they placed?" */
 export function RecentStudents({ lookups, students }: { lookups: Lookups; students: Student[] }) {
-  const groupsById = indexById(lookups.groups)
+  const indexes = indexLookups(lookups)
   const recent = [...students]
     .sort((a, b) => b.registrationDate.localeCompare(a.registrationDate))
     .slice(0, 6)
@@ -91,7 +92,7 @@ export function RecentStudents({ lookups, students }: { lookups: Lookups; studen
     <SectionCard title="آخر التسجيلات" icon={UserPlus} action={<ViewAll href="/admin/students" />}>
       <ul className="divide-y">
         {recent.map((s) => {
-          const group = groupsById.get(s.groupId)
+          const group = studentClass(s, indexes)?.group
           return (
             <li key={s.id} className="flex items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
               <Link href={`/admin/students/${s.id}`} className="min-w-0 hover:opacity-80">
@@ -111,17 +112,13 @@ export function TeacherWorkload({ lookups }: { lookups: Lookups }) {
   const rows = lookups.teachers
     .filter((t) => t.status === "ACTIVE")
     .map((teacher) => {
-      const assignments = teacherAssignments(
-        teacher.id,
-        lookups.groups.filter((g) => g.status === "ACTIVE")
-      )
+      const { groupsById } = indexLookups(lookups)
+      const assignments = teacherAssignments(teacher.id, lookups).filter((a) => isRunning(a.groupClass, groupsById))
       return {
         teacher,
         supervising: assignments.filter((a) => a.role === "SUPERVISOR").length,
         assisting: assignments.filter((a) => a.role === "ASSISTANT").length,
-        minutes: weeklyMinutes(
-          assignments.flatMap((a) => schedulesOf(a.group.id, lookups.schedules))
-        ),
+        minutes: weeklyMinutes(teacherWeeklySlots(teacher.id, lookups).map((e) => e.slot)),
       }
     })
     .sort((a, b) => b.minutes - a.minutes)

@@ -1,9 +1,9 @@
 import { rosterFor } from "@/lib/attendance"
-import { groupTeacherIds, indexById } from "@/lib/domain"
+import { classTeacherIds, indexById } from "@/lib/domain"
 import { generateSessions, sessionIdFor } from "@/lib/sessions"
 import type { AttendanceStatus, Session, StudentAttendance, TeacherAttendance } from "@/types/domain"
 
-import { groups } from "./groups"
+import { groupClasses, groups } from "./groups"
 import { ACADEMIC_YEAR, MOCK_TODAY } from "./reference-date"
 import { schedules } from "./schedules"
 import { students } from "./students"
@@ -41,9 +41,9 @@ const CANCELLED: Record<string, string> = {
 const NOT_RECORDED = new Set([sessionIdFor("ws3", "2026-09-29"), sessionIdFor("ws15", "2026-10-02")])
 const PARTIAL = new Set([sessionIdFor("ws11", "2026-09-30"), sessionIdFor("ws13", "2026-10-02")])
 
-const groupsById = indexById(groups)
+const classesById = indexById(groupClasses)
 
-const generated = generateSessions(schedules, groups, { from: ACADEMIC_YEAR.start, to: SESSIONS_UNTIL })
+const generated = generateSessions(schedules, { groupClasses, groups }, { from: ACADEMIC_YEAR.start, to: SESSIONS_UNTIL })
 
 export const sessions: Session[] = generated.map((session) => {
   if (CANCELLED[session.id]) {
@@ -73,13 +73,13 @@ export const studentAttendance: StudentAttendance[] = recordedSessions.flatMap((
 export const teacherAttendance: TeacherAttendance[] = sessions
   .filter((s) => s.status === "COMPLETED")
   .flatMap((session) => {
-    const group = groupsById.get(session.groupId)
-    if (!group) return []
-    return groupTeacherIds(group).map((teacherId) => {
+    const groupClass = classesById.get(session.groupClassId)
+    if (!groupClass) return []
+    return classTeacherIds(groupClass).map((teacherId) => {
       const n = noise(`${session.id}:${teacherId}`)
       // Supervisors are almost always there; assistants occasionally miss a session
       const status: AttendanceStatus =
-        teacherId === group.supervisorId ? (n < 0.97 ? "PRESENT" : "LATE") : n < 0.88 ? "PRESENT" : n < 0.94 ? "EXCUSED" : "ABSENT"
+        teacherId === groupClass.supervisorId ? (n < 0.97 ? "PRESENT" : "LATE") : n < 0.88 ? "PRESENT" : n < 0.94 ? "EXCUSED" : "ABSENT"
       return { id: `ta-${session.id}-${teacherId}`, sessionId: session.id, teacherId, status }
     })
   })

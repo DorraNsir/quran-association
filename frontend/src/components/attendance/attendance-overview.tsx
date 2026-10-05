@@ -16,7 +16,7 @@ import { GroupBadge } from "@/components/shared/badges"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { ATTENDANCE_STATUSES, countOf, summarize, type AttendanceSummary } from "@/lib/attendance"
 import { isWithin, weekdayOf } from "@/lib/dates"
-import { fullName, indexById, type Lookups } from "@/lib/domain"
+import { fullName, indexLookups, studentClass, type Lookups } from "@/lib/domain"
 import { countLabels, formatShortDate, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -42,14 +42,14 @@ export function AttendanceOverview({ lookups, students, today }: { lookups: Look
   const [status, setStatus] = useState(ALL)
 
   const range = resolvePeriod(period, today)
-  const groupsById = indexById(lookups.groups)
+  const indexes = indexLookups(lookups)
   // Monitoring looks at sessions that have happened (or happen today)
   const inScope = rows.filter(
     (r) =>
       r.session.date <= today &&
       isWithin(r.session.date, range) &&
-      (groupId === ALL || r.session.groupId === groupId) &&
-      (branchId === ALL || r.session.branchId === branchId)
+      (groupId === ALL || r.group?.id === groupId) &&
+      (branchId === ALL || r.branch?.id === branchId)
   )
   const held = inScope.filter((r) => r.session.status !== "CANCELLED")
   const complete = held.filter((r) => r.progress.state === "COMPLETE").length
@@ -68,6 +68,10 @@ export function AttendanceOverview({ lookups, students, today }: { lookups: Look
       cell: (r) => (
         <Link href={`/admin/sessions/${r.session.id}`} className="block hover:opacity-80">
           <p className="font-medium">{r.group?.name}</p>
+          {/* Class context: two classes of one group can meet the same day */}
+          <p className="text-xs text-muted-foreground">
+            {r.branch?.name} — {r.supervisor ? fullName(r.supervisor) : "—"}
+          </p>
           <p className="text-xs text-muted-foreground">
             {labels.weekdayShort[weekdayOf(r.session.date)]} {formatShortDate(r.session.date)} ·{" "}
             <span dir="ltr" className="tabular-nums">{formatTimeRange(r.session.start, r.session.end)}</span>
@@ -92,8 +96,8 @@ export function AttendanceOverview({ lookups, students, today }: { lookups: Look
   const studentLines: StudentLine[] = students
     .filter(
       (s) =>
-        (groupId === ALL || s.groupId === groupId) &&
-        (branchId === ALL || groupsById.get(s.groupId)?.branchId === branchId) &&
+        (groupId === ALL || studentClass(s, indexes)?.group?.id === groupId) &&
+        (branchId === ALL || studentClass(s, indexes)?.branch?.id === branchId) &&
         (!query.trim() || matchesText(fullName(s), query))
     )
     .map((student) => ({ student, summary: summarize(records.filter((r) => r.studentId === student.id)) }))
@@ -112,11 +116,20 @@ export function AttendanceOverview({ lookups, students, today }: { lookups: Look
     },
     {
       id: "group",
-      header: "المجموعة",
+      header: "المجموعة والمدرس المشرف",
       className: "hidden lg:table-cell",
       cell: ({ student }) => {
-        const g = groupsById.get(student.groupId)
-        return g ? <GroupBadge name={g.name} href={`/admin/groups/${g.id}`} /> : "—"
+        const v = studentClass(student, indexes)
+        return v?.group ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <GroupBadge name={v.group.name} href={`/admin/groups/${v.group.id}`} />
+            <span className="text-xs text-muted-foreground">
+              {v.branch?.name} — {v.supervisor ? fullName(v.supervisor) : "—"}
+            </span>
+          </div>
+        ) : (
+          "—"
+        )
       },
     },
     { id: "recorded", header: "الحصص", className: "text-center", cell: (l) => <span className="tabular-nums">{l.summary.recorded}</span> },

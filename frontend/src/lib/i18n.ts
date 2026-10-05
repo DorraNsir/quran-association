@@ -72,7 +72,7 @@ export const labels = {
       title: "تعارض في المعلم",
       message: "هذا المعلم مرتبط بمجموعة أخرى خلال هذا الوقت.",
     },
-    GROUP: { title: "تداخل في حصص المجموعة", message: "للمجموعة حصة أخرى خلال هذا الوقت." },
+    CLASS: { title: "تداخل في حصص الحلقة", message: "للحلقة حصة أخرى خلال هذا الوقت." },
   } satisfies Record<ConflictType, { title: string; message: string }>,
   attendance: {
     PRESENT: "حاضر",
@@ -85,6 +85,8 @@ export const labels = {
     COMPLETED: "منجزة",
     CANCELLED: "ملغاة",
   } satisfies Record<SessionStatus, string>,
+  /** A GroupClass, as users call it: one actual class of a pedagogical group */
+  groupClass: { one: "حلقة", plural: "الحلقات" },
   common: {
     all: "الكل",
     view: "عرض",

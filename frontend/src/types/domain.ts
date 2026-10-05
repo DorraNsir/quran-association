@@ -86,18 +86,17 @@ export interface ScheduleSlot {
 }
 
 /**
- * One recurring weekly session of a group (a group usually has 2–3).
- * Teachers are not stored here: they come from the group's assignments.
- * branchId is kept alongside roomId for filtering, and always matches room.branchId.
+ * One recurring weekly slot of a GroupClass (a class usually meets 2–3 times).
+ * Branch, room and teachers are NOT stored here — they come from the class,
+ * so there is a single source of truth.
  */
 export interface WeeklySchedule extends ScheduleSlot {
   id: ID
-  groupId: ID
-  branchId: ID
-  roomId: ID
+  groupClassId: ID
 }
 
-export type ConflictType = "ROOM" | "TEACHER" | "GROUP"
+/** CLASS: the same class already meets at an overlapping time */
+export type ConflictType = "ROOM" | "TEACHER" | "CLASS"
 
 /** Why a candidate session cannot be scheduled (frontend UX check only). */
 export interface ScheduleConflict {
@@ -108,22 +107,38 @@ export interface ScheduleConflict {
   teacherIds: ID[]
 }
 /**
- * Teaching assignments live on the group: exactly one supervisor,
- * zero or more assistants. Group membership lives on the student,
- * and weekly sessions live in WeeklySchedule (by groupId).
+ * The pedagogical group (e.g. "مجموعة ماهر"). It only carries what is
+ * shared by all its classes — location, teachers and students belong to
+ * each GroupClass, because they differ from one class to another.
  */
 export interface Group {
   id: ID
   name: string
   /** Target audience, e.g. "أطفال 7–10 سنوات" */
   audience: string
-  /** Usual location — the default for new sessions; each session has its own room */
+  status: GroupStatus
+  createdAt: ISODate
+}
+
+export type GroupClassStatus = RecordStatus
+
+/**
+ * One actual class of a Group ("حلقة" in the UI): its own branch, room,
+ * supervisor (exactly one), assistants (zero or more), weekly schedule,
+ * sessions and attendance. Students point to it (Student.groupClassId).
+ *
+ *   Group ─┬─ GroupClass A (branch 1, room 1, supervisor A) ─ students, schedule, sessions
+ *          └─ GroupClass B (branch 2, room 2, supervisor B) ─ students, schedule, sessions
+ */
+export interface GroupClass {
+  id: ID
+  groupId: ID
   branchId: ID
+  /** All of this class's sessions take place in this room */
   roomId: ID
   supervisorId: ID
   assistantIds: ID[]
-  status: GroupStatus
-  createdAt: ISODate
+  status: GroupClassStatus
 }
 
 export interface Student {
@@ -139,8 +154,8 @@ export interface Student {
   address: string
   photoUrl?: string
   registrationDate: ISODate
-  /** The student's single active group */
-  groupId: ID
+  /** The student's single active class; the pedagogical group is derived from it */
+  groupClassId: ID
   status: StudentStatus
 }
 
@@ -171,12 +186,11 @@ export type SessionStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED"
  */
 export interface Session extends Omit<ScheduleSlot, "day"> {
   id: ID
-  groupId: ID
+  /** The class that meets — group, branch, room and teachers derive from it */
+  groupClassId: ID
   /** The weekly slot this session comes from */
   scheduleId: ID
   date: ISODate
-  branchId: ID
-  roomId: ID
   status: SessionStatus
   cancellationReason?: string
 }

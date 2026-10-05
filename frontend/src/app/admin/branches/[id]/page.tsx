@@ -13,14 +13,14 @@ import { MetaItem, ProfileHeader } from "@/components/shared/profile"
 import { ScheduleSummary, WeeklyScheduleGrid } from "@/components/shared/schedule"
 import { StatCard } from "@/components/shared/stat-card"
 import {
-  activeSessionsIn,
+  activeSchedulesIn,
   branchStats,
+  describeClass,
   fullName,
   indexLookups,
-  roomName,
+  schedulesOf,
 } from "@/lib/domain"
 import { formatDuration } from "@/lib/format"
-import { labels } from "@/lib/i18n"
 import { branches, lookups } from "@/lib/mock"
 
 export function generateStaticParams() {
@@ -37,18 +37,13 @@ export default async function BranchDetailsPage(props: PageProps<"/admin/branche
   const branch = branches.find((b) => b.id === id)
   if (!branch) notFound()
 
-  const { roomsById, groupsById, teachersById } = indexLookups(lookups)
+  const indexes = indexLookups(lookups)
   const stats = branchStats(branch.id, lookups)
-  const sessions = activeSessionsIn({ branchId: branch.id }, lookups)
-  // Groups meeting here: by usual location, or with at least one session here
-  const groupIds = new Set([
-    ...lookups.groups.filter((g) => g.branchId === branch.id && g.status !== "ARCHIVED").map((g) => g.id),
-    ...sessions.map((s) => s.groupId),
-  ])
-  const branchGroups = [...groupIds].flatMap((gid) => {
-    const g = groupsById.get(gid)
-    return g ? [g] : []
-  })
+  const slots = activeSchedulesIn({ branchId: branch.id }, lookups)
+  // The classes located in this branch (a group may have other classes elsewhere)
+  const branchClasses = lookups.groupClasses
+    .filter((c) => c.branchId === branch.id && c.status !== "ARCHIVED")
+    .map((c) => describeClass(c, indexes))
 
   return (
     <>
@@ -76,7 +71,7 @@ export default async function BranchDetailsPage(props: PageProps<"/admin/branche
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="القاعات النشطة" value={`${stats.activeRooms}/${stats.rooms}`} icon={DoorOpen} />
-        <StatCard label="المجموعات النشطة" value={stats.activeGroups} icon={Users} />
+        <StatCard label="الحلقات النشطة" value={stats.activeClasses} icon={Users} />
         <StatCard label="الحصص أسبوعيًا" value={stats.weeklySessions} icon={CalendarClock} />
         <StatCard label="ساعات الاستعمال" value={formatDuration(stats.weeklyMinutes)} icon={Clock} hint="أسبوعيًا، كل القاعات" />
       </div>
@@ -85,31 +80,25 @@ export default async function BranchDetailsPage(props: PageProps<"/admin/branche
         <div className="lg:col-span-3">
           <BranchRooms branch={branch} lookups={lookups} />
         </div>
-        <SectionCard title="المجموعات في هذا الفرع" icon={BookOpen} className="h-fit lg:col-span-2">
-          {branchGroups.length === 0 ? (
-            <EmptyState icon={Users} title="لا توجد مجموعات" className="py-6" />
+        <SectionCard title="الحلقات في هذا الفرع" icon={BookOpen} className="h-fit lg:col-span-2">
+          {branchClasses.length === 0 ? (
+            <EmptyState icon={Users} title="لا توجد حلقات" className="py-6" />
           ) : (
             <ul className="divide-y">
-              {branchGroups.map((group) => {
-                const supervisor = teachersById.get(group.supervisorId)
-                const here = sessions.filter((s) => s.groupId === group.id)
-                return (
-                  <li key={group.id} className="space-y-1.5 py-3 first:pt-0 last:pb-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <Link href={`/admin/groups/${group.id}`} className="font-medium hover:text-primary">
-                        {group.name}
-                      </Link>
-                      {group.status !== "ACTIVE" && <StatusBadge status={group.status} />}
-                    </div>
-                    {supervisor && (
-                      <p className="text-xs text-muted-foreground">
-                        {labels.teachingRole.SUPERVISOR}: {fullName(supervisor)}
-                      </p>
-                    )}
-                    <ScheduleSummary schedule={here} detail={(s) => roomName(roomsById, s.roomId)} />
-                  </li>
-                )
-              })}
+              {branchClasses.map((v) => (
+                <li key={v.groupClass.id} className="space-y-1.5 py-3 first:pt-0 last:pb-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <Link href={`/admin/groups/${v.groupClass.groupId}`} className="font-medium hover:text-primary">
+                      {v.group?.name}
+                    </Link>
+                    {v.groupClass.status !== "ACTIVE" && <StatusBadge status={v.groupClass.status} />}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    المدرس المشرف: {v.supervisor ? fullName(v.supervisor) : "—"} · {v.room?.name}
+                  </p>
+                  <ScheduleSummary schedule={schedulesOf(v.groupClass.id, lookups.schedules)} />
+                </li>
+              ))}
             </ul>
           )}
         </SectionCard>
@@ -117,13 +106,18 @@ export default async function BranchDetailsPage(props: PageProps<"/admin/branche
 
       <SectionCard title="استعمال القاعات خلال الأسبوع" icon={CalendarClock} className="mt-6">
         <WeeklyScheduleGrid
-          entries={sessions.map((slot) => ({
-            slot,
-            title: groupsById.get(slot.groupId)?.name ?? "—",
-            subtitle: roomName(roomsById, slot.roomId),
-            href: `/admin/groups/${slot.groupId}`,
-            emphasis: true,
-          }))}
+          entries={slots.flatMap((slot) => {
+            const groupClass = indexes.classesById.get(slot.groupClassId)
+            if (!groupClass) return []
+            const v = describeClass(groupClass, indexes)
+            return [{
+              slot,
+              title: v.group?.name ?? "—",
+              subtitle: `${v.room?.name ?? ""} · ${v.supervisor ? fullName(v.supervisor) : ""}`,
+              href: `/admin/groups/${groupClass.groupId}`,
+              emphasis: true,
+            }]
+          })}
           emptyLabel="لا توجد حصص مبرمجة في هذا الفرع"
         />
       </SectionCard>

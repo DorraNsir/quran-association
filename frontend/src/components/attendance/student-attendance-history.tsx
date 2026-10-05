@@ -11,7 +11,7 @@ import { PeriodFilter, resolvePeriod, type Period } from "@/components/shared/pe
 import { Card } from "@/components/ui/card"
 import { ATTENDANCE_STATUSES, summarize } from "@/lib/attendance"
 import { isWithin, weekdayOf } from "@/lib/dates"
-import type { Lookups } from "@/lib/domain"
+import { fullName, type Lookups } from "@/lib/domain"
 import { countLabels, formatDate, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import type { ID, ISODate, Student } from "@/types/domain"
@@ -80,7 +80,7 @@ export function StudentAttendanceHistory({
                       {labels.weekday[weekdayOf(row.session.date)]} {formatDate(row.session.date)}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {row.group?.name} ·{" "}
+                      {row.group?.name} ({row.branch?.name}) — {row.supervisor ? fullName(row.supervisor) : "—"} ·{" "}
                       <span dir="ltr" className="tabular-nums">{formatTimeRange(row.session.start, row.session.end)}</span>
                     </p>
                   </div>

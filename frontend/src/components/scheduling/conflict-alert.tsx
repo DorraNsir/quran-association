@@ -4,13 +4,13 @@ import { AlertTriangle, DoorOpen } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { fullName, indexLookups, locationLabel, roomName, type Lookups } from "@/lib/domain"
+import { describeClass, fullName, indexLookups, type Lookups } from "@/lib/domain"
 import { formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import type { ConflictType, ID, Room, ScheduleConflict } from "@/types/domain"
 
-const ORDER: ConflictType[] = ["ROOM", "TEACHER", "GROUP"]
+const ORDER: ConflictType[] = ["ROOM", "TEACHER", "CLASS"]
 
 /**
  * Explains WHY a session can't be scheduled: which room/teacher is busy,
@@ -21,16 +21,19 @@ export function ConflictAlert({
   lookups,
   freeRooms = [],
   onPickRoom,
+  pickRoomHint = "قاعات متاحة في نفس الفرع خلال هذا الوقت:",
   className,
 }: {
   conflicts: ScheduleConflict[]
   lookups: Lookups
   freeRooms?: Room[]
   onPickRoom?: (roomId: ID) => void
+  pickRoomHint?: string
   className?: string
 }) {
   if (conflicts.length === 0) return null
-  const { branchesById, roomsById, groupsById, teachersById } = indexLookups(lookups)
+  const indexes = indexLookups(lookups)
+  const { classesById, teachersById } = indexes
   const hasRoomConflict = conflicts.some((c) => c.type === "ROOM")
 
   return (
@@ -51,7 +54,10 @@ export function ConflictAlert({
               </p>
               <ul className="space-y-1.5">
                 {items.map((c) => {
-                  const group = groupsById.get(c.schedule.groupId)
+                  // The other slot's class gives its group, place and supervisor
+                  const other = classesById.get(c.schedule.groupClassId)
+                  const view = other ? describeClass(other, indexes) : undefined
+                  const group = view?.group
                   const when = (
                     <span className="text-muted-foreground">
                       {labels.weekday[c.schedule.day]}{" "}
@@ -67,8 +73,9 @@ export function ConflictAlert({
                     >
                       {c.type === "ROOM" && (
                         <p>
-                          <strong className="font-medium">{roomName(roomsById, c.schedule.roomId)}</strong>{" "}
-                          محجوزة لـ <strong className="font-medium">{group?.name}</strong> · {when}
+                          <strong className="font-medium">{view?.room?.name}</strong>{" "}
+                          محجوزة لـ <strong className="font-medium">{group?.name}</strong>
+                          {view?.supervisor && ` (${fullName(view.supervisor)})`} · {when}
                         </p>
                       )}
                       {c.type === "TEACHER" && (
@@ -82,15 +89,11 @@ export function ConflictAlert({
                           </strong>{" "}
                           يدرّس في <strong className="font-medium">{group?.name}</strong> · {when}
                           <span className="block text-xs text-muted-foreground">
-                            {locationLabel(c.schedule, branchesById, roomsById)}
+                            {view?.branch?.name} · {view?.room?.name}
                           </span>
                         </p>
                       )}
-                      {c.type === "GROUP" && (
-                        <p>
-                          حصة أخرى لنفس المجموعة · {when}
-                        </p>
-                      )}
+                      {c.type === "CLASS" && <p>حصة أخرى لنفس الحلقة · {when}</p>}
                     </li>
                   )
                 })}
@@ -103,9 +106,7 @@ export function ConflictAlert({
           <div className="space-y-1.5 border-t border-destructive/20 pt-2">
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <DoorOpen className="size-3.5" aria-hidden />
-              {freeRooms.length > 0
-                ? "قاعات متاحة في نفس الفرع خلال هذا الوقت:"
-                : "لا توجد قاعة متاحة في هذا الفرع خلال هذا الوقت."}
+              {freeRooms.length > 0 ? pickRoomHint : "لا توجد قاعة متاحة في هذا الفرع خلال هذا الوقت."}
             </p>
             {freeRooms.length > 0 && (
               <div className="flex flex-wrap gap-1.5">

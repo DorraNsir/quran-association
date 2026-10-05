@@ -1,52 +1,40 @@
 "use client"
 
-import { LayoutGrid, List, MapPin, Plus, SearchX, Users } from "lucide-react"
+import { DoorOpen, LayoutGrid, List, Plus, SearchX, ShieldCheck, Users } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 
 import { ActionsMenu } from "@/components/shared/actions-menu"
-import { StatusBadge, TeacherRoleBadge } from "@/components/shared/badges"
+import { StatusBadge } from "@/components/shared/badges"
 import { DataTable, type Column } from "@/components/shared/data-table"
 import { EmptyState } from "@/components/shared/empty-state"
-import {
-  ALL,
-  FilterBar,
-  FilterSelect,
-  matchesText,
-  SearchInput,
-} from "@/components/shared/filters"
+import { ALL, FilterBar, FilterSelect, matchesText, SearchInput } from "@/components/shared/filters"
 import { PageHeader } from "@/components/shared/page-header"
 import { ScheduleSummary } from "@/components/shared/schedule"
-import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import {
-  countActiveStudentsByGroup,
+  classesOf,
+  countActiveStudentsByClass,
+  describeClass,
   fullName,
-  locationLabel,
-  schedulesOf,
-  sessionPlace,
-  groupTeachers,
   indexLookups,
+  schedulesOf,
+  type ClassView,
   type Lookups,
 } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import type { Group, Student, WeeklySchedule } from "@/types/domain"
+import type { Group, Student } from "@/types/domain"
 
 import { groupActions, useGroupDialogs } from "./use-group-dialogs"
 
 type ViewMode = "cards" | "table"
 
-export function GroupsView({
-  lookups,
-  initialStudents,
-}: {
-  lookups: Lookups
-  initialStudents: Student[]
-}) {
+export function GroupsView({ lookups, initialStudents }: { lookups: Lookups; initialStudents: Student[] }) {
   const [groups, setGroups] = useState(lookups.groups)
+  const [groupClasses, setGroupClasses] = useState(lookups.groupClasses)
   const [students, setStudents] = useState(initialStudents)
   const [schedules, setSchedules] = useState(lookups.schedules)
   const [query, setQuery] = useState("")
@@ -54,33 +42,33 @@ export function GroupsView({
   const [status, setStatus] = useState(ALL)
   const [view, setView] = useState<ViewMode>("cards")
 
-  const liveLookups = { ...lookups, groups, schedules }
-  const { branchesById, roomsById, teachersById } = indexLookups(liveLookups)
-  const sessionsOf = (g: Group) => schedulesOf(g.id, schedules)
-  /** Sessions normally happen in the group's usual room; show the room only when it differs. */
-  const placeOf = (g: Group) => (s: WeeklySchedule) => sessionPlace(s, g, branchesById, roomsById)
-  const studentCounts = countActiveStudentsByGroup(students)
+  const live: Lookups = { ...lookups, groups, groupClasses, schedules }
+  const indexes = indexLookups(live)
+  const counts = countActiveStudentsByClass(students)
 
   const { run, dialogs } = useGroupDialogs({
-    lookups: liveLookups,
+    lookups: live,
     students,
-    onChange: ({ group, studentIds, schedules: sessions }, isNew) => {
-      setSchedules((prev) => [...prev.filter((s) => s.groupId !== group.id), ...sessions])
-      setGroups((prev) => (isNew ? [...prev, group] : prev.map((g) => (g.id === group.id ? group : g))))
-      setStudents((prev) =>
-        prev.map((s) => (studentIds.includes(s.id) ? { ...s, groupId: group.id } : s))
-      )
+    onGroupChange: (group, isNew) =>
+      setGroups((prev) => (isNew ? [...prev, group] : prev.map((g) => (g.id === group.id ? group : g)))),
+    onClassChange: ({ groupClass, studentIds, schedules: slots }, isNew) => {
+      setGroupClasses((prev) => (isNew ? [...prev, groupClass] : prev.map((c) => (c.id === groupClass.id ? groupClass : c))))
+      setSchedules((prev) => [...prev.filter((s) => s.groupClassId !== groupClass.id), ...slots])
+      setStudents((prev) => prev.map((s) => (studentIds.includes(s.id) ? { ...s, groupClassId: groupClass.id } : s)))
     },
   })
 
+  /** A group's classes, each resolved to its own place and team. */
+  const classViews = (g: Group) => classesOf(g.id, groupClasses).map((c) => describeClass(c, indexes))
+  const groupStudents = (g: Group) => classViews(g).reduce((n, v) => n + (counts.get(v.groupClass.id) ?? 0), 0)
+
   const filtered = groups.filter((g) => {
+    const views = classViews(g)
     if (query.trim()) {
-      const { supervisor, assistants } = groupTeachers(g, teachersById)
-      const teacherNames = [supervisor, ...assistants].flatMap((t) => (t ? [fullName(t)] : []))
-      const haystack = [g.name, g.audience, ...teacherNames].join(" ")
-      if (!matchesText(haystack, query)) return false
+      const teacherNames = views.flatMap((v) => [v.supervisor, ...v.assistants]).flatMap((t) => (t ? [fullName(t)] : []))
+      if (!matchesText([g.name, g.audience, ...teacherNames].join(" "), query)) return false
     }
-    if (branchId !== ALL && g.branchId !== branchId) return false
+    if (branchId !== ALL && !views.some((v) => v.groupClass.branchId === branchId)) return false
     if (status !== ALL && g.status !== status) return false
     return true
   })
@@ -119,38 +107,21 @@ export function GroupsView({
       ),
     },
     {
-      id: "place",
-      header: "الفرع والقاعة",
-      className: "hidden lg:table-cell",
-      cell: (g) => <span className="text-sm text-muted-foreground">{locationLabel(g, branchesById, roomsById)}</span>,
+      id: "classes",
+      header: `${labels.groupClass.plural} (الفرع — المدرس المشرف)`,
+      cell: (g) => (
+        <ul className="space-y-0.5 text-sm">
+          {classViews(g).map((v) => (
+            <li key={v.groupClass.id} className={cn(v.groupClass.status !== "ACTIVE" && "text-muted-foreground line-through")}>
+              {v.branch?.name} — {v.supervisor ? fullName(v.supervisor) : "—"}
+              <span className="text-xs text-muted-foreground"> · {countLabels.students(counts.get(v.groupClass.id) ?? 0)}</span>
+            </li>
+          ))}
+          {classViews(g).length === 0 && <li className="text-muted-foreground">لا توجد حلقات بعد</li>}
+        </ul>
+      ),
     },
-    {
-      id: "students",
-      header: "الطلبة",
-      cell: (g) => <span className="tabular-nums">{studentCounts.get(g.id) ?? 0}</span>,
-    },
-    {
-      id: "supervisor",
-      header: labels.teachingRole.SUPERVISOR,
-      cell: (g) => {
-        const t = teachersById.get(g.supervisorId)
-        return t ? <PersonCell name={fullName(t)} size="sm" /> : "—"
-      },
-    },
-    {
-      id: "assistants",
-      header: "المساعدون",
-      className: "hidden xl:table-cell",
-      cell: (g) => {
-        const { assistants } = groupTeachers(g, teachersById)
-        return assistants.length ? (
-          <span className="text-sm">{assistants.map(fullName).join("، ")}</span>
-        ) : (
-          <span className="text-sm text-muted-foreground">—</span>
-        )
-      },
-    },
-    { id: "schedule", header: "المواعيد", cell: (g) => <ScheduleSummary schedule={sessionsOf(g)} detail={placeOf(g)} /> },
+    { id: "students", header: "الطلبة", cell: (g) => <span className="tabular-nums">{groupStudents(g)}</span> },
     { id: "status", header: "الحالة", cell: (g) => <StatusBadge status={g.status} /> },
     {
       id: "actions",
@@ -164,7 +135,7 @@ export function GroupsView({
     <>
       <PageHeader
         title="المجموعات"
-        description="الحلقات حسب الفرع والقاعة، مع المعلم المشرف والمساعدين والمواعيد الأسبوعية."
+        description="المجموعات البيداغوجية وحلقاتها: لكل حلقة فرعها وقاعتها ومدرسها المشرف وطلبتها ومواعيدها."
         actions={
           <Button onClick={() => run("create")}>
             <Plus />
@@ -177,71 +148,31 @@ export function GroupsView({
         hasActiveFilters={hasActiveFilters}
         onReset={resetFilters}
         resultLabel={countLabels.groups(filtered.length)}
-        search={
-          <SearchInput
-            value={query}
-            onChange={setQuery}
-            label="البحث عن مجموعة"
-            placeholder="ابحث باسم المجموعة أو المعلم"
-          />
-        }
+        search={<SearchInput value={query} onChange={setQuery} label="البحث عن مجموعة" placeholder="ابحث باسم المجموعة أو المعلم" />}
       >
-        <FilterSelect
-          label="الفرع"
-          allLabel="كل الفروع"
-          value={branchId}
-          onValueChange={setBranchId}
-          options={lookups.branches.map((b) => ({ value: b.id, label: b.name }))}
-        />
-        <FilterSelect
-          label="الحالة"
-          allLabel="كل الحالات"
-          value={status}
-          onValueChange={setStatus}
-          options={(["ACTIVE", "INACTIVE", "ARCHIVED"] as const).map((s) => ({
-            value: s,
-            label: labels.status[s],
-          }))}
-        />
-        <div
-          role="group"
-          aria-label="طريقة العرض"
-          className="col-span-2 hidden items-center rounded-lg border bg-background p-0.5 md:flex"
-        >
-          {(
-            [
-              { mode: "cards", icon: LayoutGrid, label: "بطاقات" },
-              { mode: "table", icon: List, label: "جدول" },
-            ] as const
-          ).map(({ mode, icon: Icon, label }) => (
-            <Button
-              key={mode}
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-pressed={view === mode}
-              className={cn(view === mode && "bg-muted text-foreground")}
-              onClick={() => setView(mode)}
-            >
-              <Icon />
-              {label}
-            </Button>
-          ))}
+        <FilterSelect label="الفرع" allLabel="كل الفروع" value={branchId} onValueChange={setBranchId}
+          options={lookups.branches.map((b) => ({ value: b.id, label: b.name }))} />
+        <FilterSelect label="الحالة" allLabel="كل الحالات" value={status} onValueChange={setStatus}
+          options={(["ACTIVE", "INACTIVE", "ARCHIVED"] as const).map((s) => ({ value: s, label: labels.status[s] }))} />
+        <div role="group" aria-label="طريقة العرض" className="col-span-2 hidden items-center rounded-lg border bg-background p-0.5 md:flex">
+          {([{ mode: "cards", icon: LayoutGrid, label: "بطاقات" }, { mode: "table", icon: List, label: "جدول" }] as const).map(
+            ({ mode, icon: Icon, label }) => (
+              <Button key={mode} type="button" size="sm" variant="ghost" aria-pressed={view === mode}
+                className={cn(view === mode && "bg-muted text-foreground")} onClick={() => setView(mode)}>
+                <Icon />
+                {label}
+              </Button>
+            )
+          )}
         </div>
       </FilterBar>
 
-      {view === "table" ? (
+      {view === "table" && (
         <div className="hidden md:block">
-          <DataTable
-            key={`${query}|${branchId}|${status}`}
-            caption="قائمة المجموعات"
-            columns={columns}
-            rows={filtered}
-            getRowId={(g) => g.id}
-            emptyState={noResults}
-          />
+          <DataTable key={`${query}|${branchId}|${status}`} caption="قائمة المجموعات" columns={columns} rows={filtered}
+            getRowId={(g) => g.id} emptyState={noResults} />
         </div>
-      ) : null}
+      )}
 
       <div className={cn(view === "table" && "md:hidden")}>
         {filtered.length === 0 ? (
@@ -252,12 +183,9 @@ export function GroupsView({
               <li key={group.id}>
                 <GroupCard
                   group={group}
-                  location={locationLabel(group, branchesById, roomsById)}
-                  schedule={
-                    <ScheduleSummary schedule={sessionsOf(group)} detail={placeOf(group)} />
-                  }
-                  studentCount={studentCounts.get(group.id) ?? 0}
-                  team={groupTeachers(group, teachersById)}
+                  classes={classViews(group)}
+                  counts={counts}
+                  schedules={schedules}
                   actions={<ActionsMenu label={`إجراءات ${group.name}`} actions={groupActions(group, run)} />}
                 />
               </li>
@@ -272,19 +200,18 @@ export function GroupsView({
 
 function GroupCard({
   group,
-  location,
-  schedule,
-  studentCount,
-  team,
+  classes,
+  counts,
+  schedules,
   actions,
 }: {
   group: Group
-  location: string
-  schedule: React.ReactNode
-  studentCount: number
-  team: ReturnType<typeof groupTeachers>
+  classes: ClassView[]
+  counts: Map<string, number>
+  schedules: Lookups["schedules"]
   actions: React.ReactNode
 }) {
+  const total = classes.reduce((n, v) => n + (counts.get(v.groupClass.id) ?? 0), 0)
   return (
     <Card className="h-full gap-0 p-0">
       <div className="flex items-start justify-between gap-2 p-4 pb-3">
@@ -295,43 +222,39 @@ function GroupCard({
             </Link>
             <StatusBadge status={group.status} />
           </div>
-          <p className="text-xs text-muted-foreground">{group.audience}</p>
+          <p className="text-xs text-muted-foreground">
+            {group.audience} · {countLabels.classes(classes.length)} · {countLabels.students(total)}
+          </p>
         </div>
         {actions}
       </div>
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1 px-4 pb-3 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1">
-          <MapPin className="size-3.5" aria-hidden />
-          {location}
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <Users className="size-3.5" aria-hidden />
-          {countLabels.students(studentCount)}
-        </span>
-      </div>
-
-      <div className="space-y-2 border-t px-4 py-3">
-        {team.supervisor && (
-          <div className="flex items-center justify-between gap-2">
-            <PersonCell name={fullName(team.supervisor)} size="sm" />
-            <TeacherRoleBadge role="SUPERVISOR" />
-          </div>
-        )}
-        {team.assistants.map((t) => (
-          <div key={t.id} className="flex items-center justify-between gap-2">
-            <PersonCell name={fullName(t)} size="sm" />
-            <TeacherRoleBadge role="ASSISTANT" />
-          </div>
+      <ul className="mt-auto divide-y border-t">
+        {classes.length === 0 && <li className="px-4 py-3 text-xs text-muted-foreground">لا توجد حلقات بعد</li>}
+        {classes.map((v) => (
+          <li key={v.groupClass.id} className={cn("space-y-1.5 px-4 py-3", v.groupClass.status !== "ACTIVE" && "opacity-60")}>
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <span className="inline-flex items-center gap-1.5 font-medium">
+                <DoorOpen className="size-3.5 text-muted-foreground" aria-hidden />
+                {v.branch?.name} · {v.room?.name}
+              </span>
+              {v.groupClass.status !== "ACTIVE" && <StatusBadge status={v.groupClass.status} />}
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <ShieldCheck className="size-3.5 text-primary" aria-hidden />
+                {v.supervisor ? fullName(v.supervisor) : "—"}
+                {v.assistants.length > 0 && ` + ${v.assistants.length}`}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <Users className="size-3.5" aria-hidden />
+                {countLabels.students(counts.get(v.groupClass.id) ?? 0)}
+              </span>
+            </div>
+            <ScheduleSummary schedule={schedulesOf(v.groupClass.id, schedules)} className="text-xs" />
+          </li>
         ))}
-        {team.assistants.length === 0 && (
-          <p className="text-xs text-muted-foreground">بدون معلم مساعد</p>
-        )}
-      </div>
-
-      <div className="mt-auto border-t bg-muted/30 px-4 py-3">
-        {schedule}
-      </div>
+      </ul>
     </Card>
   )
 }

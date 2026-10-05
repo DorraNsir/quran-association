@@ -13,11 +13,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useFormState } from "@/hooks/use-form-state"
-import { teacherAssignments } from "@/lib/domain"
+import { teacherAssignments, type Lookups } from "@/lib/domain"
 import { labels } from "@/lib/i18n"
 import { MOCK_TODAY, newMockId } from "@/lib/mock/reference-date"
 import { normalizePhone, PHONE_HINT, phoneError, requiredText } from "@/lib/validation"
-import type { Gender, Group, Teacher, TeacherStatus } from "@/types/domain"
+import type { Gender, Teacher, TeacherStatus } from "@/types/domain"
 
 interface TeacherFormValues {
   photoUrl?: string
@@ -61,18 +61,18 @@ export function TeacherFormSheet({
   open,
   onOpenChange,
   teacher,
-  groups,
+  lookups,
   onSave,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   teacher?: Teacher
-  groups: Group[]
+  lookups: Lookups
   onSave: (teacher: Teacher) => void
 }) {
   const form = useFormState(`teacher-${teacher?.id ?? "new"}`, toValues(teacher), validate)
   const { values, setField } = form
-  const assignments = teacher ? teacherAssignments(teacher.id, groups) : []
+  const assignments = teacher ? teacherAssignments(teacher.id, lookups) : []
 
   const submit = form.handleSubmit((v) =>
     onSave({
@@ -176,9 +176,9 @@ export function TeacherFormSheet({
         </p>
         {assignments.length > 0 ? (
           <ul className="space-y-2">
-            {assignments.map(({ group, role }) => (
-              <li key={group.id} className="flex items-center justify-between gap-2 text-sm">
-                {group.name}
+            {assignments.map(({ groupClass, group, branch, role }) => (
+              <li key={groupClass.id} className="flex items-center justify-between gap-2 text-sm">
+                {group?.name} · {branch?.name}
                 <TeacherRoleBadge role={role} />
               </li>
             ))}

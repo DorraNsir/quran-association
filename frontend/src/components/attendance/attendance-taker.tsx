@@ -97,7 +97,7 @@ export function AttendanceTaker({ row, today }: { row: SessionRow; today: ISODat
 
   const crumbs = [
     { label: "الحصص", href: "/admin/sessions" },
-    { label: `${group?.name ?? ""} — ${formatDate(session.date)}`, href: `/admin/sessions/${session.id}` },
+    { label: `${group?.name ?? ""} (${row.branch?.name ?? ""}) — ${formatDate(session.date)}`, href: `/admin/sessions/${session.id}` },
     { label: isEdit ? "تعديل الحضور" : "تسجيل الحضور" },
   ]
 

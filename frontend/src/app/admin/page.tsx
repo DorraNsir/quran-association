@@ -11,12 +11,13 @@ import {
 import { TodaySessions } from "@/components/dashboard/today-sessions"
 import { PageHeader } from "@/components/shared/page-header"
 import { StatCard } from "@/components/shared/stat-card"
-import { weekdayOf } from "@/lib/domain"
+import { isRunning, weekdayOf } from "@/lib/domain"
 import { countLabels, formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import {
   branches,
   currentUser,
+  groupClasses,
   groups,
   lookups,
   MOCK_TODAY,
@@ -40,6 +41,8 @@ export default function DashboardPage() {
   const activeStudents = students.filter((s) => s.status === "ACTIVE").length
   const activeTeachers = teachers.filter((t) => t.status === "ACTIVE").length
   const activeGroups = groups.filter((g) => g.status === "ACTIVE").length
+  const groupsById = new Map(groups.map((g) => [g.id, g]))
+  const runningClasses = groupClasses.filter((c) => isRunning(c, groupsById)).length
   const activeBranches = branches.filter((b) => b.status === "ACTIVE")
   const activeRooms = rooms.filter(
     (r) => r.status === "ACTIVE" && activeBranches.some((b) => b.id === r.branchId)
@@ -73,7 +76,7 @@ export default function DashboardPage() {
           value={activeGroups}
           icon={Users}
           href="/admin/groups"
-          hint={`${groups.length - activeGroups} متوقفة أو مؤرشفة`}
+          hint={`${countLabels.classes(runningClasses)} نشطة · ${groups.length - activeGroups} متوقفة أو مؤرشفة`}
         />
         <StatCard
           label="الفروع"

@@ -1,9 +1,6 @@
 "use client"
 
-import { Info } from "lucide-react"
-
 import { FormField, FormSection, FormSheet } from "@/components/shared/form"
-import { MultiSelect } from "@/components/shared/multi-select"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -13,324 +10,89 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useFormState } from "@/hooks/use-form-state"
-import { fullName, indexById, roomsOfBranch, schedulesOf, type Lookups } from "@/lib/domain"
-import { countLabels } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { MOCK_TODAY, newMockId } from "@/lib/mock/reference-date"
-import { checkGroupSessions, type SessionDraft } from "@/lib/scheduling"
 import { requiredText } from "@/lib/validation"
-import type { Group, GroupStatus, ID, Student, WeeklySchedule } from "@/types/domain"
-
-import { draftError, ScheduleEditor } from "./schedule-editor"
+import type { Group, GroupStatus } from "@/types/domain"
 
 interface GroupFormValues {
   name: string
   audience: string
-  branchId: string
-  roomId: string
-  supervisorId: string
-  assistantIds: string[]
-  studentIds: string[]
-  sessions: SessionDraft[]
   status: GroupStatus
 }
 
-export interface GroupSaveResult {
-  group: Group
-  studentIds: ID[]
-  /** Replaces all of the group's weekly sessions */
-  schedules: WeeklySchedule[]
-}
-
-/** Id used for conflict checks while a new group has no id yet. */
-const DRAFT_GROUP_ID = "draft-group"
-
-function toDraftGroup(v: GroupFormValues, group?: Group): Group {
-  return {
-    id: group?.id ?? DRAFT_GROUP_ID,
-    createdAt: group?.createdAt ?? MOCK_TODAY,
-    name: v.name.trim(),
-    audience: v.audience.trim(),
-    branchId: v.branchId,
-    roomId: v.roomId,
-    supervisorId: v.supervisorId,
-    assistantIds: v.assistantIds.filter((id) => id !== v.supervisorId),
-    status: v.status,
-  }
-}
-
-function SimpleSelect({
-  id,
-  value,
-  onValueChange,
-  placeholder,
-  options,
-  invalid,
-  disabled,
-}: {
-  id: string
-  value: string
-  onValueChange: (value: string) => void
-  placeholder: string
-  options: { value: string; label: string }[]
-  invalid?: boolean
-  disabled?: boolean
-}) {
-  return (
-    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
-      <SelectTrigger id={id} className="w-full" aria-invalid={invalid || undefined}>
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent position="popper">
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
-}
-
+/**
+ * The pedagogical group only: name, audience, status. Branch, room,
+ * teachers, students and schedule belong to each of its classes.
+ */
 export function GroupFormSheet({
   open,
   onOpenChange,
   group,
-  lookups,
-  students,
+  otherNames,
   onSave,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   group?: Group
-  lookups: Lookups
-  students: Student[]
-  onSave: (result: GroupSaveResult) => void
+  /** Names of the other groups, to prevent duplicates */
+  otherNames: string[]
+  onSave: (group: Group) => void
 }) {
-  const currentMembers = group ? students.filter((s) => s.groupId === group.id).map((s) => s.id) : []
-  const otherNames = lookups.groups.filter((g) => g.id !== group?.id).map((g) => g.name.trim())
-
-  const sessionChecks = (v: GroupFormValues) =>
-    checkGroupSessions(v.sessions, toDraftGroup(v, group), lookups)
-
   const form = useFormState<GroupFormValues>(
     `group-${group?.id ?? "new"}`,
-    {
-      name: group?.name ?? "",
-      audience: group?.audience ?? "",
-      branchId: group?.branchId ?? "",
-      roomId: group?.roomId ?? "",
-      supervisorId: group?.supervisorId ?? "",
-      assistantIds: group?.assistantIds ?? [],
-      studentIds: currentMembers,
-      sessions: group
-        ? schedulesOf(group.id, lookups.schedules).map((s) => ({ ...s, key: `saved:${s.id}` }))
-        : [],
-      status: group?.status ?? "ACTIVE",
-    },
+    { name: group?.name ?? "", audience: group?.audience ?? "", status: group?.status ?? "ACTIVE" },
     (v) => ({
-      name: requiredText(v.name, "اسم المجموعة مطلوب") ??
+      name:
+        requiredText(v.name, "اسم المجموعة مطلوب") ??
         (otherNames.includes(v.name.trim()) ? "توجد مجموعة بهذا الاسم" : undefined),
-      branchId: v.branchId ? undefined : "اختر الفرع",
-      roomId: v.roomId ? undefined : "اختر القاعة",
-      supervisorId: v.supervisorId ? undefined : "لكل مجموعة معلم مشرف واحد",
-      sessions:
-        v.sessions.some((row) => draftError(row)) ||
-        [...sessionChecks(v).values()].some((c) => c.conflicts.length > 0)
-          ? "راجع مواعيد الحصص: توجد بيانات ناقصة أو تعارضات"
-          : undefined,
     })
   )
-  const { values, setField } = form
 
-  const groupsById = indexById(lookups.groups)
-  const branch = lookups.branches.find((b) => b.id === values.branchId)
-  const branchRooms = roomsOfBranch(values.branchId, lookups.rooms).filter(
-    (r) => r.status === "ACTIVE" || r.id === values.roomId
-  )
-  const activeTeachers = lookups.teachers.filter(
-    (t) => t.status === "ACTIVE" || t.id === values.supervisorId || values.assistantIds.includes(t.id)
-  )
-  const moving = values.studentIds.filter((id) => !currentMembers.includes(id)).length
-
-  const submit = form.handleSubmit((v) => {
-    const saved = { ...toDraftGroup(v, group), id: group?.id ?? newMockId("g") }
+  const submit = form.handleSubmit((v) =>
     onSave({
-      group: saved,
-      studentIds: v.studentIds,
-      schedules: v.sessions.map(({ day, start, end, branchId, roomId, id }) => ({
-        id: id ?? newMockId("ws"),
-        groupId: saved.id,
-        day,
-        start,
-        end,
-        branchId,
-        roomId,
-      })),
+      id: group?.id ?? newMockId("g"),
+      createdAt: group?.createdAt ?? MOCK_TODAY,
+      name: v.name.trim(),
+      audience: v.audience.trim(),
+      status: v.status,
     })
-  })
+  )
 
   return (
     <FormSheet
       open={open}
       onOpenChange={onOpenChange}
       title={group ? `تعديل ${group.name}` : "إنشاء مجموعة جديدة"}
-      description="الحقول المعلَّمة بـ * إلزامية."
+      description={
+        group
+          ? "الفرع والمدرس المشرف والطلبة والمواعيد تُعدَّل من كل حلقة في صفحة المجموعة."
+          : "بعد الإنشاء، أضف حلقات المجموعة (فرع، مدرس مشرف، طلبة، مواعيد) من صفحتها."
+      }
       onSubmit={submit}
       submitLabel={group ? "حفظ التعديلات" : "إنشاء المجموعة"}
     >
       <FormSection title="المعلومات العامة">
         <FormField label="اسم المجموعة" required {...form.field("name")}>
-          <Input placeholder="مثال: مجموعة الفرقان" {...form.inputProps("name")} />
+          <Input placeholder="مثال: مجموعة ماهر" {...form.inputProps("name")} />
         </FormField>
         <FormField label="الفئة المستهدفة" optional {...form.field("audience")}>
           <Input placeholder="مثال: أطفال 7–10 سنوات" {...form.inputProps("audience")} />
         </FormField>
         <FormField label="الحالة" required {...form.field("status")}>
-          <SimpleSelect
-            id={form.field("status").id}
-            value={values.status}
-            onValueChange={(v) => setField("status", v as GroupStatus)}
-            placeholder=""
-            options={(["ACTIVE", "INACTIVE", "ARCHIVED"] as const).map((s) => ({
-              value: s,
-              label: labels.status[s],
-            }))}
-          />
+          <Select value={form.values.status} onValueChange={(v) => form.setField("status", v as GroupStatus)}>
+            <SelectTrigger id={form.field("status").id} className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              {(["ACTIVE", "INACTIVE", "ARCHIVED"] as const).map((s) => (
+                <SelectItem key={s} value={s}>
+                  {labels.status[s]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </FormField>
-      </FormSection>
-
-      <FormSection title="المكان المعتاد" description="يُقترح تلقائيًا لكل يوم دراسة جديد، ويمكن تغييره لكل حصة.">
-        <FormField label="الفرع" required {...form.field("branchId")}>
-          <SimpleSelect
-            id={form.field("branchId").id}
-            value={values.branchId}
-            onValueChange={(v) => {
-              // Radix also reports programmatic value changes — only a real switch resets the room
-              if (v === values.branchId) return
-              setField("branchId", v)
-              setField("roomId", "")
-              form.touch("branchId")
-            }}
-            placeholder="اختر الفرع"
-            invalid={Boolean(form.field("branchId").error)}
-            options={lookups.branches
-              .filter((b) => b.status === "ACTIVE" || b.id === values.branchId)
-              .map((b) => ({ value: b.id, label: b.name }))}
-          />
-        </FormField>
-        <FormField
-          label="القاعة"
-          required
-          description={branch ? undefined : "اختر الفرع أولًا"}
-          {...form.field("roomId")}
-        >
-          <SimpleSelect
-            id={form.field("roomId").id}
-            value={values.roomId}
-            onValueChange={(v) => {
-              setField("roomId", v)
-              form.touch("roomId")
-            }}
-            placeholder="اختر القاعة"
-            disabled={!branch}
-            invalid={Boolean(form.field("roomId").error)}
-            options={branchRooms.map((r) => ({ value: r.id, label: r.name }))}
-          />
-        </FormField>
-      </FormSection>
-
-      <FormSection
-        title="فريق التدريس"
-        description="معلم مشرف واحد مسؤول عن المجموعة، ويمكن إضافة معلم مساعد أو أكثر."
-      >
-        <FormField label={labels.teachingRole.SUPERVISOR} required {...form.field("supervisorId")}>
-          <SimpleSelect
-            id={form.field("supervisorId").id}
-            value={values.supervisorId}
-            onValueChange={(v) => {
-              setField("supervisorId", v)
-              setField("assistantIds", values.assistantIds.filter((id) => id !== v))
-              form.touch("supervisorId")
-            }}
-            placeholder="اختر المعلم المشرف"
-            invalid={Boolean(form.field("supervisorId").error)}
-            options={activeTeachers.map((t) => ({ value: t.id, label: fullName(t) }))}
-          />
-        </FormField>
-        <FormField label="المعلمون المساعدون" optional {...form.field("assistantIds")}>
-          <MultiSelect
-            id={form.field("assistantIds").id}
-            placeholder="بدون معلم مساعد"
-            searchPlaceholder="ابحث عن معلم…"
-            countLabel={countLabels.teachers}
-            selected={values.assistantIds}
-            onChange={(ids) => setField("assistantIds", ids)}
-            options={activeTeachers
-              .filter((t) => t.id !== values.supervisorId)
-              .map((t) => ({ value: t.id, label: fullName(t), description: t.qualification }))}
-          />
-        </FormField>
-      </FormSection>
-
-      <FormSection title="الطلبة" description="كل طالب ينتمي إلى مجموعة نشطة واحدة.">
-        <FormField label="طلبة المجموعة" optional className="sm:col-span-2" {...form.field("studentIds")}>
-          <MultiSelect
-            id={form.field("studentIds").id}
-            placeholder="لم يُضَف أي طالب"
-            searchPlaceholder="ابحث باسم الطالب…"
-            countLabel={countLabels.students}
-            selected={values.studentIds}
-            onChange={(ids) => setField("studentIds", ids)}
-            options={students
-              .filter((s) => s.status !== "ARCHIVED")
-              .map((s) => {
-                const isMember = currentMembers.includes(s.id)
-                return {
-                  value: s.id,
-                  label: fullName(s),
-                  section: isMember ? "أعضاء المجموعة حاليًا" : "طلبة في مجموعات أخرى",
-                  description: isMember ? undefined : `حاليًا في ${groupsById.get(s.groupId)?.name ?? "—"}`,
-                  locked: isMember,
-                }
-              })}
-          />
-        </FormField>
-        <div className="flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground sm:col-span-2">
-          <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-          <p>
-            {moving > 0 && (
-              <strong className="font-medium text-foreground">
-                سيُنقل {countLabels.students(moving)} من مجموعاتهم الحالية.{" "}
-              </strong>
-            )}
-            لإخراج طالب من هذه المجموعة استعمل «تغيير المجموعة» من صفحة الطلبة، حتى لا يبقى بدون مجموعة.
-          </p>
-        </div>
-      </FormSection>
-
-      <FormSection
-        title="المواعيد الأسبوعية"
-        description={
-          values.status === "ACTIVE"
-            ? "يُتحقَّق مباشرة من توفّر القاعة ومن عدم ارتباط المعلمين بمجموعة أخرى في نفس الوقت."
-            : "المجموعة غير نشطة: لا تحجز حصصها القاعات ولا المعلمين، لذلك لا يُتحقَّق من التعارضات."
-        }
-      >
-        {form.field("sessions").error && (
-          <p role="alert" className="text-sm text-destructive sm:col-span-2">
-            {form.field("sessions").error}
-          </p>
-        )}
-        <ScheduleEditor
-          id={form.field("sessions").id}
-          rows={values.sessions}
-          onChange={(rows) => setField("sessions", rows)}
-          lookups={lookups}
-          checks={sessionChecks(values)}
-          defaultLocation={{ branchId: values.branchId, roomId: values.roomId }}
-          showErrors={form.submitted}
-        />
       </FormSection>
     </FormSheet>
   )

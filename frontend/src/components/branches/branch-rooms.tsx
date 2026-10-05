@@ -10,7 +10,7 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { EmptyState } from "@/components/shared/empty-state"
 import { SectionCard } from "@/components/shared/info-list"
 import { Button } from "@/components/ui/button"
-import { activeSessionsIn, indexById, weeklyMinutes, type Lookups } from "@/lib/domain"
+import { activeSchedulesIn, indexLookups, weeklyMinutes, type Lookups } from "@/lib/domain"
 import { countLabels, formatDuration } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -26,7 +26,7 @@ const mockSaved = { description: labels.common.mockNotice }
 export function BranchRooms({ branch, lookups }: { branch: Branch; lookups: Lookups }) {
   const [rooms, setRooms] = useState(lookups.rooms)
   const [state, setState] = useState<DialogState | null>(null)
-  const groupsById = indexById(lookups.groups)
+  const { classesById, groupsById } = indexLookups(lookups)
   const branchRooms = rooms.filter((r) => r.branchId === branch.id)
 
   const close = (open: boolean) => {
@@ -41,7 +41,8 @@ export function BranchRooms({ branch, lookups }: { branch: Branch; lookups: Look
     close(false)
   }
 
-  const usageOf = (room: Room) => activeSessionsIn({ roomId: room.id }, lookups)
+  /** Slots of running classes whose room this is */
+  const usageOf = (room: Room) => activeSchedulesIn({ roomId: room.id }, { ...lookups, rooms })
   const pending = state?.room
   const pendingUsage = pending ? usageOf(pending) : []
 
@@ -63,7 +64,7 @@ export function BranchRooms({ branch, lookups }: { branch: Branch; lookups: Look
         <ul className="divide-y">
           {branchRooms.map((room) => {
             const usage = usageOf(room)
-            const groupIds = [...new Set(usage.map((s) => s.groupId))]
+            const classIds = [...new Set(usage.map((s) => s.groupClassId))]
             return (
               <li key={room.id} className="relative flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:gap-4">
                 <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -88,9 +89,9 @@ export function BranchRooms({ branch, lookups }: { branch: Branch; lookups: Look
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5 ps-12 sm:ps-0">
-                  {groupIds.map((id) => {
-                    const group = groupsById.get(id)
-                    return group ? <GroupBadge key={id} name={group.name} href={`/admin/groups/${id}`} /> : null
+                  {classIds.map((id) => {
+                    const group = groupsById.get(classesById.get(id)?.groupId ?? "")
+                    return group ? <GroupBadge key={id} name={group.name} href={`/admin/groups/${group.id}`} /> : null
                   })}
                 </div>
                 <div className="absolute end-0 top-3 sm:static">

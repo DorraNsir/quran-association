@@ -1,8 +1,8 @@
 "use client"
 
-import { BookOpen, CheckCircle2 } from "lucide-react"
+import { BookOpen, CheckCircle2, DoorOpen, Info } from "lucide-react"
 
-import { GroupSelect } from "@/components/groups/group-select"
+import { ClassPicker } from "@/components/groups/class-picker"
 import { ConflictAlert } from "@/components/scheduling/conflict-alert"
 import { TeacherRoleBadge } from "@/components/shared/badges"
 import { FormField, FormSection, FormSheet } from "@/components/shared/form"
@@ -16,141 +16,132 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useFormState } from "@/hooks/use-form-state"
-import {
-  fullName,
-  groupTeacherIds,
-  groupTeachers,
-  indexLookups,
-  roomsOfBranch,
-  type Lookups,
-} from "@/lib/domain"
+import { describeClass, fullName, indexLookups, type Lookups } from "@/lib/domain"
 import { labels, WEEK_ORDER } from "@/lib/i18n"
 import { newMockId } from "@/lib/mock/reference-date"
 import { findConflicts, freeRooms, isValidTimeRange } from "@/lib/scheduling"
-import type { Weekday, WeeklySchedule } from "@/types/domain"
+import type { ID, Student, Weekday, WeeklySchedule } from "@/types/domain"
 
 type ScheduleValues = Omit<WeeklySchedule, "id">
 
-export type SchedulePreset = Partial<ScheduleValues>
+export type SchedulePreset = Partial<ScheduleValues> & {
+  /** Room clicked in the rooms view — only a hint: the class decides the room */
+  roomId?: ID
+}
 
+/**
+ * Adds or edits one weekly slot of a class. The class is chosen (group →
+ * class); its branch, room and teachers follow and are checked for conflicts.
+ */
 export function ScheduleFormSheet({
   open,
   onOpenChange,
   schedule,
   preset,
   lookups,
+  students,
   onSave,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Editing an existing session (its group cannot change) */
+  /** Editing an existing slot (its class cannot change) */
   schedule?: WeeklySchedule
-  /** Values from the clicked slot (day, start, end, room…) when creating */
+  /** Values from the clicked slot (day, start, end, room hint…) when creating */
   preset?: SchedulePreset
   lookups: Lookups
+  students?: Student[]
   onSave: (schedule: WeeklySchedule) => void
 }) {
-  const { branchesById, groupsById, teachersById } = indexLookups(lookups)
-  const presetGroup = preset?.groupId ? groupsById.get(preset.groupId) : undefined
-  const presetBranchId = preset?.branchId ?? presetGroup?.branchId ?? ""
-
+  const indexes = indexLookups(lookups)
   const form = useFormState<ScheduleValues>(
     `schedule-${schedule?.id ?? "new"}`,
     {
-      groupId: schedule?.groupId ?? preset?.groupId ?? "",
+      groupClassId: schedule?.groupClassId ?? preset?.groupClassId ?? "",
       day: schedule?.day ?? preset?.day ?? "SAT",
       start: schedule?.start ?? preset?.start ?? "09:00",
       end: schedule?.end ?? preset?.end ?? "11:00",
-      branchId: schedule?.branchId ?? presetBranchId,
-      roomId: schedule?.roomId ?? preset?.roomId ?? (presetGroup?.branchId === presetBranchId ? presetGroup.roomId : ""),
     },
     (v) => ({
-      groupId: v.groupId ? undefined : "اختر المجموعة",
+      groupClassId: v.groupClassId ? undefined : "اختر المجموعة ثم الحلقة",
       end: isValidTimeRange(v.start, v.end) ? undefined : "يجب أن تكون ساعة النهاية بعد ساعة البداية",
-      branchId: v.branchId ? undefined : "اختر الفرع",
-      roomId: v.roomId ? undefined : "اختر القاعة",
     })
   )
   const { values, setField } = form
-  const group = groupsById.get(values.groupId)
-  const team = group ? groupTeachers(group, teachersById) : null
+  const groupClass = indexes.classesById.get(values.groupClassId)
+  const view = groupClass ? describeClass(groupClass, indexes) : undefined
 
-  const context = { schedules: lookups.schedules, groups: lookups.groups }
-  const complete = group && values.roomId && isValidTimeRange(values.start, values.end)
-  const conflicts = complete
-    ? findConflicts({ ...values, id: schedule?.id, teacherIds: groupTeacherIds(group) }, {
-        ...context,
-        ignoreScheduleIds: schedule ? [schedule.id] : [],
-      })
-    : []
-  const alternatives = complete
-    ? freeRooms(values, values.branchId, lookups.rooms, { ...context, ignoreScheduleIds: schedule ? [schedule.id] : [] })
-    : []
-
-  const rooms = roomsOfBranch(values.branchId, lookups.rooms).filter(
-    (r) => r.status === "ACTIVE" || r.id === values.roomId
-  )
+  const context = {
+    schedules: lookups.schedules,
+    groupClasses: lookups.groupClasses,
+    groups: lookups.groups,
+    ignoreScheduleIds: schedule ? [schedule.id] : [],
+  }
+  const complete = groupClass && isValidTimeRange(values.start, values.end)
+  const conflicts = complete ? findConflicts({ ...values, id: schedule?.id, groupClass }, context) : []
+  const alternatives = complete ? freeRooms(values, groupClass.branchId, lookups.rooms, context) : []
+  const roomHint = preset?.roomId && groupClass && preset.roomId !== groupClass.roomId ? indexes.roomsById.get(preset.roomId) : undefined
 
   const submit = form.handleSubmit((v) => {
     if (conflicts.length > 0) return
     onSave({ ...v, id: schedule?.id ?? newMockId("ws") })
   })
 
-  function selectGroup(groupId: string) {
-    const g = groupsById.get(groupId)
-    setField("groupId", groupId)
-    form.touch("groupId")
-    // Default to the group's usual location unless a room was picked on the grid
-    if (g && !preset?.roomId) {
-      setField("branchId", g.branchId)
-      setField("roomId", g.roomId)
-    }
-  }
-
   return (
     <FormSheet
       open={open}
       onOpenChange={onOpenChange}
-      title={schedule ? "تعديل الحصة" : "برمجة حصة أسبوعية"}
-      description="تتكرر الحصة كل أسبوع في نفس اليوم والتوقيت."
+      title={schedule ? "تعديل الحصة الأسبوعية" : "برمجة حصة أسبوعية"}
+      description="تتكرر الحصة كل أسبوع في نفس اليوم والتوقيت، في قاعة الحلقة ومع معلميها."
       onSubmit={submit}
       submitLabel={schedule ? "حفظ التعديلات" : "برمجة الحصة"}
       submitDisabled={conflicts.length > 0}
     >
-      <FormSection title="المجموعة">
-        <FormField label="المجموعة" required className="sm:col-span-2" {...form.field("groupId")}>
-          {schedule && group ? (
+      <FormSection title="الحلقة">
+        <FormField label="المجموعة والحلقة" required className="sm:col-span-2" {...form.field("groupClassId")}>
+          {schedule && view ? (
             <p className="flex h-9 items-center gap-2 rounded-lg border bg-muted/40 px-2.5 text-sm">
               <BookOpen className="size-4 text-primary" aria-hidden />
-              {group.name}
+              {view.group?.name} · {view.branch?.name}
             </p>
           ) : (
-            <GroupSelect
-              id={form.field("groupId").id}
-              value={values.groupId}
-              onValueChange={selectGroup}
-              groups={lookups.groups}
-              branches={lookups.branches}
-              invalid={Boolean(form.field("groupId").error)}
+            <ClassPicker
+              id={form.field("groupClassId").id}
+              value={values.groupClassId}
+              onChange={(id) => {
+                setField("groupClassId", id)
+                form.touch("groupClassId")
+              }}
+              lookups={lookups}
+              students={students}
+              invalid={Boolean(form.field("groupClassId").error)}
             />
           )}
         </FormField>
-        {team && (
+        {view && (
           <div className="space-y-2 rounded-lg border bg-muted/30 p-3 sm:col-span-2">
-            <p className="text-xs text-muted-foreground">فريق التدريس (من تعيينات المجموعة)</p>
-            {team.supervisor && (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <DoorOpen className="size-3.5" aria-hidden />
+              {view.branch?.name} · {view.room?.name} — من بيانات الحلقة
+            </p>
+            {view.supervisor && (
               <div className="flex items-center justify-between gap-2">
-                <PersonCell name={fullName(team.supervisor)} size="sm" />
+                <PersonCell name={fullName(view.supervisor)} size="sm" />
                 <TeacherRoleBadge role="SUPERVISOR" />
               </div>
             )}
-            {team.assistants.map((t) => (
+            {view.assistants.map((t) => (
               <div key={t.id} className="flex items-center justify-between gap-2">
                 <PersonCell name={fullName(t)} size="sm" />
                 <TeacherRoleBadge role="ASSISTANT" />
               </div>
             ))}
           </div>
+        )}
+        {roomHint && (
+          <p className="flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning sm:col-span-2">
+            <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            اخترت خانة في {roomHint.name}، لكن هذه الحلقة تدرس في {view?.room?.name}. القاعة تتبع الحلقة.
+          </p>
         )}
       </FormSection>
 
@@ -175,63 +166,6 @@ export function ScheduleFormSheet({
         <FormField label="إلى" required {...form.field("end")}>
           <Input type="time" dir="ltr" step={900} {...form.inputProps("end")} />
         </FormField>
-      </FormSection>
-
-      <FormSection title="المكان">
-        <FormField label="الفرع" required {...form.field("branchId")}>
-          <Select
-            value={values.branchId}
-            onValueChange={(b) => {
-              // Radix also reports programmatic value changes — only a real switch resets the room
-              if (b === values.branchId) return
-              setField("branchId", b)
-              setField("roomId", "")
-            }}
-          >
-            <SelectTrigger id={form.field("branchId").id} className="w-full">
-              <SelectValue placeholder="اختر الفرع" />
-            </SelectTrigger>
-            <SelectContent position="popper">
-              {lookups.branches
-                .filter((b) => b.status === "ACTIVE" || b.id === values.branchId)
-                .map((b) => (
-                  <SelectItem key={b.id} value={b.id}>
-                    {b.name}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        </FormField>
-        <FormField
-          label="القاعة"
-          required
-          description={values.branchId ? undefined : "اختر الفرع أولًا"}
-          {...form.field("roomId")}
-        >
-          <Select
-            value={values.roomId}
-            onValueChange={(r) => {
-              setField("roomId", r)
-              form.touch("roomId")
-            }}
-            disabled={!values.branchId}
-          >
-            <SelectTrigger
-              id={form.field("roomId").id}
-              className="w-full"
-              aria-invalid={form.field("roomId").error ? true : undefined}
-            >
-              <SelectValue placeholder="اختر القاعة" />
-            </SelectTrigger>
-            <SelectContent position="popper">
-              {rooms.map((r) => (
-                <SelectItem key={r.id} value={r.id}>
-                  {r.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FormField>
 
         <div className="sm:col-span-2">
           {conflicts.length > 0 ? (
@@ -239,13 +173,13 @@ export function ScheduleFormSheet({
               conflicts={conflicts}
               lookups={lookups}
               freeRooms={alternatives}
-              onPickRoom={(roomId) => setField("roomId", roomId)}
+              pickRoomHint="قاعات متاحة في نفس الفرع (تُغيَّر قاعة الحلقة من صفحة المجموعة):"
             />
           ) : (
             complete && (
               <p className="flex items-center gap-1.5 rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand-soft-foreground">
                 <CheckCircle2 className="size-4" aria-hidden />
-                {branchesById.get(values.branchId)?.name}: القاعة والمعلمون متاحون في هذا الوقت.
+                {view?.room?.name} والمعلمون متاحون في هذا الوقت.
               </p>
             )
           )}

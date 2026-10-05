@@ -71,7 +71,7 @@ export function useBranchDialogs({
           title={`إيقاف ${branch.name}؟`}
           description={
             stats.weeklySessions > 0
-              ? `يحتضن هذا الفرع ${countLabels.sessions(stats.weeklySessions)} أسبوعيًا لـ${countLabels.groups(stats.activeGroups)}. يجب نقل هذه الحصص إلى فرع آخر بعد الإيقاف.`
+              ? `يحتضن هذا الفرع ${countLabels.sessions(stats.weeklySessions)} أسبوعيًا لـ${countLabels.classes(stats.activeClasses)}. يجب نقل هذه الحصص إلى فرع آخر بعد الإيقاف.`
               : "لا توجد حصص مبرمجة في هذا الفرع حاليًا."
           }
           confirmLabel="إيقاف الفرع"

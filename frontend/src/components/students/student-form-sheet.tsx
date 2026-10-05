@@ -2,7 +2,7 @@
 
 import { Info } from "lucide-react"
 
-import { GroupSelect } from "@/components/groups/group-select"
+import { ClassPicker } from "@/components/groups/class-picker"
 import { FormField, FormSection, FormSheet, PhotoInput } from "@/components/shared/form"
 import { Input } from "@/components/ui/input"
 import {
@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useFormState } from "@/hooks/use-form-state"
-import { ageOn, indexLookups, locationLabel, type Lookups } from "@/lib/domain"
+import { ageOn, type Lookups } from "@/lib/domain"
 import { labels } from "@/lib/i18n"
 import { MOCK_TODAY, newMockId } from "@/lib/mock/reference-date"
 import {
@@ -36,7 +36,7 @@ interface StudentFormValues {
   guardianPhone: string
   address: string
   registrationDate: string
-  groupId: string
+  groupClassId: string
   status: StudentStatus
 }
 
@@ -52,7 +52,7 @@ function toValues(student?: Student): StudentFormValues {
     guardianPhone: student?.guardianPhone ?? "",
     address: student?.address ?? "",
     registrationDate: student?.registrationDate ?? MOCK_TODAY,
-    groupId: student?.groupId ?? "",
+    groupClassId: student?.groupClassId ?? "",
     status: student?.status ?? "ACTIVE",
   }
 }
@@ -78,7 +78,7 @@ function validate(v: StudentFormValues) {
     guardianPhone: phoneError(v.guardianPhone, { required: isMinor }),
     address: requiredText(v.address, "العنوان مطلوب"),
     registrationDate: requiredText(v.registrationDate, "تاريخ التسجيل مطلوب"),
-    groupId: v.groupId ? undefined : "يجب أن ينتمي الطالب إلى مجموعة واحدة",
+    groupClassId: v.groupClassId ? undefined : "اختر المجموعة ثم الحلقة التي يدرس فيها الطالب",
   }
 }
 
@@ -97,10 +97,8 @@ export function StudentFormSheet({
 }) {
   const form = useFormState(`student-${student?.id ?? "new"}`, toValues(student), validate)
   const { values, setField } = form
-  const { branchesById, roomsById, groupsById } = indexLookups(lookups)
   const age = ageFrom(values.dateOfBirth)
   const isMinor = age !== null && age < 18
-  const selectedGroup = groupsById.get(values.groupId)
 
   const submit = form.handleSubmit((v) => {
     onSave({
@@ -115,7 +113,7 @@ export function StudentFormSheet({
       address: v.address.trim(),
       photoUrl: v.photoUrl,
       registrationDate: v.registrationDate,
-      groupId: v.groupId,
+      groupClassId: v.groupClassId,
       status: v.status,
     })
   })
@@ -208,25 +206,20 @@ export function StudentFormSheet({
         </FormField>
       </FormSection>
 
-      <FormSection title="التسجيل" description="لكل طالب مجموعة نشطة واحدة فقط.">
-        <FormField
-          label="المجموعة"
-          required
-          className="sm:col-span-2"
-          description={selectedGroup ? locationLabel(selectedGroup, branchesById, roomsById) : undefined}
-          {...form.field("groupId")}
-        >
-          <GroupSelect
-            id={form.field("groupId").id}
-            value={values.groupId}
-            onValueChange={(id) => {
-              setField("groupId", id)
-              form.touch("groupId")
+      <FormSection
+        title="التسجيل"
+        description="يدرس الطالب في حلقة واحدة: تحدد المجموعة والفرع والمدرس المشرف والمواعيد."
+      >
+        <FormField label="المجموعة والحلقة" required className="sm:col-span-2" {...form.field("groupClassId")}>
+          <ClassPicker
+            id={form.field("groupClassId").id}
+            value={values.groupClassId}
+            onChange={(id) => {
+              setField("groupClassId", id)
+              form.touch("groupClassId")
             }}
-            groups={lookups.groups}
-            branches={lookups.branches}
-            invalid={Boolean(form.field("groupId").error)}
-            describedBy={form.field("groupId").error ? `${form.field("groupId").id}-error` : undefined}
+            lookups={lookups}
+            invalid={Boolean(form.field("groupClassId").error)}
           />
         </FormField>
         <FormField label="تاريخ التسجيل" required {...form.field("registrationDate")}>

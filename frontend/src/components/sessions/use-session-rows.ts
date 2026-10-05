@@ -6,11 +6,12 @@ import {
   type AttendanceSummary,
   type SessionProgress,
 } from "@/lib/attendance"
-import { groupTeachers, indexLookups, type Lookups } from "@/lib/domain"
+import { describeClass, indexLookups, type Lookups } from "@/lib/domain"
 import { useOperations, type OperationsState } from "@/lib/store/operations"
 import type {
   Branch,
   Group,
+  GroupClass,
   ISODate,
   Room,
   Session,
@@ -20,9 +21,13 @@ import type {
   TeacherAttendance,
 } from "@/types/domain"
 
-/** A session with everything a screen needs, resolved once from ids. */
+/**
+ * A session with everything a screen needs, resolved once from ids:
+ * Session → GroupClass → group, branch, room, teachers, roster.
+ */
 export interface SessionRow {
   session: Session
+  groupClass?: GroupClass
   group?: Group
   branch?: Branch
   room?: Room
@@ -41,22 +46,24 @@ export function buildSessionRows(
   students: Student[],
   today: ISODate
 ): SessionRow[] {
-  const { branchesById, roomsById, groupsById, teachersById } = indexLookups(lookups)
+  const indexes = indexLookups(lookups)
   const recordsBySession = indexBySession(state.studentAttendance)
   const teacherRecordsBySession = indexBySession(state.teacherAttendance)
 
   return state.sessions.map((session) => {
-    const group = groupsById.get(session.groupId)
-    const team = group ? groupTeachers(group, teachersById) : { supervisor: undefined, assistants: [] }
+    const groupClass = indexes.classesById.get(session.groupClassId)
+    const view = groupClass ? describeClass(groupClass, indexes) : undefined
+    // Only the students of THIS class — never the other classes of the same group
     const roster = rosterFor(session, students)
     const records = recordsBySession.get(session.id) ?? []
     return {
       session,
-      group,
-      branch: branchesById.get(session.branchId),
-      room: roomsById.get(session.roomId),
-      supervisor: team.supervisor,
-      assistants: team.assistants,
+      groupClass,
+      group: view?.group,
+      branch: view?.branch,
+      room: view?.room,
+      supervisor: view?.supervisor,
+      assistants: view?.assistants ?? [],
       roster,
       records,
       teacherRecords: teacherRecordsBySession.get(session.id) ?? [],

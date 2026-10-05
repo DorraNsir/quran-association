@@ -44,16 +44,16 @@ export function TeachersView({
   const [branchId, setBranchId] = useState(ALL)
 
   const { run, dialogs } = useTeacherDialogs({
-    groups: lookups.groups,
+    lookups,
     onChange: (saved, isNew) =>
       setTeachers((prev) =>
         isNew ? [saved, ...prev] : prev.map((t) => (t.id === saved.id ? saved : t))
       ),
   })
 
-  const assignmentsOf = (t: Teacher) => teacherAssignments(t.id, lookups.groups)
+  const assignmentsOf = (t: Teacher) => teacherAssignments(t.id, lookups)
   const weeklyLoad = (t: Teacher) =>
-    weeklyMinutes(teacherWeeklySlots(t.id, lookups.groups, lookups.schedules).map((e) => e.slot))
+    weeklyMinutes(teacherWeeklySlots(t.id, lookups).map((e) => e.slot))
 
   const digits = query.replace(/\D/g, "")
   const filtered = teachers.filter((t) => {
@@ -63,7 +63,7 @@ export function TeachersView({
       if (!byName && !byPhone) return false
     }
     if (status !== ALL && t.status !== status) return false
-    if (branchId !== ALL && !assignmentsOf(t).some((a) => a.group.branchId === branchId)) {
+    if (branchId !== ALL && !assignmentsOf(t).some((a) => a.groupClass.branchId === branchId)) {
       return false
     }
     return true
@@ -101,7 +101,7 @@ export function TeachersView({
     {
       id: "groups",
       header: "المجموعات والمسؤولية",
-      cell: (t) => <TeacherAssignments assignments={assignmentsOf(t)} />,
+      cell: (t) => <TeacherAssignments assignments={assignmentsOf(t)} groupClasses={lookups.groupClasses} />,
     },
     {
       id: "load",
@@ -208,7 +208,7 @@ export function TeachersView({
               <StatusBadge status={t.status} />
               <PhoneLink phone={t.phone} />
             </div>
-            <TeacherAssignments assignments={assignmentsOf(t)} />
+            <TeacherAssignments assignments={assignmentsOf(t)} groupClasses={lookups.groupClasses} />
           </div>
         )}
       />

@@ -12,7 +12,7 @@ import { PageHeader } from "@/components/shared/page-header"
 import { PeriodFilter, resolvePeriod, type Period } from "@/components/shared/period-filter"
 import { Button } from "@/components/ui/button"
 import { isWithin, weekdayOf } from "@/lib/dates"
-import { fullName, groupTeacherIds, type Lookups } from "@/lib/domain"
+import { classTeacherIds, fullName, type Lookups } from "@/lib/domain"
 import { countLabels, formatShortDate, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -72,9 +72,9 @@ export function SessionsView({
   const range = resolvePeriod(period, today)
   const matchesFilters = (row: SessionRow) =>
     isWithin(row.session.date, range) &&
-    (groupId === ALL || row.session.groupId === groupId) &&
-    (branchId === ALL || row.session.branchId === branchId) &&
-    (teacherId === ALL || (row.group ? groupTeacherIds(row.group).includes(teacherId) : false))
+    (groupId === ALL || row.group?.id === groupId) &&
+    (branchId === ALL || row.branch?.id === branchId) &&
+    (teacherId === ALL || (row.groupClass ? classTeacherIds(row.groupClass).includes(teacherId) : false))
   const filteredAll = rows.filter(matchesFilters)
   const filtered = filteredAll.filter((r) => inTab(r, tab, today))
   // Future first-to-come; history most-recent first
@@ -105,25 +105,19 @@ export function SessionsView({
     {
       id: "group",
       header: "المجموعة",
+      // The class's place tells apart two classes of the same group
       cell: (r) => (
-        <Link href={`/admin/sessions/${r.session.id}`} className="font-medium hover:text-primary">
-          {r.group?.name}
+        <Link href={`/admin/sessions/${r.session.id}`} className="block hover:opacity-80">
+          <span className="font-medium">{r.group?.name}</span>
+          <span className="block text-xs text-muted-foreground">
+            {r.room?.name} · {r.branch?.name}
+          </span>
         </Link>
       ),
     },
     {
-      id: "place",
-      header: "المكان",
-      className: "hidden xl:table-cell",
-      cell: (r) => (
-        <span className="text-sm text-muted-foreground">
-          {r.room?.name} · {r.branch?.name}
-        </span>
-      ),
-    },
-    {
       id: "supervisor",
-      header: labels.teachingRole.SUPERVISOR,
+      header: "المدرس المشرف",
       className: "hidden lg:table-cell",
       cell: (r) => <span className="text-sm">{r.supervisor ? fullName(r.supervisor) : "—"}</span>,
     },

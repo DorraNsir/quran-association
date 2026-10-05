@@ -21,10 +21,9 @@ import { Button } from "@/components/ui/button"
 import {
   ageOn,
   fullName,
-  groupTeachers,
   indexLookups,
-  locationLabel,
   schedulesOf,
+  studentClass,
   type Lookups,
 } from "@/lib/domain"
 import { formatDate, formatElapsed } from "@/lib/format"
@@ -33,10 +32,10 @@ import { MOCK_TODAY } from "@/lib/mock/reference-date"
 import type { Student } from "@/types/domain"
 
 export function StudentOverview({ student, lookups }: { student: Student; lookups: Lookups }) {
-  const { branchesById, roomsById, groupsById, teachersById } = indexLookups(lookups)
-  const group = groupsById.get(student.groupId)
+  // Student → class → group, place, teachers: the supervisor is the CLASS's, not the group's
+  const cls = studentClass(student, indexLookups(lookups))
+  const group = cls?.group
   const age = ageOn(student.dateOfBirth, MOCK_TODAY)
-  const team = group ? groupTeachers(group, teachersById) : null
 
   return (
     <div className="grid gap-6 lg:grid-cols-3">
@@ -98,7 +97,7 @@ export function StudentOverview({ student, lookups }: { student: Student; lookup
       </div>
 
       <SectionCard
-        title="المجموعة الحالية"
+        title="المجموعة والحلقة"
         icon={BookOpen}
         className="order-first h-fit lg:order-none"
         action={
@@ -109,24 +108,38 @@ export function StudentOverview({ student, lookups }: { student: Student; lookup
           )
         }
       >
-        {group ? (
+        {cls && group ? (
           <div className="space-y-5">
             <div>
               <p className="text-lg font-semibold">{group.name}</p>
               <p className="text-sm text-muted-foreground">{group.audience}</p>
-              <p className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
-                <MapPin className="size-4" aria-hidden />
-                {locationLabel(group, branchesById, roomsById)}
-              </p>
+              <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <dt className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <MapPin className="size-3.5" aria-hidden />
+                    الفرع
+                  </dt>
+                  <dd className="font-medium">{cls.branch?.name}</dd>
+                </div>
+                <div>
+                  <dt className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <MapPin className="size-3.5" aria-hidden />
+                    القاعة
+                  </dt>
+                  <dd className="font-medium">{cls.room?.name}</dd>
+                </div>
+              </dl>
             </div>
             <div className="space-y-3 border-t pt-4">
-              {team?.supervisor && (
+              {cls.supervisor && (
                 <div className="flex items-center justify-between gap-2">
-                  <PersonCell name={fullName(team.supervisor)} size="sm" />
+                  <Link href={`/admin/teachers/${cls.supervisor.id}`} className="min-w-0 hover:opacity-80">
+                    <PersonCell name={fullName(cls.supervisor)} size="sm" />
+                  </Link>
                   <TeacherRoleBadge role="SUPERVISOR" />
                 </div>
               )}
-              {team?.assistants.map((t) => (
+              {cls.assistants.map((t) => (
                 <div key={t.id} className="flex items-center justify-between gap-2">
                   <PersonCell name={fullName(t)} size="sm" />
                   <TeacherRoleBadge role="ASSISTANT" />
@@ -138,7 +151,7 @@ export function StudentOverview({ student, lookups }: { student: Student; lookup
                 <ShieldCheck className="size-3.5" aria-hidden />
                 مواعيد الحصص
               </p>
-              <ScheduleSummary schedule={schedulesOf(group.id, lookups.schedules)} />
+              <ScheduleSummary schedule={schedulesOf(cls.groupClass.id, lookups.schedules)} />
             </div>
           </div>
         ) : (

@@ -6,7 +6,7 @@ import { toast } from "sonner"
 
 import type { RowAction } from "@/components/shared/actions-menu"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
-import { fullName, type Lookups } from "@/lib/domain"
+import { fullName, indexLookups, studentClass, type Lookups } from "@/lib/domain"
 import { labels } from "@/lib/i18n"
 import type { Student } from "@/types/domain"
 
@@ -87,9 +87,12 @@ export function useStudentDialogs({
           onOpenChange={close}
           student={student}
           lookups={lookups}
-          onConfirm={(groupId) => {
-            const group = lookups.groups.find((g) => g.id === groupId)
-            commit({ ...student, groupId }, `تم نقل ${fullName(student)} إلى ${group?.name ?? ""}`)
+          onConfirm={(groupClassId) => {
+            const target = studentClass({ groupClassId }, indexLookups(lookups))
+            commit(
+              { ...student, groupClassId },
+              `تم نقل ${fullName(student)} إلى ${target?.group?.name ?? ""} — ${target?.branch?.name ?? ""}`
+            )
           }}
         />
       )}

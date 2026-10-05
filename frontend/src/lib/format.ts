@@ -116,6 +116,8 @@ export const countLabels = {
     pluralize(n, { one: "معلم واحد", two: "معلمان", few: "معلمين", many: "معلمًا" }),
   rooms: (n: number) =>
     pluralize(n, { one: "قاعة واحدة", two: "قاعتان", few: "قاعات", many: "قاعة" }),
+  classes: (n: number) =>
+    pluralize(n, { one: "حلقة واحدة", two: "حلقتان", few: "حلقات", many: "حلقة" }),
   sessions: (n: number) =>
     pluralize(n, { one: "حصة واحدة", two: "حصتان", few: "حصص", many: "حصة" }),
 }

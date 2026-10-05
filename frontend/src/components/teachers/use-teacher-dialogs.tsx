@@ -6,9 +6,9 @@ import { toast } from "sonner"
 
 import type { RowAction } from "@/components/shared/actions-menu"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
-import { fullName, teacherAssignments } from "@/lib/domain"
+import { fullName, teacherAssignments, type Lookups } from "@/lib/domain"
 import { labels } from "@/lib/i18n"
-import type { Group, Teacher } from "@/types/domain"
+import type { Teacher } from "@/types/domain"
 
 import { TeacherFormSheet } from "./teacher-form-sheet"
 
@@ -24,10 +24,10 @@ type DialogState = {
 const mockSaved = { description: labels.common.mockNotice }
 
 export function useTeacherDialogs({
-  groups,
+  lookups,
   onChange,
 }: {
-  groups: Group[]
+  lookups: Lookups
   onChange?: (teacher: Teacher, isNew: boolean) => void
 }) {
   const [state, setState] = useState<DialogState | null>(null)
@@ -54,7 +54,7 @@ export function useTeacherDialogs({
 
   const teacher = state?.teacher
   const supervised = teacher
-    ? teacherAssignments(teacher.id, groups).filter((a) => a.role === "SUPERVISOR")
+    ? teacherAssignments(teacher.id, lookups).filter((a) => a.role === "SUPERVISOR")
     : []
 
   const dialogs = (
@@ -65,7 +65,7 @@ export function useTeacherDialogs({
           open={state.open}
           onOpenChange={close}
           teacher={teacher}
-          groups={groups}
+          lookups={lookups}
           onSave={(saved) =>
             commit(
               saved,
@@ -83,7 +83,7 @@ export function useTeacherDialogs({
           description={
             supervised.length > 0
               ? `${fullName(teacher)} هو المعلم المشرف على: ${supervised
-                  .map((a) => a.group.name)
+                  .map((a) => `${a.group?.name ?? ""} (${a.branch?.name ?? ""})`)
                   .join("، ")}. يجب تعيين مشرف بديل لهذه المجموعات بعد الإيقاف.`
               : `سيصبح ${fullName(teacher)} غير نشط ولن يظهر عند تعيين المعلمين في المجموعات.`
           }

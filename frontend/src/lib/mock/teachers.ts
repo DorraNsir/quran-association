@@ -114,6 +114,26 @@ export const teachers: Teacher[] = [
     joinedAt: "2024-09-15",
     qualification: "طالب بجامعة الزيتونة",
   },
+  {
+    id: "t12",
+    firstName: "حمدي",
+    lastName: "بن عثمان",
+    gender: "MALE",
+    phone: "26418593",
+    status: "ACTIVE",
+    joinedAt: "2026-09-01",
+    qualification: "إجازة في رواية حفص عن عاصم",
+  },
+  {
+    id: "t13",
+    firstName: "درة",
+    lastName: "بن سالم",
+    gender: "FEMALE",
+    phone: "53962140",
+    status: "ACTIVE",
+    joinedAt: "2026-09-01",
+    qualification: "حافظة لكتاب الله",
+  },
 ]
 
 /** The signed-in user for this mock phase: an admin who also teaches. */

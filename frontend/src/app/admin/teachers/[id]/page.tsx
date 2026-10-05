@@ -24,20 +24,16 @@ import { TeacherProfileActions } from "@/components/teachers/teacher-profile-act
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
-  countActiveStudentsByGroup,
+  countActiveStudentsByClass,
   fullName,
-  indexLookups,
-  locationLabel,
-  roomName,
   schedulesOf,
-  sessionPlace,
   teacherAssignments,
   teacherWeeklySlots,
   weeklyMinutes,
 } from "@/lib/domain"
 import { countLabels, formatDate, formatDuration } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { currentUser, groups, lookups, schedules, students, teachers } from "@/lib/mock"
+import { currentUser, lookups, schedules, students, teachers } from "@/lib/mock"
 import { cn } from "@/lib/utils"
 
 export function generateStaticParams() {
@@ -56,12 +52,12 @@ export default async function TeacherProfilePage(props: PageProps<"/admin/teache
   if (!teacher) notFound()
 
   const name = fullName(teacher)
-  const { branchesById, roomsById } = indexLookups(lookups)
-  const studentCounts = countActiveStudentsByGroup(students)
-  const assignments = teacherAssignments(teacher.id, groups)
+  const studentCounts = countActiveStudentsByClass(students)
+  // Assignments are per class: the same group can appear twice with different branches
+  const assignments = teacherAssignments(teacher.id, lookups)
   const supervising = assignments.filter((a) => a.role === "SUPERVISOR").length
   const assisting = assignments.length - supervising
-  const weeklySlots = teacherWeeklySlots(teacher.id, groups, schedules)
+  const weeklySlots = teacherWeeklySlots(teacher.id, lookups)
   const minutes = weeklyMinutes(weeklySlots.map((e) => e.slot))
   const isAdmin = currentUser.teacherId === teacher.id && currentUser.roles.includes("ADMIN")
 
@@ -89,7 +85,7 @@ export default async function TeacherProfilePage(props: PageProps<"/admin/teache
             <MetaItem icon={CalendarDays}>منذ {formatDate(teacher.joinedAt)}</MetaItem>
           </>
         }
-        actions={<TeacherProfileActions teacher={teacher} groups={groups} />}
+        actions={<TeacherProfileActions teacher={teacher} lookups={lookups} />}
       />
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -104,10 +100,10 @@ export default async function TeacherProfilePage(props: PageProps<"/admin/teache
               />
             ) : (
               <ul className="grid gap-3 sm:grid-cols-2">
-                {assignments.map(({ group, role }) => (
-                  <li key={group.id}>
+                {assignments.map(({ groupClass, group, branch, room, role }) => (
+                  <li key={groupClass.id}>
                     <Link
-                      href={`/admin/groups/${group.id}`}
+                      href={`/admin/groups/${groupClass.groupId}`}
                       className={cn(
                         "flex h-full flex-col gap-3 rounded-lg border p-4 transition-colors hover:bg-muted/50",
                         role === "SUPERVISOR" && "border-primary/40 bg-brand-soft/30"
@@ -115,22 +111,20 @@ export default async function TeacherProfilePage(props: PageProps<"/admin/teache
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <p className="font-semibold">{group.name}</p>
-                          <p className="text-xs text-muted-foreground">{group.audience}</p>
+                          <p className="font-semibold">{group?.name}</p>
+                          <p className="text-xs text-muted-foreground">{group?.audience}</p>
                         </div>
                         <TeacherRoleBadge role={role} />
                       </div>
                       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <MapPin className="size-3.5" aria-hidden />
-                        {locationLabel(group, branchesById, roomsById)}
+                        {branch?.name} · {room?.name}
+                        {groupClass.status !== "ACTIVE" && ` · ${labels.status[groupClass.status]}`}
                       </p>
                       <div className="flex items-end justify-between gap-2 border-t pt-3">
-                        <ScheduleSummary
-                          schedule={schedulesOf(group.id, schedules)}
-                          detail={(s) => sessionPlace(s, group, branchesById, roomsById)}
-                        />
+                        <ScheduleSummary schedule={schedulesOf(groupClass.id, schedules)} />
                         <span className="text-xs whitespace-nowrap text-muted-foreground">
-                          {countLabels.students(studentCounts.get(group.id) ?? 0)}
+                          {countLabels.students(studentCounts.get(groupClass.id) ?? 0)}
                         </span>
                       </div>
                     </Link>
@@ -201,11 +195,11 @@ export default async function TeacherProfilePage(props: PageProps<"/admin/teache
         }
       >
         <WeeklyScheduleGrid
-          entries={weeklySlots.map(({ slot, group, role }) => ({
+          entries={weeklySlots.map(({ slot, group, branch, room, groupClass, role }) => ({
             slot,
-            title: group.name,
-            subtitle: `${labels.teachingRole[role]} · ${branchesById.get(slot.branchId)?.name ?? ""} · ${roomName(roomsById, slot.roomId)}`,
-            href: `/admin/groups/${group.id}`,
+            title: group?.name ?? "—",
+            subtitle: `${labels.teachingRole[role]} · ${branch?.name ?? ""} · ${room?.name ?? ""}`,
+            href: `/admin/groups/${groupClass.groupId}`,
             emphasis: role === "SUPERVISOR",
           }))}
         />

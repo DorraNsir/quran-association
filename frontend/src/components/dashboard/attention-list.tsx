@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle2, ChevronLeft } from "lucide-react"
 import Link from "next/link"
 
 import { SectionCard } from "@/components/shared/info-list"
-import { countActiveStudentsByGroup, fullName, indexById, type Lookups } from "@/lib/domain"
+import { countActiveStudentsByClass, describeClass, fullName, indexLookups, isRunning, type ClassView, type Lookups } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import type { Student } from "@/types/domain"
 
@@ -18,31 +18,32 @@ const LARGE_GROUP = 6
 
 /** "What needs an admin decision?" — derived from the data, not hard-coded. */
 export function AttentionList({ lookups, students }: { lookups: Lookups; students: Student[] }) {
-  const teachersById = indexById(lookups.teachers)
-  const counts = countActiveStudentsByGroup(students)
-  const activeGroups = lookups.groups.filter((g) => g.status === "ACTIVE")
+  const indexes = indexLookups(lookups)
+  const counts = countActiveStudentsByClass(students)
   const alerts: Alert[] = []
+  // Checked per class: each class has its own supervisor, assistants and size
+  const classes = lookups.groupClasses.map((c) => describeClass(c, indexes))
+  const name = (v: ClassView) => `${v.group?.name ?? ""} (${v.branch?.name ?? ""})`
 
-  for (const group of lookups.groups) {
-    const supervisor = teachersById.get(group.supervisorId)
-    if (group.status !== "ARCHIVED" && supervisor?.status === "INACTIVE") {
+  for (const v of classes) {
+    if (v.groupClass.status !== "ARCHIVED" && v.supervisor?.status === "INACTIVE") {
       alerts.push({
-        id: `sup-${group.id}`,
-        title: `${group.name}: المشرف غير نشط`,
-        detail: `${fullName(supervisor)} موقوف حاليًا — يلزم تعيين مشرف بديل.`,
-        href: `/admin/groups/${group.id}`,
+        id: `sup-${v.groupClass.id}`,
+        title: `${name(v)}: المشرف غير نشط`,
+        detail: `${fullName(v.supervisor)} موقوف حاليًا — يلزم تعيين مشرف بديل.`,
+        href: `/admin/groups/${v.groupClass.groupId}`,
       })
     }
   }
 
-  for (const group of activeGroups) {
-    const size = counts.get(group.id) ?? 0
-    if (group.assistantIds.length === 0 && size >= LARGE_GROUP) {
+  for (const v of classes.filter((c) => isRunning(c.groupClass, indexes.groupsById))) {
+    const size = counts.get(v.groupClass.id) ?? 0
+    if (v.assistants.length === 0 && size >= LARGE_GROUP) {
       alerts.push({
-        id: `asst-${group.id}`,
-        title: `${group.name} بدون معلم مساعد`,
-        detail: `${countLabels.students(size)} مع معلم مشرف فقط.`,
-        href: `/admin/groups/${group.id}`,
+        id: `asst-${v.groupClass.id}`,
+        title: `${name(v)} بدون معلم مساعد`,
+        detail: `${countLabels.students(size)} مع المدرس المشرف فقط.`,
+        href: `/admin/groups/${v.groupClass.groupId}`,
       })
     }
   }
@@ -58,12 +59,12 @@ export function AttentionList({ lookups, students }: { lookups: Lookups; student
   }
 
   for (const branch of lookups.branches.filter((b) => b.status === "INACTIVE")) {
-    const affected = lookups.groups.filter((g) => g.branchId === branch.id && g.status !== "ARCHIVED")
+    const affected = classes.filter((v) => v.groupClass.branchId === branch.id && v.groupClass.status !== "ARCHIVED")
     if (affected.length > 0) {
       alerts.push({
         id: `branch-${branch.id}`,
         title: `${branch.name} مغلق مؤقتًا`,
-        detail: `${countLabels.groups(affected.length)} مرتبطة بهذا الفرع.`,
+        detail: `${countLabels.classes(affected.length)} مرتبطة بهذا الفرع.`,
         href: "/admin/groups",
       })
     }

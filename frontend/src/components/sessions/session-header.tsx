@@ -1,14 +1,15 @@
-import { BookOpen, CalendarDays, Clock, DoorOpen, MapPin } from "lucide-react"
+import { BookOpen, CalendarDays, Clock, DoorOpen, MapPin, ShieldCheck } from "lucide-react"
 
 import { SessionStatusBadge } from "@/components/attendance/attendance-badges"
 import { MetaItem, ProfileHeader } from "@/components/shared/profile"
+import { fullName } from "@/lib/domain"
 import { formatTimeRange, formatWeekdayDate } from "@/lib/format"
 
 import type { SessionRow } from "./use-session-rows"
 
-/** Who / when / where of one dated session, shared by its details and attendance pages. */
+/** Who / when / where of one dated session (its class: branch, room, supervisor). */
 export function SessionHeader({ row, actions }: { row: SessionRow; actions?: React.ReactNode }) {
-  const { session, group, branch, room } = row
+  const { session, group, branch, room, supervisor } = row
   return (
     <ProfileHeader
       name={group?.name ?? "—"}
@@ -26,6 +27,7 @@ export function SessionHeader({ row, actions }: { row: SessionRow; actions?: Rea
           </MetaItem>
           <MetaItem icon={MapPin}>{branch?.name}</MetaItem>
           <MetaItem icon={DoorOpen}>{room?.name}</MetaItem>
+          {supervisor && <MetaItem icon={ShieldCheck}>المدرس المشرف: {fullName(supervisor)}</MetaItem>}
         </>
       }
       actions={actions}

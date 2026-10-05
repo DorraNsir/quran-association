@@ -7,18 +7,15 @@ import { fullName } from "@/lib/domain"
 import { countLabels, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import type { Branch, Group, Room, Session, Teacher, WeeklySchedule } from "@/types/domain"
+import type { ClassView } from "@/lib/domain"
+import type { Group, Session, WeeklySchedule } from "@/types/domain"
 
 import { toMinutes } from "./calendar-utils"
 
-/** A session with everything needed to display it, resolved once by the calendar. */
-export interface CalendarEntry {
+/** A class's weekly slot with everything needed to display it, resolved once by the calendar. */
+export interface CalendarEntry extends ClassView {
   schedule: WeeklySchedule
   group: Group
-  branch?: Branch
-  room?: Room
-  supervisor?: Teacher
-  assistants: Teacher[]
   studentCount: number
   tone: number
   /** The dated session for the displayed date, when one exists (Part 3) */
@@ -74,7 +71,7 @@ export function CalendarEvent({
             e.stopPropagation()
             onOpen(entry)
           }}
-          aria-label={`${group.name}، ${labels.weekday[schedule.day]} ${time}، ${room?.name ?? ""}${cancelled ? "، ملغاة" : ""}`}
+          aria-label={`${group.name}، ${labels.weekday[schedule.day]} ${time}، ${room?.name ?? ""}، ${supervisor ? fullName(supervisor) : ""}${cancelled ? "، ملغاة" : ""}`}
           className={cn(
             "@container flex flex-col gap-0.5 overflow-hidden rounded-md border border-s-[3px] border-black/5 px-1.5 py-1 text-start text-xs leading-tight shadow-xs outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
             toneOf(entry.tone).block,

@@ -19,7 +19,7 @@ import { PhoneLink } from "@/components/shared/info-list"
 import { PageHeader } from "@/components/shared/page-header"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
-import { ageOn, fullName, indexLookups, type Lookups } from "@/lib/domain"
+import { ageOn, fullName, indexLookups, studentClass, type Lookups } from "@/lib/domain"
 import { countLabels, formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { MOCK_TODAY } from "@/lib/mock/reference-date"
@@ -42,9 +42,12 @@ export function StudentsView({
   const [query, setQuery] = useState("")
   const [groupId, setGroupId] = useState(initialGroupId ?? ALL)
   const [branchId, setBranchId] = useState(ALL)
+  const [supervisorId, setSupervisorId] = useState(ALL)
   const [status, setStatus] = useState(ALL)
 
-  const { branchesById, groupsById } = indexLookups(lookups)
+  const indexes = indexLookups(lookups)
+  /** Student → class → group, branch, supervisor (never read from the group itself) */
+  const classOf = (s: Student) => studentClass(s, indexes)
   const { run, dialogs } = useStudentDialogs({
     lookups,
     onChange: (saved, isNew) =>
@@ -62,25 +65,23 @@ export function StudentsView({
         [s.phone, s.guardianPhone].some((p) => p?.includes(digits))
       if (!byName && !byPhone) return false
     }
-    if (groupId !== ALL && s.groupId !== groupId) return false
-    if (branchId !== ALL && groupsById.get(s.groupId)?.branchId !== branchId) return false
+    const cls = classOf(s)
+    if (groupId !== ALL && cls?.group?.id !== groupId) return false
+    if (branchId !== ALL && cls?.branch?.id !== branchId) return false
+    if (supervisorId !== ALL && cls?.supervisor?.id !== supervisorId) return false
     if (status !== ALL && s.status !== status) return false
     return true
   })
 
-  const hasActiveFilters = Boolean(query) || [groupId, branchId, status].some((v) => v !== ALL)
+  const hasActiveFilters = Boolean(query) || [groupId, branchId, supervisorId, status].some((v) => v !== ALL)
   const resetFilters = () => {
     setQuery("")
     setGroupId(ALL)
     setBranchId(ALL)
     setStatus(ALL)
+    setSupervisorId(ALL)
   }
 
-  const groupOf = (s: Student) => groupsById.get(s.groupId)
-  const branchOf = (s: Student) => {
-    const group = groupOf(s)
-    return group ? branchesById.get(group.branchId) : undefined
-  }
 
   const columns: Column<Student>[] = [
     {
@@ -106,15 +107,30 @@ export function StudentsView({
       id: "group",
       header: "المجموعة",
       cell: (s) => {
-        const group = groupOf(s)
+        const group = classOf(s)?.group
         return group ? <GroupBadge name={group.name} href={`/admin/groups/${group.id}`} /> : "—"
+      },
+    },
+    {
+      // Comes from the student's class: two students of the same group can have different supervisors
+      id: "supervisor",
+      header: "المدرس المشرف",
+      cell: (s) => {
+        const supervisor = classOf(s)?.supervisor
+        return supervisor ? (
+          <Link href={`/admin/teachers/${supervisor.id}`} className="whitespace-nowrap hover:text-primary">
+            {fullName(supervisor)}
+          </Link>
+        ) : (
+          "—"
+        )
       },
     },
     {
       id: "branch",
       header: "الفرع",
-      className: "hidden xl:table-cell",
-      cell: (s) => <span className="text-muted-foreground">{branchOf(s)?.name ?? "—"}</span>,
+      className: "hidden 2xl:table-cell",
+      cell: (s) => <span className="text-muted-foreground">{classOf(s)?.branch?.name ?? "—"}</span>,
     },
     {
       id: "registered",
@@ -178,6 +194,15 @@ export function StudentsView({
           options={lookups.branches.map((b) => ({ value: b.id, label: b.name }))}
         />
         <FilterSelect
+          label="المدرس المشرف"
+          allLabel="كل المشرفين"
+          value={supervisorId}
+          onValueChange={setSupervisorId}
+          options={lookups.teachers
+            .filter((t) => lookups.groupClasses.some((c) => c.supervisorId === t.id))
+            .map((t) => ({ value: t.id, label: fullName(t) }))}
+        />
+        <FilterSelect
           label="الحالة"
           allLabel="كل الحالات"
           value={status}
@@ -187,7 +212,7 @@ export function StudentsView({
       </FilterBar>
 
       <DataTable
-        key={`${query}|${groupId}|${branchId}|${status}`}
+        key={`${query}|${groupId}|${branchId}|${supervisorId}|${status}`}
         caption="قائمة الطلبة"
         columns={columns}
         rows={filtered}
@@ -213,7 +238,7 @@ export function StudentsView({
           )
         }
         renderMobileCard={(s) => {
-          const group = groupOf(s)
+          const cls = classOf(s)
           return (
             <div className="space-y-3">
               <div className="flex items-start justify-between gap-2">
@@ -221,15 +246,21 @@ export function StudentsView({
                   <PersonCell
                     name={fullName(s)}
                     photoUrl={s.photoUrl}
-                    secondary={`${ageOn(s.dateOfBirth, MOCK_TODAY)} سنة · ${branchOf(s)?.name ?? ""}`}
+                    secondary={`${ageOn(s.dateOfBirth, MOCK_TODAY)} سنة · ${cls?.branch?.name ?? ""}`}
                   />
                 </Link>
                 <ActionsMenu label={`إجراءات ${fullName(s)}`} actions={studentActions(s, run)} />
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge status={s.status} />
-                {group && <GroupBadge name={group.name} href={`/admin/groups/${group.id}`} />}
+                {cls?.group && <GroupBadge name={cls.group.name} href={`/admin/groups/${cls.group.id}`} />}
               </div>
+              {cls?.supervisor && (
+                <p className="text-sm">
+                  <span className="text-xs text-muted-foreground">المدرس المشرف: </span>
+                  {fullName(cls.supervisor)}
+                </p>
+              )}
               <dl className="grid grid-cols-2 gap-2 text-sm">
                 <div>
                   <dt className="text-xs text-muted-foreground">الهاتف</dt>

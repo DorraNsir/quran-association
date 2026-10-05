@@ -9,10 +9,11 @@ import { ALL, FilterBar, FilterSelect } from "@/components/shared/filters"
 import { PageHeader } from "@/components/shared/page-header"
 import { Button } from "@/components/ui/button"
 import {
-  countActiveStudentsByGroup,
+  countActiveStudentsByClass,
   fullName,
-  groupTeacherIds,
-  groupTeachers,
+  classTeacherIds,
+  describeClass,
+  isRunning,
   indexLookups,
   weeklyMinutes,
   type Lookups,
@@ -68,34 +69,34 @@ export function CalendarView({
   const [removing, setRemoving] = useState<{ entry: CalendarEntry; open: boolean } | null>(null)
 
   const live: Lookups = { ...lookups, schedules }
-  const { branchesById, roomsById, groupsById, teachersById } = indexLookups(live)
-  const studentCounts = countActiveStudentsByGroup(students)
+  const indexes = indexLookups(live)
+  const { branchesById, classesById, groupsById } = indexes
+  const studentCounts = countActiveStudentsByClass(students)
   const hours = visibleHours(lookups.schedules)
 
-  // ── Entries: active groups only, resolved once, then filtered ──
+  // ── Entries: one per slot of a running class; place and team come from the class ──
   const entries: CalendarEntry[] = schedules.flatMap((schedule) => {
-    const group = groupsById.get(schedule.groupId)
-    if (!group || group.status !== "ACTIVE") return []
-    const { supervisor, assistants } = groupTeachers(group, teachersById)
+    const groupClass = classesById.get(schedule.groupClassId)
+    if (!groupClass || !isRunning(groupClass, groupsById)) return []
+    const view = describeClass(groupClass, indexes)
+    if (!view.group) return []
     return [
       {
+        ...view,
+        group: view.group,
         schedule,
-        group,
-        branch: branchesById.get(schedule.branchId),
-        room: roomsById.get(schedule.roomId),
-        supervisor,
-        assistants,
-        studentCount: studentCounts.get(group.id) ?? 0,
-        tone: Math.max(0, lookups.branches.findIndex((b) => b.id === schedule.branchId)),
+        studentCount: studentCounts.get(groupClass.id) ?? 0,
+        tone: Math.max(0, lookups.branches.findIndex((b) => b.id === groupClass.branchId)),
       },
     ]
   })
+  // Group filter keeps every class of the group; teacher filter keeps only that teacher's classes
   const visible = entries.filter(
-    ({ schedule, group }) =>
-      (filters.branch === ALL || schedule.branchId === filters.branch) &&
-      (filters.room === ALL || schedule.roomId === filters.room) &&
+    ({ groupClass, group }) =>
+      (filters.branch === ALL || groupClass.branchId === filters.branch) &&
+      (filters.room === ALL || groupClass.roomId === filters.room) &&
       (filters.group === ALL || group.id === filters.group) &&
-      (filters.teacher === ALL || groupTeacherIds(group).includes(filters.teacher))
+      (filters.teacher === ALL || classTeacherIds(groupClass).includes(filters.teacher))
   )
   const { sessions } = useOperations()
   const sessionsById = new Map(sessions.map((s) => [s.id, s]))
@@ -111,25 +112,27 @@ export function CalendarView({
   const hasActiveFilters = Object.values(filters).some((v) => v !== ALL)
 
   // ── Actions ──
-  /** Active filters pre-fill the form (e.g. filtered on a group → schedule that group) */
-  const presetFromFilters = (): SchedulePreset => ({
-    ...(filters.group !== ALL ? { groupId: filters.group } : {}),
-    ...(filters.branch !== ALL ? { branchId: filters.branch } : {}),
-    ...(filters.room !== ALL ? { roomId: filters.room } : {}),
-  })
+  /** Filtering on a group that has a single running class pre-selects that class */
+  const presetFromFilters = (): SchedulePreset => {
+    const running = live.groupClasses.filter((c) => c.groupId === filters.group && isRunning(c, groupsById))
+    return {
+      ...(filters.group !== ALL && running.length === 1 ? { groupClassId: running[0].id } : {}),
+      ...(filters.room !== ALL ? { roomId: filters.room } : {}),
+    }
+  }
   const openCreate = (preset?: SchedulePreset) =>
     setFormState((prev) => ({ key: (prev?.key ?? 0) + 1, open: true, preset: { ...presetFromFilters(), ...preset } }))
   const slotPreset = (day: ISODate, start: string, roomId?: ID): SchedulePreset => ({
     day: weekdayOf(day),
     start,
     end: fromMinutes(toMinutes(start) + DEFAULT_LENGTH),
-    ...(roomId ? { roomId, branchId: roomsById.get(roomId)?.branchId } : {}),
+    ...(roomId ? { roomId } : {}),
   })
 
   function saveSchedule(saved: WeeklySchedule) {
     const exists = schedules.some((s) => s.id === saved.id)
     setSchedules((prev) => (exists ? prev.map((s) => (s.id === saved.id ? saved : s)) : [...prev, saved]))
-    const group = groupsById.get(saved.groupId)
+    const group = groupsById.get(classesById.get(saved.groupClassId)?.groupId ?? "")
     toast.success(
       `${exists ? "تم تعديل حصة" : "تمت برمجة حصة"} ${group?.name ?? ""} — ${labels.weekday[saved.day]} ${formatTimeRange(saved.start, saved.end)}`,
       mockSaved
@@ -182,7 +185,7 @@ export function CalendarView({
           </span>
         </>
       ),
-      entries: entriesOn(date).filter((e) => e.schedule.roomId === room.id),
+      entries: entriesOn(date).filter((e) => e.groupClass.roomId === room.id),
       emptyHint: `انقر لبرمجة حصة في ${room.name}`,
       onEmptyClick: (start) => openCreate(slotPreset(date, start, room.id)),
     }))
@@ -314,6 +317,7 @@ export function CalendarView({
           schedule={formState.schedule}
           preset={formState.preset}
           lookups={live}
+          students={students}
           onSave={saveSchedule}
         />
       )}
