@@ -1,8 +1,9 @@
 "use client"
 
-import { BookOpen, CalendarDays, Clock, DoorOpen, MapPin, Pencil, Trash2, Users } from "lucide-react"
+import { BookOpen, CalendarDays, ClipboardCheck, Clock, DoorOpen, MapPin, Pencil, Trash2, Users } from "lucide-react"
 import Link from "next/link"
 
+import { SessionStatusBadge } from "@/components/attendance/attendance-badges"
 import { StatusBadge, TeacherRoleBadge } from "@/components/shared/badges"
 import { InfoList } from "@/components/shared/info-list"
 import { PersonCell } from "@/components/shared/user-avatar"
@@ -17,12 +18,12 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { fullName } from "@/lib/domain"
-import { countLabels, formatDuration, formatTimeRange } from "@/lib/format"
+import { countLabels, formatDate, formatDuration, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import type { ISODate } from "@/types/domain"
 
 import type { CalendarEntry } from "./calendar-event"
-import { formatFullDate, toMinutes } from "./calendar-utils"
+import { toMinutes } from "./calendar-utils"
 
 export function ScheduleDetailsSheet({
   entry,
@@ -66,7 +67,7 @@ export function ScheduleDetailsSheet({
             items={[
               {
                 label: "اليوم",
-                value: `كل ${labels.weekday[schedule.day]}${date ? ` · ${formatFullDate(date)}` : ""}`,
+                value: `كل ${labels.weekday[schedule.day]}${date ? ` · ${formatDate(date)}` : ""}`,
                 icon: CalendarDays,
               },
               {
@@ -86,6 +87,26 @@ export function ScheduleDetailsSheet({
               { label: "عدد الطلبة", value: countLabels.students(entry.studentCount), icon: Users },
             ]}
           />
+
+          {entry.occurrence && (
+            <section className="space-y-2 rounded-lg border bg-muted/30 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold">حصة {formatDate(entry.occurrence.date)}</h3>
+                <SessionStatusBadge status={entry.occurrence.status} />
+              </div>
+              {entry.occurrence.status === "CANCELLED" && (
+                <p className="text-xs text-muted-foreground">
+                  أُلغيت هذه الحصة فقط{entry.occurrence.cancellationReason ? ` (${entry.occurrence.cancellationReason})` : ""}؛ البرنامج الأسبوعي لم يتغيّر.
+                </p>
+              )}
+              <Button asChild size="sm" className="w-full">
+                <Link href={`/admin/sessions/${entry.occurrence.id}`}>
+                  <ClipboardCheck />
+                  الحصة وتسجيل الحضور
+                </Link>
+              </Button>
+            </section>
+          )}
 
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">فريق التدريس</h3>

@@ -17,6 +17,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
+import { GroupAttendance } from "@/components/attendance/group-attendance"
 import { GroupProfileActions, GroupStudentsTable } from "@/components/groups/group-details-client"
 import { StatusBadge, TeacherRoleBadge } from "@/components/shared/badges"
 import { ComingSoon } from "@/components/shared/empty-state"
@@ -40,7 +41,7 @@ import {
 } from "@/lib/domain"
 import { formatDate, formatDuration } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { groups, lookups, schedules, students } from "@/lib/mock"
+import { groups, lookups, MOCK_TODAY, schedules, students } from "@/lib/mock"
 import { cn } from "@/lib/utils"
 import type { Teacher, TeachingRole, WeeklySchedule } from "@/types/domain"
 
@@ -232,10 +233,8 @@ export default async function GroupDetailsPage(props: PageProps<"/admin/groups/[
             value: "attendance",
             label: "الحضور",
             icon: <ClipboardCheck aria-hidden />,
-            later: true,
             content: (
-              <ComingSoon icon={ClipboardCheck} title="حضور المجموعة"
-                description="تسجيل حضور الطلبة والمعلمين في كل حصة، وإحصائيات المواظبة للمجموعة." />
+              <GroupAttendance groupId={group.id} lookups={lookups} students={students} today={MOCK_TODAY} />
             ),
           },
           {

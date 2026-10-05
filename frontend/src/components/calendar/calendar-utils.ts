@@ -1,46 +1,10 @@
-import { weekdayOf } from "@/lib/domain"
-import { defaultLocale, locales, WEEK_ORDER } from "@/lib/i18n"
-import type { ISODate, TimeOfDay, Weekday, WeeklySchedule } from "@/types/domain"
+import { addDays, startOfWeek } from "@/lib/dates"
+import { formatDateRange } from "@/lib/format"
+import type { TimeOfDay, WeeklySchedule } from "@/types/domain"
 
-/** Dates are handled as UTC ISO strings so server and client agree. */
-export function addDays(date: ISODate, days: number): ISODate {
-  const d = new Date(`${date}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + days)
-  return d.toISOString().slice(0, 10)
-}
-
-/** Weeks start on Monday, as in Tunisia. */
-export function startOfWeek(date: ISODate): ISODate {
-  const day = new Date(`${date}T00:00:00Z`).getUTCDay()
-  return addDays(date, -((day + 6) % 7))
-}
-
-export function weekDates(date: ISODate) {
+export function formatWeekRange(date: string) {
   const start = startOfWeek(date)
-  return WEEK_ORDER.map((weekday, i) => ({ weekday, date: addDays(start, i) }))
-}
-
-export function dateOfWeekday(date: ISODate, weekday: Weekday) {
-  return addDays(startOfWeek(date), WEEK_ORDER.indexOf(weekday))
-}
-
-export { weekdayOf }
-
-const intl = locales[defaultLocale].intl
-const dayMonth = new Intl.DateTimeFormat(intl, { day: "numeric", month: "long", timeZone: "UTC" })
-const dayMonthYear = new Intl.DateTimeFormat(intl, { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })
-const dayNumber = new Intl.DateTimeFormat(intl, { day: "numeric", timeZone: "UTC" })
-
-const asDate = (date: ISODate) => new Date(`${date}T00:00:00Z`)
-
-export const formatDayNumber = (date: ISODate) => dayNumber.format(asDate(date))
-export const formatDayMonth = (date: ISODate) => dayMonth.format(asDate(date))
-export const formatFullDate = (date: ISODate) => dayMonthYear.format(asDate(date))
-
-export function formatWeekRange(date: ISODate) {
-  const start = startOfWeek(date)
-  const end = addDays(start, 6)
-  return `${formatDayMonth(start)} – ${formatFullDate(end)}`
+  return formatDateRange(start, addDays(start, 6))
 }
 
 export function toMinutes(time: TimeOfDay) {

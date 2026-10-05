@@ -30,6 +30,36 @@ export function formatDate(date: ISODate) {
   return dateFormatter.format(new Date(date))
 }
 
+const dayNumberFormatter = new Intl.DateTimeFormat(intlLocale, { day: "numeric", timeZone: "UTC" })
+const dayMonthFormatter = new Intl.DateTimeFormat(intlLocale, { day: "numeric", month: "long", timeZone: "UTC" })
+const weekdayDateFormatter = new Intl.DateTimeFormat(intlLocale, {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+})
+
+/** "5" */
+export function formatDayNumber(date: ISODate) {
+  return dayNumberFormatter.format(new Date(date))
+}
+
+/** "5 أكتوبر" */
+export function formatDayMonth(date: ISODate) {
+  return dayMonthFormatter.format(new Date(date))
+}
+
+/** "الأحد 11 أكتوبر 2026" */
+export function formatWeekdayDate(date: ISODate) {
+  return weekdayDateFormatter.format(new Date(date))
+}
+
+/** "28 سبتمبر – 4 أكتوبر 2026" */
+export function formatDateRange(from: ISODate, to: ISODate) {
+  return `${formatDayMonth(from)} – ${formatDate(to)}`
+}
+
 export function formatShortDate(date: ISODate) {
   return shortDateFormatter.format(new Date(date))
 }

@@ -7,7 +7,7 @@ import { fullName } from "@/lib/domain"
 import { countLabels, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import type { Branch, Group, Room, Teacher, WeeklySchedule } from "@/types/domain"
+import type { Branch, Group, Room, Session, Teacher, WeeklySchedule } from "@/types/domain"
 
 import { toMinutes } from "./calendar-utils"
 
@@ -21,6 +21,8 @@ export interface CalendarEntry {
   assistants: Teacher[]
   studentCount: number
   tone: number
+  /** The dated session for the displayed date, when one exists (Part 3) */
+  occurrence?: Session
 }
 
 /** Restrained per-branch accents (border + soft background), brand green first. */
@@ -60,6 +62,8 @@ export function CalendarEvent({
   const { schedule, group, room, branch, supervisor } = entry
   const minutes = toMinutes(schedule.end) - toMinutes(schedule.start)
   const time = formatTimeRange(schedule.start, schedule.end)
+  // Cancelling one date never touches the weekly schedule — only this occurrence is shown as cancelled
+  const cancelled = entry.occurrence?.status === "CANCELLED"
 
   return (
     <Tooltip>
@@ -70,15 +74,19 @@ export function CalendarEvent({
             e.stopPropagation()
             onOpen(entry)
           }}
-          aria-label={`${group.name}، ${labels.weekday[schedule.day]} ${time}، ${room?.name ?? ""}`}
+          aria-label={`${group.name}، ${labels.weekday[schedule.day]} ${time}، ${room?.name ?? ""}${cancelled ? "، ملغاة" : ""}`}
           className={cn(
             "@container flex flex-col gap-0.5 overflow-hidden rounded-md border border-s-[3px] border-black/5 px-1.5 py-1 text-start text-xs leading-tight shadow-xs outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
             toneOf(entry.tone).block,
+            cancelled && "border-dashed bg-muted/70 opacity-70 hover:bg-muted",
             className
           )}
           style={style}
         >
-          <span className="truncate font-semibold text-foreground">{shortGroupName(group.name)}</span>
+          <span className={cn("truncate font-semibold text-foreground", cancelled && "line-through")}>
+            {shortGroupName(group.name)}
+          </span>
+          {cancelled && <span className="text-[0.65rem] font-medium text-destructive">ملغاة</span>}
           <span className="truncate tabular-nums text-muted-foreground">
             {/* Narrow lanes show only the start time; the tooltip has the full range */}
             <span dir="ltr">

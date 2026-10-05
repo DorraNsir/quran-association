@@ -5,13 +5,13 @@ import { CalendarX2, DoorOpen, Plus, ShieldCheck } from "lucide-react"
 import { EmptyState } from "@/components/shared/empty-state"
 import { Button } from "@/components/ui/button"
 import { fullName } from "@/lib/domain"
-import { countLabels } from "@/lib/format"
+import { weekDates, weekdayOf } from "@/lib/dates"
+import { countLabels, formatDate, formatDayNumber } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import type { ISODate } from "@/types/domain"
 
 import { toneOf, type CalendarEntry } from "./calendar-event"
-import { formatDayNumber, formatFullDate, weekDates, weekdayOf } from "./calendar-utils"
 
 /** Phone layout: pick a day of the week, then read that day as a list. */
 export function MobileAgenda({
@@ -43,7 +43,7 @@ export function MobileAgenda({
               type="button"
               role="tab"
               aria-selected={selected}
-              aria-label={`${labels.weekday[weekday]} ${formatFullDate(d)}، ${countLabels.sessions(count)}`}
+              aria-label={`${labels.weekday[weekday]} ${formatDate(d)}، ${countLabels.sessions(count)}`}
               onClick={() => onSelectDate(d)}
               className={cn(
                 "flex flex-col items-center gap-0.5 rounded-lg border py-2 text-xs transition-colors",
@@ -67,7 +67,7 @@ export function MobileAgenda({
 
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium">
-          {labels.weekday[weekdayOf(date)]} {formatFullDate(date)}
+          {labels.weekday[weekdayOf(date)]} {formatDate(date)}
           {date === today && <span className="ms-2 text-xs text-primary">اليوم</span>}
         </p>
         <span className="text-xs text-muted-foreground">{countLabels.sessions(entries.length)}</span>

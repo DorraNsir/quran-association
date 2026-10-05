@@ -18,7 +18,8 @@ export function Providers({
         <Toaster
           theme="light"
           dir={dir}
-          position={dir === "rtl" ? "bottom-left" : "bottom-right"}
+          // Top: bottom corners are taken by sticky action bars (e.g. "save attendance")
+          position="top-center"
           richColors
         />
       </TooltipProvider>

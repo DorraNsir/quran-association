@@ -17,25 +17,16 @@ import {
   weeklyMinutes,
   type Lookups,
 } from "@/lib/domain"
-import { countLabels, formatDuration, formatTimeRange } from "@/lib/format"
+import { addDays, dateOfWeekday, startOfWeek, weekDates, weekdayOf } from "@/lib/dates"
+import { countLabels, formatDate, formatDayNumber, formatDuration, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
+import { sessionIdFor } from "@/lib/sessions"
+import { useOperations } from "@/lib/store/operations"
 import type { ID, ISODate, Student, WeeklySchedule } from "@/types/domain"
 
 import { toneOf, type CalendarEntry } from "./calendar-event"
 import { CalendarToolbar, type CalendarView as View } from "./calendar-toolbar"
-import {
-  addDays,
-  dateOfWeekday,
-  formatDayNumber,
-  formatFullDate,
-  formatWeekRange,
-  fromMinutes,
-  startOfWeek,
-  toMinutes,
-  visibleHours,
-  weekDates,
-  weekdayOf,
-} from "./calendar-utils"
+import { formatWeekRange, fromMinutes, toMinutes, visibleHours } from "./calendar-utils"
 import { MobileAgenda } from "./mobile-agenda"
 import { ScheduleDetailsSheet } from "./schedule-details-sheet"
 import { ScheduleFormSheet, type SchedulePreset } from "./schedule-form-sheet"
@@ -106,9 +97,13 @@ export function CalendarView({
       (filters.group === ALL || group.id === filters.group) &&
       (filters.teacher === ALL || groupTeacherIds(group).includes(filters.teacher))
   )
+  const { sessions } = useOperations()
+  const sessionsById = new Map(sessions.map((s) => [s.id, s]))
+  /** A day's entries, each linked to its dated session (attendance, cancellation). */
   const entriesOn = (d: ISODate) =>
     visible
       .filter((e) => e.schedule.day === weekdayOf(d))
+      .map((e) => ({ ...e, occurrence: sessionsById.get(sessionIdFor(e.schedule.id, d)) }))
       .sort((a, b) => a.schedule.start.localeCompare(b.schedule.start))
 
   const setFilter = (key: keyof CalendarFilters) => (value: string) =>
@@ -148,7 +143,7 @@ export function CalendarView({
   const step = view === "week" ? 7 : 1
   const isCurrentPeriod = view === "week" ? startOfWeek(date) === startOfWeek(today) : date === today
   const periodLabel =
-    view === "week" ? formatWeekRange(date) : `${labels.weekday[weekdayOf(date)]} ${formatFullDate(date)}`
+    view === "week" ? formatWeekRange(date) : `${labels.weekday[weekdayOf(date)]} ${formatDate(date)}`
 
   // ── Columns ──
   const weekColumns: GridColumn[] = weekDates(date).map(({ weekday, date: d }) => ({

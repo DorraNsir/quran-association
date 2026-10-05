@@ -17,6 +17,7 @@ import { PhoneLink } from "@/components/shared/info-list"
 import { Breadcrumbs } from "@/components/shared/page-header"
 import { MetaItem, ProfileHeader } from "@/components/shared/profile"
 import { ProfileTabs } from "@/components/shared/profile-tabs"
+import { StudentAttendanceHistory } from "@/components/attendance/student-attendance-history"
 import { StudentOverview } from "@/components/students/student-overview"
 import { StudentProfileActions } from "@/components/students/student-profile-actions"
 import { ageOn, fullName } from "@/lib/domain"
@@ -80,13 +81,8 @@ export default async function StudentProfilePage(props: PageProps<"/admin/studen
             value: "attendance",
             label: "الحضور",
             icon: <ClipboardCheck aria-hidden />,
-            later: true,
             content: (
-              <ComingSoon
-                icon={ClipboardCheck}
-                title="سجل الحضور"
-                description="سيُعرض هنا حضور الطالب في كل حصة وغياباته المبرَّرة وغير المبرَّرة، بعد تفعيل وحدة الحضور."
-              />
+              <StudentAttendanceHistory studentId={student.id} lookups={lookups} students={students} today={MOCK_TODAY} />
             ),
           },
           {

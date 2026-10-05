@@ -160,3 +160,43 @@ export interface ActivityEntry {
   actor: string
   at: string
 }
+
+// ── Sessions & attendance (Part 3) ───────────────────────────────
+
+export type SessionStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED"
+
+/**
+ * One actual, dated lesson. Generated from a recurring WeeklySchedule;
+ * cancelling it affects only this date, never the weekly schedule.
+ */
+export interface Session extends Omit<ScheduleSlot, "day"> {
+  id: ID
+  groupId: ID
+  /** The weekly slot this session comes from */
+  scheduleId: ID
+  date: ISODate
+  branchId: ID
+  roomId: ID
+  status: SessionStatus
+  cancellationReason?: string
+}
+
+export type AttendanceStatus = "PRESENT" | "ABSENT" | "EXCUSED" | "LATE"
+
+/** Attendance of one student in one session. */
+export interface StudentAttendance {
+  id: ID
+  sessionId: ID
+  studentId: ID
+  status: AttendanceStatus
+  note?: string
+}
+
+/** Attendance of one assigned teacher in one session (no HR system — just presence). */
+export interface TeacherAttendance {
+  id: ID
+  sessionId: ID
+  teacherId: ID
+  status: AttendanceStatus
+  note?: string
+}

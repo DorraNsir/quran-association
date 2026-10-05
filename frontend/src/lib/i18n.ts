@@ -1,8 +1,10 @@
 import type {
+  AttendanceStatus,
   ConflictType,
   Gender,
   RecordStatus,
   Role,
+  SessionStatus,
   TeachingRole,
   Weekday,
 } from "@/types/domain"
@@ -72,6 +74,17 @@ export const labels = {
     },
     GROUP: { title: "تداخل في حصص المجموعة", message: "للمجموعة حصة أخرى خلال هذا الوقت." },
   } satisfies Record<ConflictType, { title: string; message: string }>,
+  attendance: {
+    PRESENT: "حاضر",
+    ABSENT: "غائب",
+    EXCUSED: "غياب مبرر",
+    LATE: "متأخر",
+  } satisfies Record<AttendanceStatus, string>,
+  sessionStatus: {
+    SCHEDULED: "مبرمجة",
+    COMPLETED: "منجزة",
+    CANCELLED: "ملغاة",
+  } satisfies Record<SessionStatus, string>,
   common: {
     all: "الكل",
     view: "عرض",

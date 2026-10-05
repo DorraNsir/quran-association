@@ -10,7 +10,6 @@ import type {
   Student,
   Teacher,
   TeachingRole,
-  Weekday,
   WeeklySchedule,
 } from "@/types/domain"
 
@@ -37,19 +36,7 @@ export function ageOn(dateOfBirth: ISODate, reference: ISODate) {
   return age
 }
 
-const JS_DAY_TO_WEEKDAY: Weekday[] = [
-  "SUN",
-  "MON",
-  "TUE",
-  "WED",
-  "THU",
-  "FRI",
-  "SAT",
-]
-
-export function weekdayOf(date: ISODate): Weekday {
-  return JS_DAY_TO_WEEKDAY[new Date(date).getUTCDay()]
-}
+export { weekdayOf } from "@/lib/dates"
 
 export function sortSlots<S extends ScheduleSlot>(schedule: S[]): S[] {
   return [...schedule].sort(

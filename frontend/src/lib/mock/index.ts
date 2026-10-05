@@ -13,7 +13,8 @@ export { branches, rooms, groups, schedules, teachers }
 export { currentUser } from "./teachers"
 export { students } from "./students"
 export { recentActivity } from "./activity"
-export { MOCK_TODAY } from "./reference-date"
+export { ACADEMIC_YEAR, MOCK_TODAY } from "./reference-date"
+export { sessions, studentAttendance, teacherAttendance } from "./sessions"
 
 /** The one reference-data bundle every screen resolves ids against. */
 export const lookups: Lookups = { branches, rooms, groups, teachers, schedules }
