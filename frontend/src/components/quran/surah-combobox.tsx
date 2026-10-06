@@ -40,7 +40,9 @@ export function SurahCombobox({
   const selected = value ? surahByNumber(value) : undefined
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    // modal: the combobox is often opened inside a Dialog, whose scroll lock
+    // would otherwise swallow wheel/touch scrolling in this (portaled) popover
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
           id={id}
@@ -67,7 +69,11 @@ export function SurahCombobox({
       <PopoverContent className="w-(--radix-popover-trigger-width) min-w-64 p-0" align="start">
         <Command filter={(_, search, keywords) => (!search || matchesText((keywords ?? []).join(" "), search) ? 1 : 0)}>
           <CommandInput placeholder="ابحث باسم السورة أو رقمها…" />
-          <CommandList>
+          {/* One scroll area: capped to the space available on screen, with a visible thin scrollbar */}
+          <CommandList
+            className="max-h-[min(18rem,calc(var(--radix-popover-content-available-height)-4rem))] [&::-webkit-scrollbar]:block [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border"
+            style={{ scrollbarWidth: "thin" }}
+          >
             <CommandEmpty>لا توجد سورة بهذا الاسم</CommandEmpty>
             <CommandGroup>
               {SURAHS.map((surah) => (
