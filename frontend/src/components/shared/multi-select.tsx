@@ -121,8 +121,8 @@ export function MultiSelect({
             const option = byValue.get(value)
             if (!option) return null
             return (
-              <li key={value}>
-                <Badge variant="secondary" className="h-6 gap-1 pe-1 font-normal">
+              <li key={value} className="max-w-full">
+                <Badge variant="secondary" className="h-auto min-h-6 max-w-full gap-1 pe-1 text-start font-normal whitespace-normal">
                   {option.label}
                   {option.locked ? (
                     <Lock className="size-3 text-muted-foreground" aria-hidden />

@@ -1,24 +1,44 @@
 import { useSyncExternalStore } from "react"
 
+import {
+  buildNotifications,
+  getAnnouncementRecipientUserIds,
+  getResourceRecipientUserIds,
+  type Directory,
+} from "@/lib/communication"
 import { upsertMemorization, type MemorizationUpdate } from "@/lib/memorization"
+import { branches, rooms } from "@/lib/mock/branches"
+import { announcements, announcementTargets, notifications, resources, resourceTargets } from "@/lib/mock/communication"
+import { groupClasses, groups } from "@/lib/mock/groups"
 import { memorizationProgress } from "@/lib/mock/memorization"
 import { newMockId } from "@/lib/mock/reference-date"
 import { sessions, studentAttendance, teacherAttendance } from "@/lib/mock/sessions"
+import { schedules } from "@/lib/mock/schedules"
+import { students } from "@/lib/mock/students"
 import { teacherNotes } from "@/lib/mock/teacher-notes"
+import { teachers } from "@/lib/mock/teachers"
+import { users } from "@/lib/mock/users"
 import type {
+  Announcement,
+  AnnouncementTarget,
   AttendanceStatus,
   ID,
+  ISODate,
   MemorizationProgress,
+  Resource,
+  ResourceTarget,
   Session,
   SessionStatus,
   StudentAttendance,
   TeacherAttendance,
   TeacherNote,
+  UserNotification,
 } from "@/types/domain"
 
 /**
  * In-memory mock store for operational data (sessions, attendance,
- * memorization tracking and teacher notes).
+ * memorization tracking, teacher notes, resources, announcements and
+ * notifications).
  *
  * Saving attendance on one screen must show up on the session page, the
  * student history and the dashboard, so this state is shared by every
@@ -34,9 +54,46 @@ export interface OperationsState {
   memorizationProgress: MemorizationProgress[]
   /** Private teacher notes — internal, never student-facing */
   teacherNotes: TeacherNote[]
+  /** One source of truth per concept, read by all workspaces */
+  resources: Resource[]
+  resourceTargets: ResourceTarget[]
+  announcements: Announcement[]
+  announcementTargets: AnnouncementTarget[]
+  /** Per-user alerts referencing a resource or announcement */
+  notifications: UserNotification[]
 }
 
-const seed: OperationsState = { sessions, studentAttendance, teacherAttendance, memorizationProgress, teacherNotes }
+const seed: OperationsState = {
+  sessions,
+  studentAttendance,
+  teacherAttendance,
+  memorizationProgress,
+  teacherNotes,
+  resources,
+  resourceTargets,
+  announcements,
+  announcementTargets,
+  notifications,
+}
+
+/** Who exists, to compute notification recipients (the API will do this server-side). */
+const directory: Directory = { users, students, lookups: { branches, rooms, groups, groupClasses, teachers, schedules } }
+
+export type ResourceDraft = Omit<Resource, "id" | "createdAt" | "updatedAt" | "publishedByUserId"> & { id?: ID }
+export type AnnouncementDraft = Omit<Announcement, "id" | "createdAt" | "updatedAt" | "publishedByUserId"> & { id?: ID }
+
+/** Notify everyone the announcement reaches today and who wasn't notified yet. */
+function withAnnouncementNotifications(next: OperationsState, announcement: Announcement, today: ISODate): OperationsState {
+  const recipients = getAnnouncementRecipientUserIds(announcement, next.announcementTargets, directory, today)
+  const added = buildNotifications(
+    { type: "ANNOUNCEMENT", id: announcement.id, title: announcement.title },
+    recipients,
+    next.notifications,
+    today,
+    () => newMockId("ntf")
+  )
+  return added.length ? { ...next, notifications: [...added, ...next.notifications] } : next
+}
 let state = seed
 const listeners = new Set<() => void>()
 
@@ -131,6 +188,111 @@ export const operations = {
 
   deleteTeacherNote(noteId: ID) {
     setState({ ...state, teacherNotes: state.teacherNotes.filter((n) => n.id !== noteId) })
+  },
+
+  /**
+   * Creates or edits a resource with its targets (ids typed GROUP or
+   * GROUP_CLASS). A new resource notifies exactly the student accounts that
+   * can see it — computed with the same rule as the student lists.
+   */
+  saveResource(draft: ResourceDraft, targetIds: ID[], publishedByUserId: ID, today: ISODate) {
+    const existing = draft.id ? state.resources.find((r) => r.id === draft.id) : undefined
+    const id = existing?.id ?? newMockId("res")
+    const { id: _ignored, ...fields } = draft
+    void _ignored
+    const resource: Resource = existing
+      ? { ...existing, ...fields, updatedAt: today }
+      : { ...fields, id, publishedByUserId, createdAt: today, updatedAt: today }
+    const targets: ResourceTarget[] =
+      resource.visibilityType === "ALL_STUDENTS"
+        ? []
+        : [...new Set(targetIds)].map((targetId) => ({
+            id: newMockId("rt"),
+            resourceId: id,
+            targetType: resource.visibilityType as ResourceTarget["targetType"],
+            targetId,
+          }))
+    const resourceTargets = [...state.resourceTargets.filter((t) => t.resourceId !== id), ...targets]
+    const added = existing
+      ? []
+      : buildNotifications(
+          { type: "RESOURCE", id, title: resource.title },
+          getResourceRecipientUserIds(resource, resourceTargets, directory),
+          state.notifications,
+          today,
+          () => newMockId("ntf")
+        )
+    setState({
+      ...state,
+      resources: existing ? state.resources.map((r) => (r.id === id ? resource : r)) : [resource, ...state.resources],
+      resourceTargets,
+      notifications: [...added, ...state.notifications],
+    })
+    return id
+  },
+
+  /** Removes the resource, its targets and the alerts pointing to it. */
+  deleteResource(resourceId: ID) {
+    setState({
+      ...state,
+      resources: state.resources.filter((r) => r.id !== resourceId),
+      resourceTargets: state.resourceTargets.filter((t) => t.resourceId !== resourceId),
+      notifications: state.notifications.filter((n) => !(n.entityType === "RESOURCE" && n.entityId === resourceId)),
+    })
+  },
+
+  /** Creates or edits an announcement; whoever it now reaches (and wasn't notified yet) is notified. */
+  saveAnnouncement(draft: AnnouncementDraft, groupClassIds: ID[], publishedByUserId: ID, today: ISODate) {
+    const existing = draft.id ? state.announcements.find((a) => a.id === draft.id) : undefined
+    const id = existing?.id ?? newMockId("ann")
+    const { id: _ignored, ...fields } = draft
+    void _ignored
+    const announcement: Announcement = existing
+      ? { ...existing, ...fields, updatedAt: today }
+      : { ...fields, id, publishedByUserId, createdAt: today, updatedAt: today }
+    const targets: AnnouncementTarget[] =
+      announcement.audienceType === "SPECIFIC_GROUP_CLASSES"
+        ? [...new Set(groupClassIds)].map((groupClassId) => ({ id: newMockId("at"), announcementId: id, groupClassId }))
+        : []
+    const next: OperationsState = {
+      ...state,
+      announcements: existing ? state.announcements.map((a) => (a.id === id ? announcement : a)) : [announcement, ...state.announcements],
+      announcementTargets: [...state.announcementTargets.filter((t) => t.announcementId !== id), ...targets],
+    }
+    setState(withAnnouncementNotifications(next, announcement, today))
+    return id
+  },
+
+  setAnnouncementActive(announcementId: ID, isActive: boolean, today: ISODate) {
+    const announcement = state.announcements.find((a) => a.id === announcementId)
+    if (!announcement) return
+    const updated = { ...announcement, isActive, updatedAt: today }
+    const next = { ...state, announcements: state.announcements.map((a) => (a.id === announcementId ? updated : a)) }
+    setState(isActive ? withAnnouncementNotifications(next, updated, today) : next)
+  },
+
+  deleteAnnouncement(announcementId: ID) {
+    setState({
+      ...state,
+      announcements: state.announcements.filter((a) => a.id !== announcementId),
+      announcementTargets: state.announcementTargets.filter((t) => t.announcementId !== announcementId),
+      notifications: state.notifications.filter((n) => !(n.entityType === "ANNOUNCEMENT" && n.entityId === announcementId)),
+    })
+  },
+
+  /** Only this user's alert changes — other users' read state is untouched. */
+  markNotificationRead(notificationId: ID, userId: ID) {
+    setState({
+      ...state,
+      notifications: state.notifications.map((n) => (n.id === notificationId && n.userId === userId ? { ...n, isRead: true } : n)),
+    })
+  },
+
+  markAllNotificationsRead(userId: ID) {
+    setState({
+      ...state,
+      notifications: state.notifications.map((n) => (n.userId === userId && !n.isRead ? { ...n, isRead: true } : n)),
+    })
   },
 
   /** Cancelling affects only this dated session — the weekly schedule is untouched. */

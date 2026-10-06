@@ -56,3 +56,6 @@ export const users: User[] = [
 
 /** The account used when none is chosen. Change it here to demo another teacher by default. */
 export const DEFAULT_USER_ID = "u1"
+
+/** Display names of possible publishers — what content pages show instead of whole accounts. */
+export const publisherNames: Record<string, string> = Object.fromEntries(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`]))

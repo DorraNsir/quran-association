@@ -1,11 +1,12 @@
 "use client"
 
-import { Bell, Check, FlaskConical, Languages, LogOut, Menu, UserRound } from "lucide-react"
+import { Check, FlaskConical, Languages, LogOut, Menu, UserRound } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useState } from "react"
 import { toast } from "sonner"
 
+import { NotificationBell } from "@/components/communication/notifications"
 import { UserAvatar } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { useDirection } from "@/components/ui/direction"
@@ -20,7 +21,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   Sheet,
   SheetContent,
@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/sheet"
 import { setMockAccount } from "@/lib/auth/mock-account"
 import { fullName } from "@/lib/domain"
+import { MOCK_TODAY } from "@/lib/mock/reference-date"
 import { defaultLocale, labels, locales, type Locale } from "@/lib/i18n"
 import { homeOf, type Workspace } from "@/lib/workspace"
 import type { User } from "@/types/domain"
@@ -101,29 +102,6 @@ function LanguageSwitcher() {
         })}
       </DropdownMenuContent>
     </DropdownMenu>
-  )
-}
-
-function NotificationsButton() {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="الإشعارات">
-          <Bell className="size-[1.1rem]" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-72">
-        <div className="flex flex-col items-center gap-2 py-4 text-center">
-          <span className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <Bell className="size-4" aria-hidden />
-          </span>
-          <p className="text-sm font-medium">لا توجد إشعارات</p>
-          <p className="text-xs text-muted-foreground">
-            ستتوفر الإشعارات مع وحدة الإعلانات في مرحلة قادمة.
-          </p>
-        </div>
-      </PopoverContent>
-    </Popover>
   )
 }
 
@@ -229,7 +207,7 @@ export function AppHeader({ user, accounts, workspace }: { user: User; accounts:
       </div>
       <div className="flex items-center gap-1">
         <LanguageSwitcher />
-        <NotificationsButton />
+        <NotificationBell userId={user.id} workspace={workspace} today={MOCK_TODAY} />
         <div className="mx-1 h-6 w-px bg-border" aria-hidden />
         <UserMenu user={user} accounts={accounts} workspace={workspace} />
       </div>

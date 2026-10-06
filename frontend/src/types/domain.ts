@@ -274,3 +274,81 @@ export interface TeacherNote {
   createdAt: ISODate
   updatedAt: ISODate
 }
+
+/* ------------------------------------------------------------------ */
+/* Communication: three separate concepts — Resource (pedagogical     */
+/* content), Announcement (administrative communication) and          */
+/* UserNotification (a per-user alert pointing at one of them).       */
+/* ------------------------------------------------------------------ */
+
+export type ResourceType = "PDF" | "IMAGE" | "AUDIO" | "VIDEO_LINK" | "EXTERNAL_LINK" | "FILE"
+export type ResourceVisibilityType = "ALL_STUDENTS" | "GROUP" | "GROUP_CLASS"
+
+/**
+ * A pedagogical resource published by an admin or a teacher (a User, since
+ * one account may hold several roles). Files are referenced by URL — the
+ * API will store them in object storage — never embedded as base64.
+ */
+export interface Resource {
+  id: ID
+  title: string
+  description: string
+  type: ResourceType
+  /** Stored file URL (object storage later). Mock phase: a transient blob: URL or absent */
+  fileUrl?: string
+  externalUrl?: string
+  fileName?: string
+  mimeType?: string
+  /** Bytes */
+  fileSize?: number
+  publishedByUserId: ID
+  visibilityType: ResourceVisibilityType
+  createdAt: ISODate
+  updatedAt: ISODate
+}
+
+/** One audience of a resource: an explicit Group or GroupClass (never an ambiguous id). */
+export interface ResourceTarget {
+  id: ID
+  resourceId: ID
+  targetType: Exclude<ResourceVisibilityType, "ALL_STUDENTS">
+  targetId: ID
+}
+
+export type AnnouncementAudienceType = "EVERYONE" | "TEACHERS" | "STUDENTS" | "SPECIFIC_GROUP_CLASSES"
+
+export interface Announcement {
+  id: ID
+  title: string
+  content: string
+  audienceType: AnnouncementAudienceType
+  publishedByUserId: ID
+  publishedAt: ISODate
+  expiresAt?: ISODate
+  isActive: boolean
+  createdAt: ISODate
+  updatedAt: ISODate
+}
+
+/** For SPECIFIC_GROUP_CLASSES announcements */
+export interface AnnouncementTarget {
+  id: ID
+  announcementId: ID
+  groupClassId: ID
+}
+
+export type NotificationType = "RESOURCE_PUBLISHED" | "ANNOUNCEMENT_PUBLISHED" // later: SESSION_CHANGED, SESSION_CANCELLED…
+export type NotificationEntityType = "RESOURCE" | "ANNOUNCEMENT"
+
+/** An in-app alert for ONE user (named to avoid the DOM's global `Notification`). */
+export interface UserNotification {
+  id: ID
+  userId: ID
+  type: NotificationType
+  title: string
+  message: string
+  entityType?: NotificationEntityType
+  entityId?: ID
+  isRead: boolean
+  createdAt: ISODate
+}

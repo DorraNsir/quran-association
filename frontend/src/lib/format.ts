@@ -136,3 +136,14 @@ export function formatElapsed(from: ISODate, to: ISODate) {
   const m = rest === 0 ? "" : rest === 1 ? "شهر" : rest === 2 ? "شهران" : `${rest} أشهر`
   return [y, m].filter(Boolean).join(" و")
 }
+
+/** "اليوم" / "أمس" / "منذ 3 أيام" — for publication dates (dates only in the mock phase). */
+export function formatRelativeDay(date: ISODate, today: ISODate) {
+  const days = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / 86_400_000)
+  if (days <= 0) return "اليوم"
+  if (days === 1) return "أمس"
+  if (days === 2) return "منذ يومين"
+  if (days <= 10) return `منذ ${days} أيام`
+  if (days <= 30) return `منذ ${days} يومًا`
+  return formatDate(date)
+}

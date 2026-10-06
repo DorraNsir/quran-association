@@ -1,9 +1,12 @@
 import type {
+  AnnouncementAudienceType,
   AttendanceStatus,
   Semester,
   ConflictType,
   Gender,
   RecordStatus,
+  ResourceType,
+  ResourceVisibilityType,
   Role,
   SessionStatus,
   TeachingRole,
@@ -92,6 +95,25 @@ export const labels = {
   } satisfies Record<Semester, string>,
   /** A GroupClass, as users call it: one actual class of a pedagogical group */
   groupClass: { one: "حلقة", plural: "الحلقات" },
+  resourceType: {
+    PDF: "ملف PDF",
+    IMAGE: "صورة",
+    AUDIO: "ملف صوتي",
+    VIDEO_LINK: "رابط فيديو",
+    EXTERNAL_LINK: "رابط خارجي",
+    FILE: "ملف",
+  } satisfies Record<ResourceType, string>,
+  resourceVisibility: {
+    ALL_STUDENTS: "جميع الطلاب",
+    GROUP: "مجموعة محددة",
+    GROUP_CLASS: "فصل محدد",
+  } satisfies Record<ResourceVisibilityType, string>,
+  announcementAudience: {
+    EVERYONE: "الجميع",
+    TEACHERS: "المعلمون",
+    STUDENTS: "الطلاب",
+    SPECIFIC_GROUP_CLASSES: "فصول محددة",
+  } satisfies Record<AnnouncementAudienceType, string>,
   common: {
     all: "الكل",
     view: "عرض",

@@ -8,10 +8,12 @@ import {
   CircleDashed,
   ClipboardCheck,
   GraduationCap,
+  Megaphone,
   NotebookPen,
 } from "lucide-react"
 import Link from "next/link"
 
+import { AnnouncementItem, useReaderAnnouncements } from "@/components/communication/announcements-views"
 import { SectionCard } from "@/components/shared/info-list"
 import { StatCard } from "@/components/shared/stat-card"
 import { Button } from "@/components/ui/button"
@@ -46,6 +48,7 @@ export function TeacherDashboard({
   const rows = useTeacherSessionRows(teacherId, lookups, students, today)
   const classes = getTeacherGroupClasses(teacherId, lookups)
   const active = students.filter((s) => s.status === "ACTIVE")
+  const latestAnnouncements = useReaderAnnouncements({ workspace: "teacher", teacherId }, lookups, today).slice(0, 2)
 
   const todayRows = rows.filter((r) => r.session.date === today)
   const pending = rows.filter((r) => isAttendancePending(r, today)).reverse()
@@ -169,6 +172,26 @@ export function TeacherDashboard({
           </ul>
         )}
       </SectionCard>
+
+      {latestAnnouncements.length > 0 && (
+        <SectionCard
+          title="آخر الإعلانات"
+          icon={Megaphone}
+          action={
+            <Button asChild variant="ghost" size="sm" className="text-primary">
+              <Link href="/teacher/announcements">كل الإعلانات</Link>
+            </Button>
+          }
+        >
+          <ul className="grid gap-1 sm:grid-cols-2 sm:gap-4">
+            {latestAnnouncements.map((a) => (
+              <li key={a.id}>
+                <AnnouncementItem announcement={a} href={`/teacher/announcements/${a.id}`} today={today} />
+              </li>
+            ))}
+          </ul>
+        </SectionCard>
+      )}
     </div>
   )
 }

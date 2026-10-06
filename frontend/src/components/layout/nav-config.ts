@@ -66,8 +66,8 @@ export const adminNav: NavSection[] = [
   {
     label: "التواصل",
     items: [
-      { label: "الموارد", href: "/admin/resources", icon: FolderOpen, ready: false },
-      { label: "الإعلانات", href: "/admin/announcements", icon: Megaphone, ready: false },
+      { label: "الموارد", href: "/admin/resources", icon: FolderOpen, ready: true },
+      { label: "الإعلانات", href: "/admin/announcements", icon: Megaphone, ready: true },
       { label: "الموقع الإلكتروني", href: "/admin/website", icon: Globe, ready: false },
     ],
   },
@@ -95,6 +95,13 @@ export const teacherNav: NavSection[] = [
       { label: "جدولي", href: "/teacher/schedule", icon: CalendarDays, ready: true },
     ],
   },
+  {
+    label: "التواصل",
+    items: [
+      { label: "الموارد", href: "/teacher/resources", icon: FolderOpen, ready: true },
+      { label: "الإعلانات", href: "/teacher/announcements", icon: Megaphone, ready: true },
+    ],
+  },
 ]
 
 /** Student Space: read-only, the student's own information only — no other students, no notes. */
@@ -106,6 +113,8 @@ export const studentNav: NavSection[] = [
       { label: "جدولي", href: "/student/schedule", icon: CalendarDays, ready: true },
       { label: "الحضور", href: "/student/attendance", icon: ClipboardCheck, ready: true },
       { label: "متابعة الحفظ", href: "/student/memorization", icon: BookOpenCheck, ready: true },
+      { label: "الموارد", href: "/student/resources", icon: FolderOpen, ready: true },
+      { label: "الإعلانات", href: "/student/announcements", icon: Megaphone, ready: true },
       { label: "الملف الشخصي", href: "/student/profile", icon: CircleUserRound, ready: true },
     ],
   },

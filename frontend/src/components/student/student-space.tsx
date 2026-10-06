@@ -9,7 +9,9 @@ import {
   ClipboardCheck,
   ClipboardList,
   DoorOpen,
+  FolderOpen,
   MapPin,
+  Megaphone,
   ShieldCheck,
 } from "lucide-react"
 import Link from "next/link"
@@ -17,6 +19,9 @@ import { useState } from "react"
 
 import { AttendanceStatusBadge, SessionStatusBadge } from "@/components/attendance/attendance-badges"
 import { AttendanceStats } from "@/components/attendance/attendance-stats"
+import { AnnouncementItem } from "@/components/communication/announcements-views"
+import { ResourceTypeBadge } from "@/components/communication/resource-badges"
+import type { PublisherNames } from "@/components/communication/resources-views"
 import { MemorizationValue } from "@/components/memorization/memorization-dialog"
 import { AcademicYearSelect } from "@/components/memorization/period-selectors"
 import { EmptyState } from "@/components/shared/empty-state"
@@ -24,9 +29,10 @@ import { SectionCard } from "@/components/shared/info-list"
 import { PeriodFilter, resolvePeriod, type Period } from "@/components/shared/period-filter"
 import { Card } from "@/components/ui/card"
 import { summarize } from "@/lib/attendance"
+import { getAnnouncementsForStudent, getResourcesForStudent } from "@/lib/communication"
 import { isWithin, weekdayOf } from "@/lib/dates"
 import { fullName, type ClassView, type Lookups } from "@/lib/domain"
-import { countLabels, formatDate, formatShortDate, formatTimeRange, formatWeekdayDate } from "@/lib/format"
+import { countLabels, formatDate, formatRelativeDay, formatShortDate, formatTimeRange, formatWeekdayDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { defaultPeriod, SEMESTERS } from "@/lib/memorization"
 import { useOperations } from "@/lib/store/operations"
@@ -91,15 +97,21 @@ export function StudentDashboard({
   view,
   lookups,
   academicYears,
+  publishers,
   today,
 }: {
   student: Student
   view?: ClassView
   lookups: Lookups
   academicYears: AcademicYear[]
+  publishers: PublisherNames
   today: ISODate
 }) {
   const { sessions, attendance, memorization } = useStudentRecords(student, lookups)
+  const { resources, resourceTargets, announcements, announcementTargets } = useOperations()
+  // Same visibility helpers as the resources / announcements pages and their notifications
+  const latestResources = getResourcesForStudent(student, resources, resourceTargets, lookups.groupClasses).slice(0, 3)
+  const latestAnnouncements = getAnnouncementsForStudent(student, announcements, announcementTargets, today).slice(0, 3)
   const next = nextSessionOf(sessions, today)
   const summary = summarize(attendance.map((e) => e.record))
   const period = defaultPeriod(academicYears, today)
@@ -164,6 +176,42 @@ export function StudentDashboard({
               ))}
             </ul>
           </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="أحدث الموارد" icon={FolderOpen} action={<CardLink href="/student/resources">كل الموارد</CardLink>}>
+        {latestResources.length === 0 ? (
+          <p className="text-sm text-muted-foreground">لا توجد موارد متاحة حالياً</p>
+        ) : (
+          <ul className="space-y-1">
+            {latestResources.map((r) => (
+              <li key={r.id}>
+                <Link href={`/student/resources/${r.id}`} className="-mx-2 flex items-center justify-between gap-3 rounded-lg p-2 hover:bg-muted">
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{r.title}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {publishers[r.publishedByUserId] ?? "—"} · {formatRelativeDay(r.createdAt, today)}
+                    </span>
+                  </span>
+                  <ResourceTypeBadge type={r.type} className="shrink-0" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SectionCard>
+
+      <SectionCard title="آخر الإعلانات" icon={Megaphone} action={<CardLink href="/student/announcements">كل الإعلانات</CardLink>}>
+        {latestAnnouncements.length === 0 ? (
+          <p className="text-sm text-muted-foreground">لا توجد إعلانات حالياً</p>
+        ) : (
+          <ul className="space-y-1">
+            {latestAnnouncements.map((a) => (
+              <li key={a.id}>
+                <AnnouncementItem announcement={a} href={`/student/announcements/${a.id}`} today={today} />
+              </li>
+            ))}
+          </ul>
         )}
       </SectionCard>
     </div>
