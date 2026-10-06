@@ -4,7 +4,8 @@ import { generateSessions, sessionIdFor } from "@/lib/sessions"
 import type { AttendanceStatus, Session, StudentAttendance, TeacherAttendance } from "@/types/domain"
 
 import { groupClasses, groups } from "./groups"
-import { ACADEMIC_YEAR, MOCK_TODAY } from "./reference-date"
+import { CURRENT_ACADEMIC_YEAR } from "./academic-years"
+import { MOCK_TODAY } from "./reference-date"
 import { schedules } from "./schedules"
 import { students } from "./students"
 
@@ -43,7 +44,7 @@ const PARTIAL = new Set([sessionIdFor("ws11", "2026-09-30"), sessionIdFor("ws13"
 
 const classesById = indexById(groupClasses)
 
-const generated = generateSessions(schedules, { groupClasses, groups }, { from: ACADEMIC_YEAR.start, to: SESSIONS_UNTIL })
+const generated = generateSessions(schedules, { groupClasses, groups }, { from: CURRENT_ACADEMIC_YEAR.startDate, to: SESSIONS_UNTIL })
 
 export const sessions: Session[] = generated.map((session) => {
   if (CANCELLED[session.id]) {

@@ -48,7 +48,7 @@ export const adminNav: NavSection[] = [
       { label: "الرزنامة", href: "/admin/calendar", icon: CalendarDays, ready: true },
       { label: "الحصص", href: "/admin/sessions", icon: CalendarCheck2, ready: true },
       { label: "الحضور", href: "/admin/attendance", icon: ClipboardCheck, ready: true },
-      { label: "متابعة الحفظ", href: "/admin/progress", icon: BookOpenCheck, ready: false },
+      { label: "متابعة الحفظ", href: "/admin/memorization", icon: BookOpenCheck, ready: true },
     ],
   },
   {

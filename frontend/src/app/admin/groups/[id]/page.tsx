@@ -16,6 +16,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import { GroupAttendance } from "@/components/attendance/group-attendance"
+import { GroupMemorization } from "@/components/memorization/group-memorization"
 import { GroupClassList, GroupProfileActions, GroupStudentsTable } from "@/components/groups/group-details-client"
 import { StatusBadge, TeacherRoleBadge } from "@/components/shared/badges"
 import { ComingSoon } from "@/components/shared/empty-state"
@@ -38,7 +39,7 @@ import {
   studentsInGroup,
 } from "@/lib/domain"
 import { countLabels, formatDate } from "@/lib/format"
-import { groups, lookups, MOCK_TODAY, schedules, students } from "@/lib/mock"
+import { academicYears, groups, lookups, MOCK_TODAY, schedules, students } from "@/lib/mock"
 import { cn } from "@/lib/utils"
 import type { Teacher, TeachingRole } from "@/types/domain"
 
@@ -223,11 +224,13 @@ export default async function GroupDetailsPage(props: PageProps<"/admin/groups/[
             content: <GroupAttendance groupId={group.id} lookups={lookups} students={students} today={MOCK_TODAY} />,
           },
           {
-            value: "progress",
+            value: "memorization",
             label: "متابعة الحفظ",
             icon: <BookOpenCheck aria-hidden />,
-            later: true,
-            content: <ComingSoon icon={BookOpenCheck} title="تقدم المجموعة في الحفظ" description="متابعة ما حفظه كل طالب ومقارنة تقدم أعضاء الحلقات." />,
+            content: (
+              <GroupMemorization groupId={group.id} lookups={lookups} students={students}
+                academicYears={academicYears} today={MOCK_TODAY} />
+            ),
           },
           {
             value: "resources",

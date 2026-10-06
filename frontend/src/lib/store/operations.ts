@@ -1,10 +1,13 @@
 import { useSyncExternalStore } from "react"
 
+import { upsertMemorization, type MemorizationUpdate } from "@/lib/memorization"
+import { memorizationProgress } from "@/lib/mock/memorization"
 import { newMockId } from "@/lib/mock/reference-date"
 import { sessions, studentAttendance, teacherAttendance } from "@/lib/mock/sessions"
 import type {
   AttendanceStatus,
   ID,
+  MemorizationProgress,
   Session,
   SessionStatus,
   StudentAttendance,
@@ -12,7 +15,8 @@ import type {
 } from "@/types/domain"
 
 /**
- * In-memory mock store for operational data (sessions + attendance).
+ * In-memory mock store for operational data (sessions, attendance and
+ * memorization tracking).
  *
  * Saving attendance on one screen must show up on the session page, the
  * student history and the dashboard, so this state is shared by every
@@ -24,9 +28,11 @@ export interface OperationsState {
   sessions: Session[]
   studentAttendance: StudentAttendance[]
   teacherAttendance: TeacherAttendance[]
+  /** One last-memorized-surah per (student, academic year, semester) */
+  memorizationProgress: MemorizationProgress[]
 }
 
-const seed: OperationsState = { sessions, studentAttendance, teacherAttendance }
+const seed: OperationsState = { sessions, studentAttendance, teacherAttendance, memorizationProgress }
 let state = seed
 const listeners = new Set<() => void>()
 
@@ -68,6 +74,7 @@ export const operations = {
       state.teacherAttendance.filter((r) => r.sessionId === sessionId).map((r) => [r.teacherId, r.id])
     )
     setState({
+      ...state,
       sessions: state.sessions.map((s) =>
         s.id === sessionId && complete && s.status !== "CANCELLED" ? { ...s, status: "COMPLETED" } : s
       ),
@@ -91,6 +98,14 @@ export const operations = {
           note: entry.note?.trim() || undefined,
         })),
       ],
+    })
+  },
+
+  /** Sets the student's last memorized surah for one semester (update or create — never a new event). */
+  saveMemorization(update: MemorizationUpdate) {
+    setState({
+      ...state,
+      memorizationProgress: upsertMemorization(state.memorizationProgress, update, () => newMockId("mp")),
     })
   },
 

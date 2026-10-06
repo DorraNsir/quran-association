@@ -214,3 +214,43 @@ export interface TeacherAttendance {
   status: AttendanceStatus
   note?: string
 }
+
+// ── Academic years & memorization (Part 4) ────────────────────────
+
+/** Each academic year has exactly two semesters. */
+export type Semester = "SEMESTER_1" | "SEMESTER_2"
+
+export interface DateRange {
+  startDate: ISODate
+  endDate: ISODate
+}
+
+/** Lightweight school year — enough for memorization tracking and period filters. */
+export interface AcademicYear extends DateRange {
+  /** e.g. "2026-2027" */
+  id: ID
+  /** e.g. "2026–2027" */
+  label: string
+  isCurrent: boolean
+  semesters: Record<Semester, DateRange>
+}
+
+/** Quran surah number, 1–114, in mushaf order (see lib/quran/surahs). */
+export type SurahNumber = number
+
+/**
+ * The student's LAST MEMORIZED SURAH for one semester of one academic year.
+ * Unique per (studentId, academicYearId, semester): a change updates this
+ * record — it is a current value, not a history of events. Other semesters
+ * and years are separate records and are never overwritten.
+ * Names (student, group, teacher, branch) are resolved through ids.
+ */
+export interface MemorizationProgress {
+  id: ID
+  studentId: ID
+  academicYearId: ID
+  semester: Semester
+  lastMemorizedSurah: SurahNumber
+  updatedByTeacherId: ID
+  updatedAt: ISODate
+}

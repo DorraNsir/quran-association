@@ -12,9 +12,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { addDays, startOfWeek } from "@/lib/dates"
-import { ACADEMIC_YEAR } from "@/lib/mock/reference-date"
+import { labels } from "@/lib/i18n"
+import { SEMESTERS } from "@/lib/memorization"
+import { CURRENT_ACADEMIC_YEAR } from "@/lib/mock/academic-years"
 import { cn } from "@/lib/utils"
-import type { ISODate } from "@/types/domain"
+import type { ISODate, Semester } from "@/types/domain"
 
 export interface Period {
   preset: string
@@ -29,13 +31,13 @@ export interface DateRange {
 }
 
 /**
- * Date-range presets, including the academic year and its terms — the
+ * Date-range presets, including the academic year and its two semesters — the
  * filters the end-of-year attendance count relies on.
  */
 export function resolvePeriod(period: Period, today: ISODate): DateRange {
   const monthStart = `${today.slice(0, 8)}01`
-  const term = ACADEMIC_YEAR.terms.find((t) => t.id === period.preset)
-  if (term) return { from: term.start, to: term.end }
+  const semester = CURRENT_ACADEMIC_YEAR.semesters[period.preset as Semester]
+  if (semester) return { from: semester.startDate, to: semester.endDate }
   switch (period.preset) {
     case "today":
       return { from: today, to: today }
@@ -47,7 +49,7 @@ export function resolvePeriod(period: Period, today: ISODate): DateRange {
       return { from: monthStart, to: addDays(next.toISOString().slice(0, 10), -1) }
     }
     case "year":
-      return { from: ACADEMIC_YEAR.start, to: ACADEMIC_YEAR.end }
+      return { from: CURRENT_ACADEMIC_YEAR.startDate, to: CURRENT_ACADEMIC_YEAR.endDate }
     case "custom":
       return { from: period.from, to: period.to }
     default:
@@ -82,11 +84,11 @@ export function PeriodFilter({
           <SelectItem value="month">هذا الشهر</SelectItem>
           <SelectSeparator />
           <SelectGroup>
-            <SelectLabel>السنة الدراسية {ACADEMIC_YEAR.label}</SelectLabel>
+            <SelectLabel>السنة الدراسية <span dir="ltr">{CURRENT_ACADEMIC_YEAR.label}</span></SelectLabel>
             <SelectItem value="year">كامل السنة الدراسية</SelectItem>
-            {ACADEMIC_YEAR.terms.map((t) => (
-              <SelectItem key={t.id} value={t.id}>
-                {t.label}
+            {SEMESTERS.map((s) => (
+              <SelectItem key={s} value={s}>
+                {labels.semester[s]}
               </SelectItem>
             ))}
           </SelectGroup>

@@ -1,5 +1,6 @@
 import type {
   AttendanceStatus,
+  Semester,
   ConflictType,
   Gender,
   RecordStatus,
@@ -85,6 +86,10 @@ export const labels = {
     COMPLETED: "منجزة",
     CANCELLED: "ملغاة",
   } satisfies Record<SessionStatus, string>,
+  semester: {
+    SEMESTER_1: "السداسي الأول",
+    SEMESTER_2: "السداسي الثاني",
+  } satisfies Record<Semester, string>,
   /** A GroupClass, as users call it: one actual class of a pedagogical group */
   groupClass: { one: "حلقة", plural: "الحلقات" },
   common: {

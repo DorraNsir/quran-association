@@ -13,7 +13,9 @@ export { branches, rooms, groups, groupClasses, schedules, teachers }
 export { currentUser } from "./teachers"
 export { students } from "./students"
 export { recentActivity } from "./activity"
-export { ACADEMIC_YEAR, MOCK_TODAY } from "./reference-date"
+export { MOCK_TODAY } from "./reference-date"
+export { academicYears, CURRENT_ACADEMIC_YEAR } from "./academic-years"
+export { memorizationProgress } from "./memorization"
 export { sessions, studentAttendance, teacherAttendance } from "./sessions"
 
 /** The one reference-data bundle every screen resolves ids against. */

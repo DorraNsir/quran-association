@@ -19,10 +19,11 @@ import { Breadcrumbs } from "@/components/shared/page-header"
 import { MetaItem, ProfileHeader } from "@/components/shared/profile"
 import { ProfileTabs } from "@/components/shared/profile-tabs"
 import { StudentAttendanceHistory } from "@/components/attendance/student-attendance-history"
+import { StudentMemorization } from "@/components/memorization/student-memorization"
 import { StudentOverview } from "@/components/students/student-overview"
 import { StudentProfileActions } from "@/components/students/student-profile-actions"
 import { ageOn, fullName, indexLookups, studentClass } from "@/lib/domain"
-import { lookups, MOCK_TODAY, students } from "@/lib/mock"
+import { academicYears, lookups, MOCK_TODAY, students } from "@/lib/mock"
 
 export function generateStaticParams() {
   return students.map((s) => ({ id: s.id }))
@@ -38,6 +39,9 @@ export default async function StudentProfilePage(props: PageProps<"/admin/studen
   const { id } = await props.params
   const student = students.find((s) => s.id === id)
   if (!student) notFound()
+  // ?tab=memorization|attendance opens a tab directly (links from the memorization overview)
+  const { tab } = await props.searchParams
+  const initialTab = typeof tab === "string" && ["overview", "attendance", "memorization", "payments", "notes"].includes(tab) ? tab : undefined
 
   const cls = studentClass(student, indexLookups(lookups))
   const group = cls?.group
@@ -77,6 +81,7 @@ export default async function StudentProfilePage(props: PageProps<"/admin/studen
         actions={<StudentProfileActions student={student} lookups={lookups} />}
       />
       <ProfileTabs
+        defaultValue={initialTab}
         tabs={[
           {
             value: "overview",
@@ -93,16 +98,12 @@ export default async function StudentProfilePage(props: PageProps<"/admin/studen
             ),
           },
           {
-            value: "progress",
+            value: "memorization",
             label: "متابعة الحفظ",
             icon: <BookOpenCheck aria-hidden />,
-            later: true,
             content: (
-              <ComingSoon
-                icon={BookOpenCheck}
-                title="التقدم في الحفظ"
-                description="ستُعرض هنا السور والأحزاب المحفوظة والمراجعات وتقييمات المعلمين."
-              />
+              <StudentMemorization studentId={student.id} lookups={lookups} students={students}
+                academicYears={academicYears} today={MOCK_TODAY} />
             ),
           },
           {
