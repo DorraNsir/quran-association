@@ -23,6 +23,7 @@ import { ageOn, fullName, indexLookups, studentClass, type Lookups } from "@/lib
 import { countLabels, formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { MOCK_TODAY } from "@/lib/mock/reference-date"
+import { useOperations } from "@/lib/store/operations"
 import type { Student, StudentStatus } from "@/types/domain"
 
 import { studentActions, useStudentDialogs } from "./use-student-dialogs"
@@ -38,7 +39,10 @@ export function StudentsView({
   initialGroupId?: string
   lookups: Lookups
 }) {
-  const [students, setStudents] = useState(initialStudents)
+  const [localStudents, setStudents] = useState(initialStudents)
+  // Students admitted from registration requests (shared store) join the list
+  const { admittedStudents } = useOperations()
+  const students = [...admittedStudents.filter((a) => !localStudents.some((s) => s.id === a.id)), ...localStudents]
   const [query, setQuery] = useState("")
   const [groupId, setGroupId] = useState(initialGroupId ?? ALL)
   const [branchId, setBranchId] = useState(ALL)

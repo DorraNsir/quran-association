@@ -78,6 +78,13 @@ export const groups: Group[] = [
     status: "ACTIVE",
     createdAt: "2026-09-12",
   },
+  {
+    id: "g12",
+    name: "صيف الأطفال 2027",
+    audience: "أطفال 6–9 سنوات · جويلية وأوت",
+    status: "ACTIVE",
+    createdAt: "2026-09-28",
+  },
 ]
 
 /**
@@ -98,4 +105,6 @@ export const groupClasses: GroupClass[] = [
   { id: "g10-a", groupId: "g10", branchId: "b4", roomId: "b4-r1", supervisorId: "t10", assistantIds: [], status: "INACTIVE" },
   { id: "g11-a", groupId: "g11", branchId: "b1", roomId: "b1-r3", supervisorId: "t12", assistantIds: [], status: "ACTIVE" },
   { id: "g11-b", groupId: "g11", branchId: "b2", roomId: "b2-r1", supervisorId: "t13", assistantIds: [], status: "ACTIVE" },
+  // Summer program: schedule set later, so no sessions are generated yet
+  { id: "g12-a", groupId: "g12", branchId: "b1", roomId: "b1-r2", supervisorId: "t11", assistantIds: [], status: "ACTIVE" },
 ]

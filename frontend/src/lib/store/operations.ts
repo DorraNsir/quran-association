@@ -7,8 +7,17 @@ import {
   type Directory,
 } from "@/lib/communication"
 import { upsertMemorization, type MemorizationUpdate } from "@/lib/memorization"
+import {
+  createStudentPaymentObligation,
+  getObligationSummary,
+  getStudentApplicableGroupFee,
+  getStudentPaymentObligation,
+  paymentAmountError,
+} from "@/lib/payments"
+import { canReviewRequest, type RegistrationFields } from "@/lib/registration"
 import { branches, rooms } from "@/lib/mock/branches"
 import { announcements, announcementTargets, notifications, resources, resourceTargets } from "@/lib/mock/communication"
+import { groupFees, paymentObligations, payments, registrationRequests } from "@/lib/mock/finance"
 import { groupClasses, groups } from "@/lib/mock/groups"
 import { memorizationProgress } from "@/lib/mock/memorization"
 import { newMockId } from "@/lib/mock/reference-date"
@@ -22,13 +31,19 @@ import type {
   Announcement,
   AnnouncementTarget,
   AttendanceStatus,
+  GroupFee,
   ID,
   ISODate,
   MemorizationProgress,
+  Payment,
+  PaymentObligation,
+  RegistrationRequest,
+  RegistrationRequestSource,
   Resource,
   ResourceTarget,
   Session,
   SessionStatus,
+  Student,
   StudentAttendance,
   TeacherAttendance,
   TeacherNote,
@@ -61,6 +76,13 @@ export interface OperationsState {
   announcementTargets: AnnouncementTarget[]
   /** Per-user alerts referencing a resource or announcement */
   notifications: UserNotification[]
+  /** A request is not a student: admission creates the student separately */
+  registrationRequests: RegistrationRequest[]
+  /** Students created in this session by admitting a request (seed students are static) */
+  admittedStudents: Student[]
+  groupFees: GroupFee[]
+  paymentObligations: PaymentObligation[]
+  payments: Payment[]
 }
 
 const seed: OperationsState = {
@@ -74,6 +96,26 @@ const seed: OperationsState = {
   announcements,
   announcementTargets,
   notifications,
+  registrationRequests,
+  admittedStudents: [],
+  groupFees,
+  paymentObligations,
+  payments,
+}
+
+/** Seed students + students admitted in this session. */
+export function allStudents(current: Pick<OperationsState, "admittedStudents">) {
+  return [...students, ...current.admittedStudents]
+}
+
+export type GroupFeeDraft = Omit<GroupFee, "id" | "createdAt" | "updatedAt"> & { id?: ID }
+export interface PaymentInput {
+  obligationId: ID
+  amount: number
+  paidAt: ISODate
+  receiptIssued: boolean
+  periodNumber?: number
+  note?: string
 }
 
 /** Who exists, to compute notification recipients (the API will do this server-side). */
@@ -293,6 +335,93 @@ export const operations = {
       ...state,
       notifications: state.notifications.map((n) => (n.userId === userId && !n.isRead ? { ...n, isRead: true } : n)),
     })
+  },
+
+  /** Public form or admin entry — the same entity, always PENDING, never a student. */
+  submitRegistrationRequest(fields: RegistrationFields, source: RegistrationRequestSource, today: ISODate) {
+    const request: RegistrationRequest = { ...fields, id: newMockId("rr"), source, status: "PENDING", submittedAt: today }
+    setState({ ...state, registrationRequests: [request, ...state.registrationRequests] })
+    return request.id
+  },
+
+  refuseRegistrationRequest(requestId: ID, reviewerId: ID, today: ISODate) {
+    setState({
+      ...state,
+      registrationRequests: state.registrationRequests.map((r) =>
+        r.id === requestId && canReviewRequest(r) ? { ...r, status: "REFUSED", reviewedAt: today, reviewedByUserId: reviewerId } : r
+      ),
+    })
+  },
+
+  /**
+   * Admission: creates ONE student from a pending request, links it and
+   * creates the student's payment obligation from their group's fee.
+   * A request that already produced a student is never converted again.
+   */
+  admitRegistrationRequest(requestId: ID, student: Student, reviewerId: ID, today: ISODate, academicYearId: ID) {
+    const request = state.registrationRequests.find((r) => r.id === requestId)
+    if (!request || !canReviewRequest(request)) return false
+    const fee = getStudentApplicableGroupFee(student, academicYearId, groupClasses, state.groupFees)
+    setState({
+      ...state,
+      admittedStudents: [...state.admittedStudents, student],
+      registrationRequests: state.registrationRequests.map((r) =>
+        r.id === requestId ? { ...r, status: "ACCEPTED", reviewedAt: today, reviewedByUserId: reviewerId, createdStudentId: student.id } : r
+      ),
+      paymentObligations: fee
+        ? [...state.paymentObligations, createStudentPaymentObligation(student.id, fee, today, () => newMockId("po"))]
+        : state.paymentObligations,
+    })
+    return true
+  },
+
+  /**
+   * Creates or edits a group fee. A NEW active fee creates the missing
+   * obligations of the group's students for that year; editing a fee never
+   * rewrites existing obligations (their amount is historical).
+   */
+  saveGroupFee(draft: GroupFeeDraft, today: ISODate) {
+    const existing = draft.id ? state.groupFees.find((f) => f.id === draft.id) : undefined
+    const { id: _ignored, ...fields } = draft
+    void _ignored
+    const fee: GroupFee = existing ? { ...existing, ...fields, updatedAt: today } : { ...fields, id: newMockId("fee"), createdAt: today, updatedAt: today }
+    const fees = existing ? state.groupFees.map((f) => (f.id === fee.id ? fee : f)) : [...state.groupFees, fee]
+    const created =
+      fee.isActive && fee.academicYearId
+        ? allStudents(state)
+            .filter((st) => st.status !== "ARCHIVED" && groupClasses.find((c) => c.id === st.groupClassId)?.groupId === fee.groupId)
+            .filter((st) => !getStudentPaymentObligation(st.id, fee.academicYearId!, state.paymentObligations))
+            .map((st) => createStudentPaymentObligation(st.id, fee, today, () => newMockId("po")))
+        : []
+    setState({ ...state, groupFees: fees, paymentObligations: [...state.paymentObligations, ...created] })
+  },
+
+  /** One cash transaction. Rejected when it would exceed what remains (no credit balance). */
+  recordPayment(input: PaymentInput, recordedByUserId: ID, today: ISODate) {
+    const obligation = state.paymentObligations.find((o) => o.id === input.obligationId)
+    if (!obligation) return "الالتزام غير موجود"
+    const error = paymentAmountError(input.amount, getObligationSummary(obligation, state.payments).remaining)
+    if (error) return error
+    const payment: Payment = {
+      id: newMockId("pay"),
+      obligationId: obligation.id,
+      studentId: obligation.studentId,
+      amount: input.amount,
+      paidAt: input.paidAt,
+      method: "CASH",
+      receiptIssued: input.receiptIssued,
+      periodNumber: input.periodNumber,
+      note: input.note?.trim() || undefined,
+      recordedByUserId,
+      createdAt: today,
+    }
+    setState({ ...state, payments: [...state.payments, payment] })
+    return undefined
+  },
+
+  /** Only the receipt state changes — amounts and totals stay exactly the same. */
+  setReceiptIssued(paymentId: ID, receiptIssued: boolean) {
+    setState({ ...state, payments: state.payments.map((p) => (p.id === paymentId ? { ...p, receiptIssued } : p)) })
   },
 
   /** Cancelling affects only this dated session — the weekly schedule is untouched. */

@@ -352,3 +352,81 @@ export interface UserNotification {
   isRead: boolean
   createdAt: ISODate
 }
+
+/* ------------------------------------------------------------------ */
+/* Registration & payments. A RegistrationRequest is NOT a Student;    */
+/* GroupFee (pricing rule) ≠ PaymentObligation (what one student owes) */
+/* ≠ Payment (one cash transaction).                                   */
+/* ------------------------------------------------------------------ */
+
+export type RegistrationRequestSource = "PUBLIC_WEBSITE" | "ADMIN"
+export type RegistrationRequestStatus = "PENDING" | "ACCEPTED" | "REFUSED"
+
+/** One applicant, from the public form or entered by an admin — same entity either way. */
+export interface RegistrationRequest {
+  id: ID
+  firstName: string
+  lastName: string
+  birthDate?: ISODate
+  /** When the applicant gave an age instead of a birth date */
+  age?: number
+  phone: string
+  hasStudiedQuranBefore: boolean
+  previousExperience?: string
+  notes?: string
+  source: RegistrationRequestSource
+  status: RegistrationRequestStatus
+  submittedAt: ISODate
+  reviewedAt?: ISODate
+  reviewedByUserId?: ID
+  /** Set once, on admission — prevents converting the same request twice */
+  createdStudentId?: ID
+}
+
+export type BillingType = "YEARLY" | "MONTHLY"
+
+/** Pricing rule of a pedagogical GROUP (all its classes inherit it). */
+export interface GroupFee {
+  id: ID
+  groupId: ID
+  academicYearId?: ID
+  label: string
+  billingType: BillingType
+  /** Per period: the yearly amount, or the monthly amount */
+  amount: number
+  /** 1 for yearly; number of months for monthly programs (e.g. 2 for summer) */
+  numberOfPeriods?: number
+  startDate?: ISODate
+  endDate?: ISODate
+  isActive: boolean
+  createdAt: ISODate
+  updatedAt: ISODate
+}
+
+/** What one student is expected to pay — the amount is frozen when created. */
+export interface PaymentObligation {
+  id: ID
+  studentId: ID
+  groupFeeId: ID
+  academicYearId?: ID
+  expectedAmount: number
+  createdAt: ISODate
+}
+
+export type PaymentMethod = "CASH"
+
+/** One cash transaction. The receipt is tracked independently of the money. */
+export interface Payment {
+  id: ID
+  obligationId: ID
+  studentId: ID
+  amount: number
+  paidAt: ISODate
+  method: PaymentMethod
+  receiptIssued: boolean
+  /** Monthly programs: which month this payment is for (1-based) */
+  periodNumber?: number
+  note?: string
+  recordedByUserId: ID
+  createdAt: ISODate
+}

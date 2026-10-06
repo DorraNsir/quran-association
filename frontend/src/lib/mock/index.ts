@@ -13,6 +13,7 @@ export { branches, rooms, groups, groupClasses, schedules, teachers }
 export { users, DEFAULT_USER_ID, publisherNames } from "./users"
 export { teacherNotes } from "./teacher-notes"
 export { announcements, announcementTargets, notifications, resources, resourceTargets } from "./communication"
+export { groupFees, paymentObligations, payments, registrationRequests } from "./finance"
 export { students } from "./students"
 export { recentActivity } from "./activity"
 export { MOCK_TODAY } from "./reference-date"

@@ -1,5 +1,9 @@
 import type {
   AnnouncementAudienceType,
+  BillingType,
+  PaymentMethod,
+  RegistrationRequestSource,
+  RegistrationRequestStatus,
   AttendanceStatus,
   Semester,
   ConflictType,
@@ -114,6 +118,22 @@ export const labels = {
     STUDENTS: "الطلاب",
     SPECIFIC_GROUP_CLASSES: "فصول محددة",
   } satisfies Record<AnnouncementAudienceType, string>,
+  registrationSource: {
+    PUBLIC_WEBSITE: "الموقع الإلكتروني",
+    ADMIN: "الإدارة",
+  } satisfies Record<RegistrationRequestSource, string>,
+  registrationStatus: {
+    PENDING: "قيد الانتظار",
+    ACCEPTED: "مقبول",
+    REFUSED: "مرفوض",
+  } satisfies Record<RegistrationRequestStatus, string>,
+  billingType: {
+    YEARLY: "سنوي",
+    MONTHLY: "شهري",
+  } satisfies Record<BillingType, string>,
+  paymentMethod: {
+    CASH: "نقداً",
+  } satisfies Record<PaymentMethod, string>,
   common: {
     all: "الكل",
     view: "عرض",

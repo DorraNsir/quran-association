@@ -59,8 +59,8 @@ export const adminNav: NavSection[] = [
   {
     label: "التسجيل والمالية",
     items: [
-      { label: "المدفوعات", href: "/admin/payments", icon: Wallet, ready: false },
-      { label: "مطالب التسجيل", href: "/admin/pre-registrations", icon: ClipboardList, ready: false },
+      { label: "المدفوعات", href: "/admin/payments", icon: Wallet, ready: true },
+      { label: "طلبات التسجيل", href: "/admin/registration-requests", icon: ClipboardList, ready: true },
     ],
   },
   {
@@ -115,6 +115,7 @@ export const studentNav: NavSection[] = [
       { label: "متابعة الحفظ", href: "/student/memorization", icon: BookOpenCheck, ready: true },
       { label: "الموارد", href: "/student/resources", icon: FolderOpen, ready: true },
       { label: "الإعلانات", href: "/student/announcements", icon: Megaphone, ready: true },
+      { label: "المدفوعات", href: "/student/payments", icon: Wallet, ready: true },
       { label: "الملف الشخصي", href: "/student/profile", icon: CircleUserRound, ready: true },
     ],
   },

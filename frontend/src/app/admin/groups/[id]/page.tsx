@@ -17,6 +17,7 @@ import { notFound } from "next/navigation"
 
 import { GroupAttendance } from "@/components/attendance/group-attendance"
 import { GroupMemorization } from "@/components/memorization/group-memorization"
+import { GroupFees } from "@/components/payments/payments-views"
 import { GroupClassList, GroupProfileActions, GroupStudentsTable } from "@/components/groups/group-details-client"
 import { StatusBadge, TeacherRoleBadge } from "@/components/shared/badges"
 import { ComingSoon } from "@/components/shared/empty-state"
@@ -122,6 +123,8 @@ export default async function GroupDetailsPage(props: PageProps<"/admin/groups/[
                   <StatCard label="المعلمون" value={teacherCount} icon={UsersRound} />
                   <StatCard label="الحصص أسبوعيًا" value={weeklySlots.length} icon={CalendarClock} />
                 </div>
+
+                <GroupFees group={group} academicYears={academicYears} today={MOCK_TODAY} />
 
                 <section aria-labelledby="classes-heading" className="space-y-3">
                   <h2 id="classes-heading" className="flex items-center gap-2 text-sm font-semibold">

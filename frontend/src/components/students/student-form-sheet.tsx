@@ -40,7 +40,7 @@ interface StudentFormValues {
   status: StudentStatus
 }
 
-function toValues(student?: Student): StudentFormValues {
+function toValues(student?: Partial<Student>): StudentFormValues {
   return {
     photoUrl: student?.photoUrl,
     firstName: student?.firstName ?? "",
@@ -86,16 +86,25 @@ export function StudentFormSheet({
   open,
   onOpenChange,
   student,
+  prefill,
+  title,
+  description,
+  submitLabel,
   lookups,
   onSave,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   student?: Student
+  /** New student pre-filled from known data (e.g. an accepted registration request) */
+  prefill?: Partial<Student>
+  title?: string
+  description?: string
+  submitLabel?: string
   lookups: Lookups
   onSave: (student: Student) => void
 }) {
-  const form = useFormState(`student-${student?.id ?? "new"}`, toValues(student), validate)
+  const form = useFormState(`student-${student?.id ?? "new"}`, toValues(student ?? prefill), validate)
   const { values, setField } = form
   const age = ageFrom(values.dateOfBirth)
   const isMinor = age !== null && age < 18
@@ -122,10 +131,10 @@ export function StudentFormSheet({
     <FormSheet
       open={open}
       onOpenChange={onOpenChange}
-      title={student ? "تعديل بيانات الطالب" : "إضافة طالب جديد"}
-      description="الحقول المعلَّمة بـ * إلزامية."
+      title={title ?? (student ? "تعديل بيانات الطالب" : "إضافة طالب جديد")}
+      description={description ?? "الحقول المعلَّمة بـ * إلزامية."}
       onSubmit={submit}
-      submitLabel={student ? "حفظ التعديلات" : "إضافة الطالب"}
+      submitLabel={submitLabel ?? (student ? "حفظ التعديلات" : "إضافة الطالب")}
     >
       <FormSection title="الهوية" description="المعلومات الشخصية كما تظهر في وثائق الطالب.">
         <PhotoInput
