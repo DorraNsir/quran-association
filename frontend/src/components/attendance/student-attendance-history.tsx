@@ -14,6 +14,7 @@ import { isWithin, weekdayOf } from "@/lib/dates"
 import { fullName, type Lookups } from "@/lib/domain"
 import { countLabels, formatDate, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
+import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
 import type { ID, ISODate, Student } from "@/types/domain"
 
 import { AttendanceStatusBadge } from "./attendance-badges"
@@ -25,13 +26,20 @@ export function StudentAttendanceHistory({
   lookups,
   students,
   today,
+  workspace = "admin",
+  groupClassIds,
 }: {
   studentId: ID
   lookups: Lookups
   students: Student[]
   today: ISODate
+  workspace?: StaffWorkspace
+  /** Teacher workspace: only the sessions of these classes (the teacher's own) */
+  groupClassIds?: ID[]
 }) {
-  const rows = useSessionRows(lookups, students, today)
+  const rows = useSessionRows(lookups, students, today).filter(
+    (r) => !groupClassIds || groupClassIds.includes(r.session.groupClassId)
+  )
   const [period, setPeriod] = useState<Period>({ preset: "year" })
   const [status, setStatus] = useState(ALL)
   const range = resolvePeriod(period, today)
@@ -72,7 +80,7 @@ export function StudentAttendanceHistory({
             {shown.map(({ row, record }) => (
               <li key={record.id}>
                 <Link
-                  href={`/admin/sessions/${row.session.id}`}
+                  href={workspacePaths(workspace).session(row.session.id)}
                   className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 transition-colors hover:bg-muted/40"
                 >
                   <div className="min-w-0">
@@ -81,7 +89,7 @@ export function StudentAttendanceHistory({
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {row.group?.name} ({row.branch?.name}) — {row.supervisor ? fullName(row.supervisor) : "—"} ·{" "}
-                      <span dir="ltr" className="tabular-nums">{formatTimeRange(row.session.start, row.session.end)}</span>
+                      <span dir="ltr" className="inline-block tabular-nums">{formatTimeRange(row.session.start, row.session.end)}</span>
                     </p>
                   </div>
                   <div className="flex items-center gap-2">

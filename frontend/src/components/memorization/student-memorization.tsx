@@ -23,17 +23,20 @@ export function StudentMemorization({
   students,
   academicYears,
   today,
+  updaterId,
 }: {
   studentId: ID
   lookups: Lookups
   students: Student[]
   academicYears: AcademicYear[]
   today: ISODate
+  /** The signed-in teacher in Teacher Space */
+  updaterId?: ID
 }) {
   const { memorizationProgress } = useOperations()
   const initial = defaultPeriod(academicYears, today)
   const [academicYearId, setAcademicYearId] = useState(initial.academicYearId)
-  const memorization = useMemorizationDialog({ lookups, academicYears, today })
+  const memorization = useMemorizationDialog({ lookups, academicYears, today, updaterId })
   const student = students.find((s) => s.id === studentId)
   if (!student) return null
 

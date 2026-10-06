@@ -10,7 +10,8 @@ import { schedules } from "./schedules"
 import { teachers } from "./teachers"
 
 export { branches, rooms, groups, groupClasses, schedules, teachers }
-export { currentUser } from "./teachers"
+export { users, DEFAULT_USER_ID } from "./users"
+export { teacherNotes } from "./teacher-notes"
 export { students } from "./students"
 export { recentActivity } from "./activity"
 export { MOCK_TODAY } from "./reference-date"

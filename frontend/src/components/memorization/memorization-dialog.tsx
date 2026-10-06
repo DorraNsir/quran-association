@@ -1,6 +1,6 @@
 "use client"
 
-import { BookMarked } from "lucide-react"
+import { BookMarked, ChevronLeft } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 
@@ -48,6 +48,7 @@ export function MemorizationDialog({
   current,
   lookups,
   onSave,
+  next,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -57,6 +58,8 @@ export function MemorizationDialog({
   current?: SurahNumber
   lookups: Lookups
   onSave: (surah: SurahNumber) => void
+  /** Sequential mode: save (if changed) and open the next student of the list */
+  next?: { name: string; onSaveAndNext: (surah?: SurahNumber) => void }
 }) {
   const [surah, setSurah] = useState<SurahNumber | undefined>(current)
   const view = studentClass(student, indexLookups(lookups))
@@ -76,7 +79,8 @@ export function MemorizationDialog({
           className="grid gap-4"
           onSubmit={(e) => {
             e.preventDefault()
-            if (surah) onSave(surah)
+            if (next) next.onSaveAndNext(surah)
+            else if (surah) onSave(surah)
           }}
         >
           <DialogHeader>
@@ -100,14 +104,32 @@ export function MemorizationDialog({
             <Label htmlFor="memorization-surah">آخر سورة محفوظة</Label>
             <SurahCombobox id="memorization-surah" value={surah} onChange={setSurah} />
           </div>
+          {next && (
+            <p className="text-xs text-muted-foreground">
+              الطالب التالي: <span className="font-medium text-foreground">{next.name}</span>
+            </p>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              {labels.common.cancel}
+              {next ? "إنهاء" : labels.common.cancel}
             </Button>
-            <Button type="submit" disabled={!surah || surah === current} className="min-w-24">
-              حفظ
-            </Button>
+            {next ? (
+              <>
+                <Button type="button" variant="secondary" disabled={!surah || surah === current} onClick={() => surah && onSave(surah)}>
+                  حفظ وإغلاق
+                </Button>
+                {/* Unchanged → just moves on; changed → saves then moves on */}
+                <Button type="submit" className="min-w-24">
+                  {surah && surah !== current ? "حفظ والتالي" : "التالي"}
+                  <ChevronLeft className="ltr:rotate-180" />
+                </Button>
+              </>
+            ) : (
+              <Button type="submit" disabled={!surah || surah === current} className="min-w-24">
+                حفظ
+              </Button>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>
@@ -118,8 +140,10 @@ export function MemorizationDialog({
 /**
  * Opens the memorization dialog for (student, year, semester) and saves to
  * the shared store (update if a value exists, create otherwise).
- * `updaterId` will be the logged-in teacher in Teacher Space; in the admin
+ * `updaterId` is the signed-in teacher in Teacher Space; in the admin
  * prototype it defaults to the supervisor of the student's class.
+ * Passing a `queue` (the students of the current list) enables fast
+ * sequential updates: "save and next" walks through the list.
  */
 export function useMemorizationDialog({
   lookups,
@@ -133,10 +157,17 @@ export function useMemorizationDialog({
   updaterId?: ID
 }) {
   const { memorizationProgress } = useOperations()
-  const [target, setTarget] = useState<{ student: Student; academicYearId: ID; semester: Semester; key: number; open: boolean } | null>(null)
+  const [target, setTarget] = useState<{
+    student: Student
+    academicYearId: ID
+    semester: Semester
+    queue?: Student[]
+    key: number
+    open: boolean
+  } | null>(null)
 
-  const open = (student: Student, academicYearId: ID, semester: Semester) =>
-    setTarget((prev) => ({ student, academicYearId, semester, key: (prev?.key ?? 0) + 1, open: true }))
+  const open = (student: Student, academicYearId: ID, semester: Semester, queue?: Student[]) =>
+    setTarget((prev) => ({ student, academicYearId, semester, queue, key: (prev?.key ?? 0) + 1, open: true }))
   const close = (isOpen: boolean) => {
     if (!isOpen) setTarget((t) => (t ? { ...t, open: false } : t))
   }
@@ -145,6 +176,23 @@ export function useMemorizationDialog({
   const current = target
     ? getMemorizationProgress(memorizationProgress, target.student.id, target.academicYearId, target.semester)
     : undefined
+  const queueIndex = target?.queue?.findIndex((s) => s.id === target.student.id) ?? -1
+  const nextStudent = target?.queue && queueIndex >= 0 ? target.queue[queueIndex + 1] : undefined
+
+  function save(surah: SurahNumber) {
+    if (!target) return
+    const teacherId = updaterId ?? defaultUpdater(target.student, lookups.groupClasses)
+    if (!teacherId) return
+    operations.saveMemorization({
+      studentId: target.student.id,
+      academicYearId: target.academicYearId,
+      semester: target.semester,
+      lastMemorizedSurah: surah,
+      updatedByTeacherId: teacherId,
+      updatedAt: today,
+    })
+    toast.success("تم تحديث متابعة الحفظ بنجاح", { description: `${fullName(target.student)}: ${surahLabel(surah)}` })
+  }
 
   const dialog =
     target && year ? (
@@ -158,19 +206,20 @@ export function useMemorizationDialog({
         current={current?.lastMemorizedSurah}
         lookups={lookups}
         onSave={(surah) => {
-          const teacherId = updaterId ?? defaultUpdater(target.student, lookups.groupClasses)
-          if (!teacherId) return
-          operations.saveMemorization({
-            studentId: target.student.id,
-            academicYearId: target.academicYearId,
-            semester: target.semester,
-            lastMemorizedSurah: surah,
-            updatedByTeacherId: teacherId,
-            updatedAt: today,
-          })
-          toast.success("تم تحديث متابعة الحفظ بنجاح", { description: `${fullName(target.student)}: ${surahLabel(surah)}` })
+          save(surah)
           close(false)
         }}
+        next={
+          nextStudent
+            ? {
+                name: fullName(nextStudent),
+                onSaveAndNext: (surah) => {
+                  if (surah && surah !== current?.lastMemorizedSurah) save(surah)
+                  open(nextStudent, target.academicYearId, target.semester, target.queue)
+                },
+              }
+            : undefined
+        }
       />
     ) : null
 

@@ -12,11 +12,12 @@ import { PageHeader } from "@/components/shared/page-header"
 import { PeriodFilter, resolvePeriod, type Period } from "@/components/shared/period-filter"
 import { Button } from "@/components/ui/button"
 import { isWithin, weekdayOf } from "@/lib/dates"
-import { classTeacherIds, fullName, type Lookups } from "@/lib/domain"
+import { classTeacherIds, describeClass, fullName, indexLookups, type Lookups } from "@/lib/domain"
 import { countLabels, formatShortDate, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import type { ISODate, Student } from "@/types/domain"
+import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
+import type { ID, ISODate, Student } from "@/types/domain"
 
 import { AttendanceAction } from "./attendance-action"
 import { useSessionRows, type SessionRow } from "./use-session-rows"
@@ -56,13 +57,24 @@ export function SessionsView({
   students,
   today,
   initialTab = "today",
+  workspace = "admin",
+  groupClassIds,
 }: {
   lookups: Lookups
   students: Student[]
   today: ISODate
   initialTab?: SessionTab
+  workspace?: StaffWorkspace
+  /** Teacher workspace: only the sessions of these classes */
+  groupClassIds?: ID[]
 }) {
-  const rows = useSessionRows(lookups, students, today)
+  const isTeacher = workspace === "teacher"
+  const paths = workspacePaths(workspace)
+  const indexes = indexLookups(lookups)
+  const rows = useSessionRows(lookups, students, today).filter(
+    (r) => !groupClassIds || groupClassIds.includes(r.session.groupClassId)
+  )
+  const [classId, setClassId] = useState(ALL)
   const [tab, setTab] = useState<SessionTab>(initialTab)
   const [period, setPeriod] = useState<Period>({ preset: "all" })
   const [groupId, setGroupId] = useState(ALL)
@@ -73,6 +85,7 @@ export function SessionsView({
   const matchesFilters = (row: SessionRow) =>
     isWithin(row.session.date, range) &&
     (groupId === ALL || row.group?.id === groupId) &&
+    (classId === ALL || row.session.groupClassId === classId) &&
     (branchId === ALL || row.branch?.id === branchId) &&
     (teacherId === ALL || (row.groupClass ? classTeacherIds(row.groupClass).includes(teacherId) : false))
   const filteredAll = rows.filter(matchesFilters)
@@ -80,9 +93,10 @@ export function SessionsView({
   // Future first-to-come; history most-recent first
   const ordered = tab === "today" || tab === "upcoming" ? filtered : [...filtered].reverse()
 
-  const hasActiveFilters = period.preset !== "all" || [groupId, branchId, teacherId].some((v) => v !== ALL)
+  const hasActiveFilters = period.preset !== "all" || [groupId, classId, branchId, teacherId].some((v) => v !== ALL)
   const resetFilters = () => {
     setPeriod({ preset: "all" })
+    setClassId(ALL)
     setGroupId(ALL)
     setBranchId(ALL)
     setTeacherId(ALL)
@@ -107,7 +121,7 @@ export function SessionsView({
       header: "المجموعة",
       // The class's place tells apart two classes of the same group
       cell: (r) => (
-        <Link href={`/admin/sessions/${r.session.id}`} className="block hover:opacity-80">
+        <Link href={paths.session(r.session.id)} className="block hover:opacity-80">
           <span className="font-medium">{r.group?.name}</span>
           <span className="block text-xs text-muted-foreground">
             {r.room?.name} · {r.branch?.name}
@@ -128,18 +142,22 @@ export function SessionsView({
       id: "actions",
       header: <span className="sr-only">{labels.common.actions}</span>,
       // The group name already opens the session; the row's one action is attendance
-      cell: (r) => <AttendanceAction row={r} today={today} />,
+      cell: (r) => <AttendanceAction row={r} today={today} workspace={workspace} />,
     },
   ]
 
   return (
     <>
       <PageHeader
-        title="الحصص"
-        description="الحصص الفعلية المؤرخة، المتولدة من البرنامج الأسبوعي للمجموعات، مع حالة تسجيل الحضور لكل حصة."
+        title={isTeacher ? "حصصي" : "الحصص"}
+        description={
+          isTeacher
+            ? "حصص مجموعاتك المؤرخة مع حالة تسجيل الحضور لكل حصة."
+            : "الحصص الفعلية المؤرخة، المتولدة من البرنامج الأسبوعي للمجموعات، مع حالة تسجيل الحضور لكل حصة."
+        }
         actions={
           <Button asChild variant="outline">
-            <Link href="/admin/calendar">البرنامج الأسبوعي</Link>
+            <Link href={paths.schedule}>{isTeacher ? "جدولي الأسبوعي" : "البرنامج الأسبوعي"}</Link>
           </Button>
         }
       />
@@ -176,16 +194,31 @@ export function SessionsView({
 
       <FilterBar hasActiveFilters={hasActiveFilters} onReset={resetFilters} resultLabel={countLabels.sessions(ordered.length)}>
         <PeriodFilter value={period} onChange={setPeriod} />
-        <FilterSelect label="المجموعة" allLabel="كل المجموعات" value={groupId} onValueChange={setGroupId}
-          options={lookups.groups.filter((g) => g.status === "ACTIVE").map((g) => ({ value: g.id, label: g.name }))} />
-        <FilterSelect label="الفرع" allLabel="كل الفروع" value={branchId} onValueChange={setBranchId}
-          options={lookups.branches.filter((b) => b.status === "ACTIVE").map((b) => ({ value: b.id, label: b.name }))} />
-        <FilterSelect label="المعلم" allLabel="كل المعلمين" value={teacherId} onValueChange={setTeacherId}
-          options={lookups.teachers.filter((t) => t.status === "ACTIVE").map((t) => ({ value: t.id, label: fullName(t) }))} />
+        {isTeacher ? (
+          // A teacher filters by their own classes only (group + branch)
+          (groupClassIds?.length ?? 0) > 1 && (
+            <FilterSelect label="المجموعة" allLabel="كل مجموعاتي" value={classId} onValueChange={setClassId}
+              options={(groupClassIds ?? []).flatMap((id) => {
+                const groupClass = indexes.classesById.get(id)
+                if (!groupClass) return []
+                const view = describeClass(groupClass, indexes)
+                return [{ value: id, label: `${view.group?.name ?? ""} — ${view.branch?.name ?? ""}` }]
+              })} />
+          )
+        ) : (
+          <>
+            <FilterSelect label="المجموعة" allLabel="كل المجموعات" value={groupId} onValueChange={setGroupId}
+              options={lookups.groups.filter((g) => g.status === "ACTIVE").map((g) => ({ value: g.id, label: g.name }))} />
+            <FilterSelect label="الفرع" allLabel="كل الفروع" value={branchId} onValueChange={setBranchId}
+              options={lookups.branches.filter((b) => b.status === "ACTIVE").map((b) => ({ value: b.id, label: b.name }))} />
+            <FilterSelect label="المعلم" allLabel="كل المعلمين" value={teacherId} onValueChange={setTeacherId}
+              options={lookups.teachers.filter((t) => t.status === "ACTIVE").map((t) => ({ value: t.id, label: fullName(t) }))} />
+          </>
+        )}
       </FilterBar>
 
       <DataTable
-        key={`${tab}|${period.preset}|${range.from}|${range.to}|${groupId}|${branchId}|${teacherId}`}
+        key={`${tab}|${period.preset}|${range.from}|${range.to}|${groupId}|${classId}|${branchId}|${teacherId}`}
         caption="قائمة الحصص"
         columns={columns}
         rows={ordered}
@@ -201,7 +234,7 @@ export function SessionsView({
         renderMobileCard={(r) => (
           <div className="space-y-2.5">
             <div className="flex items-start justify-between gap-2">
-              <Link href={`/admin/sessions/${r.session.id}`} className="min-w-0">
+              <Link href={paths.session(r.session.id)} className="min-w-0">
                 <p className="font-medium">{r.group?.name}</p>
                 {when(r)}
               </Link>
@@ -214,7 +247,7 @@ export function SessionsView({
             </div>
             <div className="flex items-center justify-between gap-2">
               <AttendanceStateLabel {...r.progress} />
-              <AttendanceAction row={r} today={today} />
+              <AttendanceAction row={r} today={today} workspace={workspace} />
             </div>
           </div>
         )}

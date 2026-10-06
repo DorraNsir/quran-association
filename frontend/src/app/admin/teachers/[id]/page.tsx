@@ -33,7 +33,7 @@ import {
 } from "@/lib/domain"
 import { countLabels, formatDate, formatDuration } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { currentUser, lookups, schedules, students, teachers } from "@/lib/mock"
+import { lookups, schedules, students, teachers, users } from "@/lib/mock"
 import { cn } from "@/lib/utils"
 
 export function generateStaticParams() {
@@ -59,7 +59,7 @@ export default async function TeacherProfilePage(props: PageProps<"/admin/teache
   const assisting = assignments.length - supervising
   const weeklySlots = teacherWeeklySlots(teacher.id, lookups)
   const minutes = weeklyMinutes(weeklySlots.map((e) => e.slot))
-  const isAdmin = currentUser.teacherId === teacher.id && currentUser.roles.includes("ADMIN")
+  const isAdmin = users.some((u) => u.teacherId === teacher.id && u.roles.includes("ADMIN"))
 
   return (
     <>

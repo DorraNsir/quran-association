@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation"
 
-/** The public website comes in a later phase; for now the root opens the admin. */
-export default function Home() {
-  redirect("/admin")
+import { getCurrentUser, homeOf } from "@/lib/auth/current-user"
+
+/** The public website comes in a later phase; for now the root opens the user's workspace. */
+export default async function Home() {
+  redirect(homeOf(await getCurrentUser()))
 }

@@ -5,6 +5,7 @@ import { CalendarX2 } from "lucide-react"
 import { AttendanceTaker } from "@/components/attendance/attendance-taker"
 import { EmptyState } from "@/components/shared/empty-state"
 import type { Lookups } from "@/lib/domain"
+import type { StaffWorkspace } from "@/lib/workspace"
 import type { ID, ISODate, Student } from "@/types/domain"
 
 import { SessionDetails } from "./session-details"
@@ -17,20 +18,22 @@ export function SessionScreen({
   lookups,
   students,
   today,
+  workspace = "admin",
 }: {
   sessionId: ID
   mode: "details" | "attendance"
   lookups: Lookups
   students: Student[]
   today: ISODate
+  workspace?: StaffWorkspace
 }) {
   const row = useSessionRows(lookups, students, today).find((r) => r.session.id === sessionId)
   if (!row) {
     return <EmptyState icon={CalendarX2} title="الحصة غير موجودة" />
   }
   return mode === "details" ? (
-    <SessionDetails row={row} today={today} />
+    <SessionDetails row={row} today={today} workspace={workspace} />
   ) : (
-    <AttendanceTaker key={row.session.id} row={row} today={today} />
+    <AttendanceTaker key={row.session.id} row={row} today={today} workspace={workspace} />
   )
 }

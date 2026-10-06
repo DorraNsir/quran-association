@@ -28,6 +28,7 @@ import { fullName } from "@/lib/domain"
 import { countLabels, formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { operations, type AttendanceEntry } from "@/lib/store/operations"
+import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
 import type { AttendanceStatus, ID, ISODate } from "@/types/domain"
 
 import { StudentAttendanceRow, TeacherAttendanceList } from "./attendance-rows"
@@ -38,8 +39,9 @@ import { AttendanceProgress } from "./attendance-stats"
  * save. Works as one-tap cards on phones and compact rows on desktop.
  * Remount (key) per session so the draft starts from saved data.
  */
-export function AttendanceTaker({ row, today }: { row: SessionRow; today: ISODate }) {
+export function AttendanceTaker({ row, today, workspace = "admin" }: { row: SessionRow; today: ISODate; workspace?: StaffWorkspace }) {
   const router = useRouter()
+  const paths = workspacePaths(workspace)
   const { session, group, roster } = row
   const [students, setStudents] = useState(
     () => new Map<ID, AttendanceEntry>(row.records.map((r) => [r.studentId, { status: r.status, note: r.note }]))
@@ -87,7 +89,7 @@ export function AttendanceTaker({ row, today }: { row: SessionRow; today: ISODat
     setDirty(false)
     if (complete) {
       toast.success("تم حفظ الحضور بنجاح", { description: labels.common.mockNotice })
-      router.push(`/admin/sessions/${session.id}`)
+      router.push(paths.session(session.id))
     } else {
       toast.warning(`حُفظ تسجيل جزئي — ${countLabels.students(unmarked.length)} دون تسجيل`, {
         description: "تبقى الحصة في قائمة الحضور غير المكتمل.",
@@ -96,8 +98,8 @@ export function AttendanceTaker({ row, today }: { row: SessionRow; today: ISODat
   }
 
   const crumbs = [
-    { label: "الحصص", href: "/admin/sessions" },
-    { label: `${group?.name ?? ""} (${row.branch?.name ?? ""}) — ${formatDate(session.date)}`, href: `/admin/sessions/${session.id}` },
+    { label: "الحصص", href: paths.sessions },
+    { label: `${group?.name ?? ""} (${row.branch?.name ?? ""}) — ${formatDate(session.date)}`, href: paths.session(session.id) },
     { label: isEdit ? "تعديل الحضور" : "تسجيل الحضور" },
   ]
 

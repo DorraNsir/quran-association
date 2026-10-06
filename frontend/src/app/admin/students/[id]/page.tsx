@@ -21,6 +21,7 @@ import { ProfileTabs } from "@/components/shared/profile-tabs"
 import { StudentAttendanceHistory } from "@/components/attendance/student-attendance-history"
 import { StudentMemorization } from "@/components/memorization/student-memorization"
 import { StudentOverview } from "@/components/students/student-overview"
+import { StudentTeacherNotes } from "@/components/teacher/teacher-notes"
 import { StudentProfileActions } from "@/components/students/student-profile-actions"
 import { ageOn, fullName, indexLookups, studentClass } from "@/lib/domain"
 import { academicYears, lookups, MOCK_TODAY, students } from "@/lib/mock"
@@ -123,14 +124,7 @@ export default async function StudentProfilePage(props: PageProps<"/admin/studen
             value: "notes",
             label: "ملاحظات المعلمين",
             icon: <NotebookPen aria-hidden />,
-            later: true,
-            content: (
-              <ComingSoon
-                icon={NotebookPen}
-                title="ملاحظات المعلمين"
-                description="ملاحظات خاصة يدوّنها المعلمون حول سلوك الطالب وتقدّمه، تظهر للإدارة فقط."
-              />
-            ),
+            content: <StudentTeacherNotes studentId={student.id} lookups={lookups} />,
           },
         ]}
       />

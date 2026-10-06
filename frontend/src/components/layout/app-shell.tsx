@@ -1,19 +1,26 @@
+import type { Workspace } from "@/lib/workspace"
 import type { User } from "@/types/domain"
 
-import { AdminHeader } from "./admin-header"
+import { AppHeader } from "./app-header"
 import { Brand } from "./brand"
 import { SidebarNav } from "./sidebar-nav"
 import { WorkspaceSwitcher } from "./workspace-switcher"
 
 /**
- * Admin application shell: fixed sidebar on large screens (inline-start side,
- * so it sits on the right in Arabic and on the left in French), drawer on mobile.
+ * Application shell shared by the admin and teacher workspaces: fixed
+ * sidebar on large screens (inline-start side, so it sits on the right in
+ * Arabic and on the left in French), drawer on mobile.
  */
-export function AdminLayout({
+export function AppShell({
+  workspace,
   user,
+  accounts,
   children,
 }: {
+  workspace: Workspace
   user: User
+  /** Mock accounts offered by the prototype account switcher */
+  accounts: User[]
   children: React.ReactNode
 }) {
   return (
@@ -26,15 +33,15 @@ export function AdminLayout({
       </a>
       <aside className="fixed inset-y-0 start-0 z-30 hidden w-64 flex-col border-e bg-sidebar lg:flex">
         <div className="flex h-16 items-center border-b px-4">
-          <Brand />
+          <Brand href={`/${workspace}`} />
         </div>
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-3">
-          <WorkspaceSwitcher roles={user.roles} />
-          <SidebarNav />
+          <WorkspaceSwitcher roles={user.roles} current={workspace} />
+          <SidebarNav workspace={workspace} />
         </div>
       </aside>
       <div className="flex min-h-svh flex-col">
-        <AdminHeader user={user} />
+        <AppHeader user={user} accounts={accounts} workspace={workspace} />
         <main id="main" className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <div className="mx-auto w-full max-w-7xl">{children}</div>
         </main>

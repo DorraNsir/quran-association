@@ -43,6 +43,7 @@ import { fullName } from "@/lib/domain"
 import { countLabels, formatDate, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { operations } from "@/lib/store/operations"
+import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
 import type { ISODate } from "@/types/domain"
 
 import { SessionHeader } from "./session-header"
@@ -50,8 +51,14 @@ import type { SessionRow } from "./use-session-rows"
 
 const mockSaved = { description: labels.common.mockNotice }
 
-export function SessionDetails({ row, today }: { row: SessionRow; today: ISODate }) {
+/**
+ * One dated session. In the teacher workspace the management actions
+ * (complete / cancel / reschedule) are hidden: teachers only take attendance.
+ */
+export function SessionDetails({ row, today, workspace = "admin" }: { row: SessionRow; today: ISODate; workspace?: StaffWorkspace }) {
   const { session, group, roster, progress } = row
+  const paths = workspacePaths(workspace)
+  const canManage = workspace === "admin"
   const [dialog, setDialog] = useState<"cancel" | "complete" | null>(null)
   const [reason, setReason] = useState("")
   const editable = canTakeAttendance(session, today)
@@ -83,7 +90,7 @@ export function SessionDetails({ row, today }: { row: SessionRow; today: ISODate
     <>
       <Breadcrumbs
         className="mb-4"
-        items={[{ label: "الحصص", href: "/admin/sessions" }, { label: `${group?.name ?? ""} (${row.branch?.name ?? ""}) — ${formatDate(session.date)}` }]}
+        items={[{ label: "الحصص", href: paths.sessions }, { label: `${group?.name ?? ""} (${row.branch?.name ?? ""}) — ${formatDate(session.date)}` }]}
       />
       <SessionHeader
         row={row}
@@ -91,13 +98,13 @@ export function SessionDetails({ row, today }: { row: SessionRow; today: ISODate
           <>
             {editable && (
               <Button asChild>
-                <Link href={`/admin/sessions/${session.id}/attendance`}>
+                <Link href={paths.attendance(session.id)}>
                   <ClipboardCheck />
                   {row.records.length > 0 ? "تعديل الحضور" : "تسجيل الحضور"}
                 </Link>
               </Button>
             )}
-            <ActionsMenu label="إجراءات الحصة" triggerVariant="outline" actions={secondary} />
+            {canManage && <ActionsMenu label="إجراءات الحصة" triggerVariant="outline" actions={secondary} />}
           </>
         }
       />
@@ -138,7 +145,7 @@ export function SessionDetails({ row, today }: { row: SessionRow; today: ISODate
                     const record = recordsByStudent.get(student.id)
                     return (
                       <li key={student.id} className="flex items-center justify-between gap-3 py-2.5">
-                        <Link href={`/admin/students/${student.id}`} className="min-w-0 hover:opacity-80">
+                        <Link href={paths.student(student.id)} className="min-w-0 hover:opacity-80">
                           <PersonCell name={fullName(student)} photoUrl={student.photoUrl} size="sm" secondary={record?.note} />
                         </Link>
                         {record ? (
@@ -162,8 +169,8 @@ export function SessionDetails({ row, today }: { row: SessionRow; today: ISODate
               items={[
                 {
                   label: "المجموعة",
-                  value: group && (
-                    <Link href={`/admin/groups/${group.id}`} className="text-primary hover:underline">
+                  value: group && row.groupClass && (
+                    <Link href={paths.groupClass(row.groupClass)} className="text-primary hover:underline">
                       {group.name}
                     </Link>
                   ),

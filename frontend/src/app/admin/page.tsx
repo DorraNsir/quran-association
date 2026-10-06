@@ -11,12 +11,12 @@ import {
 import { TodaySessions } from "@/components/dashboard/today-sessions"
 import { PageHeader } from "@/components/shared/page-header"
 import { StatCard } from "@/components/shared/stat-card"
+import { getCurrentUser } from "@/lib/auth/current-user"
 import { isRunning, weekdayOf } from "@/lib/domain"
 import { countLabels, formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import {
   branches,
-  currentUser,
   groupClasses,
   groups,
   lookups,
@@ -37,7 +37,8 @@ function registeredSince(days: number) {
   return students.filter((s) => s.registrationDate >= iso).length
 }
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const user = await getCurrentUser()
   const activeStudents = students.filter((s) => s.status === "ACTIVE").length
   const activeTeachers = teachers.filter((t) => t.status === "ACTIVE").length
   const activeGroups = groups.filter((g) => g.status === "ACTIVE").length
@@ -52,7 +53,7 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader
-        title={`مرحبًا، ${currentUser.firstName}`}
+        title={`مرحبًا، ${user.firstName}`}
         description={`${labels.weekday[weekdayOf(MOCK_TODAY)]} ${formatDate(MOCK_TODAY)} — ملخص نشاط الجمعية وما يحتاج إلى متابعتك.`}
       />
 

@@ -1,4 +1,4 @@
-import type { Teacher, User } from "@/types/domain"
+import type { Teacher } from "@/types/domain"
 
 export const teachers: Teacher[] = [
   {
@@ -135,14 +135,3 @@ export const teachers: Teacher[] = [
     qualification: "حافظة لكتاب الله",
   },
 ]
-
-/** The signed-in user for this mock phase: an admin who also teaches. */
-export const currentUser: User = {
-  id: "u1",
-  firstName: "أحمد",
-  lastName: "بن صالح",
-  email: "ahmed.bensalah@omar-khattab.tn",
-  phone: "98412305",
-  roles: ["ADMIN", "TEACHER"],
-  teacherId: "t1",
-}

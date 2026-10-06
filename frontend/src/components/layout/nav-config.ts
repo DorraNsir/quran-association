@@ -1,21 +1,26 @@
 import {
+  BookOpen,
   BookOpenCheck,
   Building2,
   CalendarCheck2,
   CalendarDays,
   ClipboardCheck,
   ClipboardList,
+  CircleUserRound,
   FolderOpen,
   Globe,
   GraduationCap,
   LayoutDashboard,
   Megaphone,
+  NotebookPen,
   Settings,
   Users,
   UsersRound,
   Wallet,
   type LucideIcon,
 } from "lucide-react"
+
+import type { Workspace } from "@/lib/workspace"
 
 export interface NavItem {
   label: string
@@ -72,12 +77,54 @@ export const adminFooterNav: NavItem[] = [
   { label: "الإعدادات", href: "/admin/settings", icon: Settings, ready: false },
 ]
 
+/** Teacher Space: only the teacher's own classes, students and sessions — no management. */
+export const teacherNav: NavSection[] = [
+  {
+    items: [
+      { label: "لوحة القيادة", href: "/teacher", icon: LayoutDashboard, ready: true, exact: true },
+    ],
+  },
+  {
+    label: "عملي اليومي",
+    items: [
+      { label: "مجموعاتي", href: "/teacher/classes", icon: BookOpen, ready: true },
+      { label: "طلابي", href: "/teacher/students", icon: GraduationCap, ready: true },
+      { label: "الحصص", href: "/teacher/sessions", icon: CalendarCheck2, ready: true },
+      { label: "متابعة الحفظ", href: "/teacher/memorization", icon: BookOpenCheck, ready: true },
+      { label: "ملاحظاتي", href: "/teacher/notes", icon: NotebookPen, ready: true },
+      { label: "جدولي", href: "/teacher/schedule", icon: CalendarDays, ready: true },
+    ],
+  },
+]
+
+/** Student Space: read-only, the student's own information only — no other students, no notes. */
+export const studentNav: NavSection[] = [
+  {
+    items: [
+      { label: "لوحة القيادة", href: "/student", icon: LayoutDashboard, ready: true, exact: true },
+      { label: "مجموعتي", href: "/student/group", icon: BookOpen, ready: true },
+      { label: "جدولي", href: "/student/schedule", icon: CalendarDays, ready: true },
+      { label: "الحضور", href: "/student/attendance", icon: ClipboardCheck, ready: true },
+      { label: "متابعة الحفظ", href: "/student/memorization", icon: BookOpenCheck, ready: true },
+      { label: "الملف الشخصي", href: "/student/profile", icon: CircleUserRound, ready: true },
+    ],
+  },
+]
+
+/** Navigation of each workspace (looked up client-side: icons can't cross the server boundary). */
+export const workspaceNav: Record<Workspace, { label: string; sections: NavSection[]; footer: NavItem[] }> = {
+  admin: { label: "فضاء الإدارة", sections: adminNav, footer: adminFooterNav },
+  teacher: { label: "فضاء المعلم", sections: teacherNav, footer: [] },
+  student: { label: "فضاء الطالب", sections: studentNav, footer: [] },
+}
+
 export function isNavItemActive(item: NavItem, pathname: string) {
   if (item.exact) return pathname === item.href
   return pathname === item.href || pathname.startsWith(`${item.href}/`)
 }
 
-export function findActiveNavItem(pathname: string) {
-  const all = [...adminNav.flatMap((s) => s.items), ...adminFooterNav]
+export function findActiveNavItem(pathname: string, workspace: Workspace) {
+  const { sections, footer } = workspaceNav[workspace]
+  const all = [...sections.flatMap((s) => s.items), ...footer]
   return all.find((item) => isNavItemActive(item, pathname))
 }

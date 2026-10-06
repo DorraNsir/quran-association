@@ -10,10 +10,10 @@ export const ASSOCIATION_NAME = "الفرع المحلي عمر بن الخطا�
 export const ASSOCIATION_PLACE = "بدار شعبان الفهري"
 
 /** Calligraphy mark + name, for the sidebar and mobile drawer. */
-export function Brand() {
+export function Brand({ href = "/admin" }: { href?: string }) {
   return (
     <Link
-      href="/admin"
+      href={href}
       className="flex min-w-0 items-center gap-2.5 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <Image src={logoMark} alt="" className="h-12 w-auto shrink-0" priority />

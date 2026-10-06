@@ -4,6 +4,7 @@ import { upsertMemorization, type MemorizationUpdate } from "@/lib/memorization"
 import { memorizationProgress } from "@/lib/mock/memorization"
 import { newMockId } from "@/lib/mock/reference-date"
 import { sessions, studentAttendance, teacherAttendance } from "@/lib/mock/sessions"
+import { teacherNotes } from "@/lib/mock/teacher-notes"
 import type {
   AttendanceStatus,
   ID,
@@ -12,11 +13,12 @@ import type {
   SessionStatus,
   StudentAttendance,
   TeacherAttendance,
+  TeacherNote,
 } from "@/types/domain"
 
 /**
- * In-memory mock store for operational data (sessions, attendance and
- * memorization tracking).
+ * In-memory mock store for operational data (sessions, attendance,
+ * memorization tracking and teacher notes).
  *
  * Saving attendance on one screen must show up on the session page, the
  * student history and the dashboard, so this state is shared by every
@@ -30,9 +32,11 @@ export interface OperationsState {
   teacherAttendance: TeacherAttendance[]
   /** One last-memorized-surah per (student, academic year, semester) */
   memorizationProgress: MemorizationProgress[]
+  /** Private teacher notes — internal, never student-facing */
+  teacherNotes: TeacherNote[]
 }
 
-const seed: OperationsState = { sessions, studentAttendance, teacherAttendance, memorizationProgress }
+const seed: OperationsState = { sessions, studentAttendance, teacherAttendance, memorizationProgress, teacherNotes }
 let state = seed
 const listeners = new Set<() => void>()
 
@@ -107,6 +111,26 @@ export const operations = {
       ...state,
       memorizationProgress: upsertMemorization(state.memorizationProgress, update, () => newMockId("mp")),
     })
+  },
+
+  /** Creates a note, or edits one (only its date and content change). */
+  saveTeacherNote(note: Omit<TeacherNote, "id" | "createdAt" | "updatedAt"> & { id?: ID }, today: string) {
+    const existing = note.id ? state.teacherNotes.find((n) => n.id === note.id) : undefined
+    setState({
+      ...state,
+      teacherNotes: existing
+        ? state.teacherNotes.map((n) =>
+            n.id === existing.id ? { ...n, date: note.date, content: note.content.trim(), updatedAt: today } : n
+          )
+        : [
+            ...state.teacherNotes,
+            { ...note, id: newMockId("tn"), content: note.content.trim(), createdAt: today, updatedAt: today },
+          ],
+    })
+  },
+
+  deleteTeacherNote(noteId: ID) {
+    setState({ ...state, teacherNotes: state.teacherNotes.filter((n) => n.id !== noteId) })
   },
 
   /** Cancelling affects only this dated session — the weekly schedule is untouched. */

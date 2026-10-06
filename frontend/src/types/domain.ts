@@ -60,6 +60,8 @@ export interface User {
   photoUrl?: string
   /** Set when the user also has a teacher profile */
   teacherId?: ID
+  /** Set when the account belongs to a student (links to the existing Student record) */
+  studentId?: ID
 }
 
 export interface Teacher {
@@ -252,5 +254,23 @@ export interface MemorizationProgress {
   semester: Semester
   lastMemorizedSurah: SurahNumber
   updatedByTeacherId: ID
+  updatedAt: ISODate
+}
+
+/**
+ * A teacher's private, internal note about one student.
+ * Never part of any student- or parent-facing view: a future Student
+ * Workspace must not read this type. The class is derived from the
+ * student and the author from the signed-in teacher — never chosen.
+ */
+export interface TeacherNote {
+  id: ID
+  studentId: ID
+  teacherId: ID
+  /** The student's class when the note was written */
+  groupClassId: ID
+  date: ISODate
+  content: string
+  createdAt: ISODate
   updatedAt: ISODate
 }

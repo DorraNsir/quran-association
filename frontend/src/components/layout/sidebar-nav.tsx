@@ -5,13 +5,9 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 
 import { labels } from "@/lib/i18n"
+import type { Workspace } from "@/lib/workspace"
 
-import {
-  adminFooterNav,
-  adminNav,
-  isNavItemActive,
-  type NavItem,
-} from "./nav-config"
+import { isNavItemActive, workspaceNav, type NavItem } from "./nav-config"
 
 function NavLink({
   item,
@@ -71,12 +67,13 @@ function NavLink({
   )
 }
 
-export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+export function SidebarNav({ workspace, onNavigate }: { workspace: Workspace; onNavigate?: () => void }) {
   const pathname = usePathname()
+  const { sections, footer } = workspaceNav[workspace]
 
   return (
     <nav aria-label="القائمة الرئيسية" className="flex flex-1 flex-col gap-5">
-      {adminNav.map((section, index) => (
+      {sections.map((section, index) => (
         <div key={section.label ?? index} className="flex flex-col gap-0.5">
           {section.label && (
             <p className="px-3 pb-1.5 text-xs font-medium text-muted-foreground">
@@ -93,16 +90,18 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           ))}
         </div>
       ))}
-      <div className="mt-auto flex flex-col gap-0.5 border-t pt-3">
-        {adminFooterNav.map((item) => (
-          <NavLink
-            key={item.href}
-            item={item}
-            active={isNavItemActive(item, pathname)}
-            onNavigate={onNavigate}
-          />
-        ))}
-      </div>
+      {footer.length > 0 && (
+        <div className="mt-auto flex flex-col gap-0.5 border-t pt-3">
+          {footer.map((item) => (
+            <NavLink
+              key={item.href}
+              item={item}
+              active={isNavItemActive(item, pathname)}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </div>
+      )}
     </nav>
   )
 }
