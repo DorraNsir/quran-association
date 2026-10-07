@@ -1,8 +1,11 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
 
+import { REFRESH_COOKIE } from './auth/refresh-cookie.js';
 import { NodeEnv, type EnvironmentVariables } from './config/env.validation.js';
+import { parseOrigins } from './config/frontend-origins.js';
 
 export const API_PREFIX = 'api';
 
@@ -24,12 +27,11 @@ export function configureApp(app: INestApplication) {
       transform: true,
     }),
   );
+  // Refresh token travels in an HttpOnly cookie
+  app.use(cookieParser());
+  // Credentialed CORS: explicit frontend origin(s) only — never "*"
   app.enableCors({
-    origin: config
-      .get('CORS_ORIGINS', { infer: true })
-      .split(',')
-      .map((origin) => origin.trim())
-      .filter(Boolean),
+    origin: parseOrigins(config.get('FRONTEND_URL', { infer: true })),
     credentials: true,
   });
   app.enableShutdownHooks();
@@ -42,7 +44,20 @@ export function configureApp(app: INestApplication) {
         .setDescription(
           'واجهة برمجة منصة الفرع المحلي عمر بن الخطاب بدار شعبان الفهري — Backend (NestJS + PostgreSQL).',
         )
-        .setVersion('0.1.0')
+        .setVersion('0.2.0')
+        .addBearerAuth({
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'Access token from /api/auth/login or /api/auth/refresh',
+        })
+        .addCookieAuth(REFRESH_COOKIE, {
+          type: 'apiKey',
+          in: 'cookie',
+          name: REFRESH_COOKIE,
+          description:
+            'HttpOnly refresh cookie (set by the API, path /api/auth)',
+        })
         .build(),
     );
     SwaggerModule.setup(`${API_PREFIX}/docs`, app, document);

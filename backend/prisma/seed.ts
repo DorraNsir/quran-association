@@ -3,14 +3,18 @@
  *   - the current academic year (2026–2027, two semesters)
  *   - association identity, platform settings and public-site settings
  *     (same content as the frontend prototype)
- * Deliberately NO users, passwords or personal data: the first admin account
- * is provisioned with the authentication work (Part 10.2).
+ *   - OPTIONAL development admin account, only when NODE_ENV is not
+ *     "production" AND DEV_SEED_ADMIN_USERNAME / DEV_SEED_ADMIN_PASSWORD are
+ *     set in the environment (no credential is ever committed). The password
+ *     is stored as an Argon2id hash; an existing account is left untouched.
  *
  * Run: npm run db:seed   (prisma db seed → tsx prisma/seed.ts)
  */
+import 'reflect-metadata';
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 
+import { PasswordService } from '../src/auth/password.service.js';
 import { PrismaClient } from '../src/generated/prisma/client.js';
 
 const connectionString = process.env.DATABASE_URL;
@@ -83,10 +87,59 @@ async function main() {
     });
   });
 
+  await seedDevelopmentAdmin();
+
   const current = await prisma.academicYear.findFirst({
     where: { isCurrent: true },
   });
   console.log(`Seed done — current academic year: ${current?.label ?? 'none'}`);
+}
+
+/** Dev-only ADMIN account from environment variables (see .env.example). */
+async function seedDevelopmentAdmin() {
+  const username = process.env.DEV_SEED_ADMIN_USERNAME?.trim();
+  const password = process.env.DEV_SEED_ADMIN_PASSWORD;
+  if (process.env.NODE_ENV === 'production') {
+    if (username || password)
+      console.warn('DEV_SEED_ADMIN_* ignored in production.');
+    return;
+  }
+  if (!username || !password) {
+    console.log(
+      'Development admin: skipped (DEV_SEED_ADMIN_USERNAME / DEV_SEED_ADMIN_PASSWORD not set).',
+    );
+    return;
+  }
+  if (password.length < 8)
+    throw new Error('DEV_SEED_ADMIN_PASSWORD must be at least 8 characters');
+
+  const existing = await prisma.user.findUnique({
+    where: { username },
+    select: { id: true },
+  });
+  if (existing) {
+    console.log(
+      `Development admin "${username}": already exists (left unchanged).`,
+    );
+    return;
+  }
+  const passwordHash = await new PasswordService().hash(password);
+  await prisma.person.create({
+    data: {
+      firstName: 'مسؤول',
+      lastName: 'التطوير',
+      user: {
+        create: {
+          username,
+          passwordHash,
+          // Developer-chosen password: no forced change for this local account
+          mustChangePassword: false,
+          roles: { create: [{ role: 'ADMIN' }] },
+        },
+      },
+    },
+  });
+  console.log(`Development admin "${username}": created (ADMIN).`);
 }
 
 try {

@@ -3,14 +3,17 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsInt,
-  IsOptional,
   IsString,
   Matches,
   Max,
   Min,
+  MinLength,
   validateSync,
 } from 'class-validator';
+
+import { DURATION_PATTERN } from '../common/duration.js';
 
 export enum NodeEnv {
   Development = 'development',
@@ -20,7 +23,7 @@ export enum NodeEnv {
 
 /**
  * Environment contract, validated once at startup (the app refuses to boot
- * with a missing or malformed value). JWT/auth variables arrive in Part 10.2.
+ * with a missing or malformed value). Secrets only come from the environment.
  */
 export class EnvironmentVariables {
   @IsEnum(NodeEnv)
@@ -38,10 +41,39 @@ export class EnvironmentVariables {
   })
   DATABASE_URL!: string;
 
-  /** Comma-separated allowed browser origins (the Next.js app) */
-  @IsOptional()
+  /** Comma-separated origin(s) of the Next.js app — CORS (with credentials) and cookie-endpoint origin check */
   @IsString()
-  CORS_ORIGINS: string = 'http://localhost:3000';
+  @Matches(/^https?:\/\/[^,\s]+(,\s*https?:\/\/[^,\s]+)*$/, {
+    message: 'FRONTEND_URL must be one or more comma-separated http(s) origins',
+  })
+  FRONTEND_URL: string = 'http://localhost:3000';
+
+  /** HMAC secret of the access JWT — long random value, never committed */
+  @IsString()
+  @MinLength(32, {
+    message: 'JWT_ACCESS_SECRET must be at least 32 characters',
+  })
+  JWT_ACCESS_SECRET!: string;
+
+  /** Short-lived access token, e.g. 15m */
+  @Matches(DURATION_PATTERN, {
+    message: 'JWT_ACCESS_EXPIRES_IN must look like 15m, 1h…',
+  })
+  JWT_ACCESS_EXPIRES_IN: string = '15m';
+
+  /** Sliding lifetime of a refresh session (renewed at each rotation), e.g. 7d */
+  @Matches(DURATION_PATTERN, {
+    message: 'REFRESH_TOKEN_EXPIRES_IN must look like 7d, 12h…',
+  })
+  REFRESH_TOKEN_EXPIRES_IN: string = '7d';
+
+  /**
+   * SameSite of the refresh cookie: "lax" when the frontend and API share a
+   * site (localhost, or app./api. subdomains of one domain); "none" only for
+   * a cross-site deployment (always Secure).
+   */
+  @IsIn(['lax', 'strict', 'none'])
+  REFRESH_COOKIE_SAMESITE: 'lax' | 'strict' | 'none' = 'lax';
 }
 
 export function validateEnv(config: Record<string, unknown>) {
@@ -56,6 +88,14 @@ export function validateEnv(config: Record<string, unknown>) {
       .map((e) => Object.values(e.constraints ?? {}).join(', '))
       .join('; ');
     throw new Error(`Invalid environment configuration: ${details}`);
+  }
+  if (
+    env.NODE_ENV === NodeEnv.Production &&
+    /change-me|placeholder|example/i.test(env.JWT_ACCESS_SECRET)
+  ) {
+    throw new Error(
+      'Invalid environment configuration: JWT_ACCESS_SECRET is a placeholder',
+    );
   }
   return env;
 }

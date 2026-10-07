@@ -39,6 +39,6 @@ describe('API foundation (e2e)', () => {
       .get('/api/docs-json')
       .expect(200);
     expect(res.body.info.title).toBe('Quran Association Platform API');
-    expect(Object.keys(res.body.paths)).toEqual(['/api/health']);
+    expect(Object.keys(res.body.paths)).toContain('/api/health');
   });
 });

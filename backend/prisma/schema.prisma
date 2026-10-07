@@ -197,8 +197,9 @@ model User {
   createdAt          DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt          DateTime  @updatedAt @db.Timestamptz(3)
 
-  person Person     @relation(fields: [personId], references: [id], onDelete: Restrict)
-  roles  UserRole[]
+  person   Person        @relation(fields: [personId], references: [id], onDelete: Restrict)
+  roles    UserRole[]
+  sessions AuthSession[]
 
   memorizationUpdates    MemorizationProgress[]
   reviewedRegistrations  RegistrationRequest[]
@@ -274,6 +275,26 @@ model Student {
   @@index([groupClassId])
   @@index([status])
   @@map("students")
+}
+
+/// One signed-in browser session = one rotating refresh token. Only a SHA-256
+/// digest of the (high-entropy, opaque) token is stored; rotation replaces it
+/// in place, so presenting an older token reveals reuse and revokes the session.
+model AuthSession {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  userId           String    @db.Uuid
+  refreshTokenHash String
+  expiresAt        DateTime  @db.Timestamptz(3)
+  revokedAt        DateTime? @db.Timestamptz(3)
+  lastUsedAt       DateTime? @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("auth_sessions")
 }
 
 // ──────────────────────── Academic structure ────────────────────────
