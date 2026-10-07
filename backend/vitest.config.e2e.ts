@@ -7,5 +7,7 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.e2e-spec.ts'],
+    // Suites share the development database (e.g. active-admin counts): run files one at a time
+    fileParallelism: false,
   },
 });

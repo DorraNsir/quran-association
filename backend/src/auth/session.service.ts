@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { durationToMs } from '../common/duration.js';
 import type { EnvironmentVariables } from '../config/env.validation.js';
+import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -135,8 +136,13 @@ export class SessionService {
   }
 
   /** Revokes every live session of a user, optionally keeping one (the current). */
-  async revokeAllForUser(userId: string, exceptSessionId?: string) {
-    await this.prisma.authSession.updateMany({
+  async revokeAllForUser(
+    userId: string,
+    exceptSessionId?: string,
+    /** Pass the transaction client to revoke atomically with another change */
+    db: Pick<Prisma.TransactionClient, 'authSession'> = this.prisma,
+  ) {
+    await db.authSession.updateMany({
       where: {
         userId,
         revokedAt: null,

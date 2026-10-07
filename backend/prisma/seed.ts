@@ -97,7 +97,8 @@ async function main() {
 
 /** Dev-only ADMIN account from environment variables (see .env.example). */
 async function seedDevelopmentAdmin() {
-  const username = process.env.DEV_SEED_ADMIN_USERNAME?.trim();
+  // Same normalization as the API (trim + lowercase)
+  const username = process.env.DEV_SEED_ADMIN_USERNAME?.trim().toLowerCase();
   const password = process.env.DEV_SEED_ADMIN_PASSWORD;
   if (process.env.NODE_ENV === 'production') {
     if (username || password)
