@@ -1,13 +1,989 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Quran Association Management Platform — relational schema (Part 10.1).
+// Arabic-only product: text fields are plain (title, name…), never …Ar/…Fr.
+// Conventions:
+//   - UUIDv7 primary keys (time-sortable), tables mapped to snake_case.
+//   - Calendar dates are DATE, times of day are TIME(0), instants are TIMESTAMPTZ.
+//   - Money is NUMERIC(10,3) (Tunisian dinar, 3 decimals) — never float.
+//   - Historical records (sessions, attendance, payments, registrations…)
+//     are protected with onDelete: Restrict; only pure link/alert rows cascade.
+//   - CHECK constraints the Prisma schema cannot express live in the
+//     migration SQL (surah 1–114, time ranges, positive amounts, singletons).
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+  previewFeatures     = ["partialIndexes"]
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+/// Students, groups and classes can be archived (kept for history).
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+/// Teachers, branches and rooms are only switched on/off.
+enum ActivationStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum Weekday {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+}
+
+enum SessionStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCUSED
+  LATE
+}
+
+/// Each academic year has exactly two semesters.
+enum Semester {
+  FIRST
+  SECOND
+}
+
+enum RegistrationRequestSource {
+  PUBLIC_WEBSITE
+  ADMIN
+}
+
+enum RegistrationRequestStatus {
+  PENDING
+  ACCEPTED
+  REFUSED
+}
+
+enum BillingType {
+  YEARLY
+  MONTHLY
+}
+
+enum PaymentMethod {
+  CASH
+}
+
+enum ResourceType {
+  PDF
+  IMAGE
+  AUDIO
+  VIDEO_LINK
+  EXTERNAL_LINK
+  FILE
+}
+
+enum ResourceVisibility {
+  ALL_STUDENTS
+  GROUP
+  GROUP_CLASS
+}
+
+enum AnnouncementAudience {
+  EVERYONE
+  TEACHERS
+  STUDENTS
+  SPECIFIC_GROUP_CLASSES
+}
+
+enum NotificationType {
+  RESOURCE_PUBLISHED
+  ANNOUNCEMENT_PUBLISHED
+}
+
+enum PublicGroupStatus {
+  COMING_SOON
+  OPEN
+  CLOSED
+}
+
+enum GalleryCategory {
+  ACTIVITIES
+  CEREMONIES
+  SESSIONS
+  SUMMER
+  LIFE
+}
+
+enum AchievementCategory {
+  QURAN
+  COMPETITION
+  AWARD
+  COMMUNITY
+  ASSOCIATION
+  MILESTONE
+}
+
+enum DateFormat {
+  DD_MM_YYYY
+  YYYY_MM_DD
+}
+
+enum CalendarView {
+  WEEK
+  ROOMS
+}
+
+// ──────────────────────── Identity & accounts ────────────────────────
+
+/// The ONE canonical identity of a human. Account, teacher profile and
+/// student profile all point here, so a name/photo/phone change is made once.
+model Person {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  firstName   String
+  lastName    String
+  gender      Gender?
+  dateOfBirth DateTime? @db.Date
+  phone       String?
+  email       String?
+  address     String?
+  /// Storage path/URL of the profile photo (upload comes in a later part)
+  photoUrl    String?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+
+  user    User?
+  teacher Teacher?
+  student Student?
+
+  @@index([lastName, firstName])
+  @@index([phone])
+  @@map("persons")
+}
+
+/// Login account. Roles are rows (UserRole) so one user can be ADMIN + TEACHER.
+model User {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  personId           String    @unique @db.Uuid
+  /// Admin-managed; never derived from (or renamed with) the person's name
+  username           String    @unique
+  /// Argon2 hash only (hashing implemented in Part 10.2) — never plaintext
+  passwordHash       String
+  isActive           Boolean   @default(true)
+  mustChangePassword Boolean   @default(true)
+  lastLoginAt        DateTime? @db.Timestamptz(3)
+  createdAt          DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @db.Timestamptz(3)
+
+  person Person     @relation(fields: [personId], references: [id], onDelete: Restrict)
+  roles  UserRole[]
+
+  memorizationUpdates    MemorizationProgress[]
+  reviewedRegistrations  RegistrationRequest[]
+  recordedPayments       Payment[]
+  publishedResources     Resource[]
+  publishedAnnouncements Announcement[]
+  notifications          Notification[]
+  recordedAttendance     StudentAttendance[]
+  administrationMember   AdministrationMember[]
+
+  @@map("users")
+}
+
+model UserRole {
+  userId    String   @db.Uuid
+  role      Role
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, role])
+  @@index([role])
+  @@map("user_roles")
+}
+
+/// Teacher profile of a person (teacher access later = explicit class assignments).
+model Teacher {
+  id            String           @id @default(uuid(7)) @db.Uuid
+  personId      String           @unique @db.Uuid
+  status        ActivationStatus @default(ACTIVE)
+  joinedAt      DateTime         @db.Date
+  /// Short qualification line, e.g. a Quran ijaza
+  qualification String?
+  createdAt     DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime         @updatedAt @db.Timestamptz(3)
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Restrict)
+
+  supervisedClasses GroupClass[]          @relation("GroupClassSupervisor")
+  assistedClasses   GroupClassAssistant[]
+  attendance        TeacherAttendance[]
+  notes             TeacherNote[]
+
+  @@index([status])
+  @@map("teachers")
+}
+
+/// Student profile of a person. Group, branch, room and supervisor are
+/// derived from the single current GroupClass — never stored here.
+model Student {
+  id               String       @id @default(uuid(7)) @db.Uuid
+  personId         String       @unique @db.Uuid
+  /// Current class; null when the student is not assigned (e.g. archived)
+  groupClassId     String?      @db.Uuid
+  guardianPhone    String?
+  /// Tunisian national ID — only for students who hold one
+  cin              String?      @unique
+  registrationDate DateTime     @db.Date
+  status           RecordStatus @default(ACTIVE)
+  createdAt        DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime     @updatedAt @db.Timestamptz(3)
+
+  person     Person      @relation(fields: [personId], references: [id], onDelete: Restrict)
+  groupClass GroupClass? @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
+
+  attendance          StudentAttendance[]
+  memorization        MemorizationProgress[]
+  teacherNotes        TeacherNote[]
+  paymentObligations  PaymentObligation[]
+  registrationRequest RegistrationRequest?
+  graduateEntries     QuranGraduate[]
+
+  @@index([groupClassId])
+  @@index([status])
+  @@map("students")
+}
+
+// ──────────────────────── Academic structure ────────────────────────
+
+/// School year with exactly two semesters: FIRST = [startDate, semester2StartDate),
+/// SECOND = [semester2StartDate, endDate]. At most one year is current.
+model AcademicYear {
+  id                 String   @id @default(uuid(7)) @db.Uuid
+  /// e.g. "2026–2027"
+  label              String   @unique
+  startDate          DateTime @db.Date
+  endDate            DateTime @db.Date
+  semester2StartDate DateTime @db.Date
+  isCurrent          Boolean  @default(false)
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime @updatedAt @db.Timestamptz(3)
+
+  memorization       MemorizationProgress[]
+  groupFees          GroupFee[]
+  paymentObligations PaymentObligation[]
+
+  /// Only one current year (partial unique index on the TRUE rows)
+  @@unique([isCurrent], map: "academic_years_single_current_key", where: raw("\"isCurrent\""))
+  @@index([startDate])
+  @@map("academic_years")
+}
+
+model Branch {
+  id        String           @id @default(uuid(7)) @db.Uuid
+  name      String           @unique
+  address   String
+  phone     String?
+  status    ActivationStatus @default(ACTIVE)
+  createdAt DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime         @updatedAt @db.Timestamptz(3)
+
+  rooms        Room[]
+  groupClasses GroupClass[]
+  publicGroups PublicGroupListing[]
+
+  @@map("branches")
+}
+
+/// Rooms are only identifiable spaces — no capacity/equipment by design.
+model Room {
+  id        String           @id @default(uuid(7)) @db.Uuid
+  branchId  String           @db.Uuid
+  name      String
+  status    ActivationStatus @default(ACTIVE)
+  createdAt DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime         @updatedAt @db.Timestamptz(3)
+
+  branch       Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  groupClasses GroupClass[]
+
+  @@unique([branchId, name])
+  @@map("rooms")
+}
+
+/// Pedagogical group (e.g. "مجموعة ماهر"): only what all its classes share.
+model Group {
+  id        String       @id @default(uuid(7)) @db.Uuid
+  name      String       @unique
+  /// Target audience, e.g. "أطفال 7–10 سنوات"
+  audience  String
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @db.Timestamptz(3)
+
+  classes              GroupClass[]
+  fees                 GroupFee[]
+  resourceTargets      ResourceTarget[]
+  publicListings       PublicGroupListing[]
+  interestedApplicants RegistrationRequest[]
+
+  @@index([status])
+  @@map("groups")
+}
+
+/// The operational class ("حلقة"): branch, room, one supervisor, assistants,
+/// students, weekly schedule, sessions and attendance hang from it.
+/// Invariant (application level): roomId belongs to branchId.
+model GroupClass {
+  id           String       @id @default(uuid(7)) @db.Uuid
+  groupId      String       @db.Uuid
+  branchId     String       @db.Uuid
+  roomId       String       @db.Uuid
+  supervisorId String       @db.Uuid
+  status       RecordStatus @default(ACTIVE)
+  createdAt    DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime     @updatedAt @db.Timestamptz(3)
+
+  group      Group   @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  branch     Branch  @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  room       Room    @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  supervisor Teacher @relation("GroupClassSupervisor", fields: [supervisorId], references: [id], onDelete: Restrict)
+
+  assistants          GroupClassAssistant[]
+  students            Student[]
+  schedules           WeeklySchedule[]
+  sessions            Session[]
+  teacherNotes        TeacherNote[]
+  resourceTargets     ResourceTarget[]
+  announcementTargets AnnouncementTarget[]
+
+  @@index([groupId])
+  @@index([branchId])
+  @@index([roomId])
+  @@index([supervisorId])
+  @@index([status])
+  @@map("group_classes")
+}
+
+/// Assistant teachers of a class (the supervisor is GroupClass.supervisorId).
+model GroupClassAssistant {
+  groupClassId String   @db.Uuid
+  teacherId    String   @db.Uuid
+  assignedAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  groupClass GroupClass @relation(fields: [groupClassId], references: [id], onDelete: Cascade)
+  teacher    Teacher    @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  @@id([groupClassId, teacherId])
+  @@index([teacherId])
+  @@map("group_class_assistants")
+}
+
+/// Recurring weekly slot of a class. Room/branch/teachers come from the class.
+/// Conflict rule (service later): newStart < existingEnd AND newEnd > existingStart.
+model WeeklySchedule {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  groupClassId String   @db.Uuid
+  dayOfWeek    Weekday
+  startTime    DateTime @db.Time(0)
+  endTime      DateTime @db.Time(0)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  groupClass GroupClass @relation(fields: [groupClassId], references: [id], onDelete: Cascade)
+  sessions   Session[]
+
+  @@index([groupClassId])
+  @@index([dayOfWeek, startTime])
+  @@map("weekly_schedules")
+}
+
+// ──────────────────────── Sessions & attendance ────────────────────────
+
+/// One actual dated lesson (generated from a WeeklySchedule or added ad hoc).
+/// Cancelling a session never changes the weekly schedule.
+model Session {
+  id                 String        @id @default(uuid(7)) @db.Uuid
+  groupClassId       String        @db.Uuid
+  /// The weekly slot it was generated from (null for an ad-hoc session)
+  weeklyScheduleId   String?       @db.Uuid
+  date               DateTime      @db.Date
+  startTime          DateTime      @db.Time(0)
+  endTime            DateTime      @db.Time(0)
+  status             SessionStatus @default(SCHEDULED)
+  cancellationReason String?
+  createdAt          DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime      @updatedAt @db.Timestamptz(3)
+
+  groupClass     GroupClass      @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
+  weeklySchedule WeeklySchedule? @relation(fields: [weeklyScheduleId], references: [id], onDelete: SetNull)
+
+  studentAttendance StudentAttendance[]
+  teacherAttendance TeacherAttendance[]
+
+  /// A weekly slot generates at most one session per date
+  @@unique([weeklyScheduleId, date])
+  @@index([groupClassId, date])
+  @@index([date, status])
+  @@map("sessions")
+}
+
+model StudentAttendance {
+  id               String           @id @default(uuid(7)) @db.Uuid
+  sessionId        String           @db.Uuid
+  studentId        String           @db.Uuid
+  status           AttendanceStatus
+  note             String?
+  recordedByUserId String?          @db.Uuid
+  createdAt        DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime         @updatedAt @db.Timestamptz(3)
+
+  session    Session @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  student    Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  recordedBy User?   @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([sessionId, studentId])
+  @@index([studentId, status])
+  @@map("student_attendance")
+}
+
+/// Presence of an assigned teacher in a session (no HR system).
+model TeacherAttendance {
+  id        String           @id @default(uuid(7)) @db.Uuid
+  sessionId String           @db.Uuid
+  teacherId String           @db.Uuid
+  status    AttendanceStatus
+  note      String?
+  createdAt DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime         @updatedAt @db.Timestamptz(3)
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  @@unique([sessionId, teacherId])
+  @@index([teacherId])
+  @@map("teacher_attendance")
+}
+
+// ──────────────────────── Memorization & notes ────────────────────────
+
+/// متابعة الحفظ: the LAST memorized surah of one student for one semester.
+/// A current value (updated in place), one row per student/year/semester.
+model MemorizationProgress {
+  id                       String   @id @default(uuid(7)) @db.Uuid
+  studentId                String   @db.Uuid
+  academicYearId           String   @db.Uuid
+  semester                 Semester
+  /// Mushaf order, 1–114 (CHECK constraint in the migration)
+  lastMemorizedSurahNumber Int      @db.SmallInt
+  updatedByUserId          String?  @db.Uuid
+  createdAt                DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime @updatedAt @db.Timestamptz(3)
+
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  updatedBy    User?        @relation(fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([studentId, academicYearId, semester])
+  @@index([academicYearId, semester])
+  @@map("memorization_progress")
+}
+
+/// A teacher's private note about a student — never student-facing.
+model TeacherNote {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  studentId    String   @db.Uuid
+  teacherId    String   @db.Uuid
+  /// The student's class when the note was written (historical snapshot)
+  groupClassId String   @db.Uuid
+  date         DateTime @db.Date
+  content      String
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  student    Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  teacher    Teacher    @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  groupClass GroupClass @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
+
+  @@index([studentId, date])
+  @@index([teacherId])
+  @@map("teacher_notes")
+}
+
+// ──────────────────────── Registration & admission ────────────────────────
+
+/// An applicant (public form or admin entry). NOT a student: admission later
+/// creates exactly one Student and links it here. The applicant fields are an
+/// intentional immutable snapshot of what was submitted.
+model RegistrationRequest {
+  id                     String                    @id @default(uuid(7)) @db.Uuid
+  firstName              String
+  lastName               String
+  birthDate              DateTime?                 @db.Date
+  /// When the applicant gave an age instead of a birth date
+  age                    Int?                      @db.SmallInt
+  phone                  String
+  hasStudiedQuranBefore  Boolean                   @default(false)
+  previousExperience     String?
+  notes                  String?
+  source                 RegistrationRequestSource
+  status                 RegistrationRequestStatus @default(PENDING)
+  submittedAt            DateTime                  @default(now()) @db.Timestamptz(3)
+  reviewedAt             DateTime?                 @db.Timestamptz(3)
+  reviewedByUserId       String?                   @db.Uuid
+  /// Set once on admission; unique → one request yields at most one student
+  createdStudentId       String?                   @unique @db.Uuid
+  /// Interest expressed on the public site — never a class assignment
+  interestedGroupId      String?                   @db.Uuid
+  interestedProgramLabel String?
+  createdAt              DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime                  @updatedAt @db.Timestamptz(3)
+
+  reviewedBy      User?    @relation(fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  createdStudent  Student? @relation(fields: [createdStudentId], references: [id], onDelete: Restrict)
+  interestedGroup Group?   @relation(fields: [interestedGroupId], references: [id], onDelete: SetNull)
+
+  @@index([status, submittedAt])
+  @@index([phone])
+  @@map("registration_requests")
+}
+
+// ──────────────────────── Fees & cash payments ────────────────────────
+
+/// Pricing rule of a pedagogical Group (all its classes inherit it).
+model GroupFee {
+  id              String      @id @default(uuid(7)) @db.Uuid
+  groupId         String      @db.Uuid
+  academicYearId  String?     @db.Uuid
+  label           String
+  billingType     BillingType
+  /// Per period: the yearly amount, or the monthly amount
+  amount          Decimal     @db.Decimal(10, 3)
+  /// 1 for yearly; number of months for monthly programs
+  numberOfPeriods Int         @default(1) @db.SmallInt
+  startDate       DateTime?   @db.Date
+  endDate         DateTime?   @db.Date
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime    @updatedAt @db.Timestamptz(3)
+
+  group        Group               @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear?       @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  obligations  PaymentObligation[]
+
+  @@index([groupId, academicYearId, isActive])
+  @@map("group_fees")
+}
+
+/// What one student owes. expectedAmount is frozen at creation, so a later
+/// fee change never rewrites history. Status (UNPAID/PARTIAL/PAID) is derived
+/// from the sum of payments — not stored.
+model PaymentObligation {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  studentId      String   @db.Uuid
+  groupFeeId     String   @db.Uuid
+  academicYearId String?  @db.Uuid
+  expectedAmount Decimal  @db.Decimal(10, 3)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  student      Student       @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  groupFee     GroupFee      @relation(fields: [groupFeeId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  payments     Payment[]
+
+  @@unique([studentId, groupFeeId])
+  @@index([studentId, academicYearId])
+  @@map("payment_obligations")
+}
+
+/// One cash transaction. The student is derived from the obligation; the
+/// receipt state is independent of the money.
+model Payment {
+  id               String        @id @default(uuid(7)) @db.Uuid
+  obligationId     String        @db.Uuid
+  amount           Decimal       @db.Decimal(10, 3)
+  paidAt           DateTime      @db.Date
+  method           PaymentMethod @default(CASH)
+  receiptIssued    Boolean       @default(false)
+  /// Monthly programs: which month this payment is for (1-based)
+  periodNumber     Int?          @db.SmallInt
+  note             String?
+  recordedByUserId String        @db.Uuid
+  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime      @updatedAt @db.Timestamptz(3)
+
+  obligation PaymentObligation @relation(fields: [obligationId], references: [id], onDelete: Restrict)
+  recordedBy User              @relation(fields: [recordedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([obligationId])
+  @@index([paidAt])
+  @@map("payments")
+}
+
+// ──────────────────────── Communication ────────────────────────
+
+/// Pedagogical content published by a user (admin or teacher). Files are
+/// referenced by URL/path (object storage later) — never stored inline.
+model Resource {
+  id                String             @id @default(uuid(7)) @db.Uuid
+  title             String
+  description       String             @default("")
+  type              ResourceType
+  fileUrl           String?
+  externalUrl       String?
+  fileName          String?
+  mimeType          String?
+  /// Bytes
+  fileSize          Int?
+  visibility        ResourceVisibility
+  publishedByUserId String             @db.Uuid
+  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @db.Timestamptz(3)
+
+  publishedBy   User             @relation(fields: [publishedByUserId], references: [id], onDelete: Restrict)
+  targets       ResourceTarget[]
+  notifications Notification[]
+
+  @@index([publishedByUserId])
+  @@index([visibility])
+  @@map("resources")
+}
+
+/// One explicit audience: EITHER a Group OR a GroupClass (CHECK in migration).
+model ResourceTarget {
+  id           String  @id @default(uuid(7)) @db.Uuid
+  resourceId   String  @db.Uuid
+  groupId      String? @db.Uuid
+  groupClassId String? @db.Uuid
+
+  resource   Resource    @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  group      Group?      @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  groupClass GroupClass? @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
+
+  @@unique([resourceId, groupId])
+  @@unique([resourceId, groupClassId])
+  @@index([groupId])
+  @@index([groupClassId])
+  @@map("resource_targets")
+}
+
+/// Administrative communication (distinct from public NewsArticle).
+model Announcement {
+  id                String               @id @default(uuid(7)) @db.Uuid
+  title             String
+  content           String
+  audience          AnnouncementAudience
+  publishedAt       DateTime             @db.Date
+  expiresAt         DateTime?            @db.Date
+  isActive          Boolean              @default(true)
+  publishedByUserId String               @db.Uuid
+  createdAt         DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime             @updatedAt @db.Timestamptz(3)
+
+  publishedBy   User                 @relation(fields: [publishedByUserId], references: [id], onDelete: Restrict)
+  targets       AnnouncementTarget[]
+  notifications Notification[]
+
+  @@index([isActive, publishedAt])
+  @@map("announcements")
+}
+
+/// Classes targeted by a SPECIFIC_GROUP_CLASSES announcement.
+model AnnouncementTarget {
+  announcementId String @db.Uuid
+  groupClassId   String @db.Uuid
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  groupClass   GroupClass   @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
+
+  @@id([announcementId, groupClassId])
+  @@index([groupClassId])
+  @@map("announcement_targets")
+}
+
+/// In-app alert for ONE user, pointing at a resource or an announcement
+/// (explicit nullable FKs instead of an ambiguous entityType/entityId pair).
+model Notification {
+  id             String           @id @default(uuid(7)) @db.Uuid
+  userId         String           @db.Uuid
+  type           NotificationType
+  title          String
+  message        String
+  resourceId     String?          @db.Uuid
+  announcementId String?          @db.Uuid
+  isRead         Boolean          @default(false)
+  readAt         DateTime?        @db.Timestamptz(3)
+  createdAt      DateTime         @default(now()) @db.Timestamptz(3)
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource     Resource?     @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  announcement Announcement? @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+
+// ──────────────────────── Platform settings (singletons) ────────────────────────
+
+/// The association's official identity — read by every workspace AND the
+/// public website. Single row (id = 1, CHECK in migration).
+model AssociationSettings {
+  id        Int      @id @default(1) @db.SmallInt
+  name      String
+  logoUrl   String?
+  phone     String?
+  email     String?
+  address   String?
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("association_settings")
+}
+
+/// Platform configuration. The current academic year is NOT stored here:
+/// AcademicYear.isCurrent is the single source of truth.
+model PlatformSettings {
+  id                  Int          @id @default(1) @db.SmallInt
+  /// IANA zone
+  timezone            String       @default("Africa/Tunis")
+  dateFormat          DateFormat   @default(DD_MM_YYYY)
+  defaultCalendarView CalendarView @default(WEEK)
+  /// 10, 20 or 50 (CHECK in migration)
+  defaultPageSize     Int          @default(10) @db.SmallInt
+  updatedAt           DateTime     @updatedAt @db.Timestamptz(3)
+
+  @@map("platform_settings")
+}
+
+// ──────────────────────── Public website (CMS) ────────────────────────
+
+/// How the association is presented publicly. Identity (name, logo, phone,
+/// email, address) lives in AssociationSettings — not duplicated here.
+model SiteSettings {
+  id                  Int      @id @default(1) @db.SmallInt
+  shortDescription    String
+  about               String
+  history             String?
+  mission             String
+  vision              String
+  /// One value per line
+  values              String?
+  openingHours        String?
+  mapUrl              String?
+  facebookUrl         String?
+  instagramUrl        String?
+  youtubeUrl          String?
+  registrationEnabled Boolean  @default(true)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("site_settings")
+}
+
+model HeroSlide {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  imageUrl     String
+  title        String?
+  subtitle     String?
+  ctaLabel     String?
+  ctaHref      String?
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([isActive, displayOrder])
+  @@map("hero_slides")
+}
+
+/// "ماذا نقدم لطلابنا؟"
+model ServiceOffering {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  title        String
+  description  String?
+  /// Key of the website icon set
+  icon         String?
+  displayOrder Int      @default(0)
+  isPublished  Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([isPublished, displayOrder])
+  @@map("service_offerings")
+}
+
+/// Marketing view of what the association teaches — not an operational Group.
+model PublicProgram {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  title        String
+  description  String
+  imageUrl     String?
+  icon         String?
+  displayOrder Int      @default(0)
+  isPublished  Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([isPublished, displayOrder])
+  @@map("public_programs")
+}
+
+/// Public announcement of a group/program opening soon (operational groups
+/// never appear publicly on their own).
+model PublicGroupListing {
+  id               String            @id @default(uuid(7)) @db.Uuid
+  /// The operational group it will become, when known
+  groupId          String?           @db.Uuid
+  branchId         String?           @db.Uuid
+  title            String
+  audience         String
+  description      String?
+  startDate        DateTime?         @db.Date
+  schedule         String?
+  imageUrl         String?
+  publicStatus     PublicGroupStatus @default(COMING_SOON)
+  registrationOpen Boolean           @default(true)
+  displayOrder     Int               @default(0)
+  isPublished      Boolean           @default(true)
+  createdAt        DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime          @updatedAt @db.Timestamptz(3)
+
+  group  Group?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@index([isPublished, displayOrder])
+  @@map("public_group_listings")
+}
+
+/// Public association activity — not a class Session.
+model PublicEvent {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  title       String
+  description String
+  startDate   DateTime  @db.Date
+  endDate     DateTime? @db.Date
+  time        DateTime? @db.Time(0)
+  location    String?
+  imageUrl    String?
+  isPublic    Boolean   @default(true)
+  isPublished Boolean   @default(true)
+  isCancelled Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@index([isPublished, isPublic, startDate])
+  @@map("public_events")
+}
+
+/// Public news — not an internal Announcement.
+model NewsArticle {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  title         String
+  excerpt       String
+  /// Plain text, paragraphs separated by blank lines
+  content       String
+  coverImageUrl String?
+  publishedAt   DateTime @db.Date
+  isPublished   Boolean  @default(true)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([isPublished, publishedAt])
+  @@map("news_articles")
+}
+
+model GalleryImage {
+  id           String           @id @default(uuid(7)) @db.Uuid
+  imageUrl     String
+  title        String?
+  description  String?
+  category     GalleryCategory?
+  displayOrder Int              @default(0)
+  isPublished  Boolean          @default(true)
+  createdAt    DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime         @updatedAt @db.Timestamptz(3)
+
+  @@index([isPublished, displayOrder])
+  @@map("gallery_images")
+}
+
+/// A publicly recognised Quran completer, entered explicitly by the admin.
+/// fullName is the published name (a historical completer may not be a student).
+model QuranGraduate {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  studentId      String?   @db.Uuid
+  fullName       String
+  photoUrl       String?
+  completionYear Int?      @db.SmallInt
+  completionDate DateTime? @db.Date
+  shortMessage   String?
+  displayOrder   Int       @default(0)
+  isPublished    Boolean   @default(true)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
+
+  student Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+
+  @@index([isPublished, displayOrder])
+  @@map("quran_graduates")
+}
+
+/// Board member shown on the site — unrelated to the software ADMIN role.
+model AdministrationMember {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  userId       String?  @db.Uuid
+  fullName     String
+  /// Board function, e.g. "رئيس الجمعية"
+  role         String
+  photoUrl     String?
+  shortBio     String?
+  displayOrder Int      @default(0)
+  isPublished  Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([isPublished, displayOrder])
+  @@map("administration_members")
+}
+
+model Achievement {
+  id           String               @id @default(uuid(7)) @db.Uuid
+  title        String
+  description  String
+  date         DateTime?            @db.Date
+  year         Int?                 @db.SmallInt
+  imageUrl     String?
+  category     AchievementCategory?
+  /// Preferred for the home page — never overrides isPublished
+  isFeatured   Boolean              @default(false)
+  isPublished  Boolean              @default(true)
+  displayOrder Int                  @default(0)
+  createdAt    DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime             @updatedAt @db.Timestamptz(3)
+
+  @@index([isPublished, isFeatured, displayOrder])
+  @@map("achievements")
 }
