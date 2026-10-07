@@ -6,7 +6,7 @@ import { getCurrentTeacher } from "@/lib/auth/current-user"
 import { weekdayOf } from "@/lib/dates"
 import { formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { academicYears, lookups, MOCK_TODAY, students } from "@/lib/mock"
+import { lookups, MOCK_TODAY, students } from "@/lib/mock"
 import { getTeacherStudents } from "@/lib/teacher-access"
 
 export const metadata: Metadata = { title: "فضاء المعلم" }
@@ -23,7 +23,6 @@ export default async function TeacherHomePage() {
         teacherId={teacherId}
         lookups={lookups}
         students={getTeacherStudents(teacherId, lookups, students)}
-        academicYears={academicYears}
         today={MOCK_TODAY}
       />
     </>

@@ -447,9 +447,11 @@ interface CmsTimestamps {
   updatedAt: ISODate
 }
 
+/**
+ * How the association is PRESENTED on the public website. Its identity
+ * (official name, logo, phone, email, address) lives in AssociationSettings.
+ */
 export interface SiteSettings {
-  associationNameAr: string
-  associationNameFr?: string
   shortDescriptionAr: string
   shortDescriptionFr?: string
   aboutAr: string
@@ -463,10 +465,6 @@ export interface SiteSettings {
   /** One value per line */
   valuesAr?: string
   valuesFr?: string
-  phone?: string
-  email?: string
-  addressAr?: string
-  addressFr?: string
   /** Opening hours / contact availability */
   openingHoursAr?: string
   mapUrl?: string
@@ -474,6 +472,39 @@ export interface SiteSettings {
   instagramUrl?: string
   youtubeUrl?: string
   registrationEnabled: boolean
+  updatedAt: ISODate
+}
+
+/**
+ * The association's official identity — ONE source read by every workspace
+ * and by the public website (header, footer, contact page).
+ */
+export interface AssociationSettings {
+  name: string
+  /** Undefined = the bundled logo. A changed logo is a transient blob: preview until storage exists. */
+  logoUrl?: string
+  phone?: string
+  email?: string
+  address?: string
+  updatedAt: ISODate
+}
+
+export type DateFormat = "DD/MM/YYYY" | "YYYY-MM-DD"
+export type CalendarDefaultView = "week" | "rooms"
+export type TablePageSize = 10 | 20 | 50
+
+/**
+ * Platform-wide configuration (/admin/settings). The current academic year
+ * is NOT stored here: AcademicYear.isCurrent stays the single source of truth.
+ */
+export interface PlatformSettings {
+  /** IANA zone; enforced server-side from Part 10 */
+  timezone: string
+  /** Numeric dates in administrative tables */
+  dateFormat: DateFormat
+  defaultCalendarView: CalendarDefaultView
+  /** Rows per page in shared data tables */
+  defaultPageSize: TablePageSize
   updatedAt: ISODate
 }
 

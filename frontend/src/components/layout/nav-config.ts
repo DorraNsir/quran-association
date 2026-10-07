@@ -74,7 +74,7 @@ export const adminNav: NavSection[] = [
 ]
 
 export const adminFooterNav: NavItem[] = [
-  { label: "الإعدادات", href: "/admin/settings", icon: Settings, ready: false },
+  { label: "الإعدادات", href: "/admin/settings", icon: Settings, ready: true },
 ]
 
 /** Teacher Space: only the teacher's own classes, students and sessions — no management. */

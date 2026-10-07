@@ -29,7 +29,6 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { groupClassLabel } from "@/lib/communication"
 import { describeClass, fullName, indexLookups, type Lookups } from "@/lib/domain"
-import { formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { defaultPeriod } from "@/lib/memorization"
 import {
@@ -43,9 +42,10 @@ import {
   type PaymentStatus,
 } from "@/lib/payments"
 import { allStudents, operations, useOperations } from "@/lib/store/operations"
-import type { AcademicYear, BillingType, Group, GroupFee, ID, ISODate, Student } from "@/types/domain"
+import type { BillingType, Group, GroupFee, ID, ISODate, Student } from "@/types/domain"
 
 import { ObligationFigures, PaymentHistory, PaymentStatusBadge, ReceiptBadge, useRecordPayment } from "./payment-parts"
+import { useAcademicYears, useAdminDate } from "@/lib/store/settings"
 
 /** "120 د.ت · سنوي" or "20 د.ت × 2 أشهر = 40 د.ت". */
 export function feeDescription(fee: GroupFee) {
@@ -63,16 +63,15 @@ export function StudentPayments({
   studentId,
   mode,
   userId,
-  academicYears,
   today,
 }: {
   studentId: ID
   mode: "admin" | "student"
   /** Admin recording payments */
   userId?: ID
-  academicYears: AcademicYear[]
   today: ISODate
 }) {
+  const academicYears = useAcademicYears()
   const state = useOperations()
   const recorder = useRecordPayment()
   const student = allStudents(state).find((s) => s.id === studentId)
@@ -143,14 +142,14 @@ interface Row {
 export function PaymentsOverview({
   userId,
   lookups,
-  academicYears,
   today,
 }: {
   userId: ID
   lookups: Lookups
-  academicYears: AcademicYear[]
   today: ISODate
 }) {
+  const adminDate = useAdminDate()
+  const academicYears = useAcademicYears()
   const state = useOperations()
   const recorder = useRecordPayment()
   const [academicYearId, setAcademicYearId] = useState(defaultPeriod(academicYears, today).academicYearId)
@@ -215,7 +214,7 @@ export function PaymentsOverview({
     r.summary.lastPayment ? (
       <span className="whitespace-nowrap text-sm">
         <span className="tabular-nums">{formatMoney(r.summary.lastPayment.amount)}</span>
-        <span className="block text-xs text-muted-foreground">{formatDate(r.summary.lastPayment.paidAt)} · {r.summary.payments.length} دفعة</span>
+        <span className="block text-xs text-muted-foreground">{adminDate(r.summary.lastPayment.paidAt)} · {r.summary.payments.length} دفعة</span>
       </span>
     ) : (
       <span className="text-muted-foreground">—</span>
@@ -301,7 +300,6 @@ export function PaymentsOverview({
         columns={columns}
         rows={filtered}
         getRowId={(r) => r.summary.obligation.id}
-        pageSize={20}
         emptyState={<EmptyState icon={rows.length === 0 ? Users : SearchX} title={rows.length === 0 ? "لا توجد معاليم لهذه السنة" : "لا توجد نتائج مطابقة"} />}
         renderMobileCard={(r) => (
           <div className="space-y-2.5">
@@ -348,7 +346,8 @@ export function PaymentsOverview({
 }
 
 /** "معلوم المجموعة": the group's pricing rules, one per academic year. */
-export function GroupFees({ group, academicYears, today }: { group: Group; academicYears: AcademicYear[]; today: ISODate }) {
+export function GroupFees({ group, today }: { group: Group; today: ISODate }) {
+  const academicYears = useAcademicYears()
   const { groupFees } = useOperations()
   const [editor, setEditor] = useState<{ fee?: GroupFee; key: number; open: boolean }>({ key: 0, open: false })
   const fees = groupFees.filter((f) => f.groupId === group.id).sort((a, b) => (b.academicYearId ?? "").localeCompare(a.academicYearId ?? ""))
@@ -400,7 +399,6 @@ export function GroupFees({ group, academicYears, today }: { group: Group; acade
         onOpenChange={(open) => setEditor((p) => ({ ...p, open }))}
         group={group}
         fee={editor.fee}
-        academicYears={academicYears}
         today={today}
       />
     </SectionCard>
@@ -412,16 +410,15 @@ function GroupFeeDialog({
   onOpenChange,
   group,
   fee,
-  academicYears,
   today,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   group: Group
   fee?: GroupFee
-  academicYears: AcademicYear[]
   today: ISODate
 }) {
+  const academicYears = useAcademicYears()
   const { groupFees } = useOperations()
   const current = defaultPeriod(academicYears, today).academicYearId
   const [label, setLabel] = useState(fee?.label ?? `معلوم السنة ${academicYears.find((y) => y.id === current)?.label ?? ""}`)

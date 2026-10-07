@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { usePlatformSettings } from "@/lib/store/settings"
 
 export interface Column<T> {
   id: string
@@ -24,7 +25,7 @@ export interface Column<T> {
 /**
  * Responsive data table: a real <table> from `md` up, stacked cards below
  * when `renderMobileCard` is given.
- * Pagination is client-side for the mock phase; parents reset it on filter
+ * Pagination is client-side for the mock phase (page size = platform preference); parents reset it on filter
  * changes by passing a new `key`.
  */
 export function DataTable<T>({
@@ -34,7 +35,6 @@ export function DataTable<T>({
   renderMobileCard,
   emptyState,
   caption,
-  pageSize = 10,
 }: {
   columns: Column<T>[]
   rows: T[]
@@ -43,8 +43,9 @@ export function DataTable<T>({
   renderMobileCard?: (row: T) => React.ReactNode
   emptyState: React.ReactNode
   caption: string
-  pageSize?: number
 }) {
+  // Rows per page: one platform preference (/admin/settings/preferences) for every table
+  const pageSize = usePlatformSettings().defaultPageSize
   const [page, setPage] = useState(1)
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize))
   const currentPage = Math.min(page, pageCount)

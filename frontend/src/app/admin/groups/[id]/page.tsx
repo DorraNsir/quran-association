@@ -40,7 +40,7 @@ import {
   studentsInGroup,
 } from "@/lib/domain"
 import { countLabels, formatDate } from "@/lib/format"
-import { academicYears, groups, lookups, MOCK_TODAY, schedules, students } from "@/lib/mock"
+import { groups, lookups, MOCK_TODAY, schedules, students } from "@/lib/mock"
 import { cn } from "@/lib/utils"
 import type { Teacher, TeachingRole } from "@/types/domain"
 
@@ -124,7 +124,7 @@ export default async function GroupDetailsPage(props: PageProps<"/admin/groups/[
                   <StatCard label="الحصص أسبوعيًا" value={weeklySlots.length} icon={CalendarClock} />
                 </div>
 
-                <GroupFees group={group} academicYears={academicYears} today={MOCK_TODAY} />
+                <GroupFees group={group} today={MOCK_TODAY} />
 
                 <section aria-labelledby="classes-heading" className="space-y-3">
                   <h2 id="classes-heading" className="flex items-center gap-2 text-sm font-semibold">
@@ -231,8 +231,7 @@ export default async function GroupDetailsPage(props: PageProps<"/admin/groups/[
             label: "متابعة الحفظ",
             icon: <BookOpenCheck aria-hidden />,
             content: (
-              <GroupMemorization groupId={group.id} lookups={lookups} students={students}
-                academicYears={academicYears} today={MOCK_TODAY} />
+              <GroupMemorization groupId={group.id} lookups={lookups} students={students} today={MOCK_TODAY} />
             ),
           },
           {

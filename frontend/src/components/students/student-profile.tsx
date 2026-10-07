@@ -23,7 +23,7 @@ import { StudentTeacherNotes } from "@/components/teacher/teacher-notes"
 import { StudentOverview } from "./student-overview"
 import { StudentProfileActions } from "./student-profile-actions"
 import { ageOn, fullName, indexLookups, studentClass } from "@/lib/domain"
-import { academicYears, lookups, MOCK_TODAY } from "@/lib/mock"
+import { lookups, MOCK_TODAY } from "@/lib/mock"
 import type { ID, Student } from "@/types/domain"
 
 export const STUDENT_PROFILE_TABS = ["overview", "attendance", "memorization", "payments", "notes"]
@@ -105,8 +105,7 @@ export function StudentProfile({
             label: "متابعة الحفظ",
             icon: <BookOpenCheck aria-hidden />,
             content: (
-              <StudentMemorization studentId={student.id} lookups={lookups} students={students}
-                academicYears={academicYears} today={MOCK_TODAY} />
+              <StudentMemorization studentId={student.id} lookups={lookups} students={students} today={MOCK_TODAY} />
             ),
           },
           {
@@ -114,7 +113,7 @@ export function StudentProfile({
             label: "المدفوعات",
             icon: <Wallet aria-hidden />,
             content: (
-              <StudentPayments studentId={student.id} mode="admin" userId={userId} academicYears={academicYears} today={MOCK_TODAY} />
+              <StudentPayments studentId={student.id} mode="admin" userId={userId} today={MOCK_TODAY} />
             ),
           },
           {

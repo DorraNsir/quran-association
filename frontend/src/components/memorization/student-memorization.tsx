@@ -11,28 +11,28 @@ import { labels } from "@/lib/i18n"
 import { defaultPeriod, getMemorizationProgress, SEMESTERS } from "@/lib/memorization"
 import { useOperations } from "@/lib/store/operations"
 import { cn } from "@/lib/utils"
-import type { AcademicYear, ID, ISODate, Student } from "@/types/domain"
+import type { ID, ISODate, Student } from "@/types/domain"
 
 import { MemorizationValue, useMemorizationDialog } from "./memorization-dialog"
 import { AcademicYearSelect } from "./period-selectors"
+import { useAcademicYears } from "@/lib/store/settings"
 
 /** A student's last memorized surah, one card per semester of the chosen year (not a timeline). */
 export function StudentMemorization({
   studentId,
   lookups,
   students,
-  academicYears,
   today,
   updaterId,
 }: {
   studentId: ID
   lookups: Lookups
   students: Student[]
-  academicYears: AcademicYear[]
   today: ISODate
   /** The signed-in teacher in Teacher Space */
   updaterId?: ID
 }) {
+  const academicYears = useAcademicYears()
   const { memorizationProgress } = useOperations()
   const initial = defaultPeriod(academicYears, today)
   const [academicYearId, setAcademicYearId] = useState(initial.academicYearId)

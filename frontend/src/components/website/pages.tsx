@@ -4,7 +4,7 @@ import { ArrowRight, CalendarDays, Clock, ExternalLink, Mail, MapPin, Phone } fr
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
-import { formatDate } from "@/lib/format"
+import { formatDate, formatPhone } from "@/lib/format"
 import { branches, MOCK_TODAY, teachers } from "@/lib/mock"
 import { allStudents, useOperations } from "@/lib/store/operations"
 import {
@@ -92,7 +92,7 @@ export function HomePage() {
         <Container className="grid items-center gap-10 lg:grid-cols-2">
           <div className="space-y-5">
             <p className="flex items-center gap-2 text-sm font-medium text-primary"><span aria-hidden className="h-px w-6 bg-current" />من نحن</p>
-            <h2 id="about-title" className="font-display text-3xl leading-tight font-bold sm:text-4xl">{settings.associationNameAr}</h2>
+            <h2 id="about-title" className="font-display text-3xl leading-tight font-bold sm:text-4xl">{state.associationSettings.name}</h2>
             {paragraphs(settings.aboutAr).slice(0, 2).map((p) => (
               <p key={p} className="leading-relaxed text-muted-foreground">{p}</p>
             ))}
@@ -194,7 +194,7 @@ export function AboutPage() {
   return (
     <>
       <PageHero eyebrow="عن الجمعية" title="من نحن" intro={s.shortDescriptionAr} />
-      <Section title={s.associationNameAr}>
+      <Section title={state.associationSettings.name}>
         <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr]">
           <div className="space-y-4 text-lg leading-loose text-foreground/85">
             {paragraphs(s.aboutAr).map((p) => <p key={p}>{p}</p>)}
@@ -435,18 +435,18 @@ export function GalleryPage() {
 }
 
 export function ContactPage() {
-  const { siteSettings: s } = useOperations()
+  const { siteSettings: s, associationSettings: a } = useOperations()
   const items = [
-    s.phone && { icon: Phone, label: "الهاتف", value: <a href={`tel:${s.phone}`} dir="ltr" className="hover:underline">{s.phone.replace(/(\d{2})(\d{3})(\d{3})/, "$1 $2 $3")}</a> },
-    s.email && { icon: Mail, label: "البريد الإلكتروني", value: <a href={`mailto:${s.email}`} dir="ltr" className="hover:underline">{s.email}</a> },
-    s.addressAr && { icon: MapPin, label: "العنوان", value: s.addressAr },
+    a.phone && { icon: Phone, label: "الهاتف", value: <a href={`tel:${a.phone}`} dir="ltr" className="hover:underline">{formatPhone(a.phone)}</a> },
+    a.email && { icon: Mail, label: "البريد الإلكتروني", value: <a href={`mailto:${a.email}`} dir="ltr" className="hover:underline">{a.email}</a> },
+    a.address && { icon: MapPin, label: "العنوان", value: a.address },
     s.openingHoursAr && { icon: Clock, label: "أوقات الاستقبال", value: s.openingHoursAr },
   ].filter(Boolean) as { icon: typeof Phone; label: string; value: React.ReactNode }[]
 
   return (
     <>
       <PageHero eyebrow="تواصل معنا" title="نسعد بتواصلكم" intro="للاستفسار عن التسجيل أو البرامج، اتصلوا بنا أو زوروا أحد فروعنا." />
-      <Section title={s.associationNameAr}>
+      <Section title={a.name}>
         <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
           <ul className="space-y-3">
             {items.map(({ icon: Icon, label, value }) => (

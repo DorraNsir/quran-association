@@ -7,7 +7,7 @@ import { getCurrentStudent } from "@/lib/auth/current-user"
 import { weekdayOf } from "@/lib/dates"
 import { formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { academicYears, lookups, MOCK_TODAY, publisherNames } from "@/lib/mock"
+import { lookups, MOCK_TODAY, publisherNames } from "@/lib/mock"
 import { getStudentGroupClass } from "@/lib/student-access"
 
 export const metadata: Metadata = { title: "فضاء الطالب" }
@@ -21,8 +21,7 @@ export default async function StudentHomePage() {
         title={`السلام عليكم ${student.firstName}`}
         description={`${labels.weekday[weekdayOf(MOCK_TODAY)]} ${formatDate(MOCK_TODAY)}`}
       />
-      <StudentDashboard student={student} view={getStudentGroupClass(student, lookups)} lookups={lookups}
-        academicYears={academicYears} publishers={publisherNames} today={MOCK_TODAY} />
+      <StudentDashboard student={student} view={getStudentGroupClass(student, lookups)} lookups={lookups} publishers={publisherNames} today={MOCK_TODAY} />
     </>
   )
 }

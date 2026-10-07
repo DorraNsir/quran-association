@@ -1,5 +1,5 @@
 import { defaultLocale, locales } from "@/lib/i18n"
-import type { ISODate, TimeOfDay } from "@/types/domain"
+import type { DateFormat, ISODate, TimeOfDay } from "@/types/domain"
 
 const intlLocale = locales[defaultLocale].intl
 
@@ -39,6 +39,12 @@ const weekdayDateFormatter = new Intl.DateTimeFormat(intlLocale, {
   year: "numeric",
   timeZone: "UTC",
 })
+
+/** Administrative numeric date: "07/10/2026" (DD/MM/YYYY) or "2026-10-07" — display only, the ISO value never changes. */
+export function formatNumericDate(date: ISODate, format: DateFormat = "DD/MM/YYYY") {
+  const [y, m, d] = date.slice(0, 10).split("-")
+  return format === "YYYY-MM-DD" ? `${y}-${m}-${d}` : `${d}/${m}/${y}`
+}
 
 /** "5" */
 export function formatDayNumber(date: ISODate) {

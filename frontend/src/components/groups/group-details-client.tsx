@@ -24,12 +24,13 @@ import {
   studentClass,
   type Lookups,
 } from "@/lib/domain"
-import { countLabels, formatDate } from "@/lib/format"
+import { countLabels } from "@/lib/format"
 import { MOCK_TODAY } from "@/lib/mock/reference-date"
 import { cn } from "@/lib/utils"
 import type { Group, Student } from "@/types/domain"
 
 import { classActions, groupActions, useGroupDialogs } from "./use-group-dialogs"
+import { useAdminDate } from "@/lib/store/settings"
 
 export function GroupProfileActions({ group, lookups, students }: { group: Group; lookups: Lookups; students: Student[] }) {
   const { run, dialogs } = useGroupDialogs({ lookups, students })
@@ -127,6 +128,7 @@ export function GroupClassList({ group, lookups, students }: { group: Group; loo
 
 /** All students of the group, each with their class (branch + supervisor); filterable by class. */
 export function GroupStudentsTable({ students, lookups, groupId }: { students: Student[]; lookups: Lookups; groupId: string }) {
+  const adminDate = useAdminDate()
   const indexes = indexLookups(lookups)
   const classes = classesOf(groupId, lookups.groupClasses)
   const [classId, setClassId] = useState("all")
@@ -163,7 +165,7 @@ export function GroupStudentsTable({ students, lookups, groupId }: { students: S
       id: "registered",
       header: "تاريخ التسجيل",
       className: "hidden xl:table-cell",
-      cell: (s) => <span className="text-muted-foreground">{formatDate(s.registrationDate)}</span>,
+      cell: (s) => <span className="text-muted-foreground">{adminDate(s.registrationDate)}</span>,
     },
     { id: "status", header: "الحالة", cell: (s) => <StatusBadge status={s.status} /> },
   ]
@@ -186,7 +188,6 @@ export function GroupStudentsTable({ students, lookups, groupId }: { students: S
         columns={columns}
         rows={rows}
         getRowId={(s) => s.id}
-        pageSize={15}
         emptyState={<EmptyState icon={Users} title="لا يوجد طلبة" description="أضف طلبة من خلال تعديل الحلقة أو من صفحة الطلبة." />}
         renderMobileCard={(s) => (
           <div className="space-y-1.5">

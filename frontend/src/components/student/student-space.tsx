@@ -38,7 +38,9 @@ import { defaultPeriod, SEMESTERS } from "@/lib/memorization"
 import { useOperations } from "@/lib/store/operations"
 import { getStudentAttendance, getStudentMemorization, getStudentSessions } from "@/lib/student-access"
 import { cn } from "@/lib/utils"
-import type { AcademicYear, ISODate, Session, Student } from "@/types/domain"
+import type { ISODate, Session, Student } from "@/types/domain"
+import { useAcademicYears } from "@/lib/store/settings"
+import { useCurrentAcademicYear } from "@/lib/store/settings"
 
 /*
  * Student Space — READ-ONLY views of the current student's own data.
@@ -96,17 +98,16 @@ export function StudentDashboard({
   student,
   view,
   lookups,
-  academicYears,
   publishers,
   today,
 }: {
   student: Student
   view?: ClassView
   lookups: Lookups
-  academicYears: AcademicYear[]
   publishers: PublisherNames
   today: ISODate
 }) {
+  const academicYears = useAcademicYears()
   const { sessions, attendance, memorization } = useStudentRecords(student, lookups)
   const { resources, resourceTargets, announcements, announcementTargets } = useOperations()
   // Same visibility helpers as the resources / announcements pages and their notifications
@@ -258,7 +259,8 @@ export function MySessions({ student, view, lookups, today }: { student: Student
 export function MyAttendance({ student, lookups, today }: { student: Student; lookups: Lookups; today: ISODate }) {
   const { attendance } = useStudentRecords(student, lookups)
   const [period, setPeriod] = useState<Period>({ preset: "year" })
-  const range = resolvePeriod(period, today)
+  const currentYear = useCurrentAcademicYear()
+  const range = resolvePeriod(period, today, currentYear)
   const entries = attendance.filter((e) => isWithin(e.session.date, range))
   const summary = summarize(entries.map((e) => e.record))
 
@@ -300,14 +302,13 @@ export function MyAttendance({ student, lookups, today }: { student: Student; lo
 export function MyMemorization({
   student,
   lookups,
-  academicYears,
   today,
 }: {
   student: Student
   lookups: Lookups
-  academicYears: AcademicYear[]
   today: ISODate
 }) {
+  const academicYears = useAcademicYears()
   const { memorization } = useStudentRecords(student, lookups)
   const initial = defaultPeriod(academicYears, today)
   const [academicYearId, setAcademicYearId] = useState(initial.academicYearId)

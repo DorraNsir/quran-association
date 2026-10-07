@@ -2,6 +2,7 @@
 
 import {
   Award,
+  BadgeInfo,
   CalendarDays,
   CalendarX2,
   FolderKanban,
@@ -268,7 +269,7 @@ export function CmsDashboard() {
               <span className="flex size-11 items-center justify-center rounded-lg bg-brand-soft text-brand-soft-foreground"><Settings className="size-5" aria-hidden /></span>
               <div>
                 <p className="font-medium">إعدادات الموقع</p>
-                <p className="text-xs text-muted-foreground">الاسم، التعريف، الرسالة، التواصل، التسجيل</p>
+                <p className="text-xs text-muted-foreground">التعريف، الرسالة، الاستقبال والشبكات، التسجيل</p>
               </div>
             </Card>
           </Link>
@@ -297,16 +298,12 @@ export function CmsDashboard() {
 
 type SettingsKey = keyof SiteSettings
 const SETTINGS_FIELDS: { key: SettingsKey; label: string; long?: boolean; ltr?: boolean; required?: boolean; hint?: string }[] = [
-  { key: "associationNameAr", label: "اسم الجمعية", required: true },
   { key: "shortDescriptionAr", label: "تعريف قصير", long: true, required: true },
   { key: "aboutAr", label: "من نحن", long: true, required: true, hint: "افصل الفقرات بسطر فارغ" },
   { key: "historyAr", label: "تاريخ الجمعية", long: true },
   { key: "missionAr", label: "رسالتنا", long: true, required: true },
   { key: "visionAr", label: "رؤيتنا", long: true, required: true },
   { key: "valuesAr", label: "قيمنا", long: true, hint: "قيمة في كل سطر" },
-  { key: "phone", label: "الهاتف", ltr: true },
-  { key: "email", label: "البريد الإلكتروني", ltr: true },
-  { key: "addressAr", label: "العنوان" },
   { key: "openingHoursAr", label: "أوقات الاستقبال" },
   { key: "mapUrl", label: "رابط الخريطة", ltr: true },
   { key: "facebookUrl", label: "فيسبوك", ltr: true },
@@ -326,6 +323,14 @@ export function SiteSettingsForm() {
     <>
       <Breadcrumbs className="mb-4" items={[{ label: "الموقع الإلكتروني", href: "/admin/website" }, { label: "إعدادات الموقع" }]} />
       <PageHeader title="إعدادات الموقع" description={`آخر تحديث: ${formatDate(siteSettings.updatedAt)}`} />
+      <p className="mb-6 flex items-start gap-2 rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+        <BadgeInfo className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+        <span>
+          اسم الجمعية وشعارها وهاتفها وبريدها وعنوانها تُدار من{" "}
+          <Link href="/admin/settings/association" className="font-medium text-primary hover:underline">إعدادات الجمعية</Link>
+          {" "}وتظهر تلقائيًا في الموقع. هذه الصفحة خاصة بمحتوى الموقع العام.
+        </span>
+      </p>
       <form
         noValidate
         className="space-y-6"
@@ -340,7 +345,7 @@ export function SiteSettingsForm() {
       >
         <Card className="p-5 sm:p-6">
           <FormSection title="التعريف بالجمعية">
-            {SETTINGS_FIELDS.filter((f) => f.long || f.key === "associationNameAr").map((f) => (
+            {SETTINGS_FIELDS.filter((f) => f.long).map((f) => (
               <FormField key={f.key} id={`set-${f.key}`} label={f.label} required={f.required} description={f.hint} error={submitted ? errors[f.key] : undefined} className="sm:col-span-2">
                 {f.long ? (
                   <Textarea id={`set-${f.key}`} rows={f.key === "aboutAr" || f.key === "historyAr" ? 6 : 3} value={String(values[f.key] ?? "")} onChange={(e) => set(f.key, e.target.value)} />
@@ -352,8 +357,8 @@ export function SiteSettingsForm() {
           </FormSection>
         </Card>
         <Card className="p-5 sm:p-6">
-          <FormSection title="التواصل والشبكات">
-            {SETTINGS_FIELDS.filter((f) => !f.long && f.key !== "associationNameAr").map((f) => (
+          <FormSection title="الاستقبال والشبكات">
+            {SETTINGS_FIELDS.filter((f) => !f.long).map((f) => (
               <FormField key={f.key} id={`set-${f.key}`} label={f.label} optional>
                 <Input id={`set-${f.key}`} dir={f.ltr ? "ltr" : undefined} value={String(values[f.key] ?? "")} onChange={(e) => set(f.key, e.target.value)} />
               </FormField>

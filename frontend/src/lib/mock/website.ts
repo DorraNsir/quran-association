@@ -21,8 +21,6 @@ const img = (name: string) => `/website/${name}.svg`
 const T = { createdAt: "2026-09-01", updatedAt: "2026-09-01" }
 
 export const siteSettings: SiteSettings = {
-  associationNameAr: "الفرع المحلي عمر بن الخطاب بدار شعبان الفهري",
-  associationNameFr: "Section locale Omar Ibn El Khattab — Dar Chaabane El Fehri",
   shortDescriptionAr: "بيئة تربوية لحفظ كتاب الله وتعلّمه، تجمع الأطفال والشباب والكبار حول القرآن الكريم.",
   aboutAr:
     "الفرع المحلي عمر بن الخطاب جمعية قرآنية تعمل بدار شعبان الفهري على تحفيظ القرآن الكريم وتعليم أحكام التجويد، في حلقات منظمة يؤطّرها معلمون مؤهلون.\n\nنرافق طلبتنا خطوة بخطوة: من أول سورة يحفظها الطفل إلى ختم كتاب الله، مع متابعة تربوية مستمرة وتواصل دائم مع الأولياء.",
@@ -31,9 +29,6 @@ export const siteSettings: SiteSettings = {
   missionAr: "تيسير حفظ القرآن الكريم وفهمه لكل الفئات العمرية، في بيئة تربوية آمنة تُنمّي الأخلاق وحب كتاب الله.",
   visionAr: "أن تكون الجمعية مرجعًا قرآنيًا وتربويًا في الجهة، يتخرّج منها حفظة متقنون نافعون لمجتمعهم.",
   valuesAr: "الإخلاص في خدمة كتاب الله\nالإتقان في الحفظ والتلاوة\nالرفق والقدوة الحسنة\nالتعاون مع الأسرة\nالانفتاح على المجتمع",
-  phone: "72290415",
-  email: "contact@omar-khattab.tn",
-  addressAr: "نهج الجامع الكبير، دار شعبان الفهري 8011، نابل",
   openingHoursAr: "من الاثنين إلى السبت: 09:00 – 12:00 و 15:00 – 19:00",
   mapUrl: "https://maps.google.com/?q=Dar+Chaabane+El+Fehri",
   facebookUrl: "https://facebook.com/",

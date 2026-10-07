@@ -17,7 +17,8 @@ import { countLabels, formatShortDate } from "@/lib/format"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
 import { useOperations } from "@/lib/store/operations"
 import { getTeacherGroupClasses } from "@/lib/teacher-access"
-import type { AcademicYear, ID, ISODate, Semester, Student } from "@/types/domain"
+import type { ID, ISODate, Semester, Student } from "@/types/domain"
+import { useAcademicYears } from "@/lib/store/settings"
 
 /**
  * The teacher's memorization follow-up: their classes only, one list per
@@ -28,16 +29,15 @@ export function TeacherMemorization({
   teacherId,
   lookups,
   students,
-  academicYears,
   today,
 }: {
   teacherId: ID
   lookups: Lookups
   /** The teacher's own students */
   students: Student[]
-  academicYears: AcademicYear[]
   today: ISODate
 }) {
+  const academicYears = useAcademicYears()
   const { memorizationProgress } = useOperations()
   const initial = defaultPeriod(academicYears, today)
   const [academicYearId, setAcademicYearId] = useState(initial.academicYearId)

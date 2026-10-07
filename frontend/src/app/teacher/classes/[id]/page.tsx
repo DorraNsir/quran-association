@@ -4,7 +4,7 @@ import { notFound } from "next/navigation"
 import { NoAccess } from "@/components/shared/no-access"
 import { TeacherClassDetails } from "@/components/teacher/teacher-classes"
 import { getCurrentTeacher } from "@/lib/auth/current-user"
-import { academicYears, groupClasses, groups, lookups, MOCK_TODAY, students } from "@/lib/mock"
+import { groupClasses, groups, lookups, MOCK_TODAY, students } from "@/lib/mock"
 import { getTeacherGroupClasses, getTeacherStudents } from "@/lib/teacher-access"
 
 export async function generateMetadata(props: PageProps<"/teacher/classes/[id]">): Promise<Metadata> {
@@ -25,7 +25,6 @@ export default async function TeacherClassPage(props: PageProps<"/teacher/classe
       teacherId={teacherId}
       lookups={lookups}
       students={getTeacherStudents(teacherId, lookups, students)}
-      academicYears={academicYears}
       today={MOCK_TODAY}
     />
   )

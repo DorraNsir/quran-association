@@ -12,25 +12,25 @@ import { classesOf, describeClass, fullName, indexLookups, type ClassView, type 
 import { countLabels } from "@/lib/format"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
 import { useOperations } from "@/lib/store/operations"
-import type { AcademicYear, ID, ISODate, Semester, Student } from "@/types/domain"
+import type { ID, ISODate, Semester, Student } from "@/types/domain"
 
 import { MemorizationValue, useMemorizationDialog } from "./memorization-dialog"
 import { AcademicYearSelect, SemesterSelect } from "./period-selectors"
+import { useAcademicYears } from "@/lib/store/settings"
 
 /** Last memorized surah of a group's students, CLASS BY CLASS (classes never mix). */
 export function GroupMemorization({
   groupId,
   lookups,
   students,
-  academicYears,
   today,
 }: {
   groupId: ID
   lookups: Lookups
   students: Student[]
-  academicYears: AcademicYear[]
   today: ISODate
 }) {
+  const academicYears = useAcademicYears()
   const initial = defaultPeriod(academicYears, today)
   const [academicYearId, setAcademicYearId] = useState(initial.academicYearId)
   const [semester, setSemester] = useState<Semester>(initial.semester)

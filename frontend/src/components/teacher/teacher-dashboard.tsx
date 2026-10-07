@@ -25,25 +25,25 @@ import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memoriz
 import { useOperations } from "@/lib/store/operations"
 import { getTeacherGroupClasses } from "@/lib/teacher-access"
 import { cn } from "@/lib/utils"
-import type { AcademicYear, ID, ISODate, Student } from "@/types/domain"
+import type { ID, ISODate, Student } from "@/types/domain"
 
 import { isAttendancePending, TeacherSessionList, useTeacherSessionRows } from "./teacher-sessions"
+import { useAcademicYears } from "@/lib/store/settings"
 
 /** "What do I teach today, what is left to record?" — the teacher's day at a glance. */
 export function TeacherDashboard({
   teacherId,
   lookups,
   students,
-  academicYears,
   today,
 }: {
   teacherId: ID
   lookups: Lookups
   /** The teacher's own students */
   students: Student[]
-  academicYears: AcademicYear[]
   today: ISODate
 }) {
+  const academicYears = useAcademicYears()
   const { memorizationProgress } = useOperations()
   const rows = useTeacherSessionRows(teacherId, lookups, students, today)
   const classes = getTeacherGroupClasses(teacherId, lookups)

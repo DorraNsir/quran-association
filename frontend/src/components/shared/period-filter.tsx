@@ -14,9 +14,9 @@ import {
 import { addDays, startOfWeek } from "@/lib/dates"
 import { labels } from "@/lib/i18n"
 import { SEMESTERS } from "@/lib/memorization"
-import { CURRENT_ACADEMIC_YEAR } from "@/lib/mock/academic-years"
+import { useCurrentAcademicYear } from "@/lib/store/settings"
 import { cn } from "@/lib/utils"
-import type { ISODate, Semester } from "@/types/domain"
+import type { AcademicYear, ISODate, Semester } from "@/types/domain"
 
 export interface Period {
   preset: string
@@ -34,9 +34,9 @@ export interface DateRange {
  * Date-range presets, including the academic year and its two semesters — the
  * filters the end-of-year attendance count relies on.
  */
-export function resolvePeriod(period: Period, today: ISODate): DateRange {
+export function resolvePeriod(period: Period, today: ISODate, year: AcademicYear): DateRange {
   const monthStart = `${today.slice(0, 8)}01`
-  const semester = CURRENT_ACADEMIC_YEAR.semesters[period.preset as Semester]
+  const semester = year.semesters[period.preset as Semester]
   if (semester) return { from: semester.startDate, to: semester.endDate }
   switch (period.preset) {
     case "today":
@@ -49,7 +49,7 @@ export function resolvePeriod(period: Period, today: ISODate): DateRange {
       return { from: monthStart, to: addDays(next.toISOString().slice(0, 10), -1) }
     }
     case "year":
-      return { from: CURRENT_ACADEMIC_YEAR.startDate, to: CURRENT_ACADEMIC_YEAR.endDate }
+      return { from: year.startDate, to: year.endDate }
     case "custom":
       return { from: period.from, to: period.to }
     default:
@@ -68,6 +68,7 @@ export function PeriodFilter({
   allLabel?: string
   className?: string
 }) {
+  const currentYear = useCurrentAcademicYear()
   return (
     <div className={cn("col-span-2 flex flex-wrap items-center gap-2 sm:col-span-1", className)}>
       <Select value={value.preset} onValueChange={(preset) => onChange({ ...value, preset })}>
@@ -84,7 +85,7 @@ export function PeriodFilter({
           <SelectItem value="month">هذا الشهر</SelectItem>
           <SelectSeparator />
           <SelectGroup>
-            <SelectLabel>السنة الدراسية <span dir="ltr">{CURRENT_ACADEMIC_YEAR.label}</span></SelectLabel>
+            <SelectLabel>السنة الدراسية <span dir="ltr">{currentYear.label}</span></SelectLabel>
             <SelectItem value="year">كامل السنة الدراسية</SelectItem>
             {SEMESTERS.map((s) => (
               <SelectItem key={s} value={s}>

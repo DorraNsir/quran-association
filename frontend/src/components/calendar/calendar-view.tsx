@@ -32,6 +32,7 @@ import { MobileAgenda } from "./mobile-agenda"
 import { ScheduleDetailsSheet } from "./schedule-details-sheet"
 import { ScheduleFormSheet, type SchedulePreset } from "./schedule-form-sheet"
 import { TimeGrid, type GridColumn } from "./time-grid"
+import { usePlatformSettings } from "@/lib/store/settings"
 
 export interface CalendarFilters {
   branch: string
@@ -57,7 +58,9 @@ export function CalendarView({
 }) {
   const [schedules, setSchedules] = useState(lookups.schedules)
   const [date, setDate] = useState(today)
-  const [view, setView] = useState<View>("week")
+  // Initial view = platform preference; the toolbar still switches freely
+  const { defaultCalendarView } = usePlatformSettings()
+  const [view, setView] = useState<View>(defaultCalendarView)
   const [filters, setFilters] = useState<CalendarFilters>({ ...NO_FILTERS, ...initialFilters })
   const [details, setDetails] = useState<{ entry: CalendarEntry; date: ISODate; open: boolean } | null>(null)
   const [formState, setFormState] = useState<{

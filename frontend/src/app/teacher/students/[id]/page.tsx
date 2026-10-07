@@ -27,7 +27,7 @@ import { TeacherNotes } from "@/components/teacher/teacher-notes"
 import { getCurrentTeacher } from "@/lib/auth/current-user"
 import { ageOn, fullName, indexLookups, studentClass } from "@/lib/domain"
 import { formatDate } from "@/lib/format"
-import { academicYears, lookups, MOCK_TODAY, students } from "@/lib/mock"
+import { lookups, MOCK_TODAY, students } from "@/lib/mock"
 import { canTeacherAccessStudent, getTeacherGroupClasses, getTeacherStudents } from "@/lib/teacher-access"
 
 const TABS = ["overview", "attendance", "memorization", "notes"]
@@ -112,8 +112,7 @@ export default async function TeacherStudentPage(props: PageProps<"/teacher/stud
             label: "متابعة الحفظ",
             icon: <BookOpenCheck aria-hidden />,
             content: (
-              <StudentMemorization studentId={student.id} lookups={lookups} students={myStudents}
-                academicYears={academicYears} today={MOCK_TODAY} updaterId={teacherId} />
+              <StudentMemorization studentId={student.id} lookups={lookups} students={myStudents} today={MOCK_TODAY} updaterId={teacherId} />
             ),
           },
           {

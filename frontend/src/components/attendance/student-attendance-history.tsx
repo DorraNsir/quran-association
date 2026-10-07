@@ -19,6 +19,7 @@ import type { ID, ISODate, Student } from "@/types/domain"
 
 import { AttendanceStatusBadge } from "./attendance-badges"
 import { AttendanceStats } from "./attendance-stats"
+import { useCurrentAcademicYear } from "@/lib/store/settings"
 
 /** A student's attendance, session by session, with totals for the chosen period. */
 export function StudentAttendanceHistory({
@@ -42,7 +43,8 @@ export function StudentAttendanceHistory({
   )
   const [period, setPeriod] = useState<Period>({ preset: "year" })
   const [status, setStatus] = useState(ALL)
-  const range = resolvePeriod(period, today)
+  const currentYear = useCurrentAcademicYear()
+  const range = resolvePeriod(period, today, currentYear)
 
   const entries = rows
     .flatMap((row) => {

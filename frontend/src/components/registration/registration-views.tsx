@@ -33,6 +33,8 @@ import { cn } from "@/lib/utils"
 import type { ID, ISODate, RegistrationRequest, RegistrationRequestStatus } from "@/types/domain"
 
 import { useRegistrationForm } from "./registration-form"
+import { getCurrentAcademicYear } from "@/lib/academic-years"
+import { useAdminDate } from "@/lib/store/settings"
 
 export function RegistrationStatusBadge({ status }: { status: RegistrationRequestStatus }) {
   const tone = { PENDING: "bg-warning-soft text-warning", ACCEPTED: "bg-brand-soft text-brand-soft-foreground", REFUSED: "bg-muted text-muted-foreground" }[status]
@@ -145,6 +147,7 @@ function AddRequestDialog({ open, onOpenChange, today }: { open: boolean; onOpen
 }
 
 export function RegistrationRequestsView({ today }: { today: ISODate }) {
+  const adminDate = useAdminDate()
   const { registrationRequests } = useOperations()
   const [query, setQuery] = useState("")
   const [status, setStatus] = useState(ALL)
@@ -176,7 +179,7 @@ export function RegistrationRequestsView({ today }: { today: ISODate }) {
     { id: "age", header: "العمر", cell: ageCell },
     { id: "studied", header: "دراسة سابقة", className: "hidden lg:table-cell", cell: (r) => (r.hasStudiedQuranBefore ? "نعم" : "لا") },
     { id: "source", header: "المصدر", cell: (r) => <RegistrationSourceBadge source={r.source} /> },
-    { id: "date", header: "تاريخ الطلب", className: "hidden md:table-cell", cell: (r) => <span className="whitespace-nowrap">{formatDate(r.submittedAt)}</span> },
+    { id: "date", header: "تاريخ الطلب", className: "hidden md:table-cell", cell: (r) => <span className="whitespace-nowrap">{adminDate(r.submittedAt)}</span> },
     { id: "status", header: "الحالة", cell: (r) => <RegistrationStatusBadge status={r.status} /> },
     {
       id: "actions",
@@ -251,16 +254,16 @@ export function RegistrationRequestDetails({
   requestId,
   reviewerId,
   lookups,
-  academicYearId,
   today,
 }: {
   requestId: ID
   reviewerId: ID
   lookups: Lookups
-  academicYearId: ID
   today: ISODate
 }) {
   const state = useOperations()
+  // Obligations of an admitted student belong to the CURRENT academic year (set in /admin/settings)
+  const academicYearId = getCurrentAcademicYear(state.academicYears).id
   const [admission, setAdmission] = useState({ key: 0, open: false })
   const [refusing, setRefusing] = useState(false)
   const request = state.registrationRequests.find((r) => r.id === requestId)

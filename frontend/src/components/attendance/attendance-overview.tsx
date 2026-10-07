@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils"
 import type { AttendanceStatus, ISODate, Student } from "@/types/domain"
 
 import { AttendanceStateLabel } from "./attendance-badges"
+import { useCurrentAcademicYear } from "@/lib/store/settings"
 
 type View = "sessions" | "students"
 
@@ -41,7 +42,9 @@ export function AttendanceOverview({ lookups, students, today }: { lookups: Look
   const [query, setQuery] = useState("")
   const [status, setStatus] = useState(ALL)
 
-  const range = resolvePeriod(period, today)
+  const currentYear = useCurrentAcademicYear()
+
+  const range = resolvePeriod(period, today, currentYear)
   const indexes = indexLookups(lookups)
   // Monitoring looks at sessions that have happened (or happen today)
   const inScope = rows.filter(
@@ -212,7 +215,6 @@ export function AttendanceOverview({ lookups, students, today }: { lookups: Look
           columns={sessionColumns}
           rows={sessionRows}
           getRowId={(r) => r.session.id}
-          pageSize={15}
           emptyState={<EmptyState icon={SearchX} title={period.preset === "today" ? "لا توجد حصص اليوم" : "لا توجد حصص في هذه الفترة"} />}
         />
       ) : (
@@ -222,7 +224,6 @@ export function AttendanceOverview({ lookups, students, today }: { lookups: Look
           columns={studentColumns}
           rows={studentLines}
           getRowId={(l) => l.student.id}
-          pageSize={15}
           emptyState={<EmptyState icon={SearchX} title={status === "ABSENT" ? "لا توجد غيابات" : "لم يتم تسجيل الحضور بعد"} description="لا توجد سجلات حضور مطابقة في هذه الفترة." />}
         />
       )}

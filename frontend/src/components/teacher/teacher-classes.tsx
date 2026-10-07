@@ -32,9 +32,10 @@ import { labels } from "@/lib/i18n"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
 import { useOperations } from "@/lib/store/operations"
 import { getTeacherGroupClasses } from "@/lib/teacher-access"
-import type { AcademicYear, ID, ISODate, Student } from "@/types/domain"
+import type { ID, ISODate, Student } from "@/types/domain"
 
 import { TeacherSessionList, useTeacherSessionRows } from "./teacher-sessions"
+import { useAcademicYears } from "@/lib/store/settings"
 
 /** The teacher's classes as cards: where, when, how many students, what's next. */
 export function TeacherClasses({
@@ -110,7 +111,6 @@ export function TeacherClassDetails({
   assignment,
   lookups,
   students,
-  academicYears,
   today,
   teacherId,
 }: {
@@ -118,10 +118,10 @@ export function TeacherClassDetails({
   lookups: Lookups
   /** The teacher's own students */
   students: Student[]
-  academicYears: AcademicYear[]
   today: ISODate
   teacherId: ID
 }) {
+  const academicYears = useAcademicYears()
   const { groupClass, group, branch, room, supervisor, assistants } = assignment
   const { memorizationProgress } = useOperations()
   const sessionRows = useTeacherSessionRows(teacherId, lookups, students, today).filter((r) => r.session.groupClassId === groupClass.id)

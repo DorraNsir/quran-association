@@ -12,13 +12,14 @@ import { PageHeader } from "@/components/shared/page-header"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { classesOf, describeClass, fullName, indexLookups, studentClass, type ClassView, type Lookups } from "@/lib/domain"
-import { countLabels, formatShortDate } from "@/lib/format"
+import { countLabels } from "@/lib/format"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
 import { useOperations } from "@/lib/store/operations"
-import type { AcademicYear, ISODate, MemorizationProgress, Student } from "@/types/domain"
+import type { ISODate, MemorizationProgress, Student } from "@/types/domain"
 
 import { MemorizationValue, useMemorizationDialog } from "./memorization-dialog"
 import { AcademicYearSelect, SemesterSelect } from "./period-selectors"
+import { useAcademicYears, useAdminDate } from "@/lib/store/settings"
 
 interface Row {
   student: Student
@@ -31,14 +32,14 @@ interface Row {
 export function MemorizationOverview({
   lookups,
   students,
-  academicYears,
   today,
 }: {
   lookups: Lookups
   students: Student[]
-  academicYears: AcademicYear[]
   today: ISODate
 }) {
+  const adminDate = useAdminDate()
+  const academicYears = useAcademicYears()
   const { memorizationProgress } = useOperations()
   const initial = defaultPeriod(academicYears, today)
   const [academicYearId, setAcademicYearId] = useState(initial.academicYearId)
@@ -91,7 +92,7 @@ export function MemorizationOverview({
     </Button>
   )
   const updatedAt = (r: Row) =>
-    r.record ? <span className="whitespace-nowrap tabular-nums text-muted-foreground">{formatShortDate(r.record.updatedAt)}</span> : <span className="text-muted-foreground">—</span>
+    r.record ? <span className="whitespace-nowrap tabular-nums text-muted-foreground">{adminDate(r.record.updatedAt)}</span> : <span className="text-muted-foreground">—</span>
 
   const columns: Column<Row>[] = [
     {
@@ -152,7 +153,6 @@ export function MemorizationOverview({
         columns={columns}
         rows={filtered}
         getRowId={(r) => r.student.id}
-        pageSize={20}
         emptyState={
           rows.every((r) => !r.record) && !hasActiveFilters ? (
             <EmptyState icon={BookMarked} title="لم يتم تسجيل متابعة الحفظ لهذا السداسي بعد" />

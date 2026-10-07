@@ -16,9 +16,10 @@ import { labels } from "@/lib/i18n"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
 import { useOperations } from "@/lib/store/operations"
 import { getTeacherGroupClasses, getTeacherNotes } from "@/lib/teacher-access"
-import type { AcademicYear, ID, ISODate, MemorizationProgress, Student } from "@/types/domain"
+import type { ID, ISODate, MemorizationProgress, Student } from "@/types/domain"
 
 import { useTeacherSessionRows } from "./teacher-sessions"
+import { useAcademicYears } from "@/lib/store/settings"
 
 interface Row {
   student: Student
@@ -33,16 +34,15 @@ export function TeacherStudentsView({
   teacherId,
   lookups,
   students,
-  academicYears,
   today,
 }: {
   teacherId: ID
   lookups: Lookups
   /** The teacher's own students */
   students: Student[]
-  academicYears: AcademicYear[]
   today: ISODate
 }) {
+  const academicYears = useAcademicYears()
   const { memorizationProgress, teacherNotes } = useOperations()
   const sessionRows = useTeacherSessionRows(teacherId, lookups, students, today)
   const [query, setQuery] = useState("")
@@ -115,7 +115,6 @@ export function TeacherStudentsView({
         columns={columns}
         rows={filtered}
         getRowId={(r) => r.student.id}
-        pageSize={20}
         emptyState={
           rows.length === 0 ? (
             <EmptyState icon={GraduationCap} title="لا يوجد طلبة في مجموعاتك" />

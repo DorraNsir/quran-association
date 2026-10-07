@@ -21,6 +21,7 @@ import type { ID, ISODate, Student } from "@/types/domain"
 
 import { AttendanceAction } from "./attendance-action"
 import { useSessionRows, type SessionRow } from "./use-session-rows"
+import { useCurrentAcademicYear } from "@/lib/store/settings"
 
 export type SessionTab = "today" | "pending" | "upcoming" | "done" | "cancelled" | "all"
 
@@ -81,7 +82,9 @@ export function SessionsView({
   const [branchId, setBranchId] = useState(ALL)
   const [teacherId, setTeacherId] = useState(ALL)
 
-  const range = resolvePeriod(period, today)
+  const currentYear = useCurrentAcademicYear()
+
+  const range = resolvePeriod(period, today, currentYear)
   const matchesFilters = (row: SessionRow) =>
     isWithin(row.session.date, range) &&
     (groupId === ALL || row.group?.id === groupId) &&
@@ -222,7 +225,6 @@ export function SessionsView({
         caption="قائمة الحصص"
         columns={columns}
         rows={ordered}
-        pageSize={15}
         getRowId={(r) => r.session.id}
         emptyState={
           <EmptyState

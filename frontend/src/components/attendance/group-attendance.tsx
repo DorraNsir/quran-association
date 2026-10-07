@@ -20,6 +20,7 @@ import type { ID, ISODate, Student } from "@/types/domain"
 
 import { AttendanceStateLabel } from "./attendance-badges"
 import { AttendanceStats } from "./attendance-stats"
+import { useCurrentAcademicYear } from "@/lib/store/settings"
 
 /** Group-level attendance: totals, each session's counts, and every member's record. */
 export function GroupAttendance({
@@ -35,7 +36,8 @@ export function GroupAttendance({
 }) {
   const [period, setPeriod] = useState<Period>({ preset: "year" })
   const [classId, setClassId] = useState("all")
-  const range = resolvePeriod(period, today)
+  const currentYear = useCurrentAcademicYear()
+  const range = resolvePeriod(period, today, currentYear)
   const indexes = indexLookups(lookups)
   const classes = classesOf(groupId, lookups.groupClasses)
   /** "Branch — supervisor": distinguishes this group's classes */

@@ -20,13 +20,14 @@ import { PageHeader } from "@/components/shared/page-header"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { ageOn, fullName, indexLookups, studentClass, type Lookups } from "@/lib/domain"
-import { countLabels, formatDate } from "@/lib/format"
+import { countLabels } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { MOCK_TODAY } from "@/lib/mock/reference-date"
 import { useOperations } from "@/lib/store/operations"
 import type { Student, StudentStatus } from "@/types/domain"
 
 import { studentActions, useStudentDialogs } from "./use-student-dialogs"
+import { useAdminDate } from "@/lib/store/settings"
 
 const STATUSES: StudentStatus[] = ["ACTIVE", "INACTIVE", "ARCHIVED"]
 
@@ -39,6 +40,7 @@ export function StudentsView({
   initialGroupId?: string
   lookups: Lookups
 }) {
+  const adminDate = useAdminDate()
   const [localStudents, setStudents] = useState(initialStudents)
   // Students admitted from registration requests (shared store) join the list
   const { admittedStudents } = useOperations()
@@ -142,7 +144,7 @@ export function StudentsView({
       className: "hidden lg:table-cell",
       cell: (s) => (
         <span className="whitespace-nowrap text-muted-foreground">
-          {formatDate(s.registrationDate)}
+          {adminDate(s.registrationDate)}
         </span>
       ),
     },

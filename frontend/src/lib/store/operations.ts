@@ -15,9 +15,12 @@ import {
   paymentAmountError,
 } from "@/lib/payments"
 import { canReviewRequest, type RegistrationFields } from "@/lib/registration"
+import { academicYearErrors, buildAcademicYear, withCurrentAcademicYear, type AcademicYearDraft } from "@/lib/academic-years"
+import { academicYears } from "@/lib/mock/academic-years"
 import { branches, rooms } from "@/lib/mock/branches"
 import { announcements, announcementTargets, notifications, resources, resourceTargets } from "@/lib/mock/communication"
 import { groupFees, paymentObligations, payments, registrationRequests } from "@/lib/mock/finance"
+import { associationSettings, platformSettings } from "@/lib/mock/settings"
 import * as website from "@/lib/mock/website"
 import { groupClasses, groups } from "@/lib/mock/groups"
 import { memorizationProgress } from "@/lib/mock/memorization"
@@ -29,10 +32,12 @@ import { teacherNotes } from "@/lib/mock/teacher-notes"
 import { teachers } from "@/lib/mock/teachers"
 import { users } from "@/lib/mock/users"
 import type {
+  AcademicYear,
   Achievement,
   AdministrationMember,
   Announcement,
   AnnouncementTarget,
+  AssociationSettings,
   AttendanceStatus,
   GalleryImage,
   GroupFee,
@@ -43,6 +48,7 @@ import type {
   NewsArticle,
   Payment,
   PaymentObligation,
+  PlatformSettings,
   PublicEvent,
   PublicGroupListing,
   PublicProgram,
@@ -95,6 +101,10 @@ export interface OperationsState {
   groupFees: GroupFee[]
   paymentObligations: PaymentObligation[]
   payments: Payment[]
+  /** Platform settings (/admin/settings): identity, configuration and the academic years (Part 4 model) */
+  associationSettings: AssociationSettings
+  platformSettings: PlatformSettings
+  academicYears: AcademicYear[]
   /** Public website (CMS) — the admin edits these, public pages read them */
   siteSettings: SiteSettings
   heroSlides: HeroSlide[]
@@ -143,6 +153,9 @@ const seed: OperationsState = {
   groupFees,
   paymentObligations,
   payments,
+  associationSettings,
+  platformSettings,
+  academicYears,
   siteSettings: website.siteSettings,
   heroSlides: website.heroSlides,
   serviceOfferings: website.serviceOfferings,
@@ -475,6 +488,31 @@ export const operations = {
   /** Only the receipt state changes — amounts and totals stay exactly the same. */
   setReceiptIssued(paymentId: ID, receiptIssued: boolean) {
     setState({ ...state, payments: state.payments.map((p) => (p.id === paymentId ? { ...p, receiptIssued } : p)) })
+  },
+
+  /* ---------- Platform settings ---------- */
+
+  updateAssociationSettings(patch: Partial<Omit<AssociationSettings, "updatedAt">>, today: ISODate) {
+    setState({ ...state, associationSettings: { ...state.associationSettings, ...patch, updatedAt: today } })
+  },
+
+  updatePlatformSettings(patch: Partial<Omit<PlatformSettings, "updatedAt">>, today: ISODate) {
+    setState({ ...state, platformSettings: { ...state.platformSettings, ...patch, updatedAt: today } })
+  },
+
+  /** Creates or edits a year in THE academic-year collection; returns field errors when invalid. */
+  saveAcademicYear(draft: AcademicYearDraft) {
+    const errors = academicYearErrors(draft, state.academicYears)
+    if (Object.keys(errors).length) return { errors }
+    const existing = draft.id ? state.academicYears.find((y) => y.id === draft.id) : undefined
+    const year = buildAcademicYear(draft, existing, existing?.id ?? newMockId("year"))
+    setState({ ...state, academicYears: existing ? state.academicYears.map((y) => (y.id === year.id ? year : y)) : [...state.academicYears, year] })
+    return { id: year.id }
+  },
+
+  /** Only the isCurrent flags change — progress, payments, sessions… keep their own academicYearId. */
+  setCurrentAcademicYear(id: ID) {
+    setState({ ...state, academicYears: withCurrentAcademicYear(state.academicYears, id) })
   },
 
   /* ---------- Public website CMS (one record = what the public sees) ---------- */

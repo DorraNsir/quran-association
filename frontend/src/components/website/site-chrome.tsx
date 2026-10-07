@@ -1,19 +1,19 @@
 "use client"
 
 import { Camera, Globe, LogIn, Mail, MapPin, Menu, Phone, PlayCircle } from "lucide-react"
-import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useState } from "react"
 
+import { AssociationLogo } from "@/components/layout/brand"
 import { Button } from "@/components/ui/button"
 import { useDirection } from "@/components/ui/direction"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { formatPhone } from "@/lib/format"
 import { MOCK_TODAY } from "@/lib/mock/reference-date"
 import { useOperations } from "@/lib/store/operations"
 import { cn } from "@/lib/utils"
 
-import logoMark from "../../../public/brand/logo-mark.png"
 
 export const SITE_NAV = [
   { href: "/", label: "الرئيسية" },
@@ -32,7 +32,7 @@ const isActive = (href: string, pathname: string) => (href === "/" ? pathname ==
 function SiteBrand({ compact }: { compact?: boolean }) {
   return (
     <Link href="/" className="flex min-w-0 items-center gap-2.5 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-      <Image src={logoMark} alt="" className="h-11 w-auto shrink-0" priority />
+      <AssociationLogo className="h-11 w-auto max-w-14 shrink-0" />
       <span className={cn("flex min-w-0 flex-col leading-tight", compact && "max-sm:hidden")}>
         <span className="truncate font-display text-base font-bold">عمر بن الخطاب</span>
         <span className="truncate text-xs text-muted-foreground">بدار شعبان الفهري</span>
@@ -127,9 +127,9 @@ export function SiteHeader() {
   )
 }
 
-/** Footer — every value comes from SiteSettings (single source). */
+/** Footer — identity from AssociationSettings, website content from SiteSettings. */
 export function SiteFooter() {
-  const { siteSettings: s } = useOperations()
+  const { siteSettings: s, associationSettings: a } = useOperations()
   const socials = [
     { href: s.facebookUrl, icon: Globe, label: "فيسبوك" },
     { href: s.instagramUrl, icon: Camera, label: "إنستغرام" },
@@ -142,9 +142,9 @@ export function SiteFooter() {
         <div className="space-y-4 lg:col-span-2">
           <div className="flex items-center gap-3">
             <span className="flex size-14 items-center justify-center rounded-2xl bg-white p-2">
-              <Image src={logoMark} alt="" className="h-full w-auto" />
+              <AssociationLogo className="h-full w-auto" />
             </span>
-            <p className="font-display text-xl font-bold text-white">{s.associationNameAr}</p>
+            <p className="font-display text-xl font-bold text-white">{a.name}</p>
           </div>
           <p className="max-w-md text-sm leading-relaxed">{s.shortDescriptionAr}</p>
           {socials.length > 0 && (
@@ -172,14 +172,14 @@ export function SiteFooter() {
         </nav>
         <div className="space-y-3 text-sm">
           <p className="font-semibold text-white">تواصل معنا</p>
-          {s.addressAr && <p className="flex gap-2"><MapPin className="mt-0.5 size-4 shrink-0" aria-hidden />{s.addressAr}</p>}
-          {s.phone && (
+          {a.address && <p className="flex gap-2"><MapPin className="mt-0.5 size-4 shrink-0" aria-hidden />{a.address}</p>}
+          {a.phone && (
             <p className="flex gap-2">
               <Phone className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <a href={`tel:${s.phone}`} dir="ltr" className="hover:text-white">{s.phone.replace(/(\d{2})(\d{3})(\d{3})/, "$1 $2 $3")}</a>
+              <a href={`tel:${a.phone}`} dir="ltr" className="hover:text-white">{formatPhone(a.phone)}</a>
             </p>
           )}
-          {s.email && <p className="flex gap-2"><Mail className="mt-0.5 size-4 shrink-0" aria-hidden /><a href={`mailto:${s.email}`} dir="ltr" className="hover:text-white">{s.email}</a></p>}
+          {a.email && <p className="flex gap-2"><Mail className="mt-0.5 size-4 shrink-0" aria-hidden /><a href={`mailto:${a.email}`} dir="ltr" className="hover:text-white">{a.email}</a></p>}
           {s.registrationEnabled && (
             <Button asChild size="sm" className="mt-2 rounded-full">
               <Link href="/registration">سجل الآن</Link>
@@ -189,7 +189,7 @@ export function SiteFooter() {
       </div>
       <div className="border-t border-white/10">
         <p className="mx-auto max-w-7xl px-4 py-5 text-xs text-white/60 sm:px-6 lg:px-8">
-          © {MOCK_TODAY.slice(0, 4)} {s.associationNameAr}. جميع الحقوق محفوظة.
+          © {MOCK_TODAY.slice(0, 4)} {a.name}. جميع الحقوق محفوظة.
         </p>
       </div>
     </footer>
