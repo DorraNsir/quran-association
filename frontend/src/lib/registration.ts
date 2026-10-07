@@ -11,5 +11,14 @@ export const canReviewRequest = (request: RegistrationRequest) => request.status
 
 export type RegistrationFields = Pick<
   RegistrationRequest,
-  "firstName" | "lastName" | "birthDate" | "age" | "phone" | "hasStudiedQuranBefore" | "previousExperience" | "notes"
+  | "firstName"
+  | "lastName"
+  | "birthDate"
+  | "age"
+  | "phone"
+  | "hasStudiedQuranBefore"
+  | "previousExperience"
+  | "notes"
+  | "interestedGroupId"
+  | "interestedProgramLabel"
 >

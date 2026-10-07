@@ -12,7 +12,7 @@ export default function NotFound() {
         <p className="text-sm text-muted-foreground">تعذّر العثور على الصفحة المطلوبة.</p>
       </div>
       <Button asChild>
-        <Link href="/admin">الانتقال إلى فضاء الإدارة</Link>
+        <Link href="/">العودة إلى الصفحة الرئيسية</Link>
       </Button>
     </main>
   )

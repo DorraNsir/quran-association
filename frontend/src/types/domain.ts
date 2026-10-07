@@ -381,6 +381,9 @@ export interface RegistrationRequest {
   reviewedByUserId?: ID
   /** Set once, on admission — prevents converting the same request twice */
   createdStudentId?: ID
+  /** Interest expressed on the public site (an upcoming group) — never a class assignment */
+  interestedGroupId?: ID
+  interestedProgramLabel?: string
 }
 
 export type BillingType = "YEARLY" | "MONTHLY"
@@ -429,4 +432,205 @@ export interface Payment {
   note?: string
   recordedByUserId: ID
   createdAt: ISODate
+}
+
+/* ------------------------------------------------------------------ */
+/* Public website CMS. Separate from operational data: PublicEvent ≠   */
+/* Session, NewsArticle ≠ Announcement, QuranGraduate ≠ Student,       */
+/* AdministrationMember ≠ the software ADMIN role. Arabic first,       */
+/* French-ready (…Fr fields optional). Images are URLs (object storage */
+/* later); in the mock phase local assets or transient blob: URLs.     */
+/* ------------------------------------------------------------------ */
+
+interface CmsTimestamps {
+  createdAt: ISODate
+  updatedAt: ISODate
+}
+
+export interface SiteSettings {
+  associationNameAr: string
+  associationNameFr?: string
+  shortDescriptionAr: string
+  shortDescriptionFr?: string
+  aboutAr: string
+  aboutFr?: string
+  historyAr?: string
+  historyFr?: string
+  missionAr: string
+  missionFr?: string
+  visionAr: string
+  visionFr?: string
+  /** One value per line */
+  valuesAr?: string
+  valuesFr?: string
+  phone?: string
+  email?: string
+  addressAr?: string
+  addressFr?: string
+  /** Opening hours / contact availability */
+  openingHoursAr?: string
+  mapUrl?: string
+  facebookUrl?: string
+  instagramUrl?: string
+  youtubeUrl?: string
+  registrationEnabled: boolean
+  updatedAt: ISODate
+}
+
+export interface HeroSlide extends CmsTimestamps {
+  id: ID
+  imageUrl: string
+  titleAr?: string
+  titleFr?: string
+  subtitleAr?: string
+  subtitleFr?: string
+  ctaLabelAr?: string
+  ctaLabelFr?: string
+  ctaHref?: string
+  displayOrder: number
+  isActive: boolean
+}
+
+/** "ماذا نقدم لطلابنا؟" */
+export interface ServiceOffering extends CmsTimestamps {
+  id: ID
+  titleAr: string
+  titleFr?: string
+  descriptionAr?: string
+  descriptionFr?: string
+  /** Key of the website icon set */
+  icon?: string
+  displayOrder: number
+  isPublished: boolean
+}
+
+/** Marketing view of what the association teaches — not an operational Group. */
+export interface PublicProgram extends CmsTimestamps {
+  id: ID
+  titleAr: string
+  titleFr?: string
+  descriptionAr: string
+  descriptionFr?: string
+  imageUrl?: string
+  icon?: string
+  displayOrder: number
+  isPublished: boolean
+}
+
+export type PublicGroupStatus = "COMING_SOON" | "OPEN" | "CLOSED"
+
+/**
+ * Public announcement of a group/program opening soon. Operational Groups
+ * never appear publicly by themselves; this explicit record decides it.
+ */
+export interface PublicGroupListing extends CmsTimestamps {
+  id: ID
+  /** Optional link to the operational group it will become */
+  groupId?: ID
+  titleAr: string
+  titleFr?: string
+  audienceAr: string
+  audienceFr?: string
+  descriptionAr?: string
+  descriptionFr?: string
+  branchId?: ID
+  startDate?: ISODate
+  scheduleAr?: string
+  imageUrl?: string
+  publicStatus: PublicGroupStatus
+  registrationOpen: boolean
+  displayOrder: number
+  isPublished: boolean
+}
+
+/** A public association activity — not a class Session. */
+export interface PublicEvent extends CmsTimestamps {
+  id: ID
+  titleAr: string
+  titleFr?: string
+  descriptionAr: string
+  descriptionFr?: string
+  startDate: ISODate
+  endDate?: ISODate
+  time?: string
+  location?: string
+  imageUrl?: string
+  isPublic: boolean
+  isPublished: boolean
+  isCancelled: boolean
+}
+
+/** Public news — not an internal Announcement. */
+export interface NewsArticle extends CmsTimestamps {
+  id: ID
+  titleAr: string
+  titleFr?: string
+  excerptAr: string
+  excerptFr?: string
+  /** Plain text, paragraphs separated by blank lines */
+  contentAr: string
+  contentFr?: string
+  coverImageUrl?: string
+  publishedAt: ISODate
+  isPublished: boolean
+}
+
+export type GalleryCategory = "ACTIVITIES" | "CEREMONIES" | "SESSIONS" | "SUMMER" | "LIFE"
+
+export interface GalleryImage extends CmsTimestamps {
+  id: ID
+  imageUrl: string
+  titleAr?: string
+  titleFr?: string
+  descriptionAr?: string
+  descriptionFr?: string
+  category?: GalleryCategory
+  displayOrder: number
+  isPublished: boolean
+}
+
+/** A publicly recognised Quran completer, entered explicitly by the admin. */
+export interface QuranGraduate extends CmsTimestamps {
+  id: ID
+  /** Optional: a historical completer may no longer be a student */
+  studentId?: ID
+  fullName: string
+  photoUrl?: string
+  completionYear?: number
+  completionDate?: ISODate
+  shortMessage?: string
+  displayOrder: number
+  isPublished: boolean
+}
+
+/** Board member shown on the site — unrelated to the software ADMIN role. */
+export interface AdministrationMember extends CmsTimestamps {
+  id: ID
+  userId?: ID
+  fullName: string
+  roleAr: string
+  roleFr?: string
+  photoUrl?: string
+  shortBioAr?: string
+  shortBioFr?: string
+  displayOrder: number
+  isPublished: boolean
+}
+
+export type AchievementCategory = "QURAN" | "COMPETITION" | "AWARD" | "COMMUNITY" | "ASSOCIATION" | "MILESTONE"
+
+export interface Achievement extends CmsTimestamps {
+  id: ID
+  titleAr: string
+  titleFr?: string
+  descriptionAr: string
+  descriptionFr?: string
+  date?: ISODate
+  year?: number
+  imageUrl?: string
+  category?: AchievementCategory
+  /** Preferred for the home page — never overrides isPublished */
+  isFeatured: boolean
+  isPublished: boolean
+  displayOrder: number
 }

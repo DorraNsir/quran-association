@@ -5,7 +5,6 @@ import Link from "next/link"
 import { useState } from "react"
 import { toast } from "sonner"
 
-import { BrandLogo } from "@/components/layout/brand"
 import { StudentFormSheet } from "@/components/students/student-form-sheet"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { DataTable, type Column } from "@/components/shared/data-table"
@@ -50,19 +49,34 @@ export function RegistrationSourceBadge({ source }: { source: RegistrationReques
   )
 }
 
-/** Public pre-registration — creates a PENDING request only (no student, no account, no class). */
-export function PublicRegistrationForm({ today }: { today: ISODate }) {
+/**
+ * Public pre-registration — creates a PENDING request only (no student, no
+ * account, no class, no payment). `interestId` (an announced upcoming group)
+ * is recorded as interest; the class stays an admission decision.
+ */
+export function PublicRegistrationForm({ today, interestId }: { today: ISODate; interestId?: string }) {
   const form = useRegistrationForm(today)
   const [sent, setSent] = useState(false)
+  const { publicGroups, siteSettings } = useOperations()
+  const interest = interestId ? publicGroups.find((g) => g.id === interestId && g.isPublished && g.registrationOpen) : undefined
+
+  if (!siteSettings.registrationEnabled) {
+    return (
+      <Card className="mx-auto w-full max-w-xl p-8 text-center">
+        <p className="text-lg font-semibold">التسجيل عبر الموقع مغلق حالياً</p>
+        <p className="mt-1 text-sm text-muted-foreground">يمكنكم التواصل مع الجمعية مباشرة للاستفسار.</p>
+      </Card>
+    )
+  }
 
   return (
-    <div className="mx-auto w-full max-w-xl space-y-6">
-      <div className="flex flex-col items-center gap-2 text-center">
-        <BrandLogo className="w-40" />
-        <h1 className="text-2xl font-semibold tracking-tight">طلب التسجيل</h1>
-        <p className="text-sm text-muted-foreground">املأ الاستمارة وسيتواصل معك فريق الجمعية لاستكمال التسجيل.</p>
-      </div>
-      <Card className="p-5 sm:p-6">
+    <div className="mx-auto w-full max-w-xl space-y-4">
+      {interest && !sent && (
+        <p className="rounded-2xl bg-brand-soft px-4 py-3 text-sm text-brand-soft-foreground">
+          طلب تسجيل في: <span className="font-semibold">{interest.titleAr}</span> — تحدّد الإدارة الحلقة المناسبة عند قبول الطلب.
+        </p>
+      )}
+      <Card className="rounded-3xl p-5 sm:p-7">
         {sent ? (
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <CheckCircle2 className="size-10 text-primary" aria-hidden />
@@ -77,12 +91,16 @@ export function PublicRegistrationForm({ today }: { today: ISODate }) {
               e.preventDefault()
               const fields = form.collect()
               if (!fields) return
-              operations.submitRegistrationRequest(fields, "PUBLIC_WEBSITE", today)
+              operations.submitRegistrationRequest(
+                { ...fields, interestedGroupId: interest?.groupId, interestedProgramLabel: interest?.titleAr },
+                "PUBLIC_WEBSITE",
+                today
+              )
               setSent(true)
             }}
           >
             {form.fields("public", "self")}
-            <Button type="submit" size="lg" className="w-full">إرسال طلب التسجيل</Button>
+            <Button type="submit" size="lg" className="h-12 w-full rounded-full text-base">إرسال طلب التسجيل</Button>
           </form>
         )}
       </Card>
@@ -293,6 +311,7 @@ export function RegistrationRequestDetails({
             { label: request.birthDate ? "تاريخ الميلاد" : "العمر", value: request.birthDate ? `${formatDate(request.birthDate)} (${age} سنة)` : age !== undefined ? `${age} سنة` : undefined, icon: CalendarDays },
             { label: "دراسة القرآن سابقًا", value: request.hasStudiedQuranBefore ? `نعم${request.previousExperience ? ` — ${request.previousExperience}` : ""}` : "لا", icon: BookOpen },
             { label: "تاريخ الطلب", value: formatDate(request.submittedAt), icon: CalendarDays },
+            ...(request.interestedProgramLabel ? [{ label: "الاهتمام المُعلن", value: request.interestedProgramLabel, icon: Globe }] : []),
             ...(request.notes ? [{ label: "معلومات إضافية", value: request.notes, icon: ClipboardList }] : []),
             ...(request.reviewedAt ? [{ label: "تاريخ المراجعة", value: formatDate(request.reviewedAt), icon: ShieldCheck }] : []),
           ]}

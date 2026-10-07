@@ -18,6 +18,7 @@ import { canReviewRequest, type RegistrationFields } from "@/lib/registration"
 import { branches, rooms } from "@/lib/mock/branches"
 import { announcements, announcementTargets, notifications, resources, resourceTargets } from "@/lib/mock/communication"
 import { groupFees, paymentObligations, payments, registrationRequests } from "@/lib/mock/finance"
+import * as website from "@/lib/mock/website"
 import { groupClasses, groups } from "@/lib/mock/groups"
 import { memorizationProgress } from "@/lib/mock/memorization"
 import { newMockId } from "@/lib/mock/reference-date"
@@ -28,21 +29,32 @@ import { teacherNotes } from "@/lib/mock/teacher-notes"
 import { teachers } from "@/lib/mock/teachers"
 import { users } from "@/lib/mock/users"
 import type {
+  Achievement,
+  AdministrationMember,
   Announcement,
   AnnouncementTarget,
   AttendanceStatus,
+  GalleryImage,
   GroupFee,
+  HeroSlide,
   ID,
   ISODate,
   MemorizationProgress,
+  NewsArticle,
   Payment,
   PaymentObligation,
+  PublicEvent,
+  PublicGroupListing,
+  PublicProgram,
+  QuranGraduate,
   RegistrationRequest,
   RegistrationRequestSource,
   Resource,
   ResourceTarget,
+  ServiceOffering,
   Session,
   SessionStatus,
+  SiteSettings,
   Student,
   StudentAttendance,
   TeacherAttendance,
@@ -83,6 +95,36 @@ export interface OperationsState {
   groupFees: GroupFee[]
   paymentObligations: PaymentObligation[]
   payments: Payment[]
+  /** Public website (CMS) — the admin edits these, public pages read them */
+  siteSettings: SiteSettings
+  heroSlides: HeroSlide[]
+  serviceOfferings: ServiceOffering[]
+  publicPrograms: PublicProgram[]
+  publicGroups: PublicGroupListing[]
+  publicEvents: PublicEvent[]
+  newsArticles: NewsArticle[]
+  galleryImages: GalleryImage[]
+  quranGraduates: QuranGraduate[]
+  administrationMembers: AdministrationMember[]
+  achievements: Achievement[]
+}
+
+/** CMS collections and their item type. */
+export interface CmsCollections {
+  heroSlides: HeroSlide
+  serviceOfferings: ServiceOffering
+  publicPrograms: PublicProgram
+  publicGroups: PublicGroupListing
+  publicEvents: PublicEvent
+  newsArticles: NewsArticle
+  galleryImages: GalleryImage
+  quranGraduates: QuranGraduate
+  administrationMembers: AdministrationMember
+  achievements: Achievement
+}
+export type CmsCollection = keyof CmsCollections
+export type CmsDraft<K extends CmsCollection> = Omit<CmsCollections[K], "id" | "createdAt" | "updatedAt" | "displayOrder"> & {
+  id?: ID
 }
 
 const seed: OperationsState = {
@@ -101,6 +143,17 @@ const seed: OperationsState = {
   groupFees,
   paymentObligations,
   payments,
+  siteSettings: website.siteSettings,
+  heroSlides: website.heroSlides,
+  serviceOfferings: website.serviceOfferings,
+  publicPrograms: website.publicPrograms,
+  publicGroups: website.publicGroups,
+  publicEvents: website.publicEvents,
+  newsArticles: website.newsArticles,
+  galleryImages: website.galleryImages,
+  quranGraduates: website.quranGraduates,
+  administrationMembers: website.administrationMembers,
+  achievements: website.achievements,
 }
 
 /** Seed students + students admitted in this session. */
@@ -422,6 +475,60 @@ export const operations = {
   /** Only the receipt state changes — amounts and totals stay exactly the same. */
   setReceiptIssued(paymentId: ID, receiptIssued: boolean) {
     setState({ ...state, payments: state.payments.map((p) => (p.id === paymentId ? { ...p, receiptIssued } : p)) })
+  },
+
+  /* ---------- Public website CMS (one record = what the public sees) ---------- */
+
+  updateSiteSettings(patch: Partial<SiteSettings>, today: ISODate) {
+    setState({ ...state, siteSettings: { ...state.siteSettings, ...patch, updatedAt: today } })
+  },
+
+  /** Creates (appended last in display order) or updates a CMS item. */
+  saveCmsItem<K extends CmsCollection>(collection: K, draft: CmsDraft<K>, today: ISODate) {
+    const list = state[collection] as CmsCollections[K][]
+    const existing = draft.id ? list.find((i) => i.id === draft.id) : undefined
+    const item = existing
+      ? ({ ...existing, ...draft, updatedAt: today } as CmsCollections[K])
+      : ({
+          ...draft,
+          id: newMockId(collection),
+          displayOrder: Math.max(0, ...list.map((i) => ("displayOrder" in i ? (i.displayOrder as number) : 0))) + 1,
+          createdAt: today,
+          updatedAt: today,
+        } as unknown as CmsCollections[K])
+    setState({ ...state, [collection]: existing ? list.map((i) => (i.id === item.id ? item : i)) : [...list, item] })
+    return item.id
+  },
+
+  deleteCmsItem(collection: CmsCollection, id: ID) {
+    setState({ ...state, [collection]: (state[collection] as { id: ID }[]).filter((i) => i.id !== id) })
+  },
+
+  /** Toggles a boolean flag (isPublished, isActive, isFeatured, isPublic, isCancelled…). */
+  setCmsFlag(collection: CmsCollection, id: ID, key: string, value: boolean, today: ISODate) {
+    setState({
+      ...state,
+      [collection]: (state[collection] as { id: ID }[]).map((i) => (i.id === id ? { ...i, [key]: value, updatedAt: today } : i)),
+    })
+  },
+
+  /** Swaps an item with its neighbour in display order ("up" = earlier). */
+  moveCmsItem(collection: CmsCollection, id: ID, direction: "up" | "down") {
+    const list = [...(state[collection] as { id: ID; displayOrder: number }[])].sort((a, b) => a.displayOrder - b.displayOrder)
+    const index = list.findIndex((i) => i.id === id)
+    const other = list[direction === "up" ? index - 1 : index + 1]
+    if (index < 0 || !other) return
+    const current = list[index]
+    const swapped = new Map([
+      [current.id, other.displayOrder],
+      [other.id, current.displayOrder],
+    ])
+    setState({
+      ...state,
+      [collection]: (state[collection] as { id: ID; displayOrder: number }[]).map((i) =>
+        swapped.has(i.id) ? { ...i, displayOrder: swapped.get(i.id)! } : i
+      ),
+    })
   },
 
   /** Cancelling affects only this dated session — the weekly schedule is untouched. */

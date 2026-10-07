@@ -68,7 +68,7 @@ export const adminNav: NavSection[] = [
     items: [
       { label: "الموارد", href: "/admin/resources", icon: FolderOpen, ready: true },
       { label: "الإعلانات", href: "/admin/announcements", icon: Megaphone, ready: true },
-      { label: "الموقع الإلكتروني", href: "/admin/website", icon: Globe, ready: false },
+      { label: "الموقع الإلكتروني", href: "/admin/website", icon: Globe, ready: true },
     ],
   },
 ]

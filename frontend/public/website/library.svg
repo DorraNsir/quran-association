@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6f3ea"/><stop offset="1" stop-color="#ece6d6"/></linearGradient>
+<radialGradient id="glow" cx=".5" cy=".45" r=".6"><stop offset="0" stop-color="#ffffff" stop-opacity=".35"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient><pattern id="st" width="90" height="90" patternUnits="userSpaceOnUse"><g fill="none" stroke="#0d4f2a" stroke-opacity="0.05" stroke-width="1.6"><polygon points="73.8,45.0 45.0,73.8 16.2,45.0 45.0,16.2"/><polygon points="65.4,65.4 24.6,65.4 24.6,24.6 65.4,24.6"/></g></pattern></defs>
+<rect width="1200" height="800" fill="url(#bg)"/><rect width="1200" height="800" fill="url(#st)"/><rect x="150" y="530" width="900" height="24" fill="#7a5a35"/><rect x="180" y="300" width="46" height="230" rx="4" fill="#169a48"/><rect x="238" y="353" width="46" height="177" rx="4" fill="#232323"/><rect x="296" y="346" width="46" height="184" rx="4" fill="#2f7d4f"/><rect x="354" y="339" width="46" height="191" rx="4" fill="#d8b45a"/><rect x="412" y="332" width="46" height="198" rx="4" fill="#0d4f2a"/><rect x="470" y="325" width="46" height="205" rx="4" fill="#169a48"/><rect x="528" y="318" width="46" height="212" rx="4" fill="#232323"/><rect x="586" y="311" width="46" height="219" rx="4" fill="#2f7d4f"/><rect x="644" y="304" width="46" height="226" rx="4" fill="#d8b45a"/><rect x="702" y="357" width="46" height="173" rx="4" fill="#0d4f2a"/><rect x="760" y="350" width="46" height="180" rx="4" fill="#169a48"/><rect x="818" y="343" width="46" height="187" rx="4" fill="#232323"/><rect x="876" y="336" width="46" height="194" rx="4" fill="#2f7d4f"/><rect x="934" y="329" width="46" height="201" rx="4" fill="#d8b45a"/><rect x="992" y="322" width="46" height="208" rx="4" fill="#0d4f2a"/>
+<rect x="150" y="740" width="900" height="24" fill="#7a5a35"/><g transform="translate(600 690) scale(0.6)">
+<path d="M-150 120 L120 -10 M150 120 L-120 -10" stroke="#7a5a35" stroke-width="16" stroke-linecap="round"/>
+<path d="M0 10 Q-80 -40 -170 -20 L-170 70 Q-80 50 0 95 Z" fill="#0d4f2a"/>
+<path d="M0 10 Q80 -40 170 -20 L170 70 Q80 50 0 95 Z" fill="#0d4f2a"/>
+<path d="M0 0 Q-75 -48 -158 -30 L-158 58 Q-75 40 0 84 Z" fill="#fbf8f0"/>
+<path d="M0 0 Q75 -48 158 -30 L158 58 Q75 40 0 84 Z" fill="#fbf8f0"/>
+<g stroke="#c9c2b0" stroke-width="3" stroke-linecap="round">
+<path d="M-140 -12 Q-75 -26 -18 6 M-140 8 Q-75 -6 -18 26 M-140 28 Q-75 14 -18 46"/>
+<path d="M140 -12 Q75 -26 18 6 M140 8 Q75 -6 18 26 M140 28 Q75 14 18 46"/></g></g></svg>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b2a1a"/><stop offset="1" stop-color="#232323"/></linearGradient>
+<radialGradient id="glow" cx=".5" cy=".45" r=".6"><stop offset="0" stop-color="#ffffff" stop-opacity=".35"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient><pattern id="st" width="90" height="90" patternUnits="userSpaceOnUse"><g fill="none" stroke="#d8b45a" stroke-opacity="0.06" stroke-width="1.6"><polygon points="73.8,45.0 45.0,73.8 16.2,45.0 45.0,16.2"/><polygon points="65.4,65.4 24.6,65.4 24.6,24.6 65.4,24.6"/></g></pattern></defs>
+<rect width="1200" height="800" fill="url(#bg)"/><rect width="1200" height="800" fill="url(#st)"/><g transform="translate(300 380) scale(1.6)"><line x1="0" y1="-400" x2="0" y2="-60" stroke="#d8b45a" stroke-width="3" stroke-opacity=".6"/>
+<path d="M-22 -60 H22 L34 -40 H-34 Z" fill="#d8b45a"/><path d="M-34 -40 Q-48 20 -24 60 H24 Q48 20 34 -40 Z" fill="#d8b45a" fill-opacity=".9"/>
+<path d="M-18 -30 Q-26 15 -12 48 H12 Q26 15 18 -30 Z" fill="#fff3c4"/><path d="M-24 60 H24 L14 76 H-14 Z" fill="#d8b45a"/></g><g transform="translate(600 300) scale(2.0)"><line x1="0" y1="-400" x2="0" y2="-60" stroke="#d8b45a" stroke-width="3" stroke-opacity=".6"/>
+<path d="M-22 -60 H22 L34 -40 H-34 Z" fill="#d8b45a"/><path d="M-34 -40 Q-48 20 -24 60 H24 Q48 20 34 -40 Z" fill="#d8b45a" fill-opacity=".9"/>
+<path d="M-18 -30 Q-26 15 -12 48 H12 Q26 15 18 -30 Z" fill="#fff3c4"/><path d="M-24 60 H24 L14 76 H-14 Z" fill="#d8b45a"/></g><g transform="translate(900 420) scale(1.4)"><line x1="0" y1="-400" x2="0" y2="-60" stroke="#d8b45a" stroke-width="3" stroke-opacity=".6"/>
+<path d="M-22 -60 H22 L34 -40 H-34 Z" fill="#d8b45a"/><path d="M-34 -40 Q-48 20 -24 60 H24 Q48 20 34 -40 Z" fill="#d8b45a" fill-opacity=".9"/>
+<path d="M-18 -30 Q-26 15 -12 48 H12 Q26 15 18 -30 Z" fill="#fff3c4"/><path d="M-24 60 H24 L14 76 H-14 Z" fill="#d8b45a"/></g>
+<path d="M0 700 Q600 640 1200 700 V800 H0Z" fill="#081d12"/></svg>
