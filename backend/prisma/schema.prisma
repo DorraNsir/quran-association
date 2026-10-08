@@ -161,6 +161,12 @@ enum GalleryCategory {
   LIFE
 }
 
+/// Who consented to a graduate's public listing
+enum ConsentGiver {
+  GRADUATE
+  GUARDIAN
+}
+
 enum AchievementCategory {
   QURAN
   COMPETITION
@@ -235,6 +241,7 @@ model User {
   deactivatedGroupFees   GroupFee[]             @relation("GroupFeeDeactivator")
   createdObligations     PaymentObligation[]    @relation("ObligationCreator")
   voidedObligations      PaymentObligation[]    @relation("ObligationVoider")
+  graduateConsents       QuranGraduate[]        @relation("GraduateConsentRecorder")
   publishedResources     Resource[]
   publishedAnnouncements Announcement[]
   notifications          Notification[]
@@ -1149,19 +1156,26 @@ model GalleryImage {
 /// A publicly recognised Quran completer, entered explicitly by the admin.
 /// fullName is the published name (a historical completer may not be a student).
 model QuranGraduate {
-  id             String    @id @default(uuid(7)) @db.Uuid
-  studentId      String?   @db.Uuid
-  fullName       String
-  photoUrl       String?
-  completionYear Int?      @db.SmallInt
-  completionDate DateTime? @db.Date
-  shortMessage   String?
-  displayOrder   Int       @default(0)
-  isPublished    Boolean   @default(true)
-  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
+  id                      String        @id @default(uuid(7)) @db.Uuid
+  /// Optional link (a historical completer may no longer be a student); never published
+  studentId               String?       @db.Uuid
+  fullName                String
+  photoUrl                String?
+  completionYear          Int?          @db.SmallInt
+  completionDate          DateTime?     @db.Date
+  shortMessage            String?
+  displayOrder            Int           @default(0)
+  /// Explicit admin decision, and only with a recorded consent (CHECK)
+  isPublished             Boolean       @default(false)
+  /// Who agreed to publication of the name/photo: the graduate, or the guardian of a minor
+  consentGivenBy          ConsentGiver?
+  consentRecordedAt       DateTime?     @db.Timestamptz(3)
+  consentRecordedByUserId String?       @db.Uuid
+  createdAt               DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime      @updatedAt @db.Timestamptz(3)
 
-  student Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  student           Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  consentRecordedBy User?    @relation("GraduateConsentRecorder", fields: [consentRecordedByUserId], references: [id], onDelete: Restrict)
 
   @@index([isPublished, displayOrder])
   @@map("quran_graduates")
