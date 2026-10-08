@@ -99,3 +99,33 @@ describe('validateEnv — TEACHER_ATTENDANCE_WINDOW_DAYS', () => {
     }
   });
 });
+
+describe('validateEnv — registration rate limit', () => {
+  const BASE = {
+    DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
+    JWT_ACCESS_SECRET: 'x'.repeat(48),
+  };
+
+  it('defaults to 5 submissions per 900 seconds', () => {
+    const env = validateEnv(BASE);
+    expect(env.REGISTRATION_RATE_LIMIT_MAX).toBe(5);
+    expect(env.REGISTRATION_RATE_LIMIT_WINDOW_SECONDS).toBe(900);
+    expect(
+      validateEnv({ ...BASE, REGISTRATION_RATE_LIMIT_MAX: '20' })
+        .REGISTRATION_RATE_LIMIT_MAX,
+    ).toBe(20);
+  });
+
+  it('rejects 0 and non-integers', () => {
+    for (const key of [
+      'REGISTRATION_RATE_LIMIT_MAX',
+      'REGISTRATION_RATE_LIMIT_WINDOW_SECONDS',
+    ]) {
+      for (const value of ['0', '1.5', 'many']) {
+        expect(() => validateEnv({ ...BASE, [key]: value })).toThrow(
+          new RegExp(key),
+        );
+      }
+    }
+  });
+});

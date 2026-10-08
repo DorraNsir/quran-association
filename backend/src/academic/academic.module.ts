@@ -39,5 +39,6 @@ import { TeachersService } from './teachers/teachers.service.js';
     TeachersService,
     StudentsService,
   ],
+  exports: [StudentsService],
 })
 export class AcademicModule {}

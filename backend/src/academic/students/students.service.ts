@@ -93,8 +93,16 @@ export const studentNotFound = () =>
 const cinTaken = () =>
   conflict('CIN_TAKEN', 'رقم بطاقة التعريف مسجّل لطالب آخر');
 
+/** Unique violations of a student write → domain errors (others pass through). */
+export function mapStudentWriteError(error: unknown) {
+  if (isUniqueViolation(error, 'cin')) return cinTaken();
+  if (isUniqueViolation(error, 'personId'))
+    return conflict('STUDENT_PROFILE_EXISTS', 'لهذا الشخص ملف طالب بالفعل');
+  return error;
+}
+
 /** Age in full years on `today` (UTC calendar dates). */
-function ageOn(
+export function ageOn(
   dateOfBirth: string,
   today = new Date().toISOString().slice(0, 10),
 ) {
@@ -185,6 +193,26 @@ export class StudentsService {
     dto: CreateStudentDto,
     actorUserId?: string,
   ): Promise<StudentDto> {
+    try {
+      const id = await this.prisma.$transaction((tx) =>
+        this.createInTx(tx, dto, actorUserId),
+      );
+      return this.get(id);
+    } catch (error) {
+      throw mapStudentWriteError(error);
+    }
+  }
+
+  /**
+   * The student-creation path inside a caller's transaction (also used when a
+   * registration request is accepted): Person + Student + first enrollment +
+   * first status, all starting at the registration date. Returns the id.
+   */
+  async createInTx(
+    tx: Tx,
+    dto: CreateStudentDto,
+    actorUserId?: string,
+  ): Promise<string> {
     if (Boolean(dto.personId) === Boolean(dto.person)) {
       throw badRequest(
         'PERSON_REQUIRED',
@@ -198,37 +226,27 @@ export class StudentsService {
       status: dto.status ?? RecordStatus.ACTIVE,
       groupClassId: dto.groupClassId,
     };
-    try {
-      const id = await this.prisma.$transaction(async (tx) => {
-        await this.assertClassOpen(tx, dto.groupClassId);
-        const studentId = await this.createProfile(tx, dto, student);
-        // First membership: starts at the registration date (history begins here)
-        await tx.studentEnrollment.create({
-          data: {
-            studentId,
-            groupClassId: dto.groupClassId,
-            startDate: student.registrationDate,
-            recordedByUserId: actorUserId ?? null,
-          },
-        });
-        // First status: from the registration date (status history begins here)
-        await tx.studentStatusChange.create({
-          data: {
-            studentId,
-            status: student.status,
-            effectiveDate: student.registrationDate,
-            recordedByUserId: actorUserId ?? null,
-          },
-        });
-        return studentId;
-      });
-      return this.get(id);
-    } catch (error) {
-      if (isUniqueViolation(error, 'cin')) throw cinTaken();
-      if (isUniqueViolation(error, 'personId'))
-        throw conflict('STUDENT_PROFILE_EXISTS', 'لهذا الشخص ملف طالب بالفعل');
-      throw error;
-    }
+    await this.assertClassOpen(tx, dto.groupClassId);
+    const studentId = await this.createProfile(tx, dto, student);
+    // First membership: starts at the registration date (history begins here)
+    await tx.studentEnrollment.create({
+      data: {
+        studentId,
+        groupClassId: dto.groupClassId,
+        startDate: student.registrationDate,
+        recordedByUserId: actorUserId ?? null,
+      },
+    });
+    // First status: from the registration date (status history begins here)
+    await tx.studentStatusChange.create({
+      data: {
+        studentId,
+        status: student.status,
+        effectiveDate: student.registrationDate,
+        recordedByUserId: actorUserId ?? null,
+      },
+    });
+    return studentId;
   }
 
   /** Person (existing or new) + Student row; returns the student id. */

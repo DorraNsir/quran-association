@@ -83,6 +83,21 @@ export class EnvironmentVariables {
   @Min(1)
   @Max(366)
   TEACHER_ATTENDANCE_WINDOW_DAYS: number = 7;
+
+  /**
+   * Public registration form: at most REGISTRATION_RATE_LIMIT_MAX submissions
+   * per client IP per REGISTRATION_RATE_LIMIT_WINDOW_SECONDS (in-memory,
+   * single instance — no CAPTCHA in this part).
+   */
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  REGISTRATION_RATE_LIMIT_MAX: number = 5;
+
+  @IsInt()
+  @Min(1)
+  @Max(86400)
+  REGISTRATION_RATE_LIMIT_WINDOW_SECONDS: number = 900;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

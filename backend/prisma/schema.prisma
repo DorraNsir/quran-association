@@ -216,8 +216,15 @@ model User {
   sessions AuthSession[]
 
   memorizationUpdates    MemorizationProgress[]
-  reviewedRegistrations  RegistrationRequest[]
-  recordedPayments       Payment[]
+  createdRegistrations   RegistrationRequest[]  @relation("RegistrationCreator")
+  reviewedRegistrations  RegistrationRequest[]  @relation("RegistrationReviewer")
+  recordedPayments       Payment[]              @relation("PaymentRecorder")
+  issuedReceipts         Payment[]              @relation("PaymentReceiptIssuer")
+  voidedPayments         Payment[]              @relation("PaymentVoider")
+  createdGroupFees       GroupFee[]             @relation("GroupFeeCreator")
+  deactivatedGroupFees   GroupFee[]             @relation("GroupFeeDeactivator")
+  createdObligations     PaymentObligation[]    @relation("ObligationCreator")
+  voidedObligations      PaymentObligation[]    @relation("ObligationVoider")
   publishedResources     Resource[]
   publishedAnnouncements Announcement[]
   notifications          Notification[]
@@ -389,6 +396,7 @@ model Group {
 
   classes              GroupClass[]
   fees                 GroupFee[]
+  obligations          PaymentObligation[]
   resourceTargets      ResourceTarget[]
   publicListings       PublicGroupListing[]
   interestedApplicants RegistrationRequest[]
@@ -670,19 +678,28 @@ model RegistrationRequest {
   id                     String                    @id @default(uuid(7)) @db.Uuid
   firstName              String
   lastName               String
+  gender                 Gender?
   birthDate              DateTime?                 @db.Date
-  /// When the applicant gave an age instead of a birth date
+  /// When the applicant gave an age instead of a birth date (one of the two is required)
   age                    Int?                      @db.SmallInt
+  /// Contact phone of the applicant (or of the family)
   phone                  String
+  /// Required for minors (< 18)
+  guardianPhone          String?
+  address                String?
   hasStudiedQuranBefore  Boolean                   @default(false)
   previousExperience     String?
   notes                  String?
   source                 RegistrationRequestSource
   status                 RegistrationRequestStatus @default(PENDING)
   submittedAt            DateTime                  @default(now()) @db.Timestamptz(3)
+  /// Admin who entered an ADMIN-source request (null for PUBLIC_WEBSITE)
+  createdByUserId        String?                   @db.Uuid
   reviewedAt             DateTime?                 @db.Timestamptz(3)
   reviewedByUserId       String?                   @db.Uuid
-  /// Set once on admission; unique → one request yields at most one student
+  /// Optional reason given when the request is refused
+  rejectionReason        String?
+  /// Set once on acceptance; unique → one request yields at most one student
   createdStudentId       String?                   @unique @db.Uuid
   /// Interest expressed on the public site — never a class assignment
   interestedGroupId      String?                   @db.Uuid
@@ -690,7 +707,8 @@ model RegistrationRequest {
   createdAt              DateTime                  @default(now()) @db.Timestamptz(3)
   updatedAt              DateTime                  @updatedAt @db.Timestamptz(3)
 
-  reviewedBy      User?    @relation(fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  createdBy       User?    @relation("RegistrationCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reviewedBy      User?    @relation("RegistrationReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
   createdStudent  Student? @relation(fields: [createdStudentId], references: [id], onDelete: Restrict)
   interestedGroup Group?   @relation(fields: [interestedGroupId], references: [id], onDelete: SetNull)
 
@@ -703,25 +721,34 @@ model RegistrationRequest {
 
 /// Pricing rule of a pedagogical Group (all its classes inherit it).
 model GroupFee {
-  id              String      @id @default(uuid(7)) @db.Uuid
-  groupId         String      @db.Uuid
-  academicYearId  String?     @db.Uuid
-  label           String
-  billingType     BillingType
-  /// Per period: the yearly amount, or the monthly amount
-  amount          Decimal     @db.Decimal(10, 3)
+  id                  String      @id @default(uuid(7)) @db.Uuid
+  groupId             String      @db.Uuid
+  academicYearId      String      @db.Uuid
+  label               String
+  billingType         BillingType
+  /// Per period: the yearly amount, or the monthly amount (TND, millimes precision)
+  amount              Decimal     @db.Decimal(10, 3)
   /// 1 for yearly; number of months for monthly programs
-  numberOfPeriods Int         @default(1) @db.SmallInt
-  startDate       DateTime?   @db.Date
-  endDate         DateTime?   @db.Date
-  isActive        Boolean     @default(true)
-  createdAt       DateTime    @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime    @updatedAt @db.Timestamptz(3)
+  numberOfPeriods     Int         @default(1) @db.SmallInt
+  startDate           DateTime?   @db.Date
+  endDate             DateTime?   @db.Date
+  /// Versioned: a change creates a new row and deactivates the previous one (never edited in place)
+  isActive            Boolean     @default(true)
+  createdByUserId     String?     @db.Uuid
+  deactivatedAt       DateTime?   @db.Timestamptz(3)
+  deactivatedByUserId String?     @db.Uuid
+  createdAt           DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime    @updatedAt @db.Timestamptz(3)
 
-  group        Group               @relation(fields: [groupId], references: [id], onDelete: Restrict)
-  academicYear AcademicYear?       @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
-  obligations  PaymentObligation[]
+  group         Group               @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  academicYear  AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  createdBy     User?               @relation("GroupFeeCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  deactivatedBy User?               @relation("GroupFeeDeactivator", fields: [deactivatedByUserId], references: [id], onDelete: Restrict)
+  obligations   PaymentObligation[]
 
+  @@unique([groupId, academicYearId], map: "group_fees_one_active_key", where: raw("\"isActive\""))
+  /// Target of the obligations' composite FK (an obligation's group/year always match its fee)
+  @@unique([id, groupId, academicYearId])
   @@index([groupId, academicYearId, isActive])
   @@map("group_fees")
 }
@@ -730,42 +757,66 @@ model GroupFee {
 /// fee change never rewrites history. Status (UNPAID/PARTIAL/PAID) is derived
 /// from the sum of payments — not stored.
 model PaymentObligation {
-  id             String   @id @default(uuid(7)) @db.Uuid
-  studentId      String   @db.Uuid
-  groupFeeId     String   @db.Uuid
-  academicYearId String?  @db.Uuid
-  expectedAmount Decimal  @db.Decimal(10, 3)
-  createdAt      DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+  id              String    @id @default(uuid(7)) @db.Uuid
+  studentId       String    @db.Uuid
+  groupFeeId      String    @db.Uuid
+  /// Copied from the fee (composite FK guarantees they match)
+  groupId         String    @db.Uuid
+  academicYearId  String    @db.Uuid
+  /// Frozen at creation: fee changes never rewrite it
+  expectedAmount  Decimal   @db.Decimal(10, 3)
+  note            String?
+  createdByUserId String?   @db.Uuid
+  /// Correction: a mistaken obligation (without valid payments) is voided, never deleted
+  voidedAt        DateTime? @db.Timestamptz(3)
+  voidedByUserId  String?   @db.Uuid
+  voidReason      String?
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
 
-  student      Student       @relation(fields: [studentId], references: [id], onDelete: Restrict)
-  groupFee     GroupFee      @relation(fields: [groupFeeId], references: [id], onDelete: Restrict)
-  academicYear AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  groupFee     GroupFee     @relation(fields: [groupFeeId, groupId, academicYearId], references: [id, groupId, academicYearId], onDelete: Restrict)
+  group        Group        @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  createdBy    User?        @relation("ObligationCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  voidedBy     User?        @relation("ObligationVoider", fields: [voidedByUserId], references: [id], onDelete: Restrict)
   payments     Payment[]
 
-  @@unique([studentId, groupFeeId])
+  /// One live obligation per student, group and academic year (the billing period)
+  @@unique([studentId, groupId, academicYearId], map: "payment_obligations_one_live_key", where: raw("\"voidedAt\" IS NULL"))
   @@index([studentId, academicYearId])
+  @@index([groupId, academicYearId])
+  @@index([groupFeeId])
   @@map("payment_obligations")
 }
 
 /// One cash transaction. The student is derived from the obligation; the
 /// receipt state is independent of the money.
 model Payment {
-  id               String        @id @default(uuid(7)) @db.Uuid
-  obligationId     String        @db.Uuid
-  amount           Decimal       @db.Decimal(10, 3)
-  paidAt           DateTime      @db.Date
-  method           PaymentMethod @default(CASH)
-  receiptIssued    Boolean       @default(false)
+  id                    String        @id @default(uuid(7)) @db.Uuid
+  obligationId          String        @db.Uuid
+  amount                Decimal       @db.Decimal(10, 3)
+  paidAt                DateTime      @db.Date
+  method                PaymentMethod @default(CASH)
+  /// Receipt handed over — independent of the amounts, set only by an admin
+  receiptIssued         Boolean       @default(false)
+  receiptIssuedAt       DateTime?     @db.Timestamptz(3)
+  receiptIssuedByUserId String?       @db.Uuid
   /// Monthly programs: which month this payment is for (1-based)
-  periodNumber     Int?          @db.SmallInt
-  note             String?
-  recordedByUserId String        @db.Uuid
-  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
-  updatedAt        DateTime      @updatedAt @db.Timestamptz(3)
+  periodNumber          Int?          @db.SmallInt
+  note                  String?
+  recordedByUserId      String        @db.Uuid
+  /// Correction: a mistaken payment is voided (kept, excluded from totals), never edited or deleted
+  voidedAt              DateTime?     @db.Timestamptz(3)
+  voidedByUserId        String?       @db.Uuid
+  voidReason            String?
+  createdAt             DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime      @updatedAt @db.Timestamptz(3)
 
-  obligation PaymentObligation @relation(fields: [obligationId], references: [id], onDelete: Restrict)
-  recordedBy User              @relation(fields: [recordedByUserId], references: [id], onDelete: Restrict)
+  obligation      PaymentObligation @relation(fields: [obligationId], references: [id], onDelete: Restrict)
+  recordedBy      User              @relation("PaymentRecorder", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+  receiptIssuedBy User?             @relation("PaymentReceiptIssuer", fields: [receiptIssuedByUserId], references: [id], onDelete: Restrict)
+  voidedBy        User?             @relation("PaymentVoider", fields: [voidedByUserId], references: [id], onDelete: Restrict)
 
   @@index([obligationId])
   @@index([paidAt])
