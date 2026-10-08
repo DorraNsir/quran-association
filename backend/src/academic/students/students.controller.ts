@@ -18,12 +18,15 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
+import type { AuthPrincipal } from '../../auth/auth.types.js';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator.js';
 import { AdminApi } from '../admin-api.decorator.js';
 import { SetRecordStatusDto } from '../shared.dto.js';
 import {
   AssignStudentGroupClassDto,
   CreateStudentDto,
   StudentDto,
+  StudentEnrollmentDto,
   StudentListDto,
   StudentListQueryDto,
   UpdateStudentDto,
@@ -69,8 +72,11 @@ export class StudentsController {
   @ApiConflictResponse({
     description: 'STUDENT_PROFILE_EXISTS, CIN_TAKEN, GROUP_CLASS_INACTIVE',
   })
-  create(@Body() dto: CreateStudentDto): Promise<StudentDto> {
-    return this.students.create(dto);
+  create(
+    @CurrentUser() actor: AuthPrincipal,
+    @Body() dto: CreateStudentDto,
+  ): Promise<StudentDto> {
+    return this.students.create(dto, actor.userId);
   }
 
   @Patch(':id')
@@ -89,18 +95,40 @@ export class StudentsController {
   @Patch(':id/group-class')
   @ApiOperation({
     summary:
-      'Assign / move to another ACTIVE class (always exactly one current class)',
+      'Assign / move to another ACTIVE class at an effective date (closes the open enrollment, opens a new one; no payment created)',
   })
   @ApiOkResponse({ type: StudentDto })
   @ApiNotFoundResponse({
     description: 'STUDENT_NOT_FOUND, GROUP_CLASS_NOT_FOUND',
   })
-  @ApiConflictResponse({ description: 'GROUP_CLASS_INACTIVE' })
+  @ApiBadRequestResponse({ description: 'FUTURE_EFFECTIVE_DATE' })
+  @ApiConflictResponse({
+    description: 'GROUP_CLASS_INACTIVE, EFFECTIVE_DATE_BEFORE_CURRENT',
+  })
   assignGroupClass(
+    @CurrentUser() actor: AuthPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AssignStudentGroupClassDto,
   ): Promise<StudentDto> {
-    return this.students.assignGroupClass(id, dto.groupClassId);
+    return this.students.assignGroupClass(
+      id,
+      dto.groupClassId,
+      dto.effectiveDate,
+      actor.userId,
+    );
+  }
+
+  @Get(':id/enrollments')
+  @ApiOperation({
+    summary:
+      'Class-membership history with effective dates (newest first; endDate exclusive)',
+  })
+  @ApiOkResponse({ type: StudentEnrollmentDto, isArray: true })
+  @ApiNotFoundResponse({ description: 'STUDENT_NOT_FOUND' })
+  enrollments(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<StudentEnrollmentDto[]> {
+    return this.students.enrollments(id);
   }
 
   @Patch(':id/status')

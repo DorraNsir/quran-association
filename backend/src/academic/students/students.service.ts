@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
-import { fromDbDate, fromDbDateOrNull, toDbDate } from '../../common/dates.js';
+import {
+  fromDbDate,
+  fromDbDateOrNull,
+  toDbDate,
+  todayIn,
+} from '../../common/dates.js';
 import {
   badRequest,
   conflict,
@@ -19,6 +24,7 @@ import {
 import type {
   CreateStudentDto,
   StudentDto,
+  StudentEnrollmentDto,
   StudentListDto,
   StudentListQueryDto,
   UpdateStudentDto,
@@ -178,7 +184,10 @@ export class StudentsService {
   }
 
   /** Person (existing or new) + Student in ONE active class, atomically. */
-  async create(dto: CreateStudentDto): Promise<StudentDto> {
+  async create(
+    dto: CreateStudentDto,
+    actorUserId?: string,
+  ): Promise<StudentDto> {
     if (Boolean(dto.personId) === Boolean(dto.person)) {
       throw badRequest(
         'PERSON_REQUIRED',
@@ -195,53 +204,17 @@ export class StudentsService {
     try {
       const id = await this.prisma.$transaction(async (tx) => {
         await this.assertClassOpen(tx, dto.groupClassId);
-        if (dto.personId) {
-          const person = await tx.person.findUnique({
-            where: { id: dto.personId },
-            select: {
-              dateOfBirth: true,
-              phone: true,
-              student: { select: { id: true } },
-            },
-          });
-          if (!person) throw notFound('PERSON_NOT_FOUND', 'الشخص غير موجود');
-          if (person.student)
-            throw conflict(
-              'STUDENT_PROFILE_EXISTS',
-              'لهذا الشخص ملف طالب بالفعل',
-            );
-          this.assertContactRule(
-            fromDbDateOrNull(person.dateOfBirth),
-            person.phone,
-            student.guardianPhone,
-          );
-          return (
-            await tx.student.create({
-              data: { ...student, personId: dto.personId },
-              select: { id: true },
-            })
-          ).id;
-        }
-        const p = dto.person!;
-        this.assertContactRule(
-          p.dateOfBirth,
-          p.phone ?? null,
-          student.guardianPhone,
-        );
-        const created = await tx.person.create({
+        const studentId = await this.createProfile(tx, dto, student);
+        // First membership: starts at the registration date (history begins here)
+        await tx.studentEnrollment.create({
           data: {
-            firstName: p.firstName,
-            lastName: p.lastName,
-            gender: p.gender,
-            dateOfBirth: toDbDate(p.dateOfBirth),
-            address: p.address,
-            phone: p.phone ?? null,
-            email: p.email ?? null,
-            student: { create: student },
+            studentId,
+            groupClassId: dto.groupClassId,
+            startDate: student.registrationDate,
+            recordedByUserId: actorUserId ?? null,
           },
-          select: { student: { select: { id: true } } },
         });
-        return created.student!.id;
+        return studentId;
       });
       return this.get(id);
     } catch (error) {
@@ -250,6 +223,64 @@ export class StudentsService {
         throw conflict('STUDENT_PROFILE_EXISTS', 'لهذا الشخص ملف طالب بالفعل');
       throw error;
     }
+  }
+
+  /** Person (existing or new) + Student row; returns the student id. */
+  private async createProfile(
+    tx: Tx,
+    dto: CreateStudentDto,
+    student: {
+      registrationDate: Date;
+      guardianPhone: string | null;
+      cin: string | null;
+      status: RecordStatus;
+      groupClassId: string;
+    },
+  ): Promise<string> {
+    if (dto.personId) {
+      const person = await tx.person.findUnique({
+        where: { id: dto.personId },
+        select: {
+          dateOfBirth: true,
+          phone: true,
+          student: { select: { id: true } },
+        },
+      });
+      if (!person) throw notFound('PERSON_NOT_FOUND', 'الشخص غير موجود');
+      if (person.student)
+        throw conflict('STUDENT_PROFILE_EXISTS', 'لهذا الشخص ملف طالب بالفعل');
+      this.assertContactRule(
+        fromDbDateOrNull(person.dateOfBirth),
+        person.phone,
+        student.guardianPhone,
+      );
+      return (
+        await tx.student.create({
+          data: { ...student, personId: dto.personId },
+          select: { id: true },
+        })
+      ).id;
+    }
+    const p = dto.person!;
+    this.assertContactRule(
+      p.dateOfBirth,
+      p.phone ?? null,
+      student.guardianPhone,
+    );
+    const created = await tx.person.create({
+      data: {
+        firstName: p.firstName,
+        lastName: p.lastName,
+        gender: p.gender,
+        dateOfBirth: toDbDate(p.dateOfBirth),
+        address: p.address,
+        phone: p.phone ?? null,
+        email: p.email ?? null,
+        student: { create: student },
+      },
+      select: { student: { select: { id: true } } },
+    });
+    return created.student!.id;
   }
 
   /** Student fields + canonical Person fields in one transaction (contact rule re-checked). */
@@ -310,24 +341,111 @@ export class StudentsService {
   }
 
   /**
-   * Assign / move to another ACTIVE class: one column update, so the student
-   * is never in two classes. Nothing historical is rewritten (sessions,
-   * attendance, notes, memorization keep their own references).
+   * Assign / move to another ACTIVE class at an effective date (default: today
+   * in the platform timezone). In ONE locked transaction: close the open
+   * enrollment (endDate = effective date, exclusive), open the new one and
+   * move the current-class pointer. Nothing historical is rewritten: sessions,
+   * attendance, notes and memorization keep their own references, and past
+   * enrollments stay as they were. No payment obligation is created here
+   * (finance rules: Part 10.7).
    */
   async assignGroupClass(
     id: string,
     groupClassId: string,
+    effectiveDate?: string,
+    actorUserId?: string,
   ): Promise<StudentDto> {
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM students WHERE id = ${id}::uuid FOR UPDATE`;
       const student = await tx.student.findUnique({
         where: { id },
-        select: { id: true },
+        select: { groupClassId: true },
       });
       if (!student) throw studentNotFound();
       await this.assertClassOpen(tx, groupClassId);
+
+      const today = await this.today(tx);
+      const effective = effectiveDate ?? today;
+      if (effective > today)
+        throw badRequest(
+          'FUTURE_EFFECTIVE_DATE',
+          'لا يمكن أن يكون تاريخ النقل في المستقبل',
+        );
+
+      const open = await tx.studentEnrollment.findFirst({
+        where: { studentId: id, endDate: null },
+      });
+      if (
+        open?.groupClassId === groupClassId &&
+        student.groupClassId === groupClassId
+      )
+        return; // already there
+      if (open && effective < fromDbDate(open.startDate)) {
+        throw conflict(
+          'EFFECTIVE_DATE_BEFORE_CURRENT',
+          'تاريخ النقل يسبق بداية الحلقة الحالية للطالب',
+        );
+      }
+
+      if (open && fromDbDate(open.startDate) === effective) {
+        // Same-day correction: the membership that started today simply changes class
+        await tx.studentEnrollment.update({
+          where: { id: open.id },
+          data: { groupClassId, recordedByUserId: actorUserId ?? null },
+        });
+      } else {
+        if (open)
+          await tx.studentEnrollment.update({
+            where: { id: open.id },
+            data: { endDate: toDbDate(effective) },
+          });
+        await tx.studentEnrollment.create({
+          data: {
+            studentId: id,
+            groupClassId,
+            startDate: toDbDate(effective),
+            recordedByUserId: actorUserId ?? null,
+          },
+        });
+      }
       await tx.student.update({ where: { id }, data: { groupClassId } });
     });
     return this.get(id);
+  }
+
+  /** Class-membership history, most recent first (endDate is exclusive; null = current). */
+  async enrollments(id: string): Promise<StudentEnrollmentDto[]> {
+    const student = await this.prisma.student.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!student) throw studentNotFound();
+    const rows = await this.prisma.studentEnrollment.findMany({
+      where: { studentId: id },
+      orderBy: { startDate: 'desc' },
+      select: {
+        id: true,
+        startDate: true,
+        endDate: true,
+        groupClass: { select: classBriefSelect },
+      },
+    });
+    return rows.map((e) => ({
+      id: e.id,
+      startDate: fromDbDate(e.startDate),
+      endDate: fromDbDateOrNull(e.endDate),
+      isCurrent: e.endDate === null,
+      groupClass: e.groupClass,
+    }));
+  }
+
+  /** "Today" as a calendar date in the platform timezone (Africa/Tunis by default). */
+  private async today(tx: Tx) {
+    const settings = await tx.platformSettings.findUnique({
+      where: { id: 1 },
+      select: { timezone: true },
+    });
+    return todayIn(settings?.timezone ?? 'Africa/Tunis');
   }
 
   /** (Re)activating a student requires an ACTIVE current class. Account roles are untouched. */

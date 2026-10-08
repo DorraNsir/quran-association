@@ -208,6 +208,7 @@ model User {
   publishedAnnouncements Announcement[]
   notifications          Notification[]
   recordedAttendance     StudentAttendance[]
+  recordedEnrollments    StudentEnrollment[]
   administrationMember   AdministrationMember[]
 
   @@map("users")
@@ -266,6 +267,7 @@ model Student {
   groupClass GroupClass? @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
 
   attendance          StudentAttendance[]
+  enrollments         StudentEnrollment[]
   memorization        MemorizationProgress[]
   teacherNotes        TeacherNote[]
   paymentObligations  PaymentObligation[]
@@ -396,6 +398,7 @@ model GroupClass {
 
   assistants          GroupClassAssistant[]
   students            Student[]
+  enrollments         StudentEnrollment[]
   schedules           WeeklySchedule[]
   sessions            Session[]
   teacherNotes        TeacherNote[]
@@ -441,6 +444,33 @@ model WeeklySchedule {
   @@index([groupClassId])
   @@index([dayOfWeek, startTime])
   @@map("weekly_schedules")
+}
+
+/// Class-membership HISTORY of a student, with effective dates (half-open:
+/// a membership covers startDate <= day < endDate; endDate NULL = current).
+/// Student.groupClassId stays the fast "current class" pointer and always
+/// equals the open enrollment's class (kept in sync by the service).
+/// DB guarantees: one open enrollment per student; periods never overlap.
+model StudentEnrollment {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  studentId        String    @db.Uuid
+  groupClassId     String    @db.Uuid
+  startDate        DateTime  @db.Date
+  /// Exclusive; NULL while the membership is current
+  endDate          DateTime? @db.Date
+  /// Admin who recorded the change (null for backfilled/system rows)
+  recordedByUserId String?   @db.Uuid
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
+
+  student    Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  groupClass GroupClass @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
+  recordedBy User?      @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([studentId], map: "student_enrollments_one_open_key", where: raw("\"endDate\" IS NULL"))
+  @@index([studentId, startDate])
+  @@index([groupClassId, startDate])
+  @@map("student_enrollments")
 }
 
 // ──────────────────────── Sessions & attendance ────────────────────────

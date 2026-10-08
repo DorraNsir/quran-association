@@ -83,6 +83,12 @@ export const classNotFound = () =>
  *  - assistants unique (PK) and never the supervisor (service + trigger);
  *  - an ACTIVE class needs an active group, branch, room and teachers
  *    (teachers are only checked when NEWLY assigned).
+ *
+ * Part 10.5 hook points (schedule conflict validation, ROOM + TEACHER overlap):
+ * create (ACTIVE), update when branch/room/supervisor/assistants change, and
+ * setStatus → ACTIVE must check this class's weekly slots against the other
+ * ACTIVE classes of the same room and of the same teachers. Deactivating or
+ * archiving never cancels sessions automatically.
  */
 @Injectable()
 export class GroupClassesService {

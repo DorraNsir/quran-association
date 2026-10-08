@@ -121,6 +121,9 @@ describe('Academic structure APIs (e2e)', () => {
         select: { id: true },
       })
     ).map((p) => p.id);
+    await prisma.studentEnrollment.deleteMany({
+      where: { student: { personId: { in: persons } } },
+    });
     await prisma.student.deleteMany({ where: { personId: { in: persons } } });
     const classes = { group: { name: { endsWith: RUN } } };
     await prisma.groupClassAssistant.deleteMany({
@@ -828,6 +831,112 @@ describe('Academic structure APIs (e2e)', () => {
       await patch(`group-classes/${id.class1}/status`, {
         status: 'ACTIVE',
       }).expect(200);
+    });
+
+    it('keeps an effective-dated class history (enrollments)', async () => {
+      // s1: created in class1 on 2026-09-15, moved to class2 "today" in the previous test
+      const history = await get(`students/${id.s1}/enrollments`).expect(200);
+      expect(history.body).toHaveLength(2);
+      const [current, previous] = history.body;
+      expect(current).toMatchObject({
+        isCurrent: true,
+        endDate: null,
+        groupClass: { id: id.class2 },
+      });
+      expect(previous).toMatchObject({
+        isCurrent: false,
+        startDate: '2026-09-15',
+        endDate: current.startDate,
+        groupClass: { id: id.class1 },
+      });
+
+      // Back-dated move between the current start and today
+      const back = await patch(`students/${id.s2}/group-class`, {
+        groupClassId: id.class2,
+        effectiveDate: '2026-10-01',
+      }).expect(200);
+      expect(back.body.groupClass.id).toBe(id.class2);
+      const s2 = (await get(`students/${id.s2}/enrollments`).expect(200)).body;
+      expect(
+        s2.map((e: { startDate: string; endDate: string | null }) => [
+          e.startDate,
+          e.endDate,
+        ]),
+      ).toEqual([
+        ['2026-10-01', null],
+        ['2026-09-15', '2026-10-01'],
+      ]);
+
+      // Rules: no future date, no date before the current membership, same class = no-op
+      expect(
+        (
+          await patch(`students/${id.s2}/group-class`, {
+            groupClassId: id.class1,
+            effectiveDate: '2999-01-01',
+          }).expect(400)
+        ).body.code,
+      ).toBe('FUTURE_EFFECTIVE_DATE');
+      expect(
+        (
+          await patch(`students/${id.s2}/group-class`, {
+            groupClassId: id.class1,
+            effectiveDate: '2026-09-20',
+          }).expect(409)
+        ).body.code,
+      ).toBe('EFFECTIVE_DATE_BEFORE_CURRENT');
+      await patch(`students/${id.s2}/group-class`, {
+        groupClassId: id.class2,
+      }).expect(200);
+      expect(
+        (await get(`students/${id.s2}/enrollments`).expect(200)).body,
+      ).toHaveLength(2);
+
+      // Invariants: exactly one open enrollment, matching the current-class pointer; no payment created
+      for (const sid of [id.s1, id.s2]) {
+        const open = await prisma.studentEnrollment.findMany({
+          where: { studentId: sid, endDate: null },
+        });
+        const student = await prisma.student.findUniqueOrThrow({
+          where: { id: sid },
+        });
+        expect(open).toHaveLength(1);
+        expect(open[0].groupClassId).toBe(student.groupClassId);
+      }
+      expect(
+        await prisma.paymentObligation.count({
+          where: { studentId: { in: [id.s1, id.s2] } },
+        }),
+      ).toBe(0);
+
+      // Back to class1 today (the following tests start from there)
+      await patch(`students/${id.s2}/group-class`, {
+        groupClassId: id.class1,
+      }).expect(200);
+      expect(
+        (await get(`students/${id.s2}/enrollments`).expect(200)).body,
+      ).toHaveLength(3);
+    });
+
+    it('the database refuses a second open enrollment and overlapping periods', async () => {
+      await expect(
+        prisma.studentEnrollment.create({
+          data: {
+            studentId: id.s1,
+            groupClassId: id.class1,
+            startDate: new Date('2026-01-01'),
+          },
+        }),
+      ).rejects.toThrow(); // one open enrollment per student
+      await expect(
+        prisma.studentEnrollment.create({
+          data: {
+            studentId: id.s1,
+            groupClassId: id.class1,
+            startDate: new Date('2026-09-20'),
+            endDate: new Date('2026-09-25'),
+          },
+        }),
+      ).rejects.toThrow(/student_enrollments_no_overlap|exclusion/);
     });
 
     it('status: archive keeps the class; reactivation needs an active class', async () => {

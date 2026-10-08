@@ -7,7 +7,10 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.e2e-spec.ts'],
-    // Suites share the development database (e.g. active-admin counts): run files one at a time
+    // Dedicated *_test database only (guards + migrations in the global setup)
+    globalSetup: ['./test/e2e-global-setup.ts'],
+    setupFiles: ['./test/e2e-setup-env.ts'],
+    // Suites share the test database (e.g. active-admin counts): run files one at a time
     fileParallelism: false,
   },
 });

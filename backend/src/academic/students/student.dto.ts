@@ -121,6 +121,13 @@ export class AssignStudentGroupClassDto {
   })
   @IsUUID()
   groupClassId!: string;
+
+  @IsDateOnly({
+    optional: true,
+    description:
+      'First day in the new class (default: today, platform timezone; not in the future)',
+  })
+  effectiveDate?: string;
 }
 
 export class StudentListQueryDto extends SearchQueryDto {
@@ -195,4 +202,19 @@ export class StudentDto {
 export class StudentListDto {
   @ApiProperty({ type: StudentDto, isArray: true }) data!: StudentDto[];
   @ApiProperty({ type: PaginationMetaDto }) meta!: PaginationMetaDto;
+}
+
+/** One period of class membership: startDate ≤ day < endDate (endDate null = current). */
+export class StudentEnrollmentDto {
+  @ApiProperty() id!: string;
+  @ApiProperty({ format: 'date' }) startDate!: string;
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date',
+    nullable: true,
+    description: 'Exclusive',
+  })
+  endDate!: string | null;
+  @ApiProperty() isCurrent!: boolean;
+  @ApiProperty({ type: ClassRefDto }) groupClass!: ClassRefDto;
 }

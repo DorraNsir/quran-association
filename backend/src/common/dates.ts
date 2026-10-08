@@ -11,6 +11,14 @@ import {
 /** Calendar dates travel as "YYYY-MM-DD" and are stored in DATE columns (UTC midnight). */
 export const toDbDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
 export const fromDbDate = (value: Date) => value.toISOString().slice(0, 10);
+/** Calendar date "YYYY-MM-DD" of now in an IANA timezone (e.g. Africa/Tunis). */
+export const todayIn = (timeZone: string) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 export const fromDbDateOrNull = (value: Date | null) =>
   value ? fromDbDate(value) : null;
 
