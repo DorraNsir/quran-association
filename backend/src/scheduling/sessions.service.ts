@@ -311,6 +311,8 @@ export class SessionsService {
           'لا يمكن تعديل موعد حصة ملغاة أو منجزة',
         );
       }
+      // Attendance was taken for THIS date and roster: the lesson cannot move
+      await this.assertNoAttendance(tx, id);
       const slot = {
         date: dto.date ?? fromDbDate(session.date),
         start: dto.startTime ?? fromDbTime(session.startTime),
@@ -387,6 +389,10 @@ export class SessionsService {
           'INVALID_STATUS_TRANSITION',
           'لا يمكن الانتقال إلى هذه الحالة من الحالة الحالية',
         );
+      // A lesson with recorded attendance took place: it cannot be cancelled
+      if (to === SessionStatus.CANCELLED && from !== SessionStatus.CANCELLED) {
+        await this.assertNoAttendance(tx, id);
+      }
 
       if (to === SessionStatus.COMPLETED) {
         if (!dto.adminOverride) {
@@ -735,6 +741,15 @@ export class SessionsService {
       roomId: s.roomId,
       teachers: s.teachers.map((t) => t.teacherId),
     }));
+  }
+
+  private async assertNoAttendance(tx: Tx, sessionId: string) {
+    if (await tx.studentAttendance.count({ where: { sessionId } })) {
+      throw conflict(
+        'SESSION_HAS_ATTENDANCE',
+        'سُجّل حضور هذه الحصة: لا يمكن إلغاؤها أو تغيير موعدها',
+      );
+    }
   }
 
   private async assertNotFuture(tx: Tx, date: string) {

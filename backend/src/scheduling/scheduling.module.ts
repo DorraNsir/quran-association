@@ -20,6 +20,6 @@ import { SessionsService } from './sessions.service.js';
     SessionsService,
     PageSizeService,
   ],
-  exports: [ScheduleConflictService],
+  exports: [ScheduleConflictService, SessionsService],
 })
 export class SchedulingModule {}

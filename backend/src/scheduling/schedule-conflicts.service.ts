@@ -240,6 +240,8 @@ export class ScheduleConflictService {
           groupClassId: occupancy.groupClassId,
           status: 'SCHEDULED',
           date: { gte: new Date(`${today}T00:00:00.000Z`) },
+          // A lesson with attendance already happened where it happened
+          studentAttendance: { none: {} },
         },
         select: { date: true, startTime: true, endTime: true },
       }),
@@ -383,6 +385,8 @@ export class ScheduleConflictService {
         groupClassId,
         status: 'SCHEDULED',
         date: { gte: new Date(`${today}T00:00:00.000Z`) },
+        // Sessions with recorded attendance (e.g. today's) keep their snapshot
+        studentAttendance: { none: {} },
       },
       select: { id: true },
     });

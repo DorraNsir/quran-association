@@ -549,7 +549,9 @@ describe('Scheduling hardening (e2e)', () => {
           endTime: '09:30',
         }),
       ]);
-      expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([201, 409]);
+      expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([
+        201, 409,
+      ]);
     });
 
     it('two simultaneous sessions for the same room: exactly one wins', async () => {
@@ -568,7 +570,9 @@ describe('Scheduling hardening (e2e)', () => {
           endTime: '16:30',
         }),
       ]);
-      expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([201, 409]);
+      expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([
+        201, 409,
+      ]);
     });
 
     it('a class move racing a session creation never leaves a double-booked room', async () => {
