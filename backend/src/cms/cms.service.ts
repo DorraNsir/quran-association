@@ -6,6 +6,8 @@ import { PageSizeService } from '../common/page-size.service.js';
 import { paginationMeta } from '../common/pagination.js';
 import { platformToday } from '../common/platform-clock.js';
 import type { Prisma } from '../generated/prisma/client.js';
+import { FilePurpose } from '../generated/prisma/enums.js';
+import { FilesService, privateFileUrl } from '../files/files.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { fromDbTime, toDbTime } from '../scheduling/time.js';
 import type { CmsListQueryDto, ReorderDto } from './cms.dto.js';
@@ -41,6 +43,7 @@ export class CmsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pageSizes: PageSizeService,
+    private readonly files: FilesService,
   ) {}
 
   async list(cfg: CollectionConfig, query: CmsListQueryDto) {
@@ -87,7 +90,7 @@ export class CmsService {
   async create(cfg: CollectionConfig, dto: object, userId: string) {
     const today = await platformToday(this.prisma);
     const id = await this.prisma.$transaction(async (tx) => {
-      const ctx = this.context(cfg, tx, dto, userId, today);
+      const ctx = await this.context(cfg, tx, dto, userId, today);
       await cfg.prepare?.(ctx);
       if (cfg.ordered) {
         // Serializes creations/reorders of this collection (no duplicate order)
@@ -117,7 +120,7 @@ export class CmsService {
       const current = await this.delegate(tx, cfg).findUnique({
         where: { id },
       });
-      const ctx = this.context(cfg, tx, dto, userId, today, current!);
+      const ctx = await this.context(cfg, tx, dto, userId, today, current!);
       await cfg.prepare?.(ctx);
       if (Object.keys(ctx.data).length)
         await this.delegate(tx, cfg).update({ where: { id }, data: ctx.data });
@@ -125,7 +128,10 @@ export class CmsService {
     return this.get(cfg, id);
   }
 
-  /** Hard delete (CMS content has no history to keep; media files arrive with 10.10). */
+  /**
+   * Hard delete (CMS content keeps no history). Its uploaded image is NOT
+   * deleted here: once referenced by nothing, the file cleanup removes it.
+   */
   async remove(cfg: CollectionConfig, id: string) {
     await this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRawUnsafe<{ id: string }[]>(
@@ -174,23 +180,27 @@ export class CmsService {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`cms:${cfg.table}`}))`;
   }
 
-  /** DTO → Prisma data (calendar days, times) + media/link safety checks. */
-  private context(
+  /**
+   * DTO → Prisma data (calendar days, times) + link checks + images: a
+   * bundled asset (field) OR an uploaded CMS_IMAGE (fileField, validated and
+   * locked by FilesService in this transaction) — setting one clears the other.
+   */
+  private async context(
     cfg: CollectionConfig,
     tx: Tx,
     dto: object,
     userId: string,
     today: string,
     current?: Row,
-  ): WriteContext {
+  ): Promise<WriteContext> {
     // Only what the client sent: `field in input` then means "present in the request"
     const input = Object.fromEntries(
       Object.entries(dto).filter(([, value]) => value !== undefined),
     ) as Row;
+    const mediaKeys = cfg.media.flatMap((m) => [m.field, m.fileField]);
     const data: Row = {};
     for (const [field, value] of Object.entries(input)) {
-      if (cfg.mediaFields.includes(field))
-        assertMediaRef(field, value as string | null);
+      if (mediaKeys.includes(field)) continue;
       if (cfg.linkFields.includes(field))
         assertLink(field, value as string | null);
       if (cfg.dateFields.includes(field))
@@ -199,14 +209,58 @@ export class CmsService {
         data[field] = value === null ? null : toDbTime(value as string);
       else data[field] = value;
     }
+    for (const { field, fileField, required } of cfg.media) {
+      const asset = input[field] as string | null | undefined;
+      const fileId = input[fileField] as string | null | undefined;
+      if (asset && fileId) {
+        throw badRequest(
+          'CMS_MEDIA_CONFLICT',
+          `أرسل صورة واحدة: ${field} (صورة من الموقع) أو ${fileField} (ملف مرفوع)`,
+        );
+      }
+      if (asset !== undefined) {
+        assertMediaRef(field, asset);
+        data[field] = asset;
+        if (asset !== null) data[fileField] = null;
+      }
+      if (fileId !== undefined) {
+        if (fileId !== null)
+          await this.files.assertAttachable(
+            tx,
+            fileId,
+            FilePurpose.CMS_IMAGE,
+            { userId, isAdmin: true },
+            { kinds: ['IMAGE'] },
+          );
+        data[fileField] = fileId;
+        if (fileId !== null) data[field] = null;
+      }
+      const after = (key: string) =>
+        key in data ? data[key] : (current?.[key] ?? null);
+      if (required && !after(field) && !after(fileField)) {
+        throw badRequest(
+          'CMS_MEDIA_REQUIRED',
+          `الصورة مطلوبة (${field} أو ${fileField})`,
+        );
+      }
+    }
     return { tx, data, dto: input, current, userId, today };
   }
 
-  /** Row → admin DTO: calendar days as YYYY-MM-DD, times as HH:mm, derived fields. */
+  /**
+   * Row → admin DTO: calendar days as YYYY-MM-DD, times as HH:mm, derived
+   * fields; an uploaded image's `field` is its authenticated download path
+   * (the admin sees hidden content's images too).
+   */
   serialize(cfg: CollectionConfig, row: Row, today: string): Row {
     const out: Row = {};
     for (const [field, value] of Object.entries(row)) {
       if (cfg.hidden?.includes(field)) continue;
+      const media = cfg.media.find((m) => m.field === field);
+      if (media && row[media.fileField]) {
+        out[field] = privateFileUrl(row[media.fileField] as string);
+        continue;
+      }
       if (cfg.dateFields.includes(field))
         out[field] = value instanceof Date ? fromDbDate(value) : null;
       else if (cfg.timeFields.includes(field))

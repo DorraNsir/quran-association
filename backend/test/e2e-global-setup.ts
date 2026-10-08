@@ -1,4 +1,7 @@
 import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import pg from 'pg';
 
@@ -8,8 +11,14 @@ import { resolveTestDatabase } from './e2e-database.js';
  * Runs once before the E2E suites: validates the target, creates the test
  * database if missing (never drops anything) and applies the committed
  * migrations with `prisma migrate deploy` — the same migrations as production.
+ * Also creates ONE throwaway file-storage root for the run (workers inherit
+ * it through the environment) and removes it afterwards: tests never touch
+ * development uploads.
  */
 export default async function setup() {
+  const storageRoot = mkdtempSync(join(tmpdir(), 'quran-platform-e2e-files-'));
+  process.env.E2E_FILE_STORAGE_ROOT = storageRoot;
+
   const db = resolveTestDatabase();
 
   const admin = new URL(db.url);
@@ -43,4 +52,6 @@ export default async function setup() {
     throw new Error(
       `E2E refused: connected to "${rows[0]?.db}", expected "${db.name}".`,
     );
+
+  return () => rmSync(storageRoot, { recursive: true, force: true });
 }

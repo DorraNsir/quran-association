@@ -421,7 +421,7 @@ describe('Resources, announcements & notifications (e2e)', () => {
         .expect(404);
     });
 
-    it('validates links, types and targets (no unsafe URL, no file without storage)', async () => {
+    it('validates links, types and targets (no unsafe URL, no file type without an uploaded file)', async () => {
       const code = async (body: object) =>
         (
           await admin().post('resources', {
@@ -447,7 +447,7 @@ describe('Resources, announcements & notifications (e2e)', () => {
           .expect(400);
       for (const type of ['PDF', 'IMAGE', 'AUDIO', 'FILE'])
         expect(await code({ type, externalUrl: undefined })).toBe(
-          'RESOURCE_FILE_UPLOAD_UNAVAILABLE',
+          'RESOURCE_FILE_REQUIRED',
         );
       await admin()
         .post(

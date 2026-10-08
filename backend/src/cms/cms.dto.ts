@@ -49,23 +49,46 @@ const Text = (maxLength: number, description?: string) =>
     MaxLength(maxLength),
   );
 
-/** Image reference: bundled /website/… asset or https:// URL (checked by the service). */
+/** Image as a bundled website asset path — or use the matching …FileId field for an upload. */
 const Media = (required = false) =>
   applyDecorators(
-    (required ? ApiProperty : ApiPropertyOptional)({
+    ApiPropertyOptional({
       type: String,
-      nullable: !required,
+      nullable: true,
       example: '/website/halaqa.svg',
-      description:
-        'A bundled website asset (/website/<name>.svg|png|jpg|webp) or an https:// URL — uploads need the file storage of Part 10.10 (CMS_MEDIA_UNAVAILABLE)',
+      description: `A bundled website asset (/website/<name>.svg|png|jpg|webp). For an uploaded image use the matching …FileId field instead${required ? ' (one of the two is required)' : ''}.`,
     }),
     Transform(({ value }: { value: unknown }) =>
       typeof value === 'string' ? value.trim() || null : value,
     ),
-    ...(required ? [] : [IsOptional(), ValidateIf((_, v) => v !== null)]),
-    IsString({ message: 'الصورة مطلوبة' }),
+    IsOptional(),
+    ValidateIf((_, v) => v !== null),
+    IsString(),
     MaxLength(2000),
   );
+
+/** An uploaded CMS_IMAGE (POST /api/files?purpose=CMS_IMAGE) attached by id. */
+const MediaFile = () =>
+  applyDecorators(
+    ApiPropertyOptional({
+      type: String,
+      format: 'uuid',
+      nullable: true,
+      description:
+        'Id of an uploaded CMS_IMAGE (POST /api/files?purpose=CMS_IMAGE); replaces the bundled asset; null removes it',
+    }),
+    IsOptional(),
+    ValidateIf((_, v) => v !== null),
+    IsUUID(),
+  );
+
+/** Output: the stored file id (null for a bundled asset / no image). */
+const MediaFileOut = () =>
+  ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Uploaded image id (null: bundled asset or none)',
+  });
 
 const Flag = (description: string) =>
   applyDecorators(
@@ -129,7 +152,8 @@ class Stamped {
 /* ------------------------------ hero slides ------------------------------ */
 
 export class HeroSlideInputDto {
-  @Media(true) imageUrl!: string;
+  @Media(true) imageUrl?: string | null;
+  @MediaFile() imageFileId?: string | null;
   @OptionalText(200) title?: string | null;
   @OptionalText(500) subtitle?: string | null;
   @OptionalText(60, 'Button text (with ctaHref)') ctaLabel?: string | null;
@@ -151,7 +175,14 @@ export class HeroSlideInputDto {
 }
 export class HeroSlideUpdateDto extends PartialType(HeroSlideInputDto) {}
 export class HeroSlideDto extends Stamped {
-  @ApiProperty() imageUrl!: string;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'Bundled asset path, or the download path of the uploaded image',
+  })
+  imageUrl!: string | null;
+  @MediaFileOut() imageFileId!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) title!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) subtitle!:
     string | null;
@@ -203,6 +234,7 @@ export class ProgramInputDto {
   @Text(150) title!: string;
   @Text(5000) description!: string;
   @Media() imageUrl?: string | null;
+  @MediaFile() imageFileId?: string | null;
   @Icon() icon?: string | null;
   @Flag('Public (default true)') isPublished?: boolean;
 }
@@ -212,6 +244,7 @@ export class ProgramDto extends Stamped {
   @ApiProperty() description!: string;
   @ApiPropertyOptional({ type: String, nullable: true })
   imageUrl!: string | null;
+  @MediaFileOut() imageFileId!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) icon!: string | null;
   @ApiProperty() displayOrder!: number;
   @ApiProperty() isPublished!: boolean;
@@ -237,6 +270,7 @@ export class GroupListingInputDto {
   @IsDateOnly({ optional: true }) startDate?: string | null;
   @OptionalText(150, 'Approximate schedule') schedule?: string | null;
   @Media() imageUrl?: string | null;
+  @MediaFile() imageFileId?: string | null;
   @ApiPropertyOptional({
     enum: PublicGroupStatus,
     enumName: 'PublicGroupStatus',
@@ -272,6 +306,7 @@ export class GroupListingDto extends Stamped {
   schedule!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true })
   imageUrl!: string | null;
+  @MediaFileOut() imageFileId!: string | null;
   @ApiProperty({ enum: PublicGroupStatus, enumName: 'PublicGroupStatus' })
   publicStatus!: PublicGroupStatus;
   @ApiProperty() registrationOpen!: boolean;
@@ -304,6 +339,7 @@ export class EventInputDto {
   @IsTimeOfDay({ optional: true }) time?: string | null;
   @OptionalText(200) location?: string | null;
   @Media() imageUrl?: string | null;
+  @MediaFile() imageFileId?: string | null;
   @Flag('Public event (default true); internal events never reach the site')
   isPublic?: boolean;
   @Flag('Published (default true)') isPublished?: boolean;
@@ -324,6 +360,7 @@ export class EventDto extends Stamped {
   location!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true })
   imageUrl!: string | null;
+  @MediaFileOut() imageFileId!: string | null;
   @ApiProperty() isPublic!: boolean;
   @ApiProperty() isPublished!: boolean;
   @ApiProperty() isCancelled!: boolean;
@@ -353,6 +390,7 @@ export class AchievementInputDto {
   @IsDateOnly({ optional: true }) date?: string | null;
   @Year() year?: number | null;
   @Media() imageUrl?: string | null;
+  @MediaFile() imageFileId?: string | null;
   @ApiPropertyOptional({
     enum: AchievementCategory,
     enumName: 'AchievementCategory',
@@ -380,6 +418,7 @@ export class AchievementDto extends Stamped {
   year!: number | null;
   @ApiPropertyOptional({ type: String, nullable: true })
   imageUrl!: string | null;
+  @MediaFileOut() imageFileId!: string | null;
   @ApiPropertyOptional({
     enum: AchievementCategory,
     enumName: 'AchievementCategory',
@@ -407,6 +446,7 @@ export class PublicAchievementDto extends PickType(AchievementDto, [
 export class GraduateInputDto {
   @Text(150) fullName!: string;
   @Media() photoUrl?: string | null;
+  @MediaFile() photoFileId?: string | null;
   @Year() completionYear?: number | null;
   @IsDateOnly({ optional: true }) completionDate?: string | null;
   @OptionalText(500) shortMessage?: string | null;
@@ -439,6 +479,7 @@ export class GraduateDto extends Stamped {
   @ApiProperty() fullName!: string;
   @ApiPropertyOptional({ type: String, nullable: true })
   photoUrl!: string | null;
+  @MediaFileOut() photoFileId!: string | null;
   @ApiPropertyOptional({ type: Number, nullable: true })
   completionYear!: number | null;
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
@@ -476,6 +517,7 @@ export class MemberInputDto {
   @Text(150) fullName!: string;
   @Text(100, 'Board function, e.g. "رئيس الجمعية"') role!: string;
   @Media() photoUrl?: string | null;
+  @MediaFile() photoFileId?: string | null;
   @OptionalText(1000) shortBio?: string | null;
   @Flag('Public (default true)') isPublished?: boolean;
 }
@@ -485,6 +527,7 @@ export class MemberDto extends Stamped {
   @ApiProperty() role!: string;
   @ApiPropertyOptional({ type: String, nullable: true })
   photoUrl!: string | null;
+  @MediaFileOut() photoFileId!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true })
   shortBio!: string | null;
   @ApiProperty() displayOrder!: number;
@@ -507,6 +550,7 @@ export class NewsInputDto {
   @Text(20000, 'Plain text, paragraphs separated by blank lines')
   content!: string;
   @Media() coverImageUrl?: string | null;
+  @MediaFile() coverImageFileId?: string | null;
   @IsDateOnly({
     optional: true,
     description:
@@ -522,6 +566,7 @@ export class NewsDto extends Stamped {
   @ApiProperty() content!: string;
   @ApiPropertyOptional({ type: String, nullable: true })
   coverImageUrl!: string | null;
+  @MediaFileOut() coverImageFileId!: string | null;
   @ApiProperty({ format: 'date' }) publishedAt!: string;
   @ApiProperty() isPublished!: boolean;
   @ApiProperty({
@@ -549,7 +594,8 @@ export class PublicNewsDto extends PickType(NewsDto, [
 /* ------------------------------ gallery ------------------------------ */
 
 export class GalleryInputDto {
-  @Media(true) imageUrl!: string;
+  @Media(true) imageUrl?: string | null;
+  @MediaFile() imageFileId?: string | null;
   @OptionalText(200) title?: string | null;
   @OptionalText(500) description?: string | null;
   @ApiPropertyOptional({
@@ -565,7 +611,14 @@ export class GalleryInputDto {
 }
 export class GalleryUpdateDto extends PartialType(GalleryInputDto) {}
 export class GalleryImageDto extends Stamped {
-  @ApiProperty() imageUrl!: string;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'Bundled asset path, or the download path of the uploaded image',
+  })
+  imageUrl!: string | null;
+  @MediaFileOut() imageFileId!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) title!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true })
   description!: string | null;

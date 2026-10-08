@@ -14,6 +14,7 @@ import {
   IsUUID,
   MaxLength,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 
 import { SearchQueryDto, trim } from '../academic/shared.dto.js';
@@ -65,6 +66,21 @@ export const SafeUrl = () =>
     MaxLength(2000),
   );
 
+/** An uploaded EDUCATIONAL_RESOURCE file (POST /api/files) — required for file types. */
+const FileRef = () =>
+  applyDecorators(
+    ApiPropertyOptional({
+      type: String,
+      format: 'uuid',
+      nullable: true,
+      description:
+        'PDF / IMAGE / AUDIO / FILE: id of an EDUCATIONAL_RESOURCE upload (teachers: their own upload, for one of the target classes)',
+    }),
+    IsOptional(),
+    ValidateIf((_, v) => v !== null),
+    IsUUID(),
+  );
+
 const Description = () =>
   applyDecorators(
     ApiPropertyOptional({ maxLength: 5000, description: 'Plain text' }),
@@ -80,7 +96,7 @@ const TypeField = () =>
       enum: ResourceType,
       enumName: 'ResourceType',
       description:
-        'VIDEO_LINK / EXTERNAL_LINK: supported (externalUrl). PDF / IMAGE / AUDIO / FILE: need file storage (Part 10.10) — rejected with RESOURCE_FILE_UPLOAD_UNAVAILABLE for now.',
+        'VIDEO_LINK / EXTERNAL_LINK: externalUrl (http/https). PDF / IMAGE / AUDIO / FILE: fileId of an EDUCATIONAL_RESOURCE upload (PDF: PDF; IMAGE: JPEG/PNG/WebP; AUDIO: MP3/M4A; FILE: any of these).',
     }),
     IsEnum(ResourceType),
   );
@@ -91,6 +107,7 @@ export class TeacherResourceDto {
   @Description() description?: string;
   @TypeField() type!: ResourceType;
   @SafeUrl() externalUrl?: string;
+  @FileRef() fileId?: string | null;
   @IdList('Classes the teacher is currently assigned to', true)
   groupClassIds!: string[];
 }
@@ -103,6 +120,7 @@ export class AdminResourceDto {
   @Description() description?: string;
   @TypeField() type!: ResourceType;
   @SafeUrl() externalUrl?: string;
+  @FileRef() fileId?: string | null;
   @ApiProperty({
     enum: ResourceVisibility,
     enumName: 'ResourceVisibility',
@@ -162,11 +180,15 @@ export class ClassTargetDto {
 }
 
 export class ResourceFileDto {
+  @ApiProperty() id!: string;
   @ApiProperty() fileName!: string;
-  @ApiPropertyOptional({ type: String, nullable: true })
-  mimeType!: string | null;
-  @ApiPropertyOptional({ type: Number, nullable: true })
-  fileSize!: number | null;
+  @ApiProperty() mimeType!: string;
+  @ApiProperty({ description: 'Bytes' }) size!: number;
+  @ApiProperty({
+    example: '/api/files/0199…',
+    description: 'Authenticated download (authorized from the resource)',
+  })
+  url!: string;
 }
 
 export class ResourceDto {
@@ -180,8 +202,7 @@ export class ResourceDto {
   @ApiPropertyOptional({
     type: ResourceFileDto,
     nullable: true,
-    description:
-      'File metadata only — downloads arrive with file storage (Part 10.10)',
+    description: 'The attached file (PDF / IMAGE / AUDIO / FILE types)',
   })
   file!: ResourceFileDto | null;
   @ApiProperty({ enum: ResourceVisibility, enumName: 'ResourceVisibility' })

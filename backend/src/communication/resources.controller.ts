@@ -39,7 +39,7 @@ import {
 import { ResourcesService } from './resources.service.js';
 
 const WRITE_ERRORS =
-  'Validation (title, http(s) URL), RESOURCE_TARGET_INVALID, RESOURCE_URL_REQUIRED, RESOURCE_FILE_UPLOAD_UNAVAILABLE (PDF/IMAGE/AUDIO/FILE need the file storage of Part 10.10)';
+  'Validation (title, http(s) URL), RESOURCE_TARGET_INVALID, RESOURCE_URL_REQUIRED, RESOURCE_FILE_REQUIRED, RESOURCE_CONTENT_INVALID, FILE_PURPOSE_MISMATCH, FILE_TYPE_NOT_ALLOWED; 403 FILE_CLASS_MISMATCH; 404 FILE_NOT_FOUND (a file you may not attach)';
 
 @ApiTags('admin / resources')
 @AdminApi()
@@ -90,8 +90,9 @@ export class AdminResourcesController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateAdminResourceDto,
+    @CurrentUser() user: AuthPrincipal,
   ): Promise<ResourceDto> {
-    return this.resources.updateAsAdmin(id, dto);
+    return this.resources.updateAsAdmin(id, dto, user.userId);
   }
 
   @Delete(':id')

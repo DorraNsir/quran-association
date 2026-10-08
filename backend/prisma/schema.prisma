@@ -161,6 +161,14 @@ enum GalleryCategory {
   LIFE
 }
 
+/// What an upload is for — decides who may upload it, its allowed types and where it may be attached
+enum FilePurpose {
+  ASSOCIATION_LOGO
+  CMS_IMAGE
+  PROFILE_PHOTO
+  EDUCATIONAL_RESOURCE
+}
+
 /// Who consented to a graduate's public listing
 enum ConsentGiver {
   GRADUATE
@@ -199,14 +207,16 @@ model Person {
   phone       String?
   email       String?
   address     String?
-  /// Storage path/URL of the profile photo (upload comes in a later part)
+  /// API path of the photo ("/api/files/<photoFileId>"), kept in sync with photoFileId (CHECK)
   photoUrl    String?
+  photoFileId String?   @db.Uuid
   createdAt   DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
 
-  user    User?
-  teacher Teacher?
-  student Student?
+  photoFile StoredFile? @relation(fields: [photoFileId], references: [id], onDelete: Restrict)
+  user      User?
+  teacher   Teacher?
+  student   Student?
 
   @@index([lastName, firstName])
   @@index([phone])
@@ -242,6 +252,7 @@ model User {
   createdObligations     PaymentObligation[]    @relation("ObligationCreator")
   voidedObligations      PaymentObligation[]    @relation("ObligationVoider")
   graduateConsents       QuranGraduate[]        @relation("GraduateConsentRecorder")
+  uploadedFiles          StoredFile[]           @relation("FileUploader")
   publishedResources     Resource[]
   publishedAnnouncements Announcement[]
   notifications          Notification[]
@@ -449,6 +460,7 @@ model GroupClass {
   teacherNotes        TeacherNote[]
   resourceTargets     ResourceTarget[]
   announcementTargets AnnouncementTarget[]
+  uploadedFiles       StoredFile[]
 
   @@index([groupId])
   @@index([branchId])
@@ -850,17 +862,15 @@ model Resource {
   title             String
   description       String             @default("")
   type              ResourceType
-  fileUrl           String?
   externalUrl       String?
-  fileName          String?
-  mimeType          String?
-  /// Bytes
-  fileSize          Int?
+  /// PDF / IMAGE / AUDIO / FILE resources: the stored file (metadata from StoredFile)
+  fileId            String?            @db.Uuid
   visibility        ResourceVisibility
   publishedByUserId String             @db.Uuid
   createdAt         DateTime           @default(now()) @db.Timestamptz(3)
   updatedAt         DateTime           @updatedAt @db.Timestamptz(3)
 
+  file          StoredFile?      @relation(fields: [fileId], references: [id], onDelete: Restrict)
   publishedBy   User             @relation(fields: [publishedByUserId], references: [id], onDelete: Restrict)
   targets       ResourceTarget[]
   notifications Notification[]
@@ -976,13 +986,16 @@ model Notification {
 /// The association's official identity — read by every workspace AND the
 /// public website. Single row (id = 1, CHECK in migration).
 model AssociationSettings {
-  id        Int      @id @default(1) @db.SmallInt
-  name      String
-  logoUrl   String?
-  phone     String?
-  email     String?
-  address   String?
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  id         Int      @id @default(1) @db.SmallInt
+  name       String
+  /// Uploaded logo (null = the bundled logo); served by /api/public/files/:id
+  logoFileId String?  @db.Uuid
+  phone      String?
+  email      String?
+  address    String?
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  logoFile StoredFile? @relation(fields: [logoFileId], references: [id], onDelete: Restrict)
 
   @@map("association_settings")
 }
@@ -1028,7 +1041,9 @@ model SiteSettings {
 
 model HeroSlide {
   id           String   @id @default(uuid(7)) @db.Uuid
-  imageUrl     String
+  /// Bundled website asset (/website/…) — or imageFileId
+  imageUrl     String?
+  imageFileId  String?  @db.Uuid
   title        String?
   subtitle     String?
   ctaLabel     String?
@@ -1037,6 +1052,8 @@ model HeroSlide {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  imageFile StoredFile? @relation(fields: [imageFileId], references: [id], onDelete: Restrict)
 
   @@index([isActive, displayOrder])
   @@map("hero_slides")
@@ -1063,12 +1080,16 @@ model PublicProgram {
   id           String   @id @default(uuid(7)) @db.Uuid
   title        String
   description  String
+  /// Bundled website asset (/website/…) — or imageFileId
   imageUrl     String?
+  imageFileId  String?  @db.Uuid
   icon         String?
   displayOrder Int      @default(0)
   isPublished  Boolean  @default(true)
   createdAt    DateTime @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  imageFile StoredFile? @relation(fields: [imageFileId], references: [id], onDelete: Restrict)
 
   @@index([isPublished, displayOrder])
   @@map("public_programs")
@@ -1086,7 +1107,9 @@ model PublicGroupListing {
   description      String?
   startDate        DateTime?         @db.Date
   schedule         String?
+  /// Bundled website asset (/website/…) — or imageFileId
   imageUrl         String?
+  imageFileId      String?           @db.Uuid
   publicStatus     PublicGroupStatus @default(COMING_SOON)
   registrationOpen Boolean           @default(true)
   displayOrder     Int               @default(0)
@@ -1096,6 +1119,8 @@ model PublicGroupListing {
 
   group  Group?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
   branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  imageFile StoredFile? @relation(fields: [imageFileId], references: [id], onDelete: Restrict)
 
   @@index([isPublished, displayOrder])
   @@map("public_group_listings")
@@ -1110,12 +1135,16 @@ model PublicEvent {
   endDate     DateTime? @db.Date
   time        DateTime? @db.Time(0)
   location    String?
+  /// Bundled website asset (/website/…) — or imageFileId
   imageUrl    String?
+  imageFileId String?   @db.Uuid
   isPublic    Boolean   @default(true)
   isPublished Boolean   @default(true)
   isCancelled Boolean   @default(false)
   createdAt   DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+
+  imageFile StoredFile? @relation(fields: [imageFileId], references: [id], onDelete: Restrict)
 
   @@index([isPublished, isPublic, startDate])
   @@map("public_events")
@@ -1123,16 +1152,20 @@ model PublicEvent {
 
 /// Public news — not an internal Announcement.
 model NewsArticle {
-  id            String   @id @default(uuid(7)) @db.Uuid
-  title         String
-  excerpt       String
+  id               String   @id @default(uuid(7)) @db.Uuid
+  title            String
+  excerpt          String
   /// Plain text, paragraphs separated by blank lines
-  content       String
-  coverImageUrl String?
-  publishedAt   DateTime @db.Date
-  isPublished   Boolean  @default(true)
-  createdAt     DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+  content          String
+  /// Bundled website asset (/website/…) — or coverImageFileId
+  coverImageUrl    String?
+  coverImageFileId String?  @db.Uuid
+  publishedAt      DateTime @db.Date
+  isPublished      Boolean  @default(true)
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(3)
+
+  coverImageFile StoredFile? @relation(fields: [coverImageFileId], references: [id], onDelete: Restrict)
 
   @@index([isPublished, publishedAt])
   @@map("news_articles")
@@ -1140,7 +1173,9 @@ model NewsArticle {
 
 model GalleryImage {
   id           String           @id @default(uuid(7)) @db.Uuid
-  imageUrl     String
+  /// Bundled website asset (/website/…) — or imageFileId
+  imageUrl     String?
+  imageFileId  String?          @db.Uuid
   title        String?
   description  String?
   category     GalleryCategory?
@@ -1148,6 +1183,8 @@ model GalleryImage {
   isPublished  Boolean          @default(true)
   createdAt    DateTime         @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime         @updatedAt @db.Timestamptz(3)
+
+  imageFile StoredFile? @relation(fields: [imageFileId], references: [id], onDelete: Restrict)
 
   @@index([isPublished, displayOrder])
   @@map("gallery_images")
@@ -1160,7 +1197,9 @@ model QuranGraduate {
   /// Optional link (a historical completer may no longer be a student); never published
   studentId               String?       @db.Uuid
   fullName                String
+  /// Bundled website asset (/website/…) — or photoFileId
   photoUrl                String?
+  photoFileId             String?       @db.Uuid
   completionYear          Int?          @db.SmallInt
   completionDate          DateTime?     @db.Date
   shortMessage            String?
@@ -1177,6 +1216,8 @@ model QuranGraduate {
   student           Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
   consentRecordedBy User?    @relation("GraduateConsentRecorder", fields: [consentRecordedByUserId], references: [id], onDelete: Restrict)
 
+  photoFile StoredFile? @relation(fields: [photoFileId], references: [id], onDelete: Restrict)
+
   @@index([isPublished, displayOrder])
   @@map("quran_graduates")
 }
@@ -1188,7 +1229,9 @@ model AdministrationMember {
   fullName     String
   /// Board function, e.g. "رئيس الجمعية"
   role         String
+  /// Bundled website asset (/website/…) — or photoFileId
   photoUrl     String?
+  photoFileId  String?  @db.Uuid
   shortBio     String?
   displayOrder Int      @default(0)
   isPublished  Boolean  @default(true)
@@ -1196,6 +1239,8 @@ model AdministrationMember {
   updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  photoFile StoredFile? @relation(fields: [photoFileId], references: [id], onDelete: Restrict)
 
   @@index([isPublished, displayOrder])
   @@map("administration_members")
@@ -1207,7 +1252,9 @@ model Achievement {
   description  String
   date         DateTime?            @db.Date
   year         Int?                 @db.SmallInt
+  /// Bundled website asset (/website/…) — or imageFileId
   imageUrl     String?
+  imageFileId  String?              @db.Uuid
   category     AchievementCategory?
   /// Preferred for the home page — never overrides isPublished
   isFeatured   Boolean              @default(false)
@@ -1216,6 +1263,52 @@ model Achievement {
   createdAt    DateTime             @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime             @updatedAt @db.Timestamptz(3)
 
+  imageFile StoredFile? @relation(fields: [imageFileId], references: [id], onDelete: Restrict)
+
   @@index([isPublished, isFeatured, displayOrder])
   @@map("achievements")
+}
+
+/// Shared file storage (Part 10.10): METADATA only — the bytes live in the
+/// storage driver (private local filesystem for now) under an unpredictable
+/// server-generated key, never in PostgreSQL. Entities reference a file
+/// through *FileId columns (FK, ON DELETE RESTRICT): a referenced file can
+/// never be deleted; unreferenced files are removed by the cleanup after a
+/// retention period.
+model StoredFile {
+  id               String      @id @default(uuid(7)) @db.Uuid
+  /// Driver key ("ab/cd/<uuid>") — never exposed
+  storageKey       String      @unique
+  purpose          FilePurpose
+  /// Detected from the content (signature), never the client's claim
+  mimeType         String
+  size             Int
+  /// SHA-256 (hex) of the content
+  checksum         String
+  /// Sanitized display name (Content-Disposition only, never a path)
+  originalName     String
+  /// EDUCATIONAL_RESOURCE uploaded by a teacher: the assigned class it was uploaded for
+  groupClassId     String?     @db.Uuid
+  uploadedByUserId String      @db.Uuid
+  createdAt        DateTime    @default(now()) @db.Timestamptz(3)
+
+  uploadedBy User        @relation("FileUploader", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  groupClass GroupClass? @relation(fields: [groupClassId], references: [id], onDelete: SetNull)
+
+  associationLogos  AssociationSettings[]
+  personPhotos      Person[]
+  resources         Resource[]
+  heroSlides        HeroSlide[]
+  programs          PublicProgram[]
+  groupListings     PublicGroupListing[]
+  events            PublicEvent[]
+  newsCovers        NewsArticle[]
+  galleryImages     GalleryImage[]
+  graduatePhotos    QuranGraduate[]
+  memberPhotos      AdministrationMember[]
+  achievementImages Achievement[]
+
+  @@index([createdAt])
+  @@index([uploadedByUserId])
+  @@map("stored_files")
 }

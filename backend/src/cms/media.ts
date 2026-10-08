@@ -1,15 +1,12 @@
 import { badRequest } from '../common/errors.js';
 
 /**
- * Media and link references accepted by the CMS until the file storage of
- * Part 10.10 exists. Nothing is uploaded or fabricated here:
- *
- *  - a bundled website asset of the frontend: /website/<name>.<svg|png|jpg|jpeg|webp>
- *    (exact pattern — no other local path, no traversal);
- *  - an absolute https:// URL (no credentials, no http, no other scheme).
- *
- * blob:/data: values (a browser-side upload preview) fail with
- * CMS_MEDIA_UNAVAILABLE: uploading needs the storage of Part 10.10.
+ * Image references of the CMS (Part 10.10): either a bundled website asset
+ * of the frontend — /website/<name>.<svg|png|jpg|jpeg|webp>, exact pattern,
+ * no other local path — or an UPLOADED file attached by id (…FileId fields,
+ * validated by FilesService). External image URLs are no longer accepted
+ * (no third-party hotlinking or tracking on the public site); blob:/data:
+ * values must be uploaded through POST /api/files instead.
  */
 const BUNDLED_ASSET =
   /^\/website\/[a-z0-9][a-z0-9-]{0,60}\.(svg|png|jpe?g|webp)$/;
@@ -39,7 +36,7 @@ function httpsUrl(value: string): boolean {
   );
 }
 
-/** An image reference (null/undefined = none). */
+/** A bundled-asset image reference (null/undefined = none). */
 export function assertMediaRef(
   field: string,
   value: string | null | undefined,
@@ -47,11 +44,11 @@ export function assertMediaRef(
   if (value === null || value === undefined) return;
   if (/^(blob|data):/i.test(value)) {
     throw badRequest(
-      'CMS_MEDIA_UNAVAILABLE',
-      'رفع الصور غير متاح بعد (يتوفر مع خدمة تخزين الملفات): استعمل صورة من الموقع أو رابط https',
+      'CMS_MEDIA_UPLOAD_REQUIRED',
+      'ارفع الصورة أولًا (POST /api/files?purpose=CMS_IMAGE) ثم أرسل معرّفها',
     );
   }
-  if (!BUNDLED_ASSET.test(value) && !httpsUrl(value)) throw unsafe(field);
+  if (!BUNDLED_ASSET.test(value)) throw unsafe(field);
 }
 
 /** A button / external link: an internal site route or an https:// URL. */

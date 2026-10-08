@@ -32,8 +32,32 @@ import type {
   PublicSiteSettingsDto,
   PublicStatisticsDto,
 } from './cms.dto.js';
+import { publicFileUrl } from '../files/files.service.js';
 import { cmsNotFound } from './cms.service.js';
 import { eventStatus } from './collections.js';
+
+type MediaKeys = 'imageFileId' | 'photoFileId' | 'coverImageFileId';
+const MEDIA_PAIRS = [
+  ['imageUrl', 'imageFileId'],
+  ['photoUrl', 'photoFileId'],
+  ['coverImageUrl', 'coverImageFileId'],
+] as const;
+
+/**
+ * Public image reference: the uploaded file's PUBLIC path (served only
+ * while some public content references it) or the bundled asset path.
+ * File ids are not part of the public responses.
+ */
+function publicMedia<T extends object>(row: T): Omit<T, MediaKeys> {
+  const out = { ...row } as Record<string, unknown>;
+  for (const [field, fileField] of MEDIA_PAIRS) {
+    if (!(fileField in out)) continue;
+    const fileId = out[fileField] as string | null;
+    if (fileId) out[field] = publicFileUrl(fileId);
+    delete out[fileField];
+  }
+  return out as Omit<T, MediaKeys>;
+}
 
 /** Upper bound of the small, unpaginated public lists. */
 const LIST_LIMIT = 100;
@@ -59,6 +83,7 @@ const byOrder = [
 const slideSelect = {
   id: true,
   imageUrl: true,
+  imageFileId: true,
   title: true,
   subtitle: true,
   ctaLabel: true,
@@ -77,6 +102,7 @@ const programSelect = {
   title: true,
   description: true,
   imageUrl: true,
+  imageFileId: true,
   icon: true,
   displayOrder: true,
 } satisfies Prisma.PublicProgramSelect;
@@ -90,6 +116,7 @@ const groupSelect = {
   startDate: true,
   schedule: true,
   imageUrl: true,
+  imageFileId: true,
   publicStatus: true,
   registrationOpen: true,
   displayOrder: true,
@@ -103,6 +130,7 @@ const eventSelect = {
   time: true,
   location: true,
   imageUrl: true,
+  imageFileId: true,
   isCancelled: true,
 } satisfies Prisma.PublicEventSelect;
 const achievementSelect = {
@@ -112,6 +140,7 @@ const achievementSelect = {
   date: true,
   year: true,
   imageUrl: true,
+  imageFileId: true,
   category: true,
   isFeatured: true,
   displayOrder: true,
@@ -121,6 +150,7 @@ const graduateSelect = {
   id: true,
   fullName: true,
   photoUrl: true,
+  photoFileId: true,
   completionYear: true,
   completionDate: true,
   shortMessage: true,
@@ -132,6 +162,7 @@ const memberSelect = {
   fullName: true,
   role: true,
   photoUrl: true,
+  photoFileId: true,
   shortBio: true,
   displayOrder: true,
 } satisfies Prisma.AdministrationMemberSelect;
@@ -140,11 +171,13 @@ const newsSummarySelect = {
   title: true,
   excerpt: true,
   coverImageUrl: true,
+  coverImageFileId: true,
   publishedAt: true,
 } satisfies Prisma.NewsArticleSelect;
 const gallerySelect = {
   id: true,
   imageUrl: true,
+  imageFileId: true,
   title: true,
   description: true,
   category: true,
@@ -225,7 +258,7 @@ export class PublicSiteService {
   private group(g: GroupRow): PublicGroupListingDto {
     const { branch, startDate, ...rest } = g;
     return {
-      ...rest,
+      ...publicMedia(rest),
       startDate: fromDbDateOrNull(startDate),
       // An inactive branch is not shown publicly
       branch:
@@ -238,7 +271,7 @@ export class PublicSiteService {
   private toEvent(e: EventRow, today: string): PublicEventDto {
     const { startDate, endDate, time, isCancelled, ...rest } = e;
     return {
-      ...rest,
+      ...publicMedia(rest),
       startDate: fromDbDate(startDate),
       endDate: fromDbDateOrNull(endDate),
       time: time ? fromDbTime(time) : null,
@@ -247,15 +280,18 @@ export class PublicSiteService {
   }
 
   private achievement(a: AchievementRow): PublicAchievementDto {
-    return { ...a, date: fromDbDateOrNull(a.date) };
+    return { ...publicMedia(a), date: fromDbDateOrNull(a.date) };
   }
 
   private graduate(g: GraduateRow): PublicGraduateDto {
-    return { ...g, completionDate: fromDbDateOrNull(g.completionDate) };
+    return {
+      ...publicMedia(g),
+      completionDate: fromDbDateOrNull(g.completionDate),
+    };
   }
 
   private news(n: NewsRow): PublicNewsSummaryDto {
-    return { ...n, publishedAt: fromDbDate(n.publishedAt) };
+    return { ...publicMedia(n), publishedAt: fromDbDate(n.publishedAt) };
   }
 
   /* ------------------------------ endpoints ------------------------------ */
@@ -346,26 +382,27 @@ export class PublicSiteService {
     ]);
     return {
       settings,
-      heroSlides,
+      heroSlides: heroSlides.map((r) => publicMedia(r)),
       services,
-      programs,
+      programs: programs.map((r) => publicMedia(r)),
       upcomingGroups: groups.map((g) => this.group(g)),
       upcomingEvents: events.map((e) => this.toEvent(e, today)),
       featuredAchievements: achievements.map((a) => this.achievement(a)),
       graduates: graduates.map((g) => this.graduate(g)),
       news: news.map((n) => this.news(n)),
-      gallery,
+      gallery: gallery.map((r) => publicMedia(r)),
       statistics,
     };
   }
 
-  heroSlides(): Promise<PublicHeroSlideDto[]> {
-    return this.prisma.heroSlide.findMany({
+  async heroSlides(): Promise<PublicHeroSlideDto[]> {
+    const rows = await this.prisma.heroSlide.findMany({
       where: this.visible.slides,
       select: slideSelect,
       orderBy: [...byOrder],
       take: LIST_LIMIT,
     });
+    return rows.map((r) => publicMedia(r));
   }
 
   services(): Promise<PublicServiceDto[]> {
@@ -377,13 +414,14 @@ export class PublicSiteService {
     });
   }
 
-  programs(): Promise<PublicProgramDto[]> {
-    return this.prisma.publicProgram.findMany({
+  async programs(): Promise<PublicProgramDto[]> {
+    const rows = await this.prisma.publicProgram.findMany({
       where: this.visible.programs,
       select: programSelect,
       orderBy: [...byOrder],
       take: LIST_LIMIT,
     });
+    return rows.map((r) => publicMedia(r));
   }
 
   async program(id: string): Promise<PublicProgramDto> {
@@ -392,7 +430,7 @@ export class PublicSiteService {
       select: programSelect,
     });
     if (!row) throw cmsNotFound();
-    return row;
+    return publicMedia(row);
   }
 
   async upcomingGroups(): Promise<PublicGroupListingDto[]> {
@@ -483,13 +521,14 @@ export class PublicSiteService {
     return rows.map((g) => this.graduate(g));
   }
 
-  administrationMembers(): Promise<PublicMemberDto[]> {
-    return this.prisma.administrationMember.findMany({
+  async administrationMembers(): Promise<PublicMemberDto[]> {
+    const rows = await this.prisma.administrationMember.findMany({
       where: this.visible.members,
       select: memberSelect,
       orderBy: [...byOrder],
       take: LIST_LIMIT,
     });
+    return rows.map((r) => publicMedia(r));
   }
 
   async newsList(query: PublicNewsQueryDto) {
@@ -534,7 +573,7 @@ export class PublicSiteService {
       select: { ...newsSummarySelect, content: true },
     });
     if (!row) throw cmsNotFound();
-    return { ...row, publishedAt: fromDbDate(row.publishedAt) };
+    return { ...publicMedia(row), publishedAt: fromDbDate(row.publishedAt) };
   }
 
   async gallery(query: PublicGalleryQueryDto) {
@@ -561,7 +600,10 @@ export class PublicSiteService {
         take: pageSize,
       }),
     ]);
-    return { data: rows, meta: paginationMeta(query.page, pageSize, total) };
+    return {
+      data: rows.map((r) => publicMedia(r)),
+      meta: paginationMeta(query.page, pageSize, total),
+    };
   }
 
   /** Active branches: name, address and public phone only. */
@@ -603,7 +645,7 @@ export class PublicSiteService {
         where: { id: 1 },
         select: {
           name: true,
-          logoUrl: true,
+          logoFileId: true,
           address: true,
           phone: true,
           email: true,
@@ -629,8 +671,11 @@ export class PublicSiteService {
     ]);
     if (!association || !site) return null;
     const { facebookUrl, instagramUrl, youtubeUrl, ...presentation } = site;
+    const { logoFileId, ...identity } = association;
     return {
-      ...association,
+      ...identity,
+      // The approved uploaded logo (null: the frontend's bundled logo)
+      logoUrl: logoFileId ? publicFileUrl(logoFileId) : null,
       ...presentation,
       social: {
         facebook: facebookUrl,

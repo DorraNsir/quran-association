@@ -272,7 +272,7 @@ describe('Public website & CMS (e2e)', () => {
       id.slideA = a.body.id;
       id.slideB = await make(
         'hero-slides',
-        slide('B', { imageUrl: 'https://cdn.example.org/b.webp' }),
+        slide('B', { imageUrl: '/website/children.svg' }),
       );
       id.slideC = await make('hero-slides', slide('C', { isActive: false }));
       expect((await cms('hero-slides').get(id.slideC)).body.displayOrder).toBe(
@@ -290,9 +290,13 @@ describe('Public website & CMS (e2e)', () => {
       );
       expect(await code({ ctaHref: null })).toBe('CMS_CTA_INCOMPLETE');
       expect(await code({ imageUrl: 'blob:http://localhost/1' })).toBe(
-        'CMS_MEDIA_UNAVAILABLE',
+        'CMS_MEDIA_UPLOAD_REQUIRED',
       );
       expect(await code({ imageUrl: '/etc/passwd' })).toBe('CMS_UNSAFE_URL');
+      // External images are not accepted (uploads are attached by file id)
+      expect(await code({ imageUrl: 'https://cdn.example.org/b.webp' })).toBe(
+        'CMS_UNSAFE_URL',
+      );
       expect(await code({ imageUrl: 'http://example.org/a.jpg' })).toBe(
         'CMS_UNSAFE_URL',
       );
@@ -838,7 +842,7 @@ describe('Public website & CMS (e2e)', () => {
   /* ================================================================ */
 
   describe('gallery', () => {
-    it('needs a safe image reference; uploads are reported unavailable', async () => {
+    it('needs a safe image reference; browser previews must be uploaded', async () => {
       const img = (extra: object) => ({
         imageUrl: IMG,
         description: tag('صورة'),
@@ -848,7 +852,7 @@ describe('Public website & CMS (e2e)', () => {
       id.g2 = await make(
         'gallery',
         img({
-          imageUrl: 'https://cdn.example.org/2.jpg',
+          imageUrl: '/website/summer.svg',
           category: 'ACTIVITIES',
         }),
       );
@@ -859,7 +863,7 @@ describe('Public website & CMS (e2e)', () => {
             .create(img({ imageUrl: 'data:image/png;base64,AAAA' }))
             .expect(400)
         ).body.code,
-      ).toBe('CMS_MEDIA_UNAVAILABLE');
+      ).toBe('CMS_MEDIA_UPLOAD_REQUIRED');
       expect(
         (
           await cms('gallery')

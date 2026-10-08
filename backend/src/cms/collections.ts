@@ -68,6 +68,13 @@ export type ModelKey =
   | 'newsArticle'
   | 'galleryImage';
 
+export interface MediaField {
+  field: string;
+  fileField: string;
+  /** Exactly one of the two is required (else at most one) */
+  required: boolean;
+}
+
 export interface CollectionConfig {
   /** URL segment under /api/admin/cms */
   slug: string;
@@ -80,7 +87,8 @@ export interface CollectionConfig {
   ordered: boolean;
   dateFields: string[];
   timeFields: string[];
-  mediaFields: string[];
+  /** Image fields: a bundled website asset (field) OR an uploaded CMS_IMAGE (fileField) */
+  media: MediaField[];
   linkFields: string[];
   searchFields: string[];
   adminOrderBy: object[];
@@ -141,7 +149,7 @@ export const COLLECTIONS: CollectionConfig[] = [
     ordered: true,
     dateFields: [],
     timeFields: [],
-    mediaFields: ['imageUrl'],
+    media: [{ field: 'imageUrl', fileField: 'imageFileId', required: true }],
     linkFields: ['ctaHref'],
     searchFields: ['title', 'subtitle'],
     adminOrderBy: [
@@ -170,7 +178,7 @@ export const COLLECTIONS: CollectionConfig[] = [
     ordered: true,
     dateFields: [],
     timeFields: [],
-    mediaFields: [],
+    media: [],
     linkFields: [],
     searchFields: ['title', 'description'],
     adminOrderBy: [
@@ -191,7 +199,7 @@ export const COLLECTIONS: CollectionConfig[] = [
     ordered: true,
     dateFields: [],
     timeFields: [],
-    mediaFields: ['imageUrl'],
+    media: [{ field: 'imageUrl', fileField: 'imageFileId', required: false }],
     linkFields: [],
     searchFields: ['title', 'description'],
     adminOrderBy: [
@@ -212,7 +220,7 @@ export const COLLECTIONS: CollectionConfig[] = [
     ordered: true,
     dateFields: ['startDate'],
     timeFields: [],
-    mediaFields: ['imageUrl'],
+    media: [{ field: 'imageUrl', fileField: 'imageFileId', required: false }],
     linkFields: [],
     searchFields: ['title', 'audience', 'description'],
     adminOrderBy: [
@@ -250,7 +258,7 @@ export const COLLECTIONS: CollectionConfig[] = [
     ordered: false,
     dateFields: ['startDate', 'endDate'],
     timeFields: ['time'],
-    mediaFields: ['imageUrl'],
+    media: [{ field: 'imageUrl', fileField: 'imageFileId', required: false }],
     linkFields: [],
     searchFields: ['title', 'description', 'location'],
     adminOrderBy: [
@@ -283,7 +291,7 @@ export const COLLECTIONS: CollectionConfig[] = [
     ordered: true,
     dateFields: ['date'],
     timeFields: [],
-    mediaFields: ['imageUrl'],
+    media: [{ field: 'imageUrl', fileField: 'imageFileId', required: false }],
     linkFields: [],
     searchFields: ['title', 'description'],
     adminOrderBy: [
@@ -316,7 +324,7 @@ export const COLLECTIONS: CollectionConfig[] = [
     ordered: true,
     dateFields: ['completionDate'],
     timeFields: [],
-    mediaFields: ['photoUrl'],
+    media: [{ field: 'photoUrl', fileField: 'photoFileId', required: false }],
     linkFields: [],
     searchFields: ['fullName'],
     adminOrderBy: [
@@ -377,7 +385,7 @@ export const COLLECTIONS: CollectionConfig[] = [
     ordered: true,
     dateFields: [],
     timeFields: [],
-    mediaFields: ['photoUrl'],
+    media: [{ field: 'photoUrl', fileField: 'photoFileId', required: false }],
     linkFields: [],
     searchFields: ['fullName', 'role'],
     adminOrderBy: [
@@ -400,7 +408,13 @@ export const COLLECTIONS: CollectionConfig[] = [
     ordered: false,
     dateFields: ['publishedAt'],
     timeFields: [],
-    mediaFields: ['coverImageUrl'],
+    media: [
+      {
+        field: 'coverImageUrl',
+        fileField: 'coverImageFileId',
+        required: false,
+      },
+    ],
     linkFields: [],
     searchFields: ['title', 'excerpt', 'content'],
     adminOrderBy: [
@@ -439,7 +453,7 @@ export const COLLECTIONS: CollectionConfig[] = [
     ordered: true,
     dateFields: [],
     timeFields: [],
-    mediaFields: ['imageUrl'],
+    media: [{ field: 'imageUrl', fileField: 'imageFileId', required: true }],
     linkFields: [],
     searchFields: ['title', 'description'],
     adminOrderBy: [

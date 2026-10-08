@@ -10,11 +10,10 @@ const code = (fn: () => void) => {
 };
 
 describe('CMS media and link references', () => {
-  it('accepts bundled website assets and https URLs only', () => {
+  it('accepts bundled website assets only (uploads are attached by file id)', () => {
     for (const ok of [
       '/website/halaqa.svg',
       '/website/hero-1.webp',
-      'https://cdn.example.org/a/b.jpg',
       null,
       undefined,
     ])
@@ -32,6 +31,7 @@ describe('CMS media and link references', () => {
       'https://localhost/a.jpg',
       'ftp://example.org/a.jpg',
       'image.jpg',
+      'https://cdn.example.org/a/b.jpg',
     ])
       expect([bad, code(() => assertMediaRef('imageUrl', bad))]).toEqual([
         bad,
@@ -39,13 +39,13 @@ describe('CMS media and link references', () => {
       ]);
   });
 
-  it('reports uploads as unavailable until file storage exists', () => {
+  it('asks for a real upload instead of browser previews', () => {
     expect(code(() => assertMediaRef('imageUrl', 'blob:http://x/1'))).toBe(
-      'CMS_MEDIA_UNAVAILABLE',
+      'CMS_MEDIA_UPLOAD_REQUIRED',
     );
     expect(
       code(() => assertMediaRef('imageUrl', 'data:image/png;base64,AAAA')),
-    ).toBe('CMS_MEDIA_UNAVAILABLE');
+    ).toBe('CMS_MEDIA_UPLOAD_REQUIRED');
   });
 
   it('accepts internal routes or https links for buttons', () => {

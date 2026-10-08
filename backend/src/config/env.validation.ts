@@ -107,6 +107,48 @@ export class EnvironmentVariables {
   @Min(0)
   @Max(3600)
   ANNOUNCEMENT_SCHEDULER_INTERVAL_SECONDS: number = 30;
+
+  /**
+   * Shared file storage (Part 10.10). Only the private local filesystem
+   * driver exists for now (an object-storage driver can be added behind the
+   * same interface). The root is resolved against the working directory and
+   * must be outside any publicly served folder; in production it must be a
+   * persistent, backed-up volume.
+   */
+  @IsIn(['local'])
+  FILE_STORAGE_DRIVER = 'local' as const;
+
+  @IsString()
+  @MinLength(1)
+  FILE_STORAGE_ROOT: string = './storage/uploads';
+
+  /** Per-type upload limits, in bytes (defaults: 5 MB / 15 MB / 25 MB). */
+  @IsInt()
+  @Min(1024)
+  @Max(100 * 1024 * 1024)
+  FILE_MAX_IMAGE_BYTES: number = 5 * 1024 * 1024;
+
+  @IsInt()
+  @Min(1024)
+  @Max(200 * 1024 * 1024)
+  FILE_MAX_PDF_BYTES: number = 15 * 1024 * 1024;
+
+  @IsInt()
+  @Min(1024)
+  @Max(200 * 1024 * 1024)
+  FILE_MAX_AUDIO_BYTES: number = 25 * 1024 * 1024;
+
+  /** Unreferenced files younger than this are kept (uploads awaiting attachment). */
+  @IsInt()
+  @Min(1)
+  @Max(24 * 30)
+  FILE_UNREFERENCED_RETENTION_HOURS: number = 24;
+
+  /** How often the cleanup of unreferenced files runs (minutes); 0 = off. */
+  @IsInt()
+  @Min(0)
+  @Max(24 * 60)
+  FILE_CLEANUP_INTERVAL_MINUTES: number = 60;
 }
 
 export function validateEnv(config: Record<string, unknown>) {
