@@ -1,10 +1,8 @@
 import { Injectable } from '@nestjs/common';
 
-import { toDbDate } from '../common/dates.js';
 import { notFound } from '../common/errors.js';
 import { PageSizeService } from '../common/page-size.service.js';
 import { paginationMeta } from '../common/pagination.js';
-import { platformToday } from '../common/platform-clock.js';
 import { NotificationType, type Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type {
@@ -53,7 +51,8 @@ const notificationNotFound = () =>
  * publishing transaction (no N+1, no partial state): active accounts only,
  * deduplicated per account (a multi-role account matching several rules is
  * notified once), never the author, and the (user, item) unique keys make a
- * repeated publication a no-op. A notification grants no access: the linked
+ * repeated publication a no-op. Notifications exist only for content that is
+ * actually published (a scheduled announcement notifies when it publishes). A notification grants no access: the linked
  * content is authorized again on every read.
  */
 @Injectable()
@@ -131,17 +130,14 @@ export class NotificationsService {
       ON CONFLICT DO NOTHING`;
   }
 
-  /**
-   * The user's notifications, newest first. Notifications of a scheduled
-   * announcement appear from its publication day.
-   */
+  /** The user's notifications, newest first. */
   async list(
     userId: string,
     query: NotificationListQueryDto,
   ): Promise<NotificationListDto> {
     const pageSize = await this.pageSizes.resolve(query.pageSize);
     const where = {
-      ...(await this.visibleWhere(userId)),
+      userId,
       ...(query.unreadOnly ? { readAt: null } : {}),
     };
     const [total, rows] = await this.prisma.$transaction([
@@ -163,7 +159,7 @@ export class NotificationsService {
   async unreadCount(userId: string): Promise<UnreadCountDto> {
     return {
       count: await this.prisma.notification.count({
-        where: { ...(await this.visibleWhere(userId)), readAt: null },
+        where: { userId, readAt: null },
       }),
     };
   }
@@ -171,7 +167,7 @@ export class NotificationsService {
   /** Idempotent: an already-read notification keeps its first readAt. */
   async markRead(userId: string, id: string): Promise<NotificationDto> {
     // Another user's notification is indistinguishable from a missing one
-    const where = { id, ...(await this.visibleWhere(userId)) };
+    const where = { id, userId };
     await this.prisma.notification.updateMany({
       where: { ...where, readAt: null },
       data: { readAt: new Date() },
@@ -183,22 +179,9 @@ export class NotificationsService {
 
   async markAllRead(userId: string): Promise<ReadAllResultDto> {
     const { count } = await this.prisma.notification.updateMany({
-      where: { ...(await this.visibleWhere(userId)), readAt: null },
+      where: { userId, readAt: null },
       data: { readAt: new Date() },
     });
     return { updated: count };
-  }
-
-  private async visibleWhere(
-    userId: string,
-  ): Promise<Prisma.NotificationWhereInput> {
-    const today = toDbDate(await platformToday(this.prisma));
-    return {
-      userId,
-      OR: [
-        { announcementId: null },
-        { announcement: { publishedAt: { lte: today } } },
-      ],
-    };
   }
 }

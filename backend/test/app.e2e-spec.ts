@@ -5,6 +5,7 @@ import { App } from 'supertest/types.js';
 
 import { AppModule } from './../src/app.module.js';
 import { configureApp } from './../src/app.setup.js';
+import { PrismaService } from './../src/prisma/prisma.service.js';
 
 /** Boots the real app (real config + database from .env) with the production pipeline. */
 describe('API foundation (e2e)', () => {
@@ -28,6 +29,17 @@ describe('API foundation (e2e)', () => {
       .get('/api/health')
       .expect(200);
     expect(res.body).toMatchObject({ status: 'ok', database: 'up' });
+  });
+
+  it('database sessions run in UTC: Prisma instants agree with SQL now()', async () => {
+    const prisma = app.get(PrismaService);
+    const [row] = await prisma.$queryRaw<
+      { zone: string; now: Date; tunis: Date }[]
+    >`SELECT current_setting('TimeZone') AS zone, now() AS now,
+             ('2026-10-20T08:30'::timestamp AT TIME ZONE 'Africa/Tunis') AS tunis`;
+    expect(row.zone).toBe('UTC');
+    expect(Math.abs(row.now.getTime() - Date.now())).toBeLessThan(60_000);
+    expect(row.tunis.toISOString()).toBe('2026-10-20T07:30:00.000Z');
   });
 
   it('routes live under /api only', () => {

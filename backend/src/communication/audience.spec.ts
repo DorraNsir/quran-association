@@ -49,29 +49,29 @@ describe('communication audience rules', () => {
     });
   });
 
-  it('announcements are visible only while PUBLISHED and within their dates', () => {
+  it('announcements are visible only while PUBLISHED and not expired', () => {
     expect(announcementVisibleOn(day('2026-10-08'))).toEqual({
       status: 'PUBLISHED',
-      publishedAt: { lte: day('2026-10-08') },
       OR: [{ expiresAt: null }, { expiresAt: { gte: day('2026-10-08') } }],
     });
   });
 });
 
 describe('announcement state', () => {
-  const base = {
-    status: 'PUBLISHED' as const,
-    publishedAt: day('2026-10-05'),
-    expiresAt: day('2026-10-10') as Date | null,
-  };
   const state = (a: object, today = '2026-10-08') =>
-    stateOf({ ...base, ...a } as Parameters<typeof stateOf>[0], today);
+    stateOf(
+      {
+        status: 'PUBLISHED',
+        expiresAt: day('2026-10-10'),
+        ...a,
+      } as Parameters<typeof stateOf>[0],
+      today,
+    );
 
   it('derives DRAFT / SCHEDULED / ACTIVE / EXPIRED / ARCHIVED', () => {
     expect(state({ status: 'DRAFT' })).toBe('DRAFT');
+    expect(state({ status: 'SCHEDULED' })).toBe('SCHEDULED');
     expect(state({ status: 'ARCHIVED' })).toBe('ARCHIVED');
-    expect(state({}, '2026-10-04')).toBe('SCHEDULED');
-    expect(state({}, '2026-10-05')).toBe('ACTIVE');
     expect(state({}, '2026-10-10')).toBe('ACTIVE');
     expect(state({}, '2026-10-11')).toBe('EXPIRED');
     expect(state({ expiresAt: null }, '2030-01-01')).toBe('ACTIVE');

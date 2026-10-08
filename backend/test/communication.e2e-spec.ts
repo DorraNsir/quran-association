@@ -8,7 +8,9 @@ import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
 import { PasswordService } from '../src/auth/password.service.js';
-import { todayIn } from '../src/common/dates.js';
+import { todayIn, toLocalDateTime } from '../src/common/dates.js';
+import { AnnouncementScheduler } from '../src/communication/announcement-scheduler.service.js';
+import { AnnouncementsService } from '../src/communication/announcements.service.js';
 import { Role } from '../src/generated/prisma/enums.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 
@@ -26,6 +28,8 @@ const URL_OK = 'https://example.org/tajwid';
 describe('Resources, announcements & notifications (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
+  let scheduler: AnnouncementScheduler;
+  let announcements: AnnouncementsService;
   const token: Record<string, string> = {};
   const uid: Record<string, string> = {};
   const id: Record<string, string> = {};
@@ -144,13 +148,12 @@ describe('Resources, announcements & notifications (e2e)', () => {
     ...extra,
   });
 
-  /** Admin draft + publish; returns the announcement id. */
+  /** Admin announcement (published now unless `mode` says otherwise); returns its id. */
   async function adminAnnouncement(body: object) {
     const created = await admin()
       .post('announcements', { title: 'إعلان', content: 'نص', ...body })
       .expect(201);
-    await admin().post(`announcements/${created.body.id}/publish`).expect(200);
-    return created.body.id as string;
+    return created.body.announcement.id as string;
   }
 
   beforeAll(async () => {
@@ -161,6 +164,8 @@ describe('Resources, announcements & notifications (e2e)', () => {
     configureApp(app);
     await app.init();
     prisma = app.get(PrismaService);
+    scheduler = app.get(AnnouncementScheduler);
+    announcements = app.get(AnnouncementsService);
 
     await account('admin', [Role.ADMIN]);
     await account('adminTeacher', [Role.ADMIN, Role.TEACHER], {
@@ -669,37 +674,21 @@ describe('Resources, announcements & notifications (e2e)', () => {
   /* ================================================================ */
 
   describe('announcements', () => {
-    it('a draft is invisible and notifies nobody until it is published', async () => {
-      const draft = await admin()
+    it('publishes now by default, with notifications in the same request', async () => {
+      const res = await admin()
         .post('announcements', {
           title: 'اجتماع عام',
           content: 'اجتماع الأولياء يوم السبت',
           audience: 'EVERYONE',
         })
         .expect(201);
-      expect(draft.body).toMatchObject({
-        status: 'DRAFT',
-        state: 'DRAFT',
-        publishedAt: TODAY,
-        firstPublishedAt: null,
-      });
-      id.annEveryone = draft.body.id;
-      expect(
-        await prisma.notification.count({
-          where: { announcementId: id.annEveryone },
-        }),
-      ).toBe(0);
-      await student('stu1').get(`announcements/${id.annEveryone}`).expect(404);
-      await teacher('sup').get(`announcements/${id.annEveryone}`).expect(404);
-
-      const published = await admin()
-        .post(`announcements/${id.annEveryone}/publish`)
-        .expect(200);
-      expect(published.body.announcement).toMatchObject({
+      expect(res.body.announcement).toMatchObject({
         status: 'PUBLISHED',
         state: 'ACTIVE',
+        scheduledFor: null,
       });
-      expect(published.body.announcement.firstPublishedAt).toBeTruthy();
+      expect(res.body.announcement.publishedAt).toBeTruthy();
+      id.annEveryone = res.body.announcement.id;
       // Everyone active with an eligible profile/role — once each, author excluded
       expect(await recipients({ announcementId: id.annEveryone })).toEqual([
         'adminTeacher',
@@ -712,40 +701,52 @@ describe('Resources, announcements & notifications (e2e)', () => {
         'stu3',
         'sup',
       ]);
+      expect(res.body.notifiedCount).toBe(
+        await prisma.notification.count({
+          where: { announcementId: id.annEveryone },
+        }),
+      );
       await student('stu1').get(`announcements/${id.annEveryone}`).expect(200);
     });
 
-    it('a repeated or concurrent publish is refused and never notifies twice', async () => {
-      expect(
-        (
-          await admin()
-            .post(`announcements/${id.annEveryone}/publish`)
-            .expect(409)
-        ).body.code,
-      ).toBe('ANNOUNCEMENT_PUBLISH_CONFLICT');
+    it('a draft is invisible and notifies nobody until it is published', async () => {
       const draft = await admin()
         .post('announcements', {
           title: 'تزامن',
           content: 'نص',
           audience: 'STUDENTS',
+          mode: 'DRAFT',
         })
         .expect(201);
+      expect(draft.body).toMatchObject({
+        notifiedCount: 0,
+        announcement: { status: 'DRAFT', state: 'DRAFT', publishedAt: null },
+      });
+      const draftId = draft.body.announcement.id;
+      expect(
+        await prisma.notification.count({ where: { announcementId: draftId } }),
+      ).toBe(0);
+      await student('stu1').get(`announcements/${draftId}`).expect(404);
+      await teacher('sup').get(`announcements/${draftId}`).expect(404);
+      // A repeated or concurrent publish is refused and never notifies twice
       const results = await Promise.all(
-        [0, 1, 2].map(() =>
-          admin().post(`announcements/${draft.body.id}/publish`),
-        ),
+        [0, 1, 2].map(() => admin().post(`announcements/${draftId}/publish`)),
       );
       expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([
         200, 409, 409,
       ]);
-      expect(await recipients({ announcementId: draft.body.id })).toEqual([
+      expect(results.find((r) => r.status === 409)!.body.code).toBe(
+        'ANNOUNCEMENT_PUBLISH_CONFLICT',
+      );
+      expect(await recipients({ announcementId: draftId })).toEqual([
         'leaver',
         'multi',
         'stu1',
         'stu2',
         'stu3',
       ]);
-      id.annStudents = draft.body.id;
+      id.annStudents = draftId;
+      await admin().post(`announcements/${id.annEveryone}/publish`).expect(409);
     });
 
     it('targets roles, branches and classes; multi-role accounts are notified once', async () => {
@@ -790,7 +791,7 @@ describe('Resources, announcements & notifications (e2e)', () => {
       ]);
     });
 
-    it('validates audiences, targets and dates', async () => {
+    it('validates audiences, targets, dates and modes', async () => {
       const code = async (body: object) =>
         (
           await admin()
@@ -813,54 +814,41 @@ describe('Resources, announcements & notifications (e2e)', () => {
         }),
       ).toBe('ANNOUNCEMENT_TARGET_INVALID');
       expect(
-        await code({
-          audience: 'EVERYONE',
-          publishedAt: TODAY,
-          expiresAt: addDays(TODAY, -1),
-        }),
+        await code({ audience: 'EVERYONE', expiresAt: addDays(TODAY, -1) }),
       ).toBe('INVALID_DATE_RANGE');
-      await admin()
-        .post('announcements', {
-          title: 't',
-          content: '',
-          audience: 'EVERYONE',
-        })
-        .expect(400);
-      await admin()
-        .post('announcements', { title: 't', content: 'c', audience: 'ROLE' })
-        .expect(400);
-      await admin()
-        .post('announcements', {
-          title: 't',
-          content: 'c',
-          audience: 'EVERYONE',
-          status: 'PUBLISHED',
-        })
-        .expect(400);
-      await admin()
-        .post('announcements', {
-          title: 't',
-          content: 'c',
-          audience: 'EVERYONE',
-          publishedByUserId: uid.sup,
-        })
-        .expect(400);
+      for (const extra of [
+        { content: '' },
+        { audience: 'ROLE' },
+        { status: 'PUBLISHED' },
+        { publishedByUserId: uid.sup },
+        { publishedAt: TODAY },
+        { mode: 'LATER' },
+      ])
+        await admin()
+          .post('announcements', {
+            title: 't',
+            content: 'c',
+            audience: 'EVERYONE',
+            ...extra,
+          })
+          .expect(400);
     });
 
-    it('assigned teachers announce to their classes only (no global, no unrelated class)', async () => {
+    it('assigned teachers publish now (or draft) to their classes only', async () => {
       const draft = await teacher('sup')
         .post('announcements', {
           title: 'لا حصة غدًا',
           content: 'تُلغى حصة الغد',
           groupClassIds: [id.C1],
+          mode: 'DRAFT',
         })
         .expect(201);
-      expect(draft.body).toMatchObject({
+      expect(draft.body.announcement).toMatchObject({
         audience: 'SPECIFIC_GROUP_CLASSES',
         status: 'DRAFT',
         canManage: true,
       });
-      id.annSup = draft.body.id;
+      id.annSup = draft.body.announcement.id;
       // Another teacher of the class cannot see the draft, nor publish it
       await teacher('asst').get(`announcements/${id.annSup}`).expect(404);
       await teacher('asst')
@@ -875,6 +863,18 @@ describe('Resources, announcements & notifications (e2e)', () => {
         'multi',
         'stu1',
       ]);
+      // Default for teachers too: publish now
+      const now = await teacher('other')
+        .post('announcements', {
+          title: 'تذكير',
+          content: 'أحضروا المصاحف',
+          groupClassIds: [id.C3],
+        })
+        .expect(201);
+      expect(now.body.announcement.status).toBe('PUBLISHED');
+      expect(
+        await recipients({ announcementId: now.body.announcement.id }),
+      ).toEqual(['leaver', 'stu3']);
 
       await teacher('sup')
         .post('announcements', {
@@ -968,28 +968,33 @@ describe('Resources, announcements & notifications (e2e)', () => {
       for (const body of [
         { audience: 'EVERYONE', groupClassIds: [] },
         { groupClassIds: [id.C2] },
-        { publishedAt: addDays(TODAY, 3) },
       ])
         expect(
           (await admin().patch(`announcements/${id.annC1}`, body).expect(409))
             .body.code,
         ).toBe('ANNOUNCEMENT_PUBLISHED_LOCKED');
+      await admin()
+        .patch(`announcements/${id.annC1}`, { publishedAt: TODAY })
+        .expect(400);
       await expect(
         prisma.announcement.update({
           where: { id: id.annC1 },
           data: { audience: 'EVERYONE' },
         }),
       ).rejects.toThrow(/announcements_published_locked/);
+      await expect(
+        prisma.announcement.update({
+          where: { id: id.annC1 },
+          data: { status: 'DRAFT', publishedAt: null },
+        }),
+      ).rejects.toThrow(/announcements_published_locked/);
       // A draft is fully editable (retargeting included)
-      const draft = await admin()
-        .post('announcements', {
-          title: 'مسودة',
-          content: 'نص',
-          audience: 'EVERYONE',
-        })
-        .expect(201);
+      const draftId = await adminAnnouncement({
+        audience: 'EVERYONE',
+        mode: 'DRAFT',
+      });
       const retargeted = await admin()
-        .patch(`announcements/${draft.body.id}`, {
+        .patch(`announcements/${draftId}`, {
           audience: 'SPECIFIC_BRANCHES',
           branchIds: [id.B2],
         })
@@ -997,7 +1002,7 @@ describe('Resources, announcements & notifications (e2e)', () => {
       expect(retargeted.body.branches.map((b: { id: string }) => b.id)).toEqual(
         [id.B2],
       );
-      await admin().delete(`announcements/${draft.body.id}`).expect(204);
+      await admin().delete(`announcements/${draftId}`).expect(204);
     });
 
     it('archiving hides the announcement; its notification no longer opens it', async () => {
@@ -1039,69 +1044,42 @@ describe('Resources, announcements & notifications (e2e)', () => {
       await admin().post(`announcements/${id.annStudents}/publish`).expect(409);
     });
 
-    it('a scheduled announcement (and its notification) appears on its publication day', async () => {
-      const before = await notif('stu2').count();
-      const id2 = await adminAnnouncement({
-        audience: 'STUDENTS',
-        publishedAt: addDays(TODAY, 2),
+    it('an expired draft cannot be published', async () => {
+      const draftId = await adminAnnouncement({
+        audience: 'EVERYONE',
+        mode: 'DRAFT',
+        expiresAt: TODAY,
       });
-      expect((await admin().get(`announcements/${id2}`)).body.state).toBe(
-        'SCHEDULED',
-      );
+      await prisma.announcement.update({
+        where: { id: draftId },
+        data: { expiresAt: new Date(`${addDays(TODAY, -1)}T00:00:00Z`) },
+      });
       expect(
-        await prisma.notification.count({ where: { announcementId: id2 } }),
-      ).toBeGreaterThan(0);
-      expect(await notif('stu2').count()).toBe(before);
-      await student('stu2').get(`announcements/${id2}`).expect(404);
-      const hidden = (
-        await notif('stu2').list({ pageSize: 100 })
-      ).body.data.map((n: { entityId: string }) => n.entityId);
-      expect(hidden).not.toContain(id2);
-      // An already-expired draft cannot be published
-      const expired = await admin()
-        .post('announcements', {
-          title: 'قديم',
-          content: 'نص',
-          audience: 'EVERYONE',
-          publishedAt: addDays(TODAY, -5),
-          expiresAt: addDays(TODAY, -1),
-        })
-        .expect(201);
-      expect(
-        (
-          await admin()
-            .post(`announcements/${expired.body.id}/publish`)
-            .expect(409)
-        ).body.code,
+        (await admin().post(`announcements/${draftId}/publish`).expect(409))
+          .body.code,
       ).toBe('ANNOUNCEMENT_EXPIRED');
+      await admin().delete(`announcements/${draftId}`).expect(204);
     });
 
     it('publication is atomic: an invalid target publishes nothing and notifies nobody', async () => {
-      const draft = await admin()
-        .post('announcements', {
-          title: 'إلى حلقة ستُغلق',
-          content: 'نص',
-          audience: 'SPECIFIC_GROUP_CLASSES',
-          groupClassIds: [id.C4],
-        })
-        .expect(201);
+      const draftId = await adminAnnouncement({
+        title: 'إلى حلقة ستُغلق',
+        audience: 'SPECIFIC_GROUP_CLASSES',
+        groupClassIds: [id.C4],
+        mode: 'DRAFT',
+      });
       await admin()
         .patch(`group-classes/${id.C4}/status`, { status: 'INACTIVE' })
         .expect(200);
       expect(
-        (
-          await admin()
-            .post(`announcements/${draft.body.id}/publish`)
-            .expect(400)
-        ).body.code,
+        (await admin().post(`announcements/${draftId}/publish`).expect(400))
+          .body.code,
       ).toBe('ANNOUNCEMENT_TARGET_INVALID');
+      expect((await admin().get(`announcements/${draftId}`)).body.status).toBe(
+        'DRAFT',
+      );
       expect(
-        (await admin().get(`announcements/${draft.body.id}`)).body.status,
-      ).toBe('DRAFT');
-      expect(
-        await prisma.notification.count({
-          where: { announcementId: draft.body.id },
-        }),
+        await prisma.notification.count({ where: { announcementId: draftId } }),
       ).toBe(0);
     });
 
@@ -1111,8 +1089,10 @@ describe('Resources, announcements & notifications (e2e)', () => {
           title: 'من المساعد',
           content: 'نص',
           groupClassIds: [id.C1],
+          mode: 'DRAFT',
         })
         .expect(201);
+      const draftId = draft.body.announcement.id;
       await admin()
         .patch(`group-classes/${id.C1}`, {
           assistantTeacherIds: [id['teacher:multi']],
@@ -1121,17 +1101,15 @@ describe('Resources, announcements & notifications (e2e)', () => {
       expect(
         (
           await teacher('asst')
-            .post(`announcements/${draft.body.id}/publish`)
+            .post(`announcements/${draftId}/publish`)
             .expect(403)
         ).body.code,
       ).toBe('ANNOUNCEMENT_CLASS_ACCESS_DENIED');
       await teacher('asst').get(`announcements/${id.annC1}`).expect(404);
       await teacher('asst').get(`announcements/${id.annSup}`).expect(404);
       // Its own draft stays visible and deletable (authorship preserved)
-      await teacher('asst').get(`announcements/${draft.body.id}`).expect(200);
-      await teacher('asst')
-        .delete(`announcements/${draft.body.id}`)
-        .expect(204);
+      await teacher('asst').get(`announcements/${draftId}`).expect(200);
+      await teacher('asst').delete(`announcements/${draftId}`).expect(204);
       await admin()
         .patch(`group-classes/${id.C1}`, {
           assistantTeacherIds: [id['teacher:asst'], id['teacher:multi']],
@@ -1165,16 +1143,387 @@ describe('Resources, announcements & notifications (e2e)', () => {
         id.annSup,
       );
       expect(
-        (await list({ from: addDays(TODAY, 1) })).body.data.every(
-          (a: { publishedAt: string }) => a.publishedAt > TODAY,
+        (await list({ from: TODAY, to: TODAY })).body.data.map(
+          (a: { id: string }) => a.id,
         ),
-      ).toBe(true);
+      ).toContain(id.annSup);
+      expect((await list({ from: addDays(TODAY, 1) })).body.meta.total).toBe(0);
       expect(
         (
           await teacher('sup').get('announcements', { mine: true })
         ).body.data.map((a: { id: string }) => a.id),
       ).toEqual([id.annSup]);
       await admin().get(`announcements/${randomUUID()}`).expect(404);
+    });
+  });
+
+  /* ================================================================ */
+  /* Scheduled publication                                            */
+  /* ================================================================ */
+
+  describe('scheduled publication', () => {
+    /** Africa/Tunis wall-clock time `minutes` from now. */
+    const inTunis = (minutes: number) =>
+      toLocalDateTime(new Date(Date.now() + minutes * 60_000), 'Africa/Tunis');
+    const schedule = (body: object) =>
+      admin()
+        .post('announcements', {
+          title: 'مجدول',
+          content: 'نص',
+          mode: 'SCHEDULE',
+          ...body,
+        })
+        .expect(201)
+        .then((r) => r.body.announcement.id as string);
+    /** Simulates the passing of time: the schedule is now due. */
+    const makeDue = (annId: string) =>
+      prisma.announcement.update({
+        where: { id: annId },
+        data: { scheduledFor: new Date(Date.now() - 1000) },
+      });
+    const statusOf = async (annId: string) =>
+      (await prisma.announcement.findUniqueOrThrow({ where: { id: annId } }))
+        .status;
+
+    it('stores the Africa/Tunis time as an instant and notifies nobody yet', async () => {
+      const day = addDays(TODAY, 10);
+      const res = await admin()
+        .post('announcements', {
+          title: 'اجتماع مجدول',
+          content: 'نص',
+          audience: 'EVERYONE',
+          mode: 'SCHEDULE',
+          scheduledAt: `${day}T08:30`,
+        })
+        .expect(201);
+      expect(res.body).toMatchObject({
+        notifiedCount: 0,
+        announcement: {
+          status: 'SCHEDULED',
+          state: 'SCHEDULED',
+          publishedAt: null,
+          // Tunis is UTC+1 (no DST): 08:30 local = 07:30Z
+          scheduledFor: `${day}T07:30:00.000Z`,
+          scheduledForLocal: `${day}T08:30`,
+        },
+      });
+      const annId = res.body.announcement.id;
+      expect(
+        await prisma.notification.count({ where: { announcementId: annId } }),
+      ).toBe(0);
+      await student('stu1').get(`announcements/${annId}`).expect(404);
+      await teacher('sup').get(`announcements/${annId}`).expect(404);
+      expect(
+        (
+          await admin().get('announcements', { status: 'SCHEDULED' })
+        ).body.data.map((a: { id: string }) => a.id),
+      ).toContain(annId);
+      // Not due: the scheduler leaves it alone
+      expect(await scheduler.tick()).not.toContain(annId);
+      expect(await statusOf(annId)).toBe('SCHEDULED');
+      id.annFuture = annId;
+    });
+
+    it('validates the schedule (future, Tunis wall clock, horizon, expiry, admin only)', async () => {
+      const code = async (body: object) =>
+        (
+          await admin()
+            .post('announcements', {
+              title: 't',
+              content: 'c',
+              audience: 'EVERYONE',
+              ...body,
+            })
+            .expect(400)
+        ).body.code;
+      expect(await code({ mode: 'SCHEDULE' })).toBe('SCHEDULED_AT_INVALID');
+      expect(await code({ scheduledAt: inTunis(60) })).toBe(
+        'SCHEDULED_AT_INVALID',
+      );
+      expect(await code({ mode: 'SCHEDULE', scheduledAt: inTunis(-5) })).toBe(
+        'SCHEDULE_IN_PAST',
+      );
+      expect(
+        await code({
+          mode: 'SCHEDULE',
+          scheduledAt: `${addDays(TODAY, 400)}T10:00`,
+        }),
+      ).toBe('SCHEDULE_TOO_FAR');
+      expect(
+        await code({
+          mode: 'SCHEDULE',
+          scheduledAt: `${addDays(TODAY, 5)}T10:00`,
+          expiresAt: addDays(TODAY, 4),
+        }),
+      ).toBe('INVALID_DATE_RANGE');
+      for (const scheduledAt of [
+        `${addDays(TODAY, 5)}T10:00Z`,
+        `${addDays(TODAY, 5)}T10:00+01:00`,
+        `${addDays(TODAY, 5)} 10:00`,
+        `${addDays(TODAY, 5)}T25:00`,
+      ])
+        await admin()
+          .post('announcements', {
+            title: 't',
+            content: 'c',
+            audience: 'EVERYONE',
+            mode: 'SCHEDULE',
+            scheduledAt,
+          })
+          .expect(400);
+      // Scheduling is admin-only for now
+      await teacher('sup')
+        .post('announcements', {
+          title: 't',
+          content: 'c',
+          groupClassIds: [id.C1],
+          mode: 'SCHEDULE',
+          scheduledAt: inTunis(60),
+        })
+        .expect(400);
+      await teacher('sup')
+        .post(`announcements/${id.annSup}/schedule`, {
+          scheduledAt: inTunis(60),
+        })
+        .expect(404);
+    });
+
+    it('publishes automatically when due, resolving recipients at publication time', async () => {
+      const annId = await schedule({
+        audience: 'SPECIFIC_GROUP_CLASSES',
+        groupClassIds: [id.C3],
+        scheduledAt: inTunis(120),
+      });
+      // Joins the class AFTER scheduling, BEFORE publication → notified
+      await account('late', [Role.STUDENT]);
+      await enroll('late', 'C3');
+      await makeDue(annId);
+      expect(await scheduler.tick()).toEqual([annId]);
+      const published = await prisma.announcement.findUniqueOrThrow({
+        where: { id: annId },
+      });
+      expect(published.status).toBe('PUBLISHED');
+      expect(published.publishedAt!.getTime()).toBeGreaterThanOrEqual(
+        published.scheduledFor!.getTime(),
+      );
+      expect(await recipients({ announcementId: annId })).toEqual([
+        'late',
+        'leaver',
+        'other',
+        'stu3',
+      ]);
+      await student('late').get(`announcements/${annId}`).expect(200);
+      expect(
+        (await notif('late').list()).body.data.map(
+          (n: { entityId: string }) => n.entityId,
+        ),
+      ).toContain(annId);
+      // A later run publishes nothing again and notifies nobody twice
+      const count = await prisma.notification.count({
+        where: { announcementId: annId },
+      });
+      expect(await scheduler.tick()).toEqual([]);
+      expect(
+        await prisma.notification.count({ where: { announcementId: annId } }),
+      ).toBe(count);
+    });
+
+    it('the background timer publishes due announcements on its own', async () => {
+      const annId = await schedule({
+        audience: 'TEACHERS',
+        scheduledAt: inTunis(120),
+      });
+      await makeDue(annId);
+      scheduler.start(50);
+      try {
+        for (let i = 0; i < 60 && (await statusOf(annId)) !== 'PUBLISHED'; i++)
+          await new Promise((resolve) => setTimeout(resolve, 50));
+      } finally {
+        scheduler.stop();
+      }
+      expect(await statusOf(annId)).toBe('PUBLISHED');
+      expect(await recipients({ announcementId: annId })).toEqual([
+        'adminTeacher',
+        'asst',
+        'multi',
+        'other',
+        'sup',
+      ]);
+    });
+
+    it('concurrent scheduler runs publish each due announcement exactly once', async () => {
+      const ids = [
+        await schedule({ audience: 'STUDENTS', scheduledAt: inTunis(60) }),
+        await schedule({ audience: 'EVERYONE', scheduledAt: inTunis(61) }),
+        await schedule({
+          audience: 'SPECIFIC_BRANCHES',
+          branchIds: [id.B1],
+          scheduledAt: inTunis(62),
+        }),
+      ];
+      for (const annId of ids) await makeDue(annId);
+      // Several "instances" at once: direct service calls + timer ticks
+      const runs = await Promise.all([
+        announcements.publishDue(),
+        announcements.publishDue(),
+        announcements.publishDue(),
+        scheduler.tick(),
+      ]);
+      const published = runs.flat();
+      expect(published.filter((p) => ids.includes(p)).sort()).toEqual(
+        [...ids].sort(),
+      );
+      for (const annId of ids) {
+        expect(await statusOf(annId)).toBe('PUBLISHED');
+        const rows = await prisma.notification.findMany({
+          where: { announcementId: annId },
+          select: { userId: true },
+        });
+        expect(new Set(rows.map((r) => r.userId)).size).toBe(rows.length);
+        expect(rows.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('cancels a pending schedule (back to draft, never published)', async () => {
+      const annId = await schedule({
+        audience: 'EVERYONE',
+        scheduledAt: inTunis(90),
+      });
+      const res = await admin()
+        .post(`announcements/${annId}/cancel-schedule`)
+        .expect(200);
+      expect(res.body).toMatchObject({
+        status: 'DRAFT',
+        scheduledFor: null,
+        scheduledForLocal: null,
+      });
+      expect(await scheduler.tick()).not.toContain(annId);
+      expect(await statusOf(annId)).toBe('DRAFT');
+      expect(
+        await prisma.notification.count({ where: { announcementId: annId } }),
+      ).toBe(0);
+      expect(
+        (
+          await admin()
+            .post(`announcements/${annId}/cancel-schedule`)
+            .expect(409)
+        ).body.code,
+      ).toBe('ANNOUNCEMENT_NOT_SCHEDULED');
+      await admin()
+        .post(`announcements/${id.annEveryone}/cancel-schedule`)
+        .expect(409);
+      await teacher('sup')
+        .post(`announcements/${id.annSup}/cancel-schedule`)
+        .expect(404);
+      await admin().delete(`announcements/${annId}`).expect(204);
+    });
+
+    it('reschedules a pending announcement, schedules a draft, and edits a scheduled one', async () => {
+      const day = addDays(TODAY, 20);
+      const res = await admin()
+        .post(`announcements/${id.annFuture}/schedule`, {
+          scheduledAt: `${day}T18:15`,
+        })
+        .expect(200);
+      expect(res.body).toMatchObject({
+        status: 'SCHEDULED',
+        scheduledFor: `${day}T17:15:00.000Z`,
+        scheduledForLocal: `${day}T18:15`,
+      });
+      // Content and audience stay editable until publication; still scheduled
+      const edited = await admin()
+        .patch(`announcements/${id.annFuture}`, {
+          content: 'نص معدّل',
+          audience: 'SPECIFIC_BRANCHES',
+          branchIds: [id.B2],
+        })
+        .expect(200);
+      expect(edited.body).toMatchObject({
+        status: 'SCHEDULED',
+        content: 'نص معدّل',
+        scheduledForLocal: `${day}T18:15`,
+      });
+      await admin()
+        .patch(`announcements/${id.annFuture}`, {
+          expiresAt: addDays(TODAY, 19),
+        })
+        .expect(400);
+      await admin()
+        .post(`announcements/${id.annFuture}/schedule`, {
+          scheduledAt: inTunis(-1),
+        })
+        .expect(400);
+      await admin()
+        .post(`announcements/${id.annFuture}/schedule`, {})
+        .expect(400);
+      // A draft can be scheduled later
+      const draftId = await adminAnnouncement({
+        audience: 'TEACHERS',
+        mode: 'DRAFT',
+      });
+      expect(
+        (
+          await admin()
+            .post(`announcements/${draftId}/schedule`, {
+              scheduledAt: inTunis(30),
+            })
+            .expect(200)
+        ).body.status,
+      ).toBe('SCHEDULED');
+      await admin().delete(`announcements/${draftId}`).expect(204);
+      // A published one cannot be (re)scheduled
+      expect(
+        (
+          await admin()
+            .post(`announcements/${id.annEveryone}/schedule`, {
+              scheduledAt: inTunis(60),
+            })
+            .expect(409)
+        ).body.code,
+      ).toBe('ANNOUNCEMENT_NOT_SCHEDULABLE');
+    });
+
+    it('"publish now" overrides a pending schedule; the scheduler then skips it', async () => {
+      const res = await admin()
+        .post(`announcements/${id.annFuture}/publish`)
+        .expect(200);
+      expect(res.body.announcement).toMatchObject({
+        status: 'PUBLISHED',
+        scheduledFor: null,
+      });
+      // Recipients follow the audience edited while it was scheduled (branch B2)
+      expect(await recipients({ announcementId: id.annFuture })).toEqual([
+        'late',
+        'leaver',
+        'other',
+        'stu3',
+      ]);
+      expect(await scheduler.tick()).not.toContain(id.annFuture);
+    });
+
+    it('a cancel racing the scheduler ends in exactly one consistent outcome', async () => {
+      for (let round = 0; round < 3; round++) {
+        const annId = await schedule({
+          audience: 'STUDENTS',
+          scheduledAt: inTunis(60),
+        });
+        await makeDue(annId);
+        const [cancel] = await Promise.all([
+          admin().post(`announcements/${annId}/cancel-schedule`),
+          announcements.publishDue(),
+        ]);
+        const notified = await prisma.notification.count({
+          where: { announcementId: annId },
+        });
+        if (cancel.status === 200) {
+          expect(await statusOf(annId)).toBe('DRAFT');
+          expect(notified).toBe(0);
+        } else {
+          expect(cancel.body.code).toBe('ANNOUNCEMENT_NOT_SCHEDULED');
+          expect(await statusOf(annId)).toBe('PUBLISHED');
+          expect(notified).toBeGreaterThan(0);
+        }
+      }
     });
   });
 

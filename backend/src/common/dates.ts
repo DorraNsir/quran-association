@@ -54,3 +54,56 @@ export function IsDateOnly(
     Validate(RealCalendarDate),
   );
 }
+
+/**
+ * A wall-clock time "YYYY-MM-DDTHH:mm" with NO offset: it is read in the
+ * platform timezone (Africa/Tunis) and converted to an instant explicitly
+ * (platform-clock.ts → localDateTimeToInstant).
+ */
+export function IsLocalDateTime(
+  options: { optional?: boolean; description?: string } = {},
+) {
+  return applyDecorators(
+    (options.optional ? ApiPropertyOptional : ApiProperty)({
+      type: String,
+      example: '2026-10-20T08:30',
+      description: options.description,
+    }),
+    ...(options.optional ? [IsOptional()] : []),
+    Matches(/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/, {
+      message: 'وقت غير صالح (الصيغة YYYY-MM-DDTHH:mm بتوقيت تونس)',
+    }),
+    Validate(RealLocalDateTime),
+  );
+}
+
+@ValidatorConstraint({ name: 'realLocalDateTime' })
+class RealLocalDateTime implements ValidatorConstraintInterface {
+  validate(value: unknown) {
+    return (
+      typeof value === 'string' &&
+      new RealCalendarDate().validate(value.slice(0, 10))
+    );
+  }
+  defaultMessage() {
+    return 'تاريخ غير صالح (الصيغة YYYY-MM-DDTHH:mm)';
+  }
+}
+
+/** An instant as wall-clock "YYYY-MM-DDTHH:mm" in an IANA timezone. */
+export function toLocalDateTime(instant: Date, timeZone: string) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(instant)
+      .map((p) => [p.type, p.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}

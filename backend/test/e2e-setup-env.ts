@@ -5,3 +5,5 @@ import { resolveTestDatabase } from './e2e-database.js';
 const db = resolveTestDatabase();
 process.env.DATABASE_URL = db.url;
 process.env.NODE_ENV = 'test';
+// Scheduled announcements are published by the tests themselves (no background timer)
+process.env.ANNOUNCEMENT_SCHEDULER_INTERVAL_SECONDS = '0';

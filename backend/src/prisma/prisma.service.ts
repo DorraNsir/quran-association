@@ -10,7 +10,16 @@ import { PrismaClient } from '../generated/prisma/client.js';
  * mandatory and receives the validated DATABASE_URL. Connections are opened
  * lazily, so the API still starts (and /api/health reports it) when the
  * database is temporarily unreachable.
+ *
+ * Sessions run in UTC: the pg adapter exchanges TIMESTAMPTZ values without
+ * an offset, so a server/database TimeZone other than UTC (e.g. Africa/Tunis)
+ * would shift every instant written by Prisma by that offset relative to
+ * SQL now() and AT TIME ZONE conversions. Calendar logic never relies on the
+ * session zone: it uses the platform timezone explicitly.
  */
+/** libpq startup options applied to every pooled connection. */
+export const SESSION_OPTIONS = '-c TimeZone=UTC';
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
@@ -19,6 +28,7 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
     super({
       adapter: new PrismaPg({
         connectionString: config.get('DATABASE_URL', { infer: true }),
+        options: SESSION_OPTIONS,
       }),
     });
   }

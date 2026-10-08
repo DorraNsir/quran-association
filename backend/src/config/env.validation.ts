@@ -98,6 +98,15 @@ export class EnvironmentVariables {
   @Min(1)
   @Max(86400)
   REGISTRATION_RATE_LIMIT_WINDOW_SECONDS: number = 900;
+
+  /**
+   * How often (seconds) due SCHEDULED announcements are published; 0 turns
+   * the in-process scheduler off (E2E tests drive it explicitly).
+   */
+  @IsInt()
+  @Min(0)
+  @Max(3600)
+  ANNOUNCEMENT_SCHEDULER_INTERVAL_SECONDS: number = 30;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

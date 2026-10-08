@@ -1,9 +1,15 @@
 import { applyDecorators } from '@nestjs/common';
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import {
+  ApiProperty,
+  ApiPropertyOptional,
+  OmitType,
+  PartialType,
+} from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -12,13 +18,23 @@ import {
 } from 'class-validator';
 
 import { SearchQueryDto, trim } from '../academic/shared.dto.js';
-import { IsDateOnly } from '../common/dates.js';
+import { IsDateOnly, IsLocalDateTime } from '../common/dates.js';
 import { PaginationMetaDto } from '../common/pagination.js';
 import {
   AnnouncementAudience,
   AnnouncementStatus,
 } from '../generated/prisma/enums.js';
 import { ClassTargetDto, IdList, Title } from './resource.dto.js';
+
+/**
+ * How a new announcement is published:
+ *  - PUBLISH_NOW (default): published and notified immediately.
+ *  - SCHEDULE (admins): publishes itself at `scheduledAt` (Africa/Tunis time);
+ *    recipients are resolved and notified at that moment.
+ *  - DRAFT: saved only, nothing visible, nobody notified.
+ */
+export const PUBLICATION_MODES = ['PUBLISH_NOW', 'SCHEDULE', 'DRAFT'] as const;
+export type PublicationMode = (typeof PUBLICATION_MODES)[number];
 
 const Content = () =>
   applyDecorators(
@@ -29,35 +45,42 @@ const Content = () =>
     MaxLength(10000),
   );
 
-const Dates = {
-  publishedAt: () =>
-    IsDateOnly({
-      optional: true,
-      description:
-        'Visible from this day once published (default: today; a later day = scheduled)',
-    }),
-  expiresAt: () =>
-    IsDateOnly({
-      optional: true,
-      description: 'Hidden after this day (≥ publishedAt); null clears it',
-    }),
-};
+const ExpiresAt = () =>
+  IsDateOnly({
+    optional: true,
+    description:
+      'Last day it is shown (inclusive, Africa/Tunis calendar); null clears it',
+  });
 
-/** Teacher form: always SPECIFIC_GROUP_CLASSES, toward current classes. Created as DRAFT. */
+const ScheduledAt = (optional: boolean) =>
+  IsLocalDateTime({
+    optional,
+    description:
+      'Africa/Tunis wall-clock time "YYYY-MM-DDTHH:mm" (no offset), in the future; converted to an instant by the server',
+  });
+
+/** Teacher form: always SPECIFIC_GROUP_CLASSES, toward current classes; no scheduling. */
 export class TeacherAnnouncementDto {
   @Title() title!: string;
   @Content() content!: string;
   @IdList('Classes the teacher is currently assigned to', true)
   groupClassIds!: string[];
-  @Dates.publishedAt() publishedAt?: string;
-  @Dates.expiresAt() expiresAt?: string | null;
+  @ExpiresAt() expiresAt?: string | null;
+
+  @ApiPropertyOptional({
+    enum: ['PUBLISH_NOW', 'DRAFT'],
+    default: 'PUBLISH_NOW',
+    description: 'Scheduling is admin-only for now',
+  })
+  @IsOptional()
+  @IsIn(['PUBLISH_NOW', 'DRAFT'])
+  mode?: Exclude<PublicationMode, 'SCHEDULE'>;
 }
 
 export class UpdateTeacherAnnouncementDto extends PartialType(
-  TeacherAnnouncementDto,
+  OmitType(TeacherAnnouncementDto, ['mode'] as const),
 ) {}
 
-/** Admin form. Created as DRAFT; publication is an explicit action. */
 export class AdminAnnouncementDto {
   @Title() title!: string;
   @Content() content!: string;
@@ -71,13 +94,29 @@ export class AdminAnnouncementDto {
   audience!: AnnouncementAudience;
   @IdList('SPECIFIC_GROUP_CLASSES only') groupClassIds?: string[];
   @IdList('SPECIFIC_BRANCHES only') branchIds?: string[];
-  @Dates.publishedAt() publishedAt?: string;
-  @Dates.expiresAt() expiresAt?: string | null;
+  @ExpiresAt() expiresAt?: string | null;
+
+  @ApiPropertyOptional({
+    enum: PUBLICATION_MODES,
+    default: 'PUBLISH_NOW',
+    description:
+      'PUBLISH_NOW (default) · SCHEDULE (requires scheduledAt) · DRAFT',
+  })
+  @IsOptional()
+  @IsIn(PUBLICATION_MODES)
+  mode?: PublicationMode;
+
+  @ScheduledAt(true) scheduledAt?: string;
 }
 
+/** Content and audience of a DRAFT or SCHEDULED announcement (the schedule itself: /schedule). */
 export class UpdateAdminAnnouncementDto extends PartialType(
-  AdminAnnouncementDto,
+  OmitType(AdminAnnouncementDto, ['mode', 'scheduledAt'] as const),
 ) {}
+
+export class ScheduleAnnouncementDto {
+  @ScheduledAt(false) scheduledAt!: string;
+}
 
 export class AnnouncementListQueryDto extends SearchQueryDto {
   @ApiPropertyOptional({
@@ -102,9 +141,15 @@ export class AnnouncementListQueryDto extends SearchQueryDto {
   @IsOptional()
   @IsUUID()
   branchId?: string;
-  @IsDateOnly({ optional: true, description: 'publishedAt on/after' })
+  @IsDateOnly({
+    optional: true,
+    description: 'Published on/after this day (Africa/Tunis)',
+  })
   from?: string;
-  @IsDateOnly({ optional: true, description: 'publishedAt on/before' })
+  @IsDateOnly({
+    optional: true,
+    description: 'Published on/before this day (Africa/Tunis)',
+  })
   to?: string;
   @ApiPropertyOptional({ description: 'Only announcements I wrote' })
   @IsOptional()
@@ -148,11 +193,27 @@ export class AnnouncementDto {
     description: 'Derived for today: only ACTIVE reaches readers',
   })
   state!: AnnouncementState;
-  @ApiProperty({ format: 'date' }) publishedAt!: string;
+  @ApiPropertyOptional({
+    type: Date,
+    nullable: true,
+    description: 'Pending (SCHEDULED) or past scheduled publication instant',
+  })
+  scheduledFor!: Date | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '2026-10-20T08:30',
+    description: 'scheduledFor as Africa/Tunis wall-clock time',
+  })
+  scheduledForLocal!: string | null;
+  @ApiPropertyOptional({
+    type: Date,
+    nullable: true,
+    description: 'Actual publication instant (null before publication)',
+  })
+  publishedAt!: Date | null;
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
   expiresAt!: string | null;
-  @ApiPropertyOptional({ type: Date, nullable: true })
-  firstPublishedAt!: Date | null;
   @ApiPropertyOptional({ type: Date, nullable: true }) archivedAt!: Date | null;
   @ApiProperty({ type: ClassTargetDto, isArray: true })
   groupClasses!: ClassTargetDto[];
@@ -174,6 +235,9 @@ export class AnnouncementListDto {
 
 export class PublishResultDto {
   @ApiProperty({ type: AnnouncementDto }) announcement!: AnnouncementDto;
-  @ApiProperty({ description: 'Accounts notified by this publication' })
+  @ApiProperty({
+    description:
+      'Accounts notified by this request (0 for a draft or a scheduled announcement: they are notified when it publishes)',
+  })
   notifiedCount!: number;
 }

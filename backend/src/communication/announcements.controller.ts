@@ -34,6 +34,7 @@ import {
   AnnouncementListDto,
   AnnouncementListQueryDto,
   PublishResultDto,
+  ScheduleAnnouncementDto,
   TeacherAnnouncementDto,
   UpdateAdminAnnouncementDto,
   UpdateTeacherAnnouncementDto,
@@ -41,13 +42,17 @@ import {
 import { AnnouncementsService } from './announcements.service.js';
 
 const WRITE_ERRORS =
-  'Validation, ANNOUNCEMENT_TARGET_INVALID, INVALID_DATE_RANGE';
+  'Validation, ANNOUNCEMENT_TARGET_INVALID, INVALID_DATE_RANGE, SCHEDULED_AT_INVALID, SCHEDULE_IN_PAST, SCHEDULE_TOO_FAR';
 const UPDATE_CONFLICTS =
-  'ANNOUNCEMENT_ARCHIVED, ANNOUNCEMENT_PUBLISHED_LOCKED (after publication only title, content and expiresAt change)';
+  'ANNOUNCEMENT_ARCHIVED, ANNOUNCEMENT_PUBLISHED_LOCKED (after publication only title, content and expiresAt change; DRAFT and SCHEDULED are fully editable)';
 const PUBLISH_DOC = {
-  summary: 'Publish a DRAFT (explicit action) and notify its audience once',
+  summary: 'Publish NOW a DRAFT (admins: also a SCHEDULED one, ahead of time)',
   description:
-    'Atomic: status PUBLISHED + one notification per reached active account (deduplicated, author excluded). Repeated/concurrent publish → 409, nobody notified twice. A future publishedAt = scheduled: readers (and the notification) see it from that day.',
+    'Atomic: status PUBLISHED, actual instant, and one notification per account reached now (deduplicated, author excluded). Repeated/concurrent publish → 409 ANNOUNCEMENT_PUBLISH_CONFLICT, nobody notified twice.',
+};
+const CREATE_DOC = {
+  description:
+    'mode PUBLISH_NOW (default): published and notified immediately (notifiedCount). DRAFT: saved only. SCHEDULE (admins): scheduledAt = Africa/Tunis wall-clock "YYYY-MM-DDTHH:mm"; it publishes itself at that time and its recipients are resolved and notified then.',
 };
 
 @ApiTags('admin / announcements')
@@ -85,14 +90,15 @@ export class AdminAnnouncementsController {
   @Post()
   @ApiOperation({
     summary:
-      'Create a DRAFT (EVERYONE, TEACHERS, STUDENTS, classes or branches)',
+      'Create: publish now (default), schedule, or save as draft (EVERYONE, TEACHERS, STUDENTS, classes or branches)',
+    ...CREATE_DOC,
   })
-  @ApiCreatedResponse({ type: AnnouncementDto })
+  @ApiCreatedResponse({ type: PublishResultDto })
   @ApiBadRequestResponse({ description: WRITE_ERRORS })
   create(
     @Body() dto: AdminAnnouncementDto,
     @CurrentUser() user: AuthPrincipal,
-  ): Promise<AnnouncementDto> {
+  ): Promise<PublishResultDto> {
     return this.announcements.createAsAdmin(user.userId, dto);
   }
 
@@ -127,6 +133,52 @@ export class AdminAnnouncementsController {
     @CurrentUser() user: AuthPrincipal,
   ): Promise<PublishResultDto> {
     return this.announcements.publish(
+      this.announcements.admin(user.userId),
+      id,
+    );
+  }
+
+  @Post(':id/schedule')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Schedule a DRAFT, or reschedule a pending SCHEDULED one',
+    description:
+      'scheduledAt = Africa/Tunis wall-clock "YYYY-MM-DDTHH:mm" (no offset), in the future, ≤ 366 days, not after expiresAt. Stored as an instant (scheduledFor); scheduledForLocal echoes the Tunis time. Recipients are resolved when it publishes.',
+  })
+  @ApiOkResponse({ type: AnnouncementDto })
+  @ApiBadRequestResponse({
+    description:
+      'Validation, SCHEDULE_IN_PAST, SCHEDULE_TOO_FAR, INVALID_DATE_RANGE, ANNOUNCEMENT_TARGET_INVALID',
+  })
+  @ApiNotFoundResponse({ description: 'ANNOUNCEMENT_NOT_FOUND' })
+  @ApiConflictResponse({ description: 'ANNOUNCEMENT_NOT_SCHEDULABLE' })
+  schedule(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ScheduleAnnouncementDto,
+    @CurrentUser() user: AuthPrincipal,
+  ): Promise<AnnouncementDto> {
+    return this.announcements.schedule(
+      this.announcements.admin(user.userId),
+      id,
+      dto,
+    );
+  }
+
+  @Post(':id/cancel-schedule')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Cancel a pending schedule (back to DRAFT, nobody notified)',
+  })
+  @ApiOkResponse({ type: AnnouncementDto })
+  @ApiNotFoundResponse({ description: 'ANNOUNCEMENT_NOT_FOUND' })
+  @ApiConflictResponse({
+    description: 'ANNOUNCEMENT_NOT_SCHEDULED (e.g. already published)',
+  })
+  cancelSchedule(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthPrincipal,
+  ): Promise<AnnouncementDto> {
+    return this.announcements.cancelSchedule(
       this.announcements.admin(user.userId),
       id,
     );
@@ -200,15 +252,16 @@ export class TeacherAnnouncementsController {
 
   @Post()
   @ApiOperation({
-    summary: 'Create a DRAFT for my current classes (SPECIFIC_GROUP_CLASSES)',
+    summary:
+      'Create for my current classes: publish now (default) or save as draft (no scheduling)',
   })
-  @ApiCreatedResponse({ type: AnnouncementDto })
+  @ApiCreatedResponse({ type: PublishResultDto })
   @ApiBadRequestResponse({ description: WRITE_ERRORS })
   @ApiForbiddenResponse({ description: 'ANNOUNCEMENT_CLASS_ACCESS_DENIED' })
   create(
     @Body() dto: TeacherAnnouncementDto,
     @CurrentUser() user: AuthPrincipal,
-  ): Promise<AnnouncementDto> {
+  ): Promise<PublishResultDto> {
     return this.announcements.createAsTeacher(user.userId, dto);
   }
 

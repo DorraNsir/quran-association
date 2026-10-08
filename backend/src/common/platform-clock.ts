@@ -36,3 +36,18 @@ export async function platformDayBounds(
     ...(row.lt ? { lt: row.lt } : {}),
   };
 }
+
+/**
+ * Wall-clock "YYYY-MM-DDTHH:mm" in the platform timezone → instant. Done by
+ * PostgreSQL (timestamp AT TIME ZONE), which applies the zone's offset/DST
+ * rules for that very date.
+ */
+export async function localDateTimeToInstant(
+  db: Db & Pick<Prisma.TransactionClient, '$queryRaw'>,
+  local: string,
+): Promise<Date> {
+  const timezone = await platformTimezone(db);
+  const [row] = await db.$queryRaw<{ instant: Date }[]>`
+    SELECT (${local}::timestamp AT TIME ZONE ${timezone}) AS instant`;
+  return row.instant;
+}

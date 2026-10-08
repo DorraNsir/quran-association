@@ -17,7 +17,7 @@ import type { TeacherScope } from '../teaching/teacher-access.service.js';
  *   CURRENT class is targeted · GROUP_CLASS → their current class is targeted.
  *   Teachers consult what reaches their CURRENT classes (and what they wrote).
  *
- * Announcements (visible only while PUBLISHED, from publishedAt to expiresAt):
+ * Announcements (visible only while PUBLISHED and not past expiresAt):
  *   EVERYONE → every account (admins included) · TEACHERS / STUDENTS → that
  *   profile · SPECIFIC_GROUP_CLASSES → students currently in, and teachers
  *   currently assigned to (supervisor or assistant), a targeted class ·
@@ -71,13 +71,12 @@ export function teacherResourceWhere(
   };
 }
 
-/** Published, and within its visibility dates on `today`. */
+/** Published (actually — a SCHEDULED one is not yet) and not expired on `today`. */
 export function announcementVisibleOn(
   today: Date,
 ): Prisma.AnnouncementWhereInput {
   return {
     status: AnnouncementStatus.PUBLISHED,
-    publishedAt: { lte: today },
     OR: [{ expiresAt: null }, { expiresAt: { gte: today } }],
   };
 }

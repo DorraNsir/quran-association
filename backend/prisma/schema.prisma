@@ -133,9 +133,11 @@ enum AnnouncementAudience {
   SPECIFIC_BRANCHES
 }
 
-/// DRAFT (invisible, editable) → PUBLISHED (explicit action, notifies once) → ARCHIVED (hidden, kept)
+/// DRAFT (invisible, editable) → [SCHEDULED (admin, publishes itself at scheduledFor)] →
+/// PUBLISHED (notifies once, at the actual publication) → ARCHIVED (hidden, kept)
 enum AnnouncementStatus {
   DRAFT
+  SCHEDULED
   PUBLISHED
   ARCHIVED
 }
@@ -885,12 +887,13 @@ model Announcement {
   title             String
   content           String
   audience          AnnouncementAudience
-  /// Visible to readers from this day (a future day = scheduled)
-  publishedAt       DateTime             @db.Date
-  expiresAt         DateTime?            @db.Date
   status            AnnouncementStatus   @default(DRAFT)
-  /// When the publish action happened (notifications are created then, once)
-  firstPublishedAt  DateTime?            @db.Timestamptz(3)
+  /// SCHEDULED: the instant it publishes itself (entered in Africa/Tunis local time, stored as an instant)
+  scheduledFor      DateTime?            @db.Timestamptz(3)
+  /// The ACTUAL publication instant (notifications are created then, once); null before
+  publishedAt       DateTime?            @db.Timestamptz(3)
+  /// Last day it is shown (platform calendar day, inclusive)
+  expiresAt         DateTime?            @db.Date
   archivedAt        DateTime?            @db.Timestamptz(3)
   /// The author (admin or teacher account)
   publishedByUserId String               @db.Uuid
@@ -903,6 +906,8 @@ model Announcement {
   notifications Notification[]
 
   @@index([status, publishedAt])
+  /// The scheduler's queue
+  @@index([status, scheduledFor])
   @@index([publishedByUserId])
   @@map("announcements")
 }

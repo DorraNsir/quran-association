@@ -8,6 +8,7 @@ import {
   StudentAnnouncementsController,
   TeacherAnnouncementsController,
 } from './announcements.controller.js';
+import { AnnouncementScheduler } from './announcement-scheduler.service.js';
 import { AnnouncementsService } from './announcements.service.js';
 import { NotificationsController } from './notifications.controller.js';
 import { NotificationsService } from './notifications.service.js';
@@ -35,6 +36,7 @@ import { ResourcesService } from './resources.service.js';
     NotificationsService,
     ResourcesService,
     AnnouncementsService,
+    AnnouncementScheduler,
   ],
 })
 export class CommunicationModule {}

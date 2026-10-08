@@ -21,7 +21,8 @@ const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is not set');
 
 const prisma = new PrismaClient({
-  adapter: new PrismaPg({ connectionString }),
+  // UTC sessions, as the API (src/prisma/prisma.service.ts)
+  adapter: new PrismaPg({ connectionString, options: '-c TimeZone=UTC' }),
 });
 const date = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 

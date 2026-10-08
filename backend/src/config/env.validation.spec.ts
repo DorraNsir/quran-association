@@ -129,3 +129,23 @@ describe('validateEnv — registration rate limit', () => {
     }
   });
 });
+
+describe('validateEnv — ANNOUNCEMENT_SCHEDULER_INTERVAL_SECONDS', () => {
+  const BASE = {
+    DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
+    JWT_ACCESS_SECRET: 'x'.repeat(48),
+  };
+
+  it('defaults to 30 and accepts 0 (off) to 3600', () => {
+    expect(validateEnv(BASE).ANNOUNCEMENT_SCHEDULER_INTERVAL_SECONDS).toBe(30);
+    for (const v of ['0', '3600'])
+      expect(
+        validateEnv({ ...BASE, ANNOUNCEMENT_SCHEDULER_INTERVAL_SECONDS: v })
+          .ANNOUNCEMENT_SCHEDULER_INTERVAL_SECONDS,
+      ).toBe(Number(v));
+    for (const v of ['-1', '3601', '1.5'])
+      expect(() =>
+        validateEnv({ ...BASE, ANNOUNCEMENT_SCHEDULER_INTERVAL_SECONDS: v }),
+      ).toThrow(/ANNOUNCEMENT_SCHEDULER_INTERVAL_SECONDS/);
+  });
+});
