@@ -6,6 +6,14 @@ import { PrismaService } from '../prisma/prisma.service.js';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
+/** The classes a teacher is assigned to NOW (supervisor or assistant), with their groups and branches. */
+export interface TeacherScope {
+  teacherId: string;
+  classIds: string[];
+  groupIds: string[];
+  branchIds: string[];
+}
+
 /** Inclusive calendar range (YYYY-MM-DD). */
 export interface DateRange {
   from: string;
@@ -59,6 +67,33 @@ export class TeacherAccessService {
         message: 'ملف المعلم غير نشط',
       });
     return teacher.id;
+  }
+
+  /**
+   * Current assignments only — used by communication (resources,
+   * announcements): unlike attendance/memorization, past teaching gives no
+   * access to a class's current private content.
+   */
+  async currentScope(
+    userId: string,
+    db: Db = this.prisma,
+  ): Promise<TeacherScope> {
+    const teacherId = await this.teacherIdOf(userId, db);
+    const classes = await db.groupClass.findMany({
+      where: {
+        OR: [
+          { supervisorId: teacherId },
+          { assistants: { some: { teacherId } } },
+        ],
+      },
+      select: { id: true, groupId: true, branchId: true },
+    });
+    return {
+      teacherId,
+      classIds: classes.map((c) => c.id),
+      groupIds: [...new Set(classes.map((c) => c.groupId))],
+      branchIds: [...new Set(classes.map((c) => c.branchId))],
+    };
   }
 
   /** Session in the teacher's snapshot team → teacherId; 404 if the session does not exist. */

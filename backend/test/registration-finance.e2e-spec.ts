@@ -627,7 +627,9 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
           }),
         ),
       );
-      expect(results.map((r) => r.status).sort()).toEqual([200, 409, 409]);
+      expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([
+        200, 409, 409,
+      ]);
       expect(
         await prisma.person.count({
           where: { firstName: 'متزامن', lastName: tag('مترشح') },

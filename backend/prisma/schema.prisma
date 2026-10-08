@@ -130,6 +130,14 @@ enum AnnouncementAudience {
   TEACHERS
   STUDENTS
   SPECIFIC_GROUP_CLASSES
+  SPECIFIC_BRANCHES
+}
+
+/// DRAFT (invisible, editable) → PUBLISHED (explicit action, notifies once) → ARCHIVED (hidden, kept)
+enum AnnouncementStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
 }
 
 enum NotificationType {
@@ -358,9 +366,10 @@ model Branch {
   createdAt DateTime         @default(now()) @db.Timestamptz(3)
   updatedAt DateTime         @updatedAt @db.Timestamptz(3)
 
-  rooms        Room[]
-  groupClasses GroupClass[]
-  publicGroups PublicGroupListing[]
+  rooms               Room[]
+  groupClasses        GroupClass[]
+  publicGroups        PublicGroupListing[]
+  announcementTargets AnnouncementBranchTarget[]
 
   @@map("branches")
 }
@@ -876,18 +885,25 @@ model Announcement {
   title             String
   content           String
   audience          AnnouncementAudience
+  /// Visible to readers from this day (a future day = scheduled)
   publishedAt       DateTime             @db.Date
   expiresAt         DateTime?            @db.Date
-  isActive          Boolean              @default(true)
+  status            AnnouncementStatus   @default(DRAFT)
+  /// When the publish action happened (notifications are created then, once)
+  firstPublishedAt  DateTime?            @db.Timestamptz(3)
+  archivedAt        DateTime?            @db.Timestamptz(3)
+  /// The author (admin or teacher account)
   publishedByUserId String               @db.Uuid
   createdAt         DateTime             @default(now()) @db.Timestamptz(3)
   updatedAt         DateTime             @updatedAt @db.Timestamptz(3)
 
-  publishedBy   User                 @relation(fields: [publishedByUserId], references: [id], onDelete: Restrict)
+  publishedBy   User                       @relation(fields: [publishedByUserId], references: [id], onDelete: Restrict)
   targets       AnnouncementTarget[]
+  branchTargets AnnouncementBranchTarget[]
   notifications Notification[]
 
-  @@index([isActive, publishedAt])
+  @@index([status, publishedAt])
+  @@index([publishedByUserId])
   @@map("announcements")
 }
 
@@ -904,17 +920,31 @@ model AnnouncementTarget {
   @@map("announcement_targets")
 }
 
+/// For SPECIFIC_BRANCHES announcements
+model AnnouncementBranchTarget {
+  announcementId String @db.Uuid
+  branchId       String @db.Uuid
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  branch       Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  @@id([announcementId, branchId])
+  @@index([branchId])
+  @@map("announcement_branch_targets")
+}
+
 /// In-app alert for ONE user, pointing at a resource or an announcement
 /// (explicit nullable FKs instead of an ambiguous entityType/entityId pair).
 model Notification {
   id             String           @id @default(uuid(7)) @db.Uuid
   userId         String           @db.Uuid
   type           NotificationType
+  /// Snapshot at creation (later edits of the content do not rewrite it)
   title          String
   message        String
   resourceId     String?          @db.Uuid
   announcementId String?          @db.Uuid
-  isRead         Boolean          @default(false)
+  /// null = unread
   readAt         DateTime?        @db.Timestamptz(3)
   createdAt      DateTime         @default(now()) @db.Timestamptz(3)
 
@@ -922,7 +952,10 @@ model Notification {
   resource     Resource?     @relation(fields: [resourceId], references: [id], onDelete: Cascade)
   announcement Announcement? @relation(fields: [announcementId], references: [id], onDelete: Cascade)
 
-  @@index([userId, isRead, createdAt])
+  /// One delivery per user and content item (NULLs are distinct)
+  @@unique([userId, resourceId])
+  @@unique([userId, announcementId])
+  @@index([userId, createdAt])
   @@map("notifications")
 }
 
