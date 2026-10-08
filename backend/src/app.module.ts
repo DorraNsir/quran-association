@@ -8,6 +8,7 @@ import { validateEnv } from './config/env.validation.js';
 import { HealthModule } from './health/health.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { ProfileModule } from './profile/profile.module.js';
+import { SchedulingModule } from './scheduling/scheduling.module.js';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { ProfileModule } from './profile/profile.module.js';
     AccountsModule,
     ProfileModule,
     AcademicModule,
+    SchedulingModule,
     HealthModule,
   ],
 })

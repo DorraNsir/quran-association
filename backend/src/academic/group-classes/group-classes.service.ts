@@ -13,7 +13,9 @@ import {
   type Prisma,
   RecordStatus,
 } from '../../generated/prisma/client.js';
+import { platformToday } from '../../common/platform-clock.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { ScheduleConflictService } from '../../scheduling/schedule-conflicts.service.js';
 import { branchNotFound } from '../branches/branches.service.js';
 import { groupNotFound } from '../groups/groups.service.js';
 import { roomNotFound } from '../rooms/rooms.service.js';
@@ -95,6 +97,7 @@ export class GroupClassesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pageSizes: PageSizeService,
+    private readonly conflicts: ScheduleConflictService,
   ) {}
 
   async list(query: GroupClassListQueryDto): Promise<GroupClassListDto> {
@@ -227,6 +230,29 @@ export class GroupClassesService {
         ];
         await this.assertTeachersAssignable(tx, added);
 
+        // Same weekly slots / upcoming sessions, new room or team: must not create conflicts
+        const occupancyChanged =
+          roomId !== current.roomId ||
+          supervisorId !== current.supervisorId ||
+          assistants.length !== currentAssistants.length ||
+          assistants.some((t) => !currentAssistants.includes(t));
+        if (occupancyChanged) {
+          await this.conflicts.assertClassOccupancyFree(
+            tx,
+            {
+              groupClassId: id,
+              roomId,
+              teacherIds: [supervisorId, ...assistants],
+            },
+            await platformToday(tx),
+            {
+              checkWeekly:
+                current.status === RecordStatus.ACTIVE &&
+                current.group.status === RecordStatus.ACTIVE,
+            },
+          );
+        }
+
         if (dto.assistantTeacherIds) {
           await tx.groupClassAssistant.deleteMany({
             where: { groupClassId: id, teacherId: { notIn: assistants } },
@@ -273,6 +299,20 @@ export class GroupClassesService {
           );
         await this.assertPlace(tx, current.branchId, current.roomId, status);
         await this.assertTeachersAssignable(tx, [current.supervisorId]);
+        // Its weekly slots start occupying room and teachers again
+        await this.conflicts.assertClassOccupancyFree(
+          tx,
+          {
+            groupClassId: id,
+            roomId: current.roomId,
+            teacherIds: [
+              current.supervisorId,
+              ...current.assistants.map((a) => a.teacherId),
+            ],
+          },
+          await platformToday(tx),
+          { checkWeekly: true },
+        );
       }
       await tx.groupClass.update({ where: { id }, data: { status } });
     });
@@ -281,7 +321,9 @@ export class GroupClassesService {
 
   // ───────────────────────── rules ─────────────────────────
 
+  /** Scheduling lock (room/team/activation affect occupancy) + row lock. */
   private async lock(tx: Tx, id: string) {
+    await this.conflicts.lockScheduling(tx);
     await tx.$queryRaw`SELECT id FROM group_classes WHERE id = ${id}::uuid FOR UPDATE`;
     const current = await tx.groupClass.findUnique({
       where: { id },
@@ -291,6 +333,7 @@ export class GroupClassesService {
         roomId: true,
         supervisorId: true,
         status: true,
+        group: { select: { status: true } },
         assistants: { select: { teacherId: true } },
       },
     });

@@ -4,7 +4,9 @@ import { conflict, isUniqueViolation, notFound } from '../../common/errors.js';
 import { PageSizeService } from '../../common/page-size.service.js';
 import { paginationMeta } from '../../common/pagination.js';
 import { type Prisma, RecordStatus } from '../../generated/prisma/client.js';
+import { platformToday } from '../../common/platform-clock.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { ScheduleConflictService } from '../../scheduling/schedule-conflicts.service.js';
 import type {
   CreateGroupDto,
   GroupDetailDto,
@@ -34,6 +36,7 @@ export class GroupsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pageSizes: PageSizeService,
+    private readonly conflicts: ScheduleConflictService,
   ) {}
 
   async list(query: GroupListQueryDto): Promise<GroupListDto> {
@@ -136,9 +139,48 @@ export class GroupsService {
   }
 
   /** Like the admin UI: the group's classes are not changed (the admin moves students first). */
+  /**
+   * Re-activating a group makes its ACTIVE classes run again: their weekly
+   * slots and upcoming sessions must not collide with other classes.
+   */
   async setStatus(id: string, status: RecordStatus): Promise<GroupDetailDto> {
-    await this.get(id);
-    await this.prisma.group.update({ where: { id }, data: { status } });
+    const group = await this.get(id);
+    await this.prisma.$transaction(async (tx) => {
+      await this.conflicts.lockScheduling(tx);
+      // Updated first so classes of THIS group also see each other as running
+      // (a conflict rolls the whole transaction back)
+      await tx.group.update({ where: { id }, data: { status } });
+      if (
+        status === RecordStatus.ACTIVE &&
+        group.status !== RecordStatus.ACTIVE
+      ) {
+        const today = await platformToday(tx);
+        const classes = await tx.groupClass.findMany({
+          where: { groupId: id, status: RecordStatus.ACTIVE },
+          select: {
+            id: true,
+            roomId: true,
+            supervisorId: true,
+            assistants: { select: { teacherId: true } },
+          },
+        });
+        for (const c of classes) {
+          await this.conflicts.assertClassOccupancyFree(
+            tx,
+            {
+              groupClassId: c.id,
+              roomId: c.roomId,
+              teacherIds: [
+                c.supervisorId,
+                ...c.assistants.map((a) => a.teacherId),
+              ],
+            },
+            today,
+            { checkWeekly: true },
+          );
+        }
+      }
+    });
     return this.get(id);
   }
 

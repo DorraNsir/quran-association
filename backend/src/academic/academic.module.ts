@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { PageSizeService } from '../common/page-size.service.js';
+import { SchedulingModule } from '../scheduling/scheduling.module.js';
 import { AcademicYearsController } from './academic-years/academic-years.controller.js';
 import { AcademicYearsService } from './academic-years/academic-years.service.js';
 import { BranchesController } from './branches/branches.controller.js';
@@ -18,6 +19,7 @@ import { TeachersService } from './teachers/teachers.service.js';
 
 /** Academic structure administration (ADMIN only): years, branches, rooms, groups, classes, teachers, students. */
 @Module({
+  imports: [SchedulingModule],
   controllers: [
     AcademicYearsController,
     BranchesController,

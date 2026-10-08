@@ -1,11 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
-import {
-  fromDbDate,
-  fromDbDateOrNull,
-  toDbDate,
-  todayIn,
-} from '../../common/dates.js';
+import { fromDbDate, fromDbDateOrNull, toDbDate } from '../../common/dates.js';
+import { platformToday } from '../../common/platform-clock.js';
 import {
   badRequest,
   conflict,
@@ -364,7 +360,7 @@ export class StudentsService {
       if (!student) throw studentNotFound();
       await this.assertClassOpen(tx, groupClassId);
 
-      const today = await this.today(tx);
+      const today = await platformToday(tx);
       const effective = effectiveDate ?? today;
       if (effective > today)
         throw badRequest(
@@ -437,15 +433,6 @@ export class StudentsService {
       isCurrent: e.endDate === null,
       groupClass: e.groupClass,
     }));
-  }
-
-  /** "Today" as a calendar date in the platform timezone (Africa/Tunis by default). */
-  private async today(tx: Tx) {
-    const settings = await tx.platformSettings.findUnique({
-      where: { id: 1 },
-      select: { timezone: true },
-    });
-    return todayIn(settings?.timezone ?? 'Africa/Tunis');
   }
 
   /** (Re)activating a student requires an ACTIVE current class. Account roles are untouched. */
