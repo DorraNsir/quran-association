@@ -218,3 +218,25 @@ export class StudentEnrollmentDto {
   @ApiProperty() isCurrent!: boolean;
   @ApiProperty({ type: ClassRefDto }) groupClass!: ClassRefDto;
 }
+
+/** PATCH /admin/students/:id/status — optional effective date (default today). */
+export class SetStudentStatusDto {
+  @ApiProperty({ enum: RecordStatus, enumName: 'RecordStatus' })
+  @IsEnum(RecordStatus)
+  status!: RecordStatus;
+
+  @IsDateOnly({
+    optional: true,
+    description:
+      'Day the status applies from (default: today; not future, not before registration)',
+  })
+  effectiveDate?: string;
+}
+
+export class StudentStatusChangeDto {
+  @ApiProperty({ enum: RecordStatus, enumName: 'RecordStatus' })
+  status!: RecordStatus;
+  @ApiProperty({ format: 'date' }) effectiveDate!: string;
+  @ApiPropertyOptional({ type: String, nullable: true }) recordedBy!:
+    string | null;
+}

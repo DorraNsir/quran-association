@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
@@ -187,7 +188,11 @@ describe('Attendance & memorization (e2e)', () => {
     await student('s4', 'B', addDays(TODAY, -60));
     await student('s6', 'A', addDays(TODAY, -400));
     await admin
-      .patch(`students/${id.s5}/status`, { status: 'INACTIVE' })
+      // Inactive since registration (back-dated): never expected on any roster
+      .patch(`students/${id.s5}/status`, {
+        status: 'INACTIVE',
+        effectiveDate: addDays(TODAY, -60),
+      })
       .expect(200);
 
     id.past1 = await session('A', addDays(TODAY, -3));
@@ -240,6 +245,9 @@ describe('Attendance & memorization (e2e)', () => {
     await prisma.session.deleteMany({ where: { groupClass: classes } });
     await prisma.weeklySchedule.deleteMany({ where: { groupClass: classes } });
     await prisma.studentEnrollment.deleteMany({
+      where: { student: studentWhere },
+    });
+    await prisma.studentStatusChange.deleteMany({
       where: { student: studentWhere },
     });
     await prisma.student.deleteMany({ where: studentWhere });
@@ -563,6 +571,90 @@ describe('Attendance & memorization (e2e)', () => {
 
   // ───────────────────────── history & snapshots ─────────────────────────
 
+  describe('historical status (regression: deactivated after attending)', () => {
+    it('a student deactivated today stays expected — with their record — on past rosters', async () => {
+      await student('s7', 'A', addDays(TODAY, -60));
+      const past = await session('A', addDays(TODAY, -4), '17:00', '18:00');
+      await admin
+        .put(`sessions/${past}/attendance`, {
+          records: [{ studentId: id.s7, status: 'PRESENT' }],
+        })
+        .expect(200);
+
+      await admin
+        .patch(`students/${id.s7}/status`, { status: 'INACTIVE' })
+        .expect(200);
+      const roster = (
+        await admin.get(`sessions/${past}/attendance`).expect(200)
+      ).body;
+      expect(
+        roster.students.find(
+          (s: { studentId: string }) => s.studentId === id.s7,
+        ),
+      ).toMatchObject({
+        expected: true, // was ACTIVE on that date
+        status: 'PRESENT',
+      });
+      // …and is no longer expected from today on
+      const upcomingToday = await session('A', TODAY, '20:00', '21:00');
+      const today = (
+        await admin.get(`sessions/${upcomingToday}/attendance`).expect(200)
+      ).body;
+      expect(
+        today.students.map((s: { studentId: string }) => s.studentId),
+      ).not.toContain(id.s7);
+      expect(
+        (
+          await admin.get(`students/${id.s7}/status-history`).expect(200)
+        ).body.map((h: { status: string }) => h.status),
+      ).toEqual(['INACTIVE', 'ACTIVE']);
+    });
+
+    it('a back-dated deactivation applies from its effective date only', async () => {
+      await student('s8', 'A', addDays(TODAY, -60));
+      const before = await session('A', addDays(TODAY, -6), '17:00', '18:00');
+      const after = await session('A', addDays(TODAY, -5), '17:00', '18:00');
+      const res = await admin
+        .patch(`students/${id.s8}/status`, {
+          status: 'INACTIVE',
+          effectiveDate: addDays(TODAY, -5),
+        })
+        .expect(200);
+      expect(res.body.status).toBe('INACTIVE');
+      const ids = async (sid: string) =>
+        (
+          await admin.get(`sessions/${sid}/attendance`).expect(200)
+        ).body.students
+          .filter((s: { expected: boolean }) => s.expected)
+          .map((s: { studentId: string }) => s.studentId);
+      expect(await ids(before)).toContain(id.s8);
+      expect(await ids(after)).not.toContain(id.s8);
+    });
+
+    it('validates the effective date', async () => {
+      expect(
+        (
+          await admin
+            .patch(`students/${id.s8}/status`, {
+              status: 'ACTIVE',
+              effectiveDate: addDays(TODAY, 3),
+            })
+            .expect(400)
+        ).body.code,
+      ).toBe('FUTURE_EFFECTIVE_DATE');
+      expect(
+        (
+          await admin
+            .patch(`students/${id.s8}/status`, {
+              status: 'ACTIVE',
+              effectiveDate: addDays(TODAY, -100),
+            })
+            .expect(400)
+        ).body.code,
+      ).toBe('EFFECTIVE_DATE_BEFORE_REGISTRATION');
+    });
+  });
+
   describe('historical membership and teacher snapshots', () => {
     it('a moved student stays on the old class’s past rosters and appears on the new class’s', async () => {
       await admin
@@ -716,7 +808,9 @@ describe('Attendance & memorization (e2e)', () => {
         where: { studentId: id.s1 },
       });
       expect(
-        rows.map((r) => [r.semester, r.lastMemorizedSurahNumber]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+        rows
+          .map((r) => [r.semester, r.lastMemorizedSurahNumber])
+          .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
       ).toEqual([
         ['FIRST', 80],
         ['SECOND', 114],
@@ -847,9 +941,9 @@ describe('Attendance & memorization (e2e)', () => {
       const byId = new Map(
         res.body.students.map((s: { studentId: string }) => [s.studentId, s]),
       );
-      expect([...byId.keys()].sort((a, b) => String(a).localeCompare(String(b)))).toEqual(
-        [id.s1, id.s2, id.s3, id.s5, id.s6].sort(),
-      );
+      expect(
+        [...byId.keys()].sort((a, b) => String(a).localeCompare(String(b))),
+      ).toEqual([id.s1, id.s2, id.s3, id.s5, id.s6, id.s7, id.s8].sort());
       expect(byId.get(id.s1)).toMatchObject({
         lastMemorizedSurahNumber: 80,
         surahName: 'عبس',
@@ -904,6 +998,37 @@ describe('Attendance & memorization (e2e)', () => {
         }),
       ).toBe(1);
     });
+  });
+
+  it('the teacher window is configurable (TEACHER_ATTENDANCE_WINDOW_DAYS)', async () => {
+    const real = app.get(ConfigService);
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(ConfigService)
+      .useValue({
+        get: (key: string, options?: unknown) =>
+          key === 'TEACHER_ATTENDANCE_WINDOW_DAYS'
+            ? 30
+            : real.get(key, options as never),
+      })
+      .compile();
+    const wide = moduleRef.createNestApplication();
+    configureApp(wide);
+    await wide.init();
+    try {
+      // 20 days ago: closed with the default 7, open with 30
+      await request(wide.getHttpServer())
+        .put(`/api/teacher/sessions/${id.old}/attendance`)
+        .set(as(token.sup))
+        .send({ records: [{ studentId: id.s2, status: 'PRESENT' }] })
+        .expect(200);
+    } finally {
+      await wide.close();
+    }
+    await teacher('sup')
+      .put(`sessions/${id.old}/attendance`, {
+        records: [{ studentId: id.s2, status: 'ABSENT' }],
+      })
+      .expect(409);
   });
 
   it('Swagger documents attendance and memorization', async () => {

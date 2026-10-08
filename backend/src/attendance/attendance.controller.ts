@@ -135,7 +135,7 @@ export class TeacherAttendanceController {
   @Put()
   @ApiOperation({
     ...SAVE_DOC,
-    description: `${SAVE_DOC.description} Teachers: sessions dated within the last 7 days (today included).`,
+    description: `${SAVE_DOC.description} Teachers: sessions dated within the last TEACHER_ATTENDANCE_WINDOW_DAYS days (default 7, today included); admins at any time.`,
   })
   @ApiOkResponse({ type: SessionAttendanceDto })
   @ApiBadRequestResponse({ description: SAVE_ERRORS_400 })

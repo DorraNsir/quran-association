@@ -72,3 +72,30 @@ describe('validateEnv', () => {
     );
   });
 });
+
+describe('validateEnv — TEACHER_ATTENDANCE_WINDOW_DAYS', () => {
+  const BASE = {
+    DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
+    JWT_ACCESS_SECRET: 'x'.repeat(48),
+  };
+
+  it('defaults to 7 and accepts 1–366', () => {
+    expect(validateEnv(BASE).TEACHER_ATTENDANCE_WINDOW_DAYS).toBe(7);
+    expect(
+      validateEnv({ ...BASE, TEACHER_ATTENDANCE_WINDOW_DAYS: '30' })
+        .TEACHER_ATTENDANCE_WINDOW_DAYS,
+    ).toBe(30);
+    expect(
+      validateEnv({ ...BASE, TEACHER_ATTENDANCE_WINDOW_DAYS: '1' })
+        .TEACHER_ATTENDANCE_WINDOW_DAYS,
+    ).toBe(1);
+  });
+
+  it('rejects 0, more than 366 and non-integers', () => {
+    for (const value of ['0', '367', '2.5', 'week']) {
+      expect(() =>
+        validateEnv({ ...BASE, TEACHER_ATTENDANCE_WINDOW_DAYS: value }),
+      ).toThrow(/TEACHER_ATTENDANCE_WINDOW_DAYS/);
+    }
+  });
+});

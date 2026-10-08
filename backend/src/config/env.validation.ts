@@ -74,6 +74,15 @@ export class EnvironmentVariables {
    */
   @IsIn(['lax', 'strict', 'none'])
   REFRESH_COOKIE_SAMESITE: 'lax' | 'strict' | 'none' = 'lax';
+
+  /**
+   * Days (today included) during which a teacher may record or correct the
+   * attendance of their own sessions; older sessions: admins only.
+   */
+  @IsInt()
+  @Min(1)
+  @Max(366)
+  TEACHER_ATTENDANCE_WINDOW_DAYS: number = 7;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

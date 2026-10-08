@@ -223,6 +223,7 @@ model User {
   notifications          Notification[]
   recordedAttendance     StudentAttendance[]
   recordedEnrollments    StudentEnrollment[]
+  recordedStatusChanges  StudentStatusChange[]
   completedSessions      Session[]
   administrationMember   AdministrationMember[]
 
@@ -284,6 +285,7 @@ model Student {
 
   attendance          StudentAttendance[]
   enrollments         StudentEnrollment[]
+  statusChanges       StudentStatusChange[]
   memorization        MemorizationProgress[]
   teacherNotes        TeacherNote[]
   paymentObligations  PaymentObligation[]
@@ -488,6 +490,28 @@ model StudentEnrollment {
   @@index([studentId, startDate])
   @@index([groupClassId, startDate])
   @@map("student_enrollments")
+}
+
+/// Status HISTORY of a student with effective dates: the status on day D is
+/// the latest change with effectiveDate <= D. Student.status stays the fast
+/// "current status" pointer (kept in sync by the service). Used where the
+/// past matters (e.g. who was expected at a past session).
+model StudentStatusChange {
+  id               String       @id @default(uuid(7)) @db.Uuid
+  studentId        String       @db.Uuid
+  status           RecordStatus
+  effectiveDate    DateTime     @db.Date
+  /// Admin who recorded the change (null for backfilled/system rows)
+  recordedByUserId String?      @db.Uuid
+  createdAt        DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime     @updatedAt @db.Timestamptz(3)
+
+  student    Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  recordedBy User?   @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  /// One status per student per day (a same-day change replaces it)
+  @@unique([studentId, effectiveDate])
+  @@map("student_status_changes")
 }
 
 // ──────────────────────── Sessions & attendance ────────────────────────

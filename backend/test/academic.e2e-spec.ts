@@ -124,6 +124,9 @@ describe('Academic structure APIs (e2e)', () => {
     await prisma.studentEnrollment.deleteMany({
       where: { student: { personId: { in: persons } } },
     });
+    await prisma.studentStatusChange.deleteMany({
+      where: { student: { personId: { in: persons } } },
+    });
     await prisma.student.deleteMany({ where: { personId: { in: persons } } });
     const classes = { group: { name: { endsWith: RUN } } };
     await prisma.groupClassAssistant.deleteMany({

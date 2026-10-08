@@ -21,12 +21,13 @@ import {
 import type { AuthPrincipal } from '../../auth/auth.types.js';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator.js';
 import { AdminApi } from '../admin-api.decorator.js';
-import { SetRecordStatusDto } from '../shared.dto.js';
 import {
   AssignStudentGroupClassDto,
   CreateStudentDto,
   StudentDto,
+  SetStudentStatusDto,
   StudentEnrollmentDto,
+  StudentStatusChangeDto,
   StudentListDto,
   StudentListQueryDto,
   UpdateStudentDto,
@@ -137,13 +138,34 @@ export class StudentsController {
       'ACTIVE / INACTIVE / ARCHIVED (activation needs an active class; account roles untouched)',
   })
   @ApiOkResponse({ type: StudentDto })
+  @ApiBadRequestResponse({
+    description: 'FUTURE_EFFECTIVE_DATE, EFFECTIVE_DATE_BEFORE_REGISTRATION',
+  })
   @ApiConflictResponse({
     description: 'GROUP_CLASS_INACTIVE, GROUP_CLASS_REQUIRED',
   })
   setStatus(
+    @CurrentUser() actor: AuthPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: SetRecordStatusDto,
+    @Body() dto: SetStudentStatusDto,
   ): Promise<StudentDto> {
-    return this.students.setStatus(id, dto.status);
+    return this.students.setStatus(
+      id,
+      dto.status,
+      dto.effectiveDate,
+      actor.userId,
+    );
+  }
+
+  @Get(':id/status-history')
+  @ApiOperation({
+    summary: 'Status history with effective dates (newest first)',
+  })
+  @ApiOkResponse({ type: StudentStatusChangeDto, isArray: true })
+  @ApiNotFoundResponse({ description: 'STUDENT_NOT_FOUND' })
+  statusHistory(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<StudentStatusChangeDto[]> {
+    return this.students.statusHistory(id);
   }
 }

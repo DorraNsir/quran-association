@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { fromDbDate, toDbDate } from '../common/dates.js';
 import { badRequest, conflict, notFound } from '../common/errors.js';
+import type { EnvironmentVariables } from '../config/env.validation.js';
 import { PageSizeService } from '../common/page-size.service.js';
 import { paginationMeta } from '../common/pagination.js';
 import { platformToday } from '../common/platform-clock.js';
@@ -30,14 +32,24 @@ type Tx = Prisma.TransactionClient;
 export type AttendanceActor =
   { kind: 'admin'; userId: string } | { kind: 'teacher'; userId: string };
 
-/** Teachers record / correct attendance of their sessions dated within the last N days (today included). */
-export const TEACHER_ATTENDANCE_WINDOW_DAYS = 7;
-
 const addDays = (date: string, n: number) => {
   const d = new Date(`${date}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 };
+
+/**
+ * Teachers record / correct attendance of their sessions dated within the
+ * last `windowDays` days, today included (TEACHER_ATTENDANCE_WINDOW_DAYS,
+ * default 7). Admins are never limited.
+ */
+export function withinTeacherWindow(
+  sessionDate: string,
+  today: string,
+  windowDays: number,
+) {
+  return sessionDate >= addDays(today, -(windowDays - 1));
+}
 
 const personSelect = {
   select: { firstName: true, lastName: true, photoUrl: true },
@@ -47,9 +59,10 @@ const personSelect = {
  * Attendance of a session's students (one record per session + student).
  *
  * ROSTER (who is expected): students ENROLLED in the session's class ON THE
- * SESSION DATE (StudentEnrollment history, not today's class) and currently
- * ACTIVE — plus anyone who already has a record for the session, so recorded
- * history is never hidden. Missing record = "not recorded", never "absent".
+ * SESSION DATE (StudentEnrollment history, not today's class) whose status ON
+ * THAT DATE was ACTIVE (StudentStatusChange history, not today's status) —
+ * plus anyone who already has a record for the session, so recorded history
+ * is never hidden. Missing record = "not recorded", never "absent".
  *
  * SAVE (bulk, all-or-nothing, session row locked): only roster students; a
  * listed student is created or updated (corrections keep createdAt, set
@@ -60,7 +73,7 @@ const personSelect = {
  * (source ATTENDANCE) once every expected student has a status. Partial saves
  * never complete it; an empty roster never completes it (admin override
  * instead). Corrections on a COMPLETED session keep it COMPLETED (never
- * reopened). Teachers may record/correct within TEACHER_ATTENDANCE_WINDOW_DAYS
+ * reopened). Teachers may record/correct within TEACHER_ATTENDANCE_WINDOW_DAYS (config)
  * of the session date; admins at any time.
  */
 @Injectable()
@@ -70,7 +83,14 @@ export class AttendanceService {
     private readonly sessions: SessionsService,
     private readonly access: TeacherAccessService,
     private readonly pageSizes: PageSizeService,
-  ) {}
+    config: ConfigService<EnvironmentVariables, true>,
+  ) {
+    this.teacherWindowDays = config.get('TEACHER_ATTENDANCE_WINDOW_DAYS', {
+      infer: true,
+    });
+  }
+
+  private readonly teacherWindowDays: number;
 
   async sessionAttendance(
     sessionId: string,
@@ -298,11 +318,11 @@ export class AttendanceService {
       );
     if (
       actor.kind === 'teacher' &&
-      date < addDays(today, -(TEACHER_ATTENDANCE_WINDOW_DAYS - 1))
+      !withinTeacherWindow(date, today, this.teacherWindowDays)
     ) {
       return conflict(
         'ATTENDANCE_CORRECTION_WINDOW_CLOSED',
-        `انتهت مهلة تسجيل الحضور أو تعديله (${TEACHER_ATTENDANCE_WINDOW_DAYS} أيام): تواصل مع الإدارة`,
+        `انتهت مهلة تسجيل الحضور أو تعديله (${this.teacherWindowDays} أيام): تواصل مع الإدارة`,
       );
     }
     return undefined;
@@ -319,15 +339,20 @@ export class AttendanceService {
       select: { groupClassId: true },
     });
     const [enrolled, recorded] = await Promise.all([
-      db.studentEnrollment.findMany({
-        where: {
-          groupClassId: session.groupClassId,
-          startDate: { lte: toDbDate(date) },
-          OR: [{ endDate: null }, { endDate: { gt: toDbDate(date) } }],
-          student: { status: 'ACTIVE' },
-        },
-        select: { studentId: true },
-      }),
+      // Enrolled in the class ON the date, and ACTIVE ON the date (status history:
+      // latest change up to that day) — not today's class or today's status
+      db.$queryRaw<{ studentId: string }[]>`
+        SELECT e."studentId"
+        FROM student_enrollments e
+        WHERE e."groupClassId" = ${session.groupClassId}::uuid
+          AND e."startDate" <= ${date}::date
+          AND (e."endDate" IS NULL OR e."endDate" > ${date}::date)
+          AND (
+            SELECT c.status FROM student_status_changes c
+            WHERE c."studentId" = e."studentId" AND c."effectiveDate" <= ${date}::date
+            ORDER BY c."effectiveDate" DESC
+            LIMIT 1
+          ) = 'ACTIVE'`,
       db.studentAttendance.findMany({
         where: { sessionId },
         select: { studentId: true },

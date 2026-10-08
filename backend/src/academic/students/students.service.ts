@@ -21,6 +21,7 @@ import type {
   CreateStudentDto,
   StudentDto,
   StudentEnrollmentDto,
+  StudentStatusChangeDto,
   StudentListDto,
   StudentListQueryDto,
   UpdateStudentDto,
@@ -207,6 +208,15 @@ export class StudentsService {
             studentId,
             groupClassId: dto.groupClassId,
             startDate: student.registrationDate,
+            recordedByUserId: actorUserId ?? null,
+          },
+        });
+        // First status: from the registration date (status history begins here)
+        await tx.studentStatusChange.create({
+          data: {
+            studentId,
+            status: student.status,
+            effectiveDate: student.registrationDate,
             recordedByUserId: actorUserId ?? null,
           },
         });
@@ -436,13 +446,40 @@ export class StudentsService {
   }
 
   /** (Re)activating a student requires an ACTIVE current class. Account roles are untouched. */
-  async setStatus(id: string, status: RecordStatus): Promise<StudentDto> {
+  /**
+   * Status change effective at a date (default: today, platform timezone; not
+   * in the future, not before registration). Recorded in the status history
+   * (one row per day: a same-day change replaces it); Student.status is then
+   * re-derived as the latest change up to today. Past attendance rosters use
+   * the status that applied on each session date.
+   */
+  async setStatus(
+    id: string,
+    status: RecordStatus,
+    effectiveDate?: string,
+    actorUserId?: string,
+  ): Promise<StudentDto> {
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM students WHERE id = ${id}::uuid FOR UPDATE`;
       const student = await tx.student.findUnique({
         where: { id },
-        select: { status: true, groupClassId: true },
+        select: { status: true, groupClassId: true, registrationDate: true },
       });
       if (!student) throw studentNotFound();
+      const today = await platformToday(tx);
+      const effective = effectiveDate ?? today;
+      if (effective > today) {
+        throw badRequest(
+          'FUTURE_EFFECTIVE_DATE',
+          'لا يمكن أن يكون تاريخ تغيير الحالة في المستقبل',
+        );
+      }
+      if (effective < fromDbDate(student.registrationDate)) {
+        throw badRequest(
+          'EFFECTIVE_DATE_BEFORE_REGISTRATION',
+          'تاريخ تغيير الحالة يسبق تاريخ تسجيل الطالب',
+        );
+      }
       if (
         status === RecordStatus.ACTIVE &&
         student.status !== RecordStatus.ACTIVE
@@ -454,9 +491,56 @@ export class StudentsService {
           );
         await this.assertClassOpen(tx, student.groupClassId);
       }
-      await tx.student.update({ where: { id }, data: { status } });
+      await tx.studentStatusChange.upsert({
+        where: {
+          studentId_effectiveDate: {
+            studentId: id,
+            effectiveDate: toDbDate(effective),
+          },
+        },
+        create: {
+          studentId: id,
+          status,
+          effectiveDate: toDbDate(effective),
+          recordedByUserId: actorUserId ?? null,
+        },
+        update: { status, recordedByUserId: actorUserId ?? null },
+      });
+      // Current status = latest change up to today (a back-dated change may be superseded)
+      const latest = await tx.studentStatusChange.findFirst({
+        where: { studentId: id, effectiveDate: { lte: toDbDate(today) } },
+        orderBy: { effectiveDate: 'desc' },
+        select: { status: true },
+      });
+      await tx.student.update({
+        where: { id },
+        data: { status: latest?.status ?? status },
+      });
     });
     return this.get(id);
+  }
+
+  /** Status history, most recent first. */
+  async statusHistory(id: string): Promise<StudentStatusChangeDto[]> {
+    const student = await this.prisma.student.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!student) throw studentNotFound();
+    const rows = await this.prisma.studentStatusChange.findMany({
+      where: { studentId: id },
+      orderBy: { effectiveDate: 'desc' },
+      select: {
+        status: true,
+        effectiveDate: true,
+        recordedBy: { select: { username: true } },
+      },
+    });
+    return rows.map((r) => ({
+      status: r.status,
+      effectiveDate: fromDbDate(r.effectiveDate),
+      recordedBy: r.recordedBy?.username ?? null,
+    }));
   }
 
   private async assertClassOpen(tx: Tx, groupClassId: string) {
