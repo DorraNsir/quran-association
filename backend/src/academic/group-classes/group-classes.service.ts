@@ -271,6 +271,13 @@ export class GroupClassesService {
             skipDuplicates: true,
           });
         }
+        // Upcoming SCHEDULED sessions follow the class (history keeps its snapshot)
+        if (occupancyChanged)
+          await this.conflicts.syncUpcomingSessions(
+            tx,
+            id,
+            await platformToday(tx),
+          );
         return id;
       }),
     );

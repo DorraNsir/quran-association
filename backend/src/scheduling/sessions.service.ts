@@ -5,15 +5,16 @@ import { badRequest, conflict, notFound } from '../common/errors.js';
 import { PageSizeService } from '../common/page-size.service.js';
 import { paginationMeta } from '../common/pagination.js';
 import { platformToday } from '../common/platform-clock.js';
-import { type Prisma, SessionStatus } from '../generated/prisma/client.js';
-import { PrismaService } from '../prisma/prisma.service.js';
 import {
-  classCalendarSelect,
-  toScheduleClass,
-} from './class-calendar.select.js';
+  type Prisma,
+  CompletionSource,
+  SessionStatus,
+} from '../generated/prisma/client.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import { ScheduleConflictService } from './schedule-conflicts.service.js';
 import { classNotFound } from './schedules.service.js';
 import type {
+  AttentionFlag,
   CreateSessionDto,
   GenerateSessionsDto,
   GenerateSessionsResultDto,
@@ -44,12 +45,64 @@ const select = {
   status: true,
   cancellationReason: true,
   weeklyScheduleId: true,
-  groupClass: { select: classCalendarSelect },
+  completedAt: true,
+  completionSource: true,
+  completedBy: { select: { username: true } },
+  groupClass: {
+    select: {
+      id: true,
+      status: true,
+      group: { select: { id: true, name: true, status: true } },
+    },
+  },
+  room: {
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      branch: { select: { id: true, name: true, status: true } },
+    },
+  },
+  teachers: {
+    select: {
+      role: true,
+      teacher: {
+        select: {
+          id: true,
+          status: true,
+          person: { select: { firstName: true, lastName: true } },
+        },
+      },
+    },
+    orderBy: { role: 'asc' },
+  },
 } satisfies Prisma.SessionSelect;
 
-const toDto = (
-  s: Prisma.SessionGetPayload<{ select: typeof select }>,
-): SessionDto => ({
+type Row = Prisma.SessionGetPayload<{ select: typeof select }>;
+
+/** Why an upcoming SCHEDULED session needs an admin decision (never auto-cancelled). */
+function attentionOf(s: Row, today: string): AttentionFlag[] {
+  if (s.status !== SessionStatus.SCHEDULED || fromDbDate(s.date) < today)
+    return [];
+  const flags: AttentionFlag[] = [];
+  if (s.groupClass.status !== 'ACTIVE') flags.push('CLASS_INACTIVE');
+  if (s.groupClass.group.status !== 'ACTIVE') flags.push('GROUP_INACTIVE');
+  if (s.room.status !== 'ACTIVE') flags.push('ROOM_INACTIVE');
+  if (s.room.branch.status !== 'ACTIVE') flags.push('BRANCH_INACTIVE');
+  const supervisor = s.teachers.find((t) => t.role === 'SUPERVISOR');
+  if (!supervisor) flags.push('NO_SUPERVISOR');
+  else if (supervisor.teacher.status !== 'ACTIVE')
+    flags.push('SUPERVISOR_INACTIVE');
+  if (
+    s.teachers.some(
+      (t) => t.role === 'ASSISTANT' && t.teacher.status !== 'ACTIVE',
+    )
+  )
+    flags.push('ASSISTANT_INACTIVE');
+  return flags;
+}
+
+const toDto = (s: Row, today: string): SessionDto => ({
   id: s.id,
   date: fromDbDate(s.date),
   startTime: fromDbTime(s.startTime),
@@ -57,10 +110,45 @@ const toDto = (
   status: s.status,
   cancellationReason: s.cancellationReason,
   weeklyScheduleId: s.weeklyScheduleId,
-  groupClass: toScheduleClass(s.groupClass),
+  completion:
+    s.completedAt && s.completionSource
+      ? {
+          completedAt: s.completedAt,
+          source: s.completionSource,
+          completedBy: s.completedBy?.username ?? null,
+        }
+      : null,
+  groupClass: s.groupClass,
+  room: s.room,
+  teachers: s.teachers.map((t) => ({
+    id: t.teacher.id,
+    ...t.teacher.person,
+    role: t.role,
+    status: t.teacher.status,
+  })),
+  attention: attentionOf(s, today),
+});
+
+/** Prisma filter equivalent of attentionOf (for ?needsAttention=true). */
+const needsAttentionWhere = (today: string): Prisma.SessionWhereInput => ({
+  status: SessionStatus.SCHEDULED,
+  date: { gte: toDbDate(today) },
+  OR: [
+    { groupClass: { status: { not: 'ACTIVE' } } },
+    { groupClass: { group: { status: { not: 'ACTIVE' } } } },
+    { room: { status: 'INACTIVE' } },
+    { room: { branch: { status: 'INACTIVE' } } },
+    { teachers: { some: { teacher: { status: 'INACTIVE' } } } },
+    { teachers: { none: { role: 'SUPERVISOR' } } },
+  ],
 });
 
 const sessionNotFound = () => notFound('SESSION_NOT_FOUND', 'الحصة غير موجودة');
+const supervisorInactive = () =>
+  conflict(
+    'SUPERVISOR_INACTIVE',
+    'المعلم المشرف على الحلقة غير نشط: عيّن مشرفًا بديلًا قبل برمجة حصص جديدة',
+  );
 const MAX_CALENDAR_DAYS = 62;
 const MAX_GENERATION_DAYS = 366;
 
@@ -86,11 +174,23 @@ function assertRange(from: string, to: string, maxDays: number) {
 }
 
 /**
- * Dated sessions (the real lessons). Physical integrity: no two
- * non-cancelled sessions overlap in the same class, room or teacher
- * (CANCELLED never blocks). Cancelling keeps the row (history); completion is
- * an explicit admin action, never inferred from the clock. Attendance is a
- * separate concept (Part 10.6).
+ * Dated sessions (the real lessons).
+ *
+ * Integrity: no two non-cancelled sessions overlap in the same class, room or
+ * teacher (CANCELLED never blocks). Each session carries its own room and
+ * team snapshot; only upcoming SCHEDULED sessions are re-snapshotted when the
+ * class changes — past, completed and cancelled sessions are never rewritten.
+ *
+ * Completion rules:
+ *  - NORMAL: a SCHEDULED session (date ≤ today) becomes COMPLETED when the
+ *    attendance of its class roster is saved successfully — Part 10.6 calls
+ *    `completeFromAttendance` inside the attendance transaction
+ *    (completionSource = ATTENDANCE, completedBy = the saving teacher/admin).
+ *  - ADMIN OVERRIDE: `PATCH /admin/sessions/:id/status` with
+ *    { status: COMPLETED, adminOverride: true } (completionSource =
+ *    ADMIN_OVERRIDE), for lessons held without attendance being recorded.
+ *  - Never inferred from the clock; never for a future date. Reopening
+ *    (COMPLETED → SCHEDULED) clears the completion data.
  */
 @Injectable()
 export class SessionsService {
@@ -103,8 +203,11 @@ export class SessionsService {
   async list(query: SessionListQueryDto): Promise<SessionListDto> {
     if (query.from && query.to && query.to < query.from)
       throw badRequest('DATE_RANGE_INVALID', 'فترة غير صالحة');
-    const pageSize = await this.pageSizes.resolve(query.pageSize);
-    const where = this.where(query);
+    const [pageSize, today] = await Promise.all([
+      this.pageSizes.resolve(query.pageSize),
+      platformToday(this.prisma),
+    ]);
+    const where = this.where(query, today);
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.session.count({ where }),
       this.prisma.session.findMany({
@@ -116,7 +219,7 @@ export class SessionsService {
       }),
     ]);
     return {
-      data: rows.map(toDto),
+      data: rows.map((r) => toDto(r, today)),
       meta: paginationMeta(query.page, pageSize, total),
     };
   }
@@ -124,39 +227,44 @@ export class SessionsService {
   /** Every session of a bounded range — what the calendar renders. */
   async calendar(query: SessionCalendarQueryDto): Promise<SessionDto[]> {
     assertRange(query.from, query.to, MAX_CALENDAR_DAYS);
+    const today = await platformToday(this.prisma);
     const rows = await this.prisma.session.findMany({
-      where: this.where(query),
+      where: this.where(query, today),
       select,
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }, { id: 'asc' }],
     });
-    return rows.map(toDto);
+    return rows.map((r) => toDto(r, today));
   }
 
   async get(id: string): Promise<SessionDto> {
-    const session = await this.prisma.session.findUnique({
-      where: { id },
-      select,
-    });
+    const [session, today] = await Promise.all([
+      this.prisma.session.findUnique({ where: { id }, select }),
+      platformToday(this.prisma),
+    ]);
     if (!session) throw sessionNotFound();
-    return toDto(session);
+    return toDto(session, today);
   }
 
-  /** Manual session: the weekly schedule is NOT modified. */
-  async create(dto: CreateSessionDto): Promise<SessionDto> {
+  /** Manual session (snapshot of the class's room and active team); the weekly schedule is NOT modified. */
+  async create(
+    dto: CreateSessionDto,
+    actorUserId?: string,
+  ): Promise<SessionDto> {
     assertTimeRange(dto.startTime, dto.endTime);
     const id = await this.prisma.$transaction(async (tx) => {
       await this.conflicts.lockScheduling(tx);
-      const current = await this.conflicts.occupancyOf(tx, dto.groupClassId);
-      if (!current) throw classNotFound();
-      if (current.status !== 'ACTIVE')
+      const team = await this.conflicts.sessionTeamOf(tx, dto.groupClassId);
+      if (!team) throw classNotFound();
+      if (!team.classActive)
         throw conflict('GROUP_CLASS_INACTIVE', 'الحلقة غير نشطة');
+      if (!team.supervisorActive) throw supervisorInactive();
       const status = dto.status ?? SessionStatus.SCHEDULED;
       if (status === SessionStatus.COMPLETED)
         await this.assertNotFuture(tx, dto.date);
       this.conflicts.throwIfAny(
         await this.conflicts.sessionConflicts(
           tx,
-          current.occupancy,
+          team.occupancy,
           [{ date: dto.date, start: dto.startTime, end: dto.endTime }],
           {
             includeSameClass: true,
@@ -167,23 +275,35 @@ export class SessionsService {
       const created = await tx.session.create({
         data: {
           groupClassId: dto.groupClassId,
+          roomId: team.roomId,
           date: toDbDate(dto.date),
           startTime: toDbTime(dto.startTime),
           endTime: toDbTime(dto.endTime),
           status,
+          ...(status === SessionStatus.COMPLETED
+            ? this.completion(CompletionSource.ADMIN_OVERRIDE, actorUserId)
+            : {}),
         },
         select: { id: true },
       });
+      await this.conflicts.writeSessionTeams(tx, [created.id], team);
       return created.id;
     });
     return this.get(id);
   }
 
-  /** Reschedule (SCHEDULED sessions only); the session is excluded from its own check. */
+  /**
+   * Reschedule a SCHEDULED session; it is excluded from its own check. A
+   * session moved to today or later takes the class's CURRENT room and active
+   * team; one kept in the past keeps its snapshot.
+   */
   async update(id: string, dto: UpdateSessionDto): Promise<SessionDto> {
     await this.prisma.$transaction(async (tx) => {
       await this.conflicts.lockScheduling(tx);
-      const session = await tx.session.findUnique({ where: { id } });
+      const session = await tx.session.findUnique({
+        where: { id },
+        include: { teachers: true },
+      });
       if (!session) throw sessionNotFound();
       if (session.status !== SessionStatus.SCHEDULED) {
         throw conflict(
@@ -197,12 +317,14 @@ export class SessionsService {
         end: dto.endTime ?? fromDbTime(session.endTime),
       };
       assertTimeRange(slot.start, slot.end);
-      const current = (await this.conflicts.occupancyOf(
+      const refresh = await this.refreshSnapshotIfUpcoming(
         tx,
         session.groupClassId,
-      ))!;
+        slot.date,
+      );
+      const occupancy = refresh?.occupancy ?? this.snapshotOccupancy(session);
       this.conflicts.throwIfAny(
-        await this.conflicts.sessionConflicts(tx, current.occupancy, [slot], {
+        await this.conflicts.sessionConflicts(tx, occupancy, [slot], {
           excludeSessionIds: [id],
           includeSameClass: true,
         }),
@@ -214,20 +336,30 @@ export class SessionsService {
           date: toDbDate(slot.date),
           startTime: toDbTime(slot.start),
           endTime: toDbTime(slot.end),
+          ...(refresh ? { roomId: refresh.roomId } : {}),
         },
       });
+      if (refresh) await this.conflicts.writeSessionTeams(tx, [id], refresh);
     });
     return this.get(id);
   }
 
   /**
-   * SCHEDULED → CANCELLED (optional reason) | COMPLETED (not in the future);
-   * CANCELLED → SCHEDULED (restore: conflicts re-checked); COMPLETED → SCHEDULED (reopen).
+   * SCHEDULED → CANCELLED (optional reason) | COMPLETED (adminOverride, not in the future);
+   * CANCELLED → SCHEDULED (restore: snapshot refreshed if upcoming, conflicts re-checked);
+   * COMPLETED → SCHEDULED (reopen: completion data cleared).
    */
-  async setStatus(id: string, dto: SetSessionStatusDto): Promise<SessionDto> {
+  async setStatus(
+    id: string,
+    dto: SetSessionStatusDto,
+    actorUserId?: string,
+  ): Promise<SessionDto> {
     await this.prisma.$transaction(async (tx) => {
       await this.conflicts.lockScheduling(tx);
-      const session = await tx.session.findUnique({ where: { id } });
+      const session = await tx.session.findUnique({
+        where: { id },
+        include: { teachers: true },
+      });
       if (!session) throw sessionNotFound();
       const from = session.status;
       const to = dto.status;
@@ -235,6 +367,12 @@ export class SessionsService {
         throw badRequest(
           'CANCELLATION_REASON_UNEXPECTED',
           'سبب الإلغاء يخص الحصص الملغاة فقط',
+        );
+      }
+      if (dto.adminOverride && to !== SessionStatus.COMPLETED) {
+        throw badRequest(
+          'ADMIN_OVERRIDE_UNEXPECTED',
+          'التجاوز الإداري يخص إنهاء الحصة فقط',
         );
       }
       if (from === to && to !== SessionStatus.CANCELLED) return;
@@ -250,21 +388,34 @@ export class SessionsService {
           'لا يمكن الانتقال إلى هذه الحالة من الحالة الحالية',
         );
 
-      if (to === SessionStatus.COMPLETED)
+      if (to === SessionStatus.COMPLETED) {
+        if (!dto.adminOverride) {
+          throw badRequest(
+            'COMPLETION_REQUIRES_ATTENDANCE',
+            'تُنهى الحصة عادةً بتسجيل حضور طلبتها؛ لإنهائها دون ذلك أرسل adminOverride: true',
+          );
+        }
         await this.assertNotFuture(tx, fromDbDate(session.date));
+      }
+
+      let refresh: Awaited<
+        ReturnType<SessionsService['refreshSnapshotIfUpcoming']>
+      >;
       if (from === SessionStatus.CANCELLED && to === SessionStatus.SCHEDULED) {
         // A cancelled session freed its slot: restoring must not double-book
-        const current = (await this.conflicts.occupancyOf(
+        const date = fromDbDate(session.date);
+        refresh = await this.refreshSnapshotIfUpcoming(
           tx,
           session.groupClassId,
-        ))!;
+          date,
+        );
         this.conflicts.throwIfAny(
           await this.conflicts.sessionConflicts(
             tx,
-            current.occupancy,
+            refresh?.occupancy ?? this.snapshotOccupancy(session),
             [
               {
-                date: fromDbDate(session.date),
+                date,
                 start: fromDbTime(session.startTime),
                 end: fromDbTime(session.endTime),
               },
@@ -282,10 +433,43 @@ export class SessionsService {
             to === SessionStatus.CANCELLED
               ? (dto.cancellationReason ?? null)
               : null,
+          ...(to === SessionStatus.COMPLETED
+            ? this.completion(CompletionSource.ADMIN_OVERRIDE, actorUserId)
+            : {
+                completedAt: null,
+                completedByUserId: null,
+                completionSource: null,
+              }),
+          ...(refresh ? { roomId: refresh.roomId } : {}),
         },
       });
+      if (refresh) await this.conflicts.writeSessionTeams(tx, [id], refresh);
     });
     return this.get(id);
+  }
+
+  /**
+   * Part 10.6 hook — NORMAL completion: call inside the transaction that saves
+   * the attendance of the session's class roster. Idempotent for an already
+   * attendance-completed session; refuses cancelled and future sessions.
+   */
+  async completeFromAttendance(tx: Tx, sessionId: string, userId: string) {
+    const session = await tx.session.findUnique({
+      where: { id: sessionId },
+      select: { status: true, date: true },
+    });
+    if (!session) throw sessionNotFound();
+    if (session.status === SessionStatus.CANCELLED) {
+      throw conflict('SESSION_CANCELLED', 'لا يمكن تسجيل الحضور لحصة ملغاة');
+    }
+    await this.assertNotFuture(tx, fromDbDate(session.date));
+    await tx.session.update({
+      where: { id: sessionId },
+      data: {
+        status: SessionStatus.COMPLETED,
+        ...this.completion(CompletionSource.ATTENDANCE, userId),
+      },
+    });
   }
 
   /**
@@ -295,10 +479,12 @@ export class SessionsService {
    *    cancelled one is never recreated; also guaranteed by the unique
    *    (weeklyScheduleId, date) index), and
    *  - the class has no other session (any status) overlapping it that day
-   *    (e.g. a manual or rescheduled one), and
+   *    (manual, rescheduled, or generated from a deleted-and-recreated slot), and
    *  - it does not collide with a non-cancelled session of another class in
    *    the same room or with a shared teacher (reported, not created).
-   * Existing sessions are never modified.
+   * Classes whose supervisor is inactive are skipped (reported). Each new
+   * session snapshots the class's room and active team. Existing sessions
+   * are never modified.
    */
   async generate(dto: GenerateSessionsDto): Promise<GenerateSessionsResultDto> {
     assertRange(dto.from, dto.to, MAX_GENERATION_DAYS);
@@ -323,8 +509,10 @@ export class SessionsService {
           select: {
             id: true,
             roomId: true,
-            supervisorId: true,
-            assistants: { select: { teacherId: true } },
+            supervisor: { select: { id: true, status: true } },
+            assistants: {
+              select: { teacher: { select: { id: true, status: true } } },
+            },
             schedules: {
               select: {
                 id: true,
@@ -335,28 +523,39 @@ export class SessionsService {
             },
           },
         });
-        const existing = await this.sessionsInRange(tx, dto.from, dto.to);
-        const occupancy = new Map(
-          classes.map((c) => [
+        const skippedInactiveSupervisorClassIds = classes
+          .filter(
+            (c) => c.supervisor.status !== 'ACTIVE' && c.schedules.length > 0,
+          )
+          .map((c) => c.id);
+        const plannable = classes.filter(
+          (c) => c.supervisor.status === 'ACTIVE',
+        );
+        const team = new Map(
+          plannable.map((c) => [
             c.id,
             {
               roomId: c.roomId,
-              teachers: [
-                c.supervisorId,
-                ...c.assistants.map((a) => a.teacherId),
-              ],
+              supervisorId: c.supervisor.id,
+              assistantIds: c.assistants
+                .map((a) => a.teacher)
+                .filter((t) => t.status === 'ACTIVE')
+                .map((t) => t.id),
             },
           ]),
         );
+        const existing = await this.sessionsInRange(tx, dto.from, dto.to);
 
-        const toCreate: Prisma.SessionCreateManyInput[] = [];
+        type Planned = Prisma.SessionCreateManyInput & { teamOf: string };
+        const planned: Planned[] = [];
         const skippedConflicts: SkippedSessionDto[] = [];
         let skippedExisting = 0;
         for (const date of eachDate(dto.from, dto.to)) {
           const weekday = weekdayOf(date);
           const sameDay = existing.filter((s) => s.date === date);
-          for (const c of classes) {
-            const occ = occupancy.get(c.id)!;
+          for (const c of plannable) {
+            const t = team.get(c.id)!;
+            const teachers = [t.supervisorId, ...t.assistantIds];
             for (const ws of c.schedules.filter(
               (s) => s.dayOfWeek === weekday,
             )) {
@@ -364,12 +563,13 @@ export class SessionsService {
                 start: fromDbTime(ws.startTime),
                 end: fromDbTime(ws.endTime),
               };
-              const already = sameDay.some(
-                (s) =>
-                  s.weeklyScheduleId === ws.id ||
-                  (s.groupClassId === c.id && overlaps(s, slot)),
-              );
-              if (already) {
+              if (
+                sameDay.some(
+                  (s) =>
+                    s.weeklyScheduleId === ws.id ||
+                    (s.groupClassId === c.id && overlaps(s, slot)),
+                )
+              ) {
                 skippedExisting++;
                 continue;
               }
@@ -378,8 +578,8 @@ export class SessionsService {
                   s.status !== SessionStatus.CANCELLED &&
                   s.groupClassId !== c.id &&
                   overlaps(s, slot) &&
-                  (s.roomId === occ.roomId ||
-                    s.teachers.some((t) => occ.teachers.includes(t))),
+                  (s.roomId === t.roomId ||
+                    s.teachers.some((x) => teachers.includes(x))),
               );
               if (blocking) {
                 skippedConflicts.push({
@@ -388,47 +588,68 @@ export class SessionsService {
                   date,
                   startTime: slot.start,
                   endTime: slot.end,
-                  reason: blocking.roomId === occ.roomId ? 'ROOM' : 'TEACHER',
+                  reason: blocking.roomId === t.roomId ? 'ROOM' : 'TEACHER',
                   conflictingSessionId: blocking.id,
                 });
                 continue;
               }
-              toCreate.push({
+              planned.push({
                 groupClassId: c.id,
                 weeklyScheduleId: ws.id,
+                roomId: t.roomId,
                 date: toDbDate(date),
                 startTime: ws.startTime,
                 endTime: ws.endTime,
                 status: SessionStatus.SCHEDULED,
+                teamOf: c.id,
               });
-              // Later occurrences of this run see the new session too
-              existing.push({
-                id: 'new',
+              const added = {
+                id: 'planned',
                 date,
                 ...slot,
                 status: SessionStatus.SCHEDULED,
                 groupClassId: c.id,
                 weeklyScheduleId: ws.id,
-                roomId: occ.roomId,
-                teachers: occ.teachers,
-              });
-              sameDay.push(existing[existing.length - 1]);
+                roomId: t.roomId,
+                teachers,
+              };
+              existing.push(added);
+              sameDay.push(added);
             }
           }
         }
         // skipDuplicates: the unique (weeklyScheduleId, date) index is the final idempotency guard
-        const { count } = toCreate.length
-          ? await tx.session.createMany({
-              data: toCreate,
+        const created = planned.length
+          ? await tx.session.createManyAndReturn({
+              data: planned.map(({ teamOf: _teamOf, ...row }) => row),
               skipDuplicates: true,
+              select: { id: true, groupClassId: true },
             })
-          : { count: 0 };
+          : [];
+        await tx.sessionTeacher.createMany({
+          data: created.flatMap((s) => {
+            const t = team.get(s.groupClassId)!;
+            return [
+              {
+                sessionId: s.id,
+                teacherId: t.supervisorId,
+                role: 'SUPERVISOR' as const,
+              },
+              ...t.assistantIds.map((teacherId) => ({
+                sessionId: s.id,
+                teacherId,
+                role: 'ASSISTANT' as const,
+              })),
+            ];
+          }),
+        });
         return {
           from: dto.from,
           to: dto.to,
-          created: count,
-          skippedExisting: skippedExisting + (toCreate.length - count),
+          created: created.length,
+          skippedExisting: skippedExisting + (planned.length - created.length),
           skippedConflicts,
+          skippedInactiveSupervisorClassIds,
         };
       },
       { timeout: 30_000 },
@@ -437,36 +658,57 @@ export class SessionsService {
 
   // ───────────────────────── helpers ─────────────────────────
 
-  private where(query: SessionListQueryDto): Prisma.SessionWhereInput {
-    const classWhere: Prisma.GroupClassWhereInput = {
-      ...(query.groupId ? { groupId: query.groupId } : {}),
-      ...(query.branchId ? { branchId: query.branchId } : {}),
-      ...(query.roomId ? { roomId: query.roomId } : {}),
-      ...(query.teacherId
-        ? {
-            OR: [
-              { supervisorId: query.teacherId },
-              { assistants: { some: { teacherId: query.teacherId } } },
-            ],
-          }
-        : {}),
-    };
+  private completion(source: CompletionSource, userId?: string) {
     return {
-      ...(query.groupClassId ? { groupClassId: query.groupClassId } : {}),
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.from || query.to
-        ? {
-            date: {
-              ...(query.from ? { gte: toDbDate(query.from) } : {}),
-              ...(query.to ? { lte: toDbDate(query.to) } : {}),
-            },
-          }
-        : {}),
-      ...(Object.keys(classWhere).length ? { groupClass: classWhere } : {}),
+      completedAt: new Date(),
+      completionSource: source,
+      completedByUserId: userId ?? null,
     };
   }
 
-  /** All sessions of the range with their class's room and team (bounded by the range). */
+  /** A session dated today or later takes the class's current room and active team. */
+  private async refreshSnapshotIfUpcoming(
+    tx: Tx,
+    groupClassId: string,
+    date: string,
+  ) {
+    if (date < (await platformToday(tx))) return undefined;
+    const team = (await this.conflicts.sessionTeamOf(tx, groupClassId))!;
+    if (!team.supervisorActive) throw supervisorInactive();
+    return team;
+  }
+
+  private snapshotOccupancy(session: {
+    groupClassId: string;
+    roomId: string;
+    teachers: { teacherId: string }[];
+  }) {
+    return {
+      groupClassId: session.groupClassId,
+      roomId: session.roomId,
+      teacherIds: session.teachers.map((t) => t.teacherId),
+    };
+  }
+
+  private where(
+    query: SessionListQueryDto,
+    today: string,
+  ): Prisma.SessionWhereInput {
+    const and: Prisma.SessionWhereInput[] = [];
+    if (query.groupClassId) and.push({ groupClassId: query.groupClassId });
+    if (query.groupId) and.push({ groupClass: { groupId: query.groupId } });
+    if (query.branchId) and.push({ room: { branchId: query.branchId } });
+    if (query.roomId) and.push({ roomId: query.roomId });
+    if (query.teacherId)
+      and.push({ teachers: { some: { teacherId: query.teacherId } } });
+    if (query.status) and.push({ status: query.status });
+    if (query.from) and.push({ date: { gte: toDbDate(query.from) } });
+    if (query.to) and.push({ date: { lte: toDbDate(query.to) } });
+    if (query.needsAttention) and.push(needsAttentionWhere(today));
+    return and.length ? { AND: and } : {};
+  }
+
+  /** All sessions of the range with THEIR room and team snapshot (bounded by the range). */
   private async sessionsInRange(tx: Tx, from: string, to: string) {
     const rows = await tx.session.findMany({
       where: { date: { gte: toDbDate(from), lte: toDbDate(to) } },
@@ -478,13 +720,8 @@ export class SessionsService {
         status: true,
         groupClassId: true,
         weeklyScheduleId: true,
-        groupClass: {
-          select: {
-            roomId: true,
-            supervisorId: true,
-            assistants: { select: { teacherId: true } },
-          },
-        },
+        roomId: true,
+        teachers: { select: { teacherId: true } },
       },
     });
     return rows.map((s) => ({
@@ -495,11 +732,8 @@ export class SessionsService {
       status: s.status,
       groupClassId: s.groupClassId,
       weeklyScheduleId: s.weeklyScheduleId,
-      roomId: s.groupClass.roomId,
-      teachers: [
-        s.groupClass.supervisorId,
-        ...s.groupClass.assistants.map((a) => a.teacherId),
-      ],
+      roomId: s.roomId,
+      teachers: s.teachers.map((t) => t.teacherId),
     }));
   }
 

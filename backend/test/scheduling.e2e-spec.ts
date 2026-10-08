@@ -623,11 +623,19 @@ describe('Weekly scheduling & sessions (e2e)', () => {
       ).toBe('SESSION_NOT_EDITABLE');
     });
 
-    it('completion is explicit, never in the future, and persists', async () => {
+    it('completion is explicit (admin override), never in the future, and persists', async () => {
       expect(
         (
           await patch(`sessions/${id.manualA}/status`, {
             status: 'COMPLETED',
+          }).expect(400)
+        ).body.code,
+      ).toBe('COMPLETION_REQUIRES_ATTENDANCE');
+      expect(
+        (
+          await patch(`sessions/${id.manualA}/status`, {
+            status: 'COMPLETED',
+            adminOverride: true,
           }).expect(400)
         ).body.code,
       ).toBe('SESSION_IN_FUTURE');
@@ -639,7 +647,13 @@ describe('Weekly scheduling & sessions (e2e)', () => {
         endTime: '09:00',
         status: 'COMPLETED',
       }).expect(201);
-      expect(done.body.status).toBe('COMPLETED');
+      expect(done.body).toMatchObject({
+        status: 'COMPLETED',
+        completion: {
+          source: 'ADMIN_OVERRIDE',
+          completedBy: `e2e-${RUN}-admin`,
+        },
+      });
       expect(
         (
           await patch(`sessions/${done.body.id}/status`, {
@@ -647,17 +661,18 @@ describe('Weekly scheduling & sessions (e2e)', () => {
           }).expect(409)
         ).body.code,
       ).toBe('INVALID_STATUS_TRANSITION');
-      expect(
-        (
-          await patch(`sessions/${done.body.id}/status`, {
-            status: 'SCHEDULED',
-          }).expect(200)
-        ).body.status,
-      ).toBe('SCHEDULED');
+      const reopened = await patch(`sessions/${done.body.id}/status`, {
+        status: 'SCHEDULED',
+      }).expect(200);
+      expect(reopened.body).toMatchObject({
+        status: 'SCHEDULED',
+        completion: null,
+      });
       expect(
         (
           await patch(`sessions/${done.body.id}/status`, {
             status: 'COMPLETED',
+            adminOverride: true,
           }).expect(200)
         ).body.status,
       ).toBe('COMPLETED');
@@ -667,6 +682,10 @@ describe('Weekly scheduling & sessions (e2e)', () => {
       await patch(`sessions/${done.body.id}/status`, {
         status: 'COMPLETED',
         cancellationReason: 'x',
+      }).expect(400);
+      await patch(`sessions/${done.body.id}/status`, {
+        status: 'SCHEDULED',
+        adminOverride: true,
       }).expect(400);
     });
 
@@ -724,6 +743,7 @@ describe('Weekly scheduling & sessions (e2e)', () => {
         prisma.session.create({
           data: {
             groupClassId: id.A,
+            roomId: a.roomId,
             date: a.date,
             startTime: new Date('1970-01-01T18:00:00Z'),
             endTime: new Date('1970-01-01T18:20:00Z'),
@@ -744,12 +764,15 @@ describe('Weekly scheduling & sessions (e2e)', () => {
           date: expect.any(String),
           startTime: expect.any(String),
           status: expect.any(String),
-          groupClass: expect.objectContaining({
-            group: expect.any(Object),
+          groupClass: expect.objectContaining({ group: expect.any(Object) }),
+          room: expect.objectContaining({
+            name: expect.any(String),
             branch: expect.any(Object),
-            room: expect.any(Object),
-            supervisor: expect.any(Object),
           }),
+          teachers: expect.arrayContaining([
+            expect.objectContaining({ role: 'SUPERVISOR' }),
+          ]),
+          attention: [],
         }),
       );
       const dates = cal.body.map((s: { date: string }) => s.date);

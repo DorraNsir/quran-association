@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  IsBoolean,
   IsEnum,
   IsIn,
   IsOptional,
@@ -11,8 +12,13 @@ import {
 
 import { IsDateOnly } from '../common/dates.js';
 import { PaginationMetaDto, PaginationQueryDto } from '../common/pagination.js';
-import { SessionStatus } from '../generated/prisma/enums.js';
-import { ScheduleClassDto } from './schedule.dto.js';
+import {
+  ActivationStatus,
+  CompletionSource,
+  RecordStatus,
+  SessionStatus,
+  TeachingRole,
+} from '../generated/prisma/enums.js';
 import { IsTimeOfDay } from './time.js';
 
 /** A real lesson on a real date (manual — never changes the weekly schedule). */
@@ -42,6 +48,7 @@ export class SetSessionStatusDto {
   @ApiProperty({ enum: SessionStatus, enumName: 'SessionStatus' })
   @IsEnum(SessionStatus)
   status!: SessionStatus;
+
   @ApiPropertyOptional({ description: 'Only for CANCELLED' })
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
@@ -50,6 +57,14 @@ export class SetSessionStatusDto {
   @IsString()
   @MaxLength(300)
   cancellationReason?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Required (true) to set COMPLETED here: a session is normally completed when its attendance is saved (Part 10.6); this records an ADMIN_OVERRIDE.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  adminOverride?: boolean;
 }
 
 class SessionFilters extends PaginationQueryDto {
@@ -80,6 +95,16 @@ class SessionFilters extends PaginationQueryDto {
   @IsOptional()
   @IsEnum(SessionStatus)
   status?: SessionStatus;
+  @ApiPropertyOptional({
+    description:
+      'Only upcoming SCHEDULED sessions with at least one attention flag',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  needsAttention?: boolean;
 }
 
 export class SessionListQueryDto extends SessionFilters {
@@ -110,6 +135,63 @@ export class GenerateSessionsDto {
   groupClassId?: string;
 }
 
+export const ATTENTION_FLAGS = [
+  'CLASS_INACTIVE',
+  'GROUP_INACTIVE',
+  'ROOM_INACTIVE',
+  'BRANCH_INACTIVE',
+  'SUPERVISOR_INACTIVE',
+  'ASSISTANT_INACTIVE',
+  'NO_SUPERVISOR',
+] as const;
+export type AttentionFlag = (typeof ATTENTION_FLAGS)[number];
+
+export class SessionClassDto {
+  @ApiProperty() id!: string;
+  @ApiProperty({ enum: RecordStatus, enumName: 'RecordStatus' })
+  status!: RecordStatus;
+  @ApiProperty() group!: { id: string; name: string; status: RecordStatus };
+}
+
+export class SessionRoomDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty({ enum: ActivationStatus, enumName: 'ActivationStatus' })
+  status!: ActivationStatus;
+  @ApiProperty() branch!: {
+    id: string;
+    name: string;
+    status: ActivationStatus;
+  };
+}
+
+export class SessionTeacherDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() firstName!: string;
+  @ApiProperty() lastName!: string;
+  @ApiProperty({ enum: TeachingRole, enumName: 'TeachingRole' })
+  role!: TeachingRole;
+  @ApiProperty({ enum: ActivationStatus, enumName: 'ActivationStatus' })
+  status!: ActivationStatus;
+}
+
+export class SessionCompletionDto {
+  @ApiProperty() completedAt!: Date;
+  @ApiProperty({ enum: CompletionSource, enumName: 'CompletionSource' })
+  source!: CompletionSource;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Username of who completed it',
+  })
+  completedBy!: string | null;
+}
+
+/**
+ * A session with WHERE (room + branch) and WHO (team) as they apply to THIS
+ * session (snapshot), and attention flags for upcoming SCHEDULED sessions
+ * whose class, room, branch or teachers are no longer active.
+ */
 export class SessionDto {
   @ApiProperty() id!: string;
   @ApiProperty({ format: 'date' }) date!: string;
@@ -125,7 +207,23 @@ export class SessionDto {
     description: 'Weekly slot it was generated from (null = manual)',
   })
   weeklyScheduleId!: string | null;
-  @ApiProperty({ type: ScheduleClassDto }) groupClass!: ScheduleClassDto;
+  @ApiPropertyOptional({ type: SessionCompletionDto, nullable: true })
+  completion!: SessionCompletionDto | null;
+  @ApiProperty({ type: SessionClassDto }) groupClass!: SessionClassDto;
+  @ApiProperty({ type: SessionRoomDto }) room!: SessionRoomDto;
+  @ApiProperty({
+    type: SessionTeacherDto,
+    isArray: true,
+    description: 'Supervisor first',
+  })
+  teachers!: SessionTeacherDto[];
+  @ApiProperty({
+    enum: ATTENTION_FLAGS,
+    isArray: true,
+    description:
+      'Upcoming SCHEDULED sessions needing an admin decision (never auto-cancelled)',
+  })
+  attention!: AttentionFlag[];
 }
 
 export class SessionListDto {
@@ -160,4 +258,11 @@ export class GenerateSessionsResultDto {
       'Occurrences not created because of a room/teacher conflict with an existing session',
   })
   skippedConflicts!: SkippedSessionDto[];
+  @ApiProperty({
+    type: String,
+    isArray: true,
+    description:
+      'Classes skipped because their supervisor is inactive (appoint a replacement first)',
+  })
+  skippedInactiveSupervisorClassIds!: string[];
 }

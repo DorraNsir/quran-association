@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { badRequest, notFound } from '../common/errors.js';
+import { badRequest, conflict, notFound } from '../common/errors.js';
 import { type Prisma, Weekday } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -120,6 +120,12 @@ export class SchedulesService {
       await this.conflicts.lockScheduling(tx);
       const current = await this.conflicts.occupancyOf(tx, groupClassId);
       if (!current) throw classNotFound();
+      if (!current.supervisorActive) {
+        throw conflict(
+          'SUPERVISOR_INACTIVE',
+          'المعلم المشرف على الحلقة غير نشط: عيّن مشرفًا بديلًا قبل إضافة مواعيد',
+        );
+      }
       this.conflicts.throwIfAny(
         await this.conflicts.weeklyConflicts(
           tx,

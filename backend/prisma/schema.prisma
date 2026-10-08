@@ -63,6 +63,20 @@ enum SessionStatus {
   CANCELLED
 }
 
+/// Responsibility of a teacher in a class / session
+enum TeachingRole {
+  SUPERVISOR
+  ASSISTANT
+}
+
+/// How a session became COMPLETED
+enum CompletionSource {
+  /// Normal path: the class roster's attendance was saved (Part 10.6)
+  ATTENDANCE
+  /// Explicit admin decision without attendance
+  ADMIN_OVERRIDE
+}
+
 enum AttendanceStatus {
   PRESENT
   ABSENT
@@ -209,6 +223,7 @@ model User {
   notifications          Notification[]
   recordedAttendance     StudentAttendance[]
   recordedEnrollments    StudentEnrollment[]
+  completedSessions      Session[]
   administrationMember   AdministrationMember[]
 
   @@map("users")
@@ -239,10 +254,11 @@ model Teacher {
 
   person Person @relation(fields: [personId], references: [id], onDelete: Restrict)
 
-  supervisedClasses GroupClass[]          @relation("GroupClassSupervisor")
-  assistedClasses   GroupClassAssistant[]
-  attendance        TeacherAttendance[]
-  notes             TeacherNote[]
+  supervisedClasses  GroupClass[]          @relation("GroupClassSupervisor")
+  assistedClasses    GroupClassAssistant[]
+  attendance         TeacherAttendance[]
+  sessionAssignments SessionTeacher[]
+  notes              TeacherNote[]
 
   @@index([status])
   @@map("teachers")
@@ -351,6 +367,7 @@ model Room {
 
   branch       Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
   groupClasses GroupClass[]
+  sessions     Session[]
 
   @@unique([branchId, name])
   /// Target of GroupClass's composite FK (roomId, branchId): a class's room is always in its branch
@@ -477,21 +494,37 @@ model StudentEnrollment {
 
 /// One actual dated lesson (generated from a WeeklySchedule or added ad hoc).
 /// Cancelling a session never changes the weekly schedule.
+/// One actual dated lesson (generated from a WeeklySchedule or added ad hoc).
+/// Cancelling a session never changes the weekly schedule.
+///
+/// WHERE and WHO are snapshotted on the session (roomId + SessionTeacher):
+/// a lesson that happened keeps its real room and team even if the class is
+/// later moved or re-staffed. Only UPCOMING SCHEDULED sessions follow such
+/// class changes; past, completed and cancelled sessions are never rewritten.
 model Session {
-  id                 String        @id @default(uuid(7)) @db.Uuid
-  groupClassId       String        @db.Uuid
+  id                 String            @id @default(uuid(7)) @db.Uuid
+  groupClassId       String            @db.Uuid
   /// The weekly slot it was generated from (null for an ad-hoc session)
-  weeklyScheduleId   String?       @db.Uuid
-  date               DateTime      @db.Date
-  startTime          DateTime      @db.Time(0)
-  endTime            DateTime      @db.Time(0)
-  status             SessionStatus @default(SCHEDULED)
+  weeklyScheduleId   String?           @db.Uuid
+  /// Room actually used (snapshot of the class's room)
+  roomId             String            @db.Uuid
+  date               DateTime          @db.Date
+  startTime          DateTime          @db.Time(0)
+  endTime            DateTime          @db.Time(0)
+  status             SessionStatus     @default(SCHEDULED)
   cancellationReason String?
-  createdAt          DateTime      @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime      @updatedAt @db.Timestamptz(3)
+  /// Set iff status = COMPLETED (CHECK in migration)
+  completedAt        DateTime?         @db.Timestamptz(3)
+  completedByUserId  String?           @db.Uuid
+  completionSource   CompletionSource?
+  createdAt          DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime          @updatedAt @db.Timestamptz(3)
 
-  groupClass     GroupClass      @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
-  weeklySchedule WeeklySchedule? @relation(fields: [weeklyScheduleId], references: [id], onDelete: SetNull)
+  groupClass     GroupClass       @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
+  weeklySchedule WeeklySchedule?  @relation(fields: [weeklyScheduleId], references: [id], onDelete: SetNull)
+  room           Room             @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  completedBy    User?            @relation(fields: [completedByUserId], references: [id], onDelete: SetNull)
+  teachers       SessionTeacher[]
 
   studentAttendance StudentAttendance[]
   teacherAttendance TeacherAttendance[]
@@ -500,7 +533,26 @@ model Session {
   @@unique([weeklyScheduleId, date])
   @@index([groupClassId, date])
   @@index([date, status])
+  @@index([roomId, date])
   @@map("sessions")
+}
+
+/// Teaching team of ONE session (snapshot: supervisor + assistants who were
+/// active when the session was planned). Teacher conflicts between sessions
+/// are checked on these rows, not on the class's current team.
+model SessionTeacher {
+  sessionId String       @db.Uuid
+  teacherId String       @db.Uuid
+  role      TeachingRole
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  @@id([sessionId, teacherId])
+  /// At most one supervisor per session
+  @@unique([sessionId], map: "session_teachers_one_supervisor_key", where: raw("role = 'SUPERVISOR'"))
+  @@index([teacherId])
+  @@map("session_teachers")
 }
 
 model StudentAttendance {

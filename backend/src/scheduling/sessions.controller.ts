@@ -21,6 +21,8 @@ import {
 } from '@nestjs/swagger';
 
 import { AdminApi } from '../academic/admin-api.decorator.js';
+import type { AuthPrincipal } from '../auth/auth.types.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { SchedulingConflictDto } from './schedule.dto.js';
 import {
   CreateSessionDto,
@@ -103,10 +105,13 @@ export class SessionsController {
   @ApiNotFoundResponse({ description: 'GROUP_CLASS_NOT_FOUND' })
   @ApiConflictResponse({
     type: SchedulingConflictDto,
-    description: `GROUP_CLASS_INACTIVE, ${CONFLICTS}`,
+    description: `GROUP_CLASS_INACTIVE, SUPERVISOR_INACTIVE, ${CONFLICTS}`,
   })
-  create(@Body() dto: CreateSessionDto): Promise<SessionDto> {
-    return this.sessions.create(dto);
+  create(
+    @CurrentUser() actor: AuthPrincipal,
+    @Body() dto: CreateSessionDto,
+  ): Promise<SessionDto> {
+    return this.sessions.create(dto, actor.userId);
   }
 
   @Patch(':id')
@@ -133,16 +138,18 @@ export class SessionsController {
   })
   @ApiOkResponse({ type: SessionDto })
   @ApiBadRequestResponse({
-    description: 'SESSION_IN_FUTURE, CANCELLATION_REASON_UNEXPECTED',
+    description:
+      'SESSION_IN_FUTURE, COMPLETION_REQUIRES_ATTENDANCE (set adminOverride), CANCELLATION_REASON_UNEXPECTED',
   })
   @ApiConflictResponse({
     type: SchedulingConflictDto,
     description: `INVALID_STATUS_TRANSITION, ${CONFLICTS}`,
   })
   setStatus(
+    @CurrentUser() actor: AuthPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SetSessionStatusDto,
   ): Promise<SessionDto> {
-    return this.sessions.setStatus(id, dto);
+    return this.sessions.setStatus(id, dto, actor.userId);
   }
 }
