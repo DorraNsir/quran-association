@@ -45,6 +45,7 @@ describe('AccountsService — last active admin', () => {
       prisma,
       {} as PasswordService,
       sessions,
+      {} as never,
     );
     // The detail reload after the change is not under test
     service.get = () => Promise.resolve({} as never);

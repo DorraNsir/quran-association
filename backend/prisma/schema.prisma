@@ -351,6 +351,8 @@ model Room {
   groupClasses GroupClass[]
 
   @@unique([branchId, name])
+  /// Target of GroupClass's composite FK (roomId, branchId): a class's room is always in its branch
+  @@unique([id, branchId])
   @@map("rooms")
 }
 
@@ -376,7 +378,6 @@ model Group {
 
 /// The operational class ("حلقة"): branch, room, one supervisor, assistants,
 /// students, weekly schedule, sessions and attendance hang from it.
-/// Invariant (application level): roomId belongs to branchId.
 model GroupClass {
   id           String       @id @default(uuid(7)) @db.Uuid
   groupId      String       @db.Uuid
@@ -389,7 +390,8 @@ model GroupClass {
 
   group      Group   @relation(fields: [groupId], references: [id], onDelete: Restrict)
   branch     Branch  @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  room       Room    @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  /// Composite FK: the room must belong to the class's branch (enforced by PostgreSQL)
+  room       Room    @relation(fields: [roomId, branchId], references: [id, branchId], onDelete: Restrict, onUpdate: Restrict)
   supervisor Teacher @relation("GroupClassSupervisor", fields: [supervisorId], references: [id], onDelete: Restrict)
 
   assistants          GroupClassAssistant[]

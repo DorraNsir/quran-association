@@ -8,6 +8,7 @@ import {
 import type { AuthPrincipal } from '../auth/auth.types.js';
 import { PasswordService } from '../auth/password.service.js';
 import { SessionService } from '../auth/session.service.js';
+import { PageSizeService } from '../common/page-size.service.js';
 import { paginationMeta } from '../common/pagination.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { Role } from '../generated/prisma/enums.js';
@@ -110,10 +111,11 @@ export class AccountsService {
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
     private readonly sessions: SessionService,
+    private readonly pageSizes: PageSizeService,
   ) {}
 
   async list(query: AccountListQueryDto): Promise<AccountListDto> {
-    const pageSize = query.pageSize ?? (await this.defaultPageSize());
+    const pageSize = await this.pageSizes.resolve(query.pageSize);
     const search = query.search?.trim();
     const where: Prisma.UserWhereInput = {
       ...(query.role ? { roles: { some: { role: query.role } } } : {}),
@@ -403,14 +405,5 @@ export class AccountsService {
       error.code === 'P2025'
       ? notFound()
       : error;
-  }
-
-  /** Platform setting (/admin/settings), 10 when not configured. */
-  private async defaultPageSize() {
-    const settings = await this.prisma.platformSettings.findUnique({
-      where: { id: 1 },
-      select: { defaultPageSize: true },
-    });
-    return settings?.defaultPageSize ?? 10;
   }
 }
