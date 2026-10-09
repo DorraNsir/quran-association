@@ -1,6 +1,6 @@
 "use client"
 
-import { CalendarSearch, DoorOpen, ShieldCheck, Users } from "lucide-react"
+import { CalendarSearch, DoorOpen, Info, ShieldCheck, Users } from "lucide-react"
 import Link from "next/link"
 import { useQueries } from "@tanstack/react-query"
 import { useState } from "react"
@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/shared/empty-state"
 import { ALL, FilterBar, FilterSelect } from "@/components/shared/filters"
 import { PageHeader } from "@/components/shared/page-header"
 import { PeriodFilter, resolvePeriod, type Period } from "@/components/shared/period-filter"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Pager } from "@/components/shared/pager"
 import { QueryState } from "@/components/shared/query-state"
@@ -26,6 +27,7 @@ import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
 import type { ISODate } from "@/types/domain"
 
 import { AttendanceAction } from "./attendance-action"
+import { GenerateSessionsButton } from "./generate-sessions-sheet"
 import { toSessionRow, type SessionRow } from "./use-session-rows"
 import { useCurrentAcademicYear, usePlatformSettings } from "@/lib/store/settings"
 
@@ -118,6 +120,9 @@ export function SessionsView({
       }
     }),
   })
+  // Does ANY session exist (no filter)? Distinguishes "none generated yet" from "none match"
+  const anySession = useSessionPage(workspace, {}, 1, 1)
+  const noneGenerated = anySession.data?.meta.total === 0
   const rows = (list.data?.data ?? []).map((s) => toSessionRow(s, today))
   const total = filters === null ? 0 : (list.data?.meta.total ?? 0)
 
@@ -185,11 +190,26 @@ export function SessionsView({
             : "الحصص الفعلية المؤرخة، المتولدة من البرنامج الأسبوعي للمجموعات، مع حالة تسجيل الحضور لكل حصة."
         }
         actions={
-          <Button asChild variant="outline">
-            <Link href={paths.schedule}>{isTeacher ? "جدولي الأسبوعي" : "البرنامج الأسبوعي"}</Link>
-          </Button>
+          <>
+            <Button asChild variant="outline">
+              <Link href={paths.schedule}>{isTeacher ? "جدولي الأسبوعي" : "البرنامج الأسبوعي"}</Link>
+            </Button>
+            {!isTeacher && <GenerateSessionsButton lookups={lookups} today={today} />}
+          </>
         }
       />
+
+      {noneGenerated && (
+        <Alert className="mb-4">
+          <Info aria-hidden />
+          <AlertTitle>{isTeacher ? "لا توجد حصص مؤرخة لك بعد" : "لم تُولَّد أي حصص بعد"}</AlertTitle>
+          <AlertDescription>
+            {isTeacher
+              ? "تُنشئ الإدارة الحصص المؤرخة انطلاقًا من البرنامج الأسبوعي، وتظهر هنا بعد ذلك."
+              : "المواعيد الأسبوعية هي البرنامج المتكرر فقط؛ الحصص الفعلية (التي يُسجَّل فيها الحضور) تُنشأ من هذا البرنامج عبر «توليد الحصص» للفترة المطلوبة."}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div role="tablist" aria-label="تصنيف الحصص" className="mb-4 flex gap-1 overflow-x-auto rounded-lg border bg-card p-1">
         {TABS.map((t, index) => {
@@ -257,8 +277,25 @@ export function SessionsView({
         emptyState={
           <EmptyState
             icon={CalendarSearch}
-            title={tab === "today" ? "لا توجد حصص اليوم" : tab === "pending" ? "لا توجد حصص بحضور غير مكتمل" : "لا توجد حصص مطابقة"}
-            description={hasActiveFilters ? "جرّب تغيير عوامل التصفية." : undefined}
+            title={
+              noneGenerated
+                ? "لم تُولَّد أي حصص بعد"
+                : tab === "today"
+                  ? "لا توجد حصص اليوم"
+                  : tab === "pending"
+                    ? "لا توجد حصص بحضور غير مكتمل"
+                    : "لا توجد حصص مطابقة"
+            }
+            description={
+              noneGenerated
+                ? undefined
+                : hasActiveFilters
+                  ? "جرّب تغيير عوامل التصفية."
+                  : tab === "today"
+                    ? "اطّلع على الحصص القادمة أو على كل الحصص."
+                    : undefined
+            }
+            action={noneGenerated && !isTeacher ? <GenerateSessionsButton lookups={lookups} today={today} variant="outline" /> : undefined}
           />
         }
         renderMobileCard={(r) => (

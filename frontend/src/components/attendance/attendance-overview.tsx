@@ -1,10 +1,12 @@
 "use client"
 
-import { CalendarCheck2, CalendarClock, CircleDashed, SearchX, UserX } from "lucide-react"
+import { CalendarCheck2, CalendarClock, CircleDashed, Info, SearchX, UserX } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 
 import { AttendanceAction } from "@/components/sessions/attendance-action"
+import { GenerateSessionsButton } from "@/components/sessions/generate-sessions-sheet"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { toSessionRow, type SessionRow } from "@/components/sessions/use-session-rows"
 import { Pager } from "@/components/shared/pager"
 import { QueryState } from "@/components/shared/query-state"
@@ -68,6 +70,12 @@ export function AttendanceOverview({ lookups }: { lookups: Lookups }) {
   const complete = valid ? (completedCount.data?.meta.total ?? 0) : 0
   const pending = valid ? (pendingCount.data?.meta.total ?? 0) : 0
   const held = complete + pending
+  // A failed count is shown as unknown ("—"), never as a misleading 0
+  const countsFailed = completedCount.isError || pendingCount.isError
+  const linesFailed = lines.isError
+  // Does ANY session exist? Distinguishes "none generated yet" from "none in this period"
+  const anySession = useSessionPage("admin", {}, 1, 1)
+  const noneGenerated = anySession.data?.meta.total === 0
   const allLines = valid ? (lines.data ?? []) : []
   const students = useStudents()
   const studentClassById = new Map((students.data ?? []).map((st) => [st.id, st.groupClassId]))
@@ -198,12 +206,25 @@ export function AttendanceOverview({ lookups }: { lookups: Lookups }) {
         )}
       </FilterBar>
 
+      {noneGenerated && (
+        <Alert className="mb-4">
+          <Info aria-hidden />
+          <AlertTitle>لم تُولَّد أي حصص بعد</AlertTitle>
+          <AlertDescription>
+            <p>يُسجَّل الحضور في الحصص الفعلية المؤرخة، وهي تُنشأ من المواعيد الأسبوعية عبر «توليد الحصص». لذلك تبقى الإحصائيات صفرًا إلى حين توليدها.</p>
+            <div className="mt-2">
+              <GenerateSessionsButton lookups={lookups} today={today} variant="outline" />
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <section aria-label="ملخص الفترة" className="mb-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <StatCard label="الحصص المبرمجة" value={held} icon={CalendarClock} hint={period.preset === "today" ? "اليوم" : undefined} />
-        <StatCard label="حضور مكتمل" value={complete} icon={CalendarCheck2} />
-        <StatCard label="حضور غير مكتمل" value={pending} icon={CircleDashed} href={pending > 0 ? "/admin/sessions?tab=pending" : undefined}
+        <StatCard label="الحصص المبرمجة" value={countsFailed ? "—" : held} icon={CalendarClock} hint={period.preset === "today" ? "اليوم" : undefined} />
+        <StatCard label="حضور مكتمل" value={countsFailed ? "—" : complete} icon={CalendarCheck2} />
+        <StatCard label="حضور غير مكتمل" value={countsFailed ? "—" : pending} icon={CircleDashed} href={pending > 0 ? "/admin/sessions?tab=pending" : undefined}
           className={cn(pending > 0 && "border-warning/40")} />
-        <StatCard label="طلبة غائبون" value={absentStudents} icon={UserX} hint={`${absences} غياب غير مبرر`} />
+        <StatCard label="طلبة غائبون" value={linesFailed ? "—" : absentStudents} icon={UserX} hint={linesFailed ? "تعذّر تحميل الحضور" : `${absences} غياب غير مبرر`} />
       </section>
 
       <div role="tablist" aria-label="طريقة العرض" className="mb-4 inline-flex rounded-lg border bg-card p-1">
@@ -223,7 +244,13 @@ export function AttendanceOverview({ lookups }: { lookups: Lookups }) {
           columns={sessionColumns}
           rows={sessionRows}
           getRowId={(r) => r.session.id}
-          emptyState={<EmptyState icon={SearchX} title={period.preset === "today" ? "لا توجد حصص اليوم" : "لا توجد حصص في هذه الفترة"} />}
+          emptyState={
+            <EmptyState
+              icon={SearchX}
+              title={noneGenerated ? "لم تُولَّد أي حصص بعد" : period.preset === "today" ? "لا توجد حصص اليوم" : "لا توجد حصص في هذه الفترة"}
+              description={noneGenerated ? undefined : "تعرض المتابعة الحصص التي حلّ موعدها؛ غيّر الفترة لرؤية حصص أخرى."}
+            />
+          }
         />
         <Pager page={page} totalPages={list.data?.meta.totalPages ?? 1} onPage={setPage} />
         </QueryState>

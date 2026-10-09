@@ -204,5 +204,40 @@ export function useSetSessionStatus(id: string) {
   )
 }
 
+export interface GenerateSessionsResult {
+  from: ISODate
+  to: ISODate
+  /** New SCHEDULED sessions */
+  created: number
+  /** Occurrences that already had a session (any status, cancelled included) */
+  skippedExisting: number
+  /** Occurrences not created: they collide with an existing session (room or teacher) */
+  skippedConflicts: {
+    groupClassId: string
+    weeklyScheduleId: string
+    date: ISODate
+    startTime: string
+    endTime: string
+    reason: "ROOM" | "TEACHER"
+    conflictingSessionId: string
+  }[]
+  /** Classes skipped because their supervisor is inactive */
+  skippedInactiveSupervisorClassIds: string[]
+}
+
+/**
+ * Admin: create the dated sessions of running classes' weekly slots between
+ * two dates (POST /admin/sessions/generate). The API is idempotent — an
+ * occurrence that already has a session (any status) is never recreated or
+ * modified — and reports the occurrences it could not create.
+ */
+export function useGenerateSessions() {
+  return useApiMutation(
+    (body: { from: ISODate; to: ISODate; groupClassId?: string }) =>
+      api<GenerateSessionsResult>("/admin/sessions/generate", { method: "POST", body }),
+    [keys.sessions, ["attendance"]]
+  )
+}
+
 /** Page size used when a screen needs "all" rows of a bounded query. */
 export const MAX_PAGE = 100
