@@ -5,7 +5,10 @@ import { IsBoolean, IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { RecordStatus, Weekday } from '../generated/prisma/enums.js';
 import { IsTimeOfDay } from './time.js';
 
-/** A recurring weekly slot; branch, room and teachers come from the class. */
+/**
+ * A recurring weekly slot with ITS OWN room (a room of the class's branch);
+ * branch and teachers come from the class.
+ */
 export class CreateWeeklyScheduleDto {
   @ApiProperty({ enum: Weekday, enumName: 'Weekday' })
   @IsEnum(Weekday)
@@ -13,6 +16,12 @@ export class CreateWeeklyScheduleDto {
   @IsTimeOfDay({ description: 'Local time (Africa/Tunis)' }) startTime!: string;
   @IsTimeOfDay({ description: 'Local time, strictly after startTime' })
   endTime!: string;
+  @ApiProperty({
+    format: 'uuid',
+    description: "A room of the class's branch (active)",
+  })
+  @IsUUID()
+  roomId!: string;
 }
 
 export class UpdateWeeklyScheduleDto {
@@ -22,6 +31,14 @@ export class UpdateWeeklyScheduleDto {
   dayOfWeek?: Weekday;
   @IsTimeOfDay({ optional: true }) startTime?: string;
   @IsTimeOfDay({ optional: true }) endTime?: string;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "Another room of the class's branch; the slot's upcoming scheduled sessions (no attendance yet) move with it",
+  })
+  @IsOptional()
+  @IsUUID()
+  roomId?: string;
 }
 
 /** Calendar week view across classes (bounded by the number of weekly slots — not paginated). */
@@ -30,7 +47,10 @@ export class WeeklyScheduleQueryDto {
   @IsOptional()
   @IsUUID()
   branchId?: string;
-  @ApiPropertyOptional({ format: 'uuid' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Slots taught in this room',
+  })
   @IsOptional()
   @IsUUID()
   roomId?: string;
@@ -75,14 +95,13 @@ export class TeacherBriefDto {
   @ApiProperty() lastName!: string;
 }
 
-/** What a calendar cell needs: the slot, its class, group, branch, room and team. */
+/** What a calendar cell needs: the slot's class, group, branch and team (the room is the slot's). */
 export class ScheduleClassDto {
   @ApiProperty() id!: string;
   @ApiProperty({ enum: RecordStatus, enumName: 'RecordStatus' })
   status!: RecordStatus;
   @ApiProperty({ type: NamedRefDto }) group!: NamedRefDto;
   @ApiProperty({ type: NamedRefDto }) branch!: NamedRefDto;
-  @ApiProperty({ type: NamedRefDto }) room!: NamedRefDto;
   @ApiProperty({ type: TeacherBriefDto }) supervisor!: TeacherBriefDto;
   @ApiProperty({ type: TeacherBriefDto, isArray: true })
   assistants!: TeacherBriefDto[];
@@ -93,6 +112,8 @@ export class WeeklyScheduleDto {
   @ApiProperty({ enum: Weekday, enumName: 'Weekday' }) dayOfWeek!: Weekday;
   @ApiProperty({ example: '17:00' }) startTime!: string;
   @ApiProperty({ example: '19:00' }) endTime!: string;
+  @ApiProperty({ type: NamedRefDto, description: 'The room of this slot' })
+  room!: NamedRefDto;
   @ApiProperty({ type: ScheduleClassDto }) groupClass!: ScheduleClassDto;
 }
 

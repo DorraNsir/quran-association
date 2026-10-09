@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/shared/empty-state"
 import { SectionCard } from "@/components/shared/info-list"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
-import { classesOf, describeClass, fullName, indexLookups, type ClassView, type Lookups } from "@/lib/domain"
+import { classesOf, type ClassView, describeClass, fullName, indexLookups, type Lookups, roomsLabel } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
 import { useClassesMemorization } from "@/lib/api/memorization"
@@ -90,7 +90,7 @@ function ClassMemorization({
 
   return (
     <SectionCard
-      title={`${view.branch?.name ?? ""} · ${view.room?.name ?? ""}`}
+      title={`${view.branch?.name ?? ""} · ${roomsLabel(view.rooms)}`}
       icon={DoorOpen}
       action={
         <span className="text-xs text-muted-foreground">

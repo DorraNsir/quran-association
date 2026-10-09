@@ -29,6 +29,7 @@ export function generateSessions(
         id: sessionIdFor(s.id, date),
         groupClassId: s.groupClassId,
         scheduleId: s.id,
+        roomId: s.roomId,
         date,
         start: s.start,
         end: s.end,

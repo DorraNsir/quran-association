@@ -5,8 +5,8 @@
  * validation. Everything here is pure (data in, conflicts out) so it can be
  * swapped for an API call without touching components.
  *
- * Rooms and teachers belong to the GroupClass, so a weekly slot occupies its
- * class's room and its class's teachers.
+ * Each weekly slot has its own room; teachers belong to the GroupClass. A
+ * slot occupies ITS room and its class's teachers.
  */
 import { minutesBetween } from "@/lib/format"
 import { classTeacherIds, indexById, isRunning } from "@/lib/domain"
@@ -30,11 +30,13 @@ export function isValidTimeRange(start: TimeOfDay, end: TimeOfDay) {
   return Boolean(start && end) && minutesBetween(start, end) > 0
 }
 
-/** A slot being created or edited, for a given class (possibly with unsaved team/room). */
+/** A slot being created or edited, in its room, for a given class (possibly with an unsaved team). */
 export interface CandidateSlot extends ScheduleSlot {
   /** Set when editing an existing slot, so it is not compared with itself */
   id?: ID
-  groupClass: Pick<GroupClass, "id" | "roomId" | "supervisorId" | "assistantIds">
+  /** The room of this slot ("" while not chosen: no room conflict to report yet) */
+  roomId: ID
+  groupClass: Pick<GroupClass, "id" | "supervisorId" | "assistantIds">
 }
 
 export interface ConflictContext {
@@ -59,7 +61,7 @@ function occupying({ schedules, groupClasses, groups, ignoreScheduleIds = [] }: 
 
 /**
  * Every reason the candidate slot cannot take place:
- * - ROOM: the class's room hosts another class at an overlapping time
+ * - ROOM: the slot's room hosts another class at an overlapping time
  * - TEACHER: one of its teachers teaches another class at that time
  * - CLASS: the same class already meets at an overlapping time
  */
@@ -74,7 +76,7 @@ export function findConflicts(candidate: CandidateSlot, context: ConflictContext
       conflicts.push({ type: "CLASS", schedule, teacherIds: [] })
       continue
     }
-    if (groupClass.roomId === candidate.groupClass.roomId) {
+    if (candidate.roomId && schedule.roomId === candidate.roomId) {
       conflicts.push({ type: "ROOM", schedule, teacherIds: [] })
     }
     const shared = classTeacherIds(groupClass).filter((id) => teacherIds.includes(id))
@@ -89,7 +91,7 @@ export function freeRooms(slot: ScheduleSlot, branchId: ID, rooms: Room[], conte
   const busy = new Set(
     occupying(context)
       .filter(({ schedule }) => slotsOverlap(slot, schedule))
-      .map(({ groupClass }) => groupClass.roomId)
+      .map(({ schedule }) => schedule.roomId)
   )
   return rooms.filter((r) => r.branchId === branchId && r.status === "ACTIVE" && !busy.has(r.id))
 }
@@ -98,6 +100,14 @@ export function freeRooms(slot: ScheduleSlot, branchId: ID, rooms: Room[], conte
 export interface SlotDraft extends ScheduleSlot {
   key: string
   id?: ID
+  /** The room of this row ("" until chosen) */
+  roomId: ID
+}
+
+/** After a branch change: rows keep their room only when it belongs to the new branch (others must be re-chosen). */
+export function keepRoomsOfBranch<R extends { roomId: ID }>(rows: R[], branchId: ID, rooms: Room[]): R[] {
+  const valid = new Set(rooms.filter((r) => r.branchId === branchId).map((r) => r.id))
+  return rows.map((row) => (valid.has(row.roomId) ? row : { ...row, roomId: "" }))
 }
 
 export interface SlotCheck {
@@ -107,8 +117,8 @@ export interface SlotCheck {
 
 /**
  * Checks every valid row of a class form against other classes' slots AND
- * the form's other rows, using the form's (unsaved) room and team. The
- * class's saved slots are ignored because the form replaces them.
+ * the form's other rows, each in its own room, with the form's (unsaved)
+ * team. The class's saved slots are ignored because the form replaces them.
  */
 export function checkClassSlots(
   drafts: SlotDraft[],
@@ -117,13 +127,13 @@ export function checkClassSlots(
 ) {
   const results = new Map<string, SlotCheck>()
   const groupsById = indexById(data.groups)
-  if (!draftClass.roomId || !isRunning(draftClass, groupsById)) return results
+  if (!isRunning(draftClass, groupsById)) return results
 
   const valid = drafts.filter((d) => isValidTimeRange(d.start, d.end))
   const context: ConflictContext = {
     schedules: [
       ...data.schedules.filter((s) => s.groupClassId !== draftClass.id),
-      ...valid.map((d) => ({ id: `draft:${d.key}`, groupClassId: draftClass.id, day: d.day, start: d.start, end: d.end })),
+      ...valid.map((d) => ({ id: `draft:${d.key}`, groupClassId: draftClass.id, roomId: d.roomId, day: d.day, start: d.start, end: d.end })),
     ],
     groupClasses: [...data.groupClasses.filter((c) => c.id !== draftClass.id), draftClass],
     groups: data.groups,

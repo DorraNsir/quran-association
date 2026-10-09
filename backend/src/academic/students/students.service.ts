@@ -16,6 +16,8 @@ import { classNotFound } from '../group-classes/group-classes.service.js';
 import {
   accountSummarySelect,
   classBriefSelect,
+  roomsOfSlots,
+  toClassRef,
 } from '../teacher-assignments.js';
 import type {
   CreateStudentDto,
@@ -80,7 +82,7 @@ function toDto(s: Row): StudentDto {
           status: c.status,
           group: c.group,
           branch: c.branch,
-          room: c.room,
+          rooms: roomsOfSlots(c.schedules),
           supervisor: { id: c.supervisor.id, ...c.supervisor.person },
         }
       : null,
@@ -459,7 +461,7 @@ export class StudentsService {
       startDate: fromDbDate(e.startDate),
       endDate: fromDbDateOrNull(e.endDate),
       isCurrent: e.endDate === null,
-      groupClass: e.groupClass,
+      groupClass: toClassRef(e.groupClass),
     }));
   }
 

@@ -7,6 +7,7 @@ import { type Prisma, RecordStatus } from '../../generated/prisma/client.js';
 import { platformToday } from '../../common/platform-clock.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { ScheduleConflictService } from '../../scheduling/schedule-conflicts.service.js';
+import { roomsOfSlots } from '../teacher-assignments.js';
 import type {
   CreateGroupDto,
   GroupDetailDto,
@@ -79,7 +80,11 @@ export class GroupsService {
         id: true,
         status: true,
         branch: { select: { id: true, name: true } },
-        room: { select: { id: true, name: true } },
+        // Each weekly slot has its own room: the class lists the rooms it uses
+        schedules: {
+          select: { room: { select: { id: true, name: true } } },
+          orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+        },
         supervisor: {
           select: {
             person: { select: { firstName: true, lastName: true } },
@@ -103,7 +108,7 @@ export class GroupsService {
         id: c.id,
         status: c.status,
         branch: c.branch,
-        room: c.room,
+        rooms: roomsOfSlots(c.schedules),
         supervisor: { id: c.supervisor.id, ...c.supervisor.person },
         assistantsCount: c._count.assistants,
         activeStudentsCount: c._count.students,
@@ -159,7 +164,6 @@ export class GroupsService {
           where: { groupId: id, status: RecordStatus.ACTIVE },
           select: {
             id: true,
-            roomId: true,
             supervisorId: true,
             assistants: { select: { teacherId: true } },
           },
@@ -169,7 +173,6 @@ export class GroupsService {
             tx,
             {
               groupClassId: c.id,
-              roomId: c.roomId,
               teacherIds: [
                 c.supervisorId,
                 ...c.assistants.map((a) => a.teacherId),

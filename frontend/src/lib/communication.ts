@@ -1,4 +1,4 @@
-import { describeClass, fullName, indexLookups, type Lookups } from "@/lib/domain"
+import { describeClass, fullName, indexLookups, roomsLabel, type Lookups } from "@/lib/domain"
 import { getTeacherClassIds, getTeacherGroupClasses } from "@/lib/teacher-access"
 import type { Workspace } from "@/lib/workspace"
 import type {
@@ -37,10 +37,10 @@ export interface Directory {
 
 /* ---------------- GroupClass labels ---------------- */
 
-/** "مجموعة ماهر — المقر الرئيسي — القاعة 3 — حمدي بن عثمان": never two identical options. */
+/** "مجموعة ماهر — المقر الرئيسي — القاعة 3، القاعة 4 — حمدي بن عثمان": never two identical options. */
 export function groupClassLabel(groupClass: GroupClass, lookups: Lookups) {
   const view = describeClass(groupClass, indexLookups(lookups))
-  return [view.group?.name, view.branch?.name, view.room?.name, view.supervisor && fullName(view.supervisor)]
+  return [view.group?.name, view.branch?.name, view.rooms.length ? roomsLabel(view.rooms) : undefined, view.supervisor && fullName(view.supervisor)]
     .filter(Boolean)
     .join(" — ")
 }

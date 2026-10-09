@@ -10,7 +10,7 @@ import { ScheduleSummary, WeeklyScheduleGrid } from "@/components/shared/schedul
 import { PersonCell } from "@/components/shared/user-avatar"
 import { WithStudentWorkspace } from "@/components/shared/with-workspace"
 import { todayInTunis, weekdayOf } from "@/lib/dates"
-import { ageOn, fullName, schedulesOf } from "@/lib/domain"
+import { ageOn, fullName, roomsLabel, schedulesOf } from "@/lib/domain"
 import { formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { getStudentGroupClass } from "@/lib/student-access"
@@ -66,7 +66,7 @@ export function StudentGroupScreen() {
                   items={[
                     { label: "المجموعة", value: view.group?.name, icon: BookOpen },
                     { label: "الفرع", value: view.branch?.name, icon: MapPin },
-                    { label: "القاعة", value: view.room?.name, icon: DoorOpen },
+                    { label: "القاعة", value: roomsLabel(view.rooms), icon: DoorOpen },
                   ]}
                 />
               </SectionCard>
@@ -88,7 +88,7 @@ export function StudentGroupScreen() {
                 {schedule.length === 0 ? (
                   <p className="text-sm text-muted-foreground">لم يتم تحديد جدول لهذه المجموعة بعد</p>
                 ) : (
-                  <ScheduleSummary schedule={schedule} detail={() => `${view.branch?.name ?? ""} · ${view.room?.name ?? ""}`} />
+                  <ScheduleSummary schedule={schedule} detail={(slot) => `${view.branch?.name ?? ""} · ${view.rooms.find((r) => r.id === slot.roomId)?.name ?? ""}`} />
                 )}
               </SectionCard>
             </div>
@@ -116,7 +116,7 @@ export function StudentScheduleScreen() {
                   entries={schedulesOf(view.groupClass.id, lookups.schedules).map((slot) => ({
                     slot,
                     title: view.group?.name ?? "—",
-                    subtitle: `${view.branch?.name ?? ""} · ${view.room?.name ?? ""}`,
+                    subtitle: `${view.branch?.name ?? ""} · ${view.rooms.find((r) => r.id === slot.roomId)?.name ?? ""}`,
                     emphasis: true,
                   }))}
                 />

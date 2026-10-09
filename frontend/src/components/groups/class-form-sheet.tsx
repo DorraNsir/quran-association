@@ -16,14 +16,13 @@ import { fullName, indexLookups, roomsOfBranch, schedulesOf, studentClass, type 
 import { countLabels } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import type { ClassSaveInput } from "@/lib/api/hooks/groups"
-import { checkClassSlots, type SlotDraft } from "@/lib/scheduling"
+import { checkClassSlots, keepRoomsOfBranch, type SlotDraft } from "@/lib/scheduling"
 import type { Group, GroupClass, GroupClassStatus, Student } from "@/types/domain"
 
 import { draftError, ScheduleEditor } from "./schedule-editor"
 
 interface ClassFormValues {
   branchId: string
-  roomId: string
   supervisorId: string
   assistantIds: string[]
   studentIds: string[]
@@ -40,7 +39,6 @@ function toDraftClass(v: ClassFormValues, group: Group, groupClass?: GroupClass)
     id: groupClass?.id ?? DRAFT_CLASS_ID,
     groupId: group.id,
     branchId: v.branchId,
-    roomId: v.roomId,
     supervisorId: v.supervisorId,
     assistantIds: v.assistantIds.filter((id) => id !== v.supervisorId),
     status: v.status,
@@ -111,30 +109,26 @@ export function ClassFormSheet({
     `class-${groupClass?.id ?? "new"}`,
     {
       branchId: groupClass?.branchId ?? "",
-      roomId: groupClass?.roomId ?? "",
       supervisorId: groupClass?.supervisorId ?? "",
       assistantIds: groupClass?.assistantIds ?? [],
       studentIds: currentMembers,
       slots: groupClass
-        ? schedulesOf(groupClass.id, lookups.schedules).map((s) => ({ key: `saved:${s.id}`, id: s.id, day: s.day, start: s.start, end: s.end }))
+        ? schedulesOf(groupClass.id, lookups.schedules).map((s) => ({ key: `saved:${s.id}`, id: s.id, day: s.day, start: s.start, end: s.end, roomId: s.roomId }))
         : [],
       status: groupClass?.status ?? "ACTIVE",
     },
     (v) => ({
       branchId: v.branchId ? undefined : "اختر الفرع",
-      roomId: v.roomId ? undefined : "اختر القاعة",
       supervisorId: v.supervisorId ? undefined : "لكل قسم مدرس مشرف واحد",
       slots:
         v.slots.some((row) => draftError(row)) || [...slotChecks(v).values()].some((c) => c.conflicts.length > 0)
-          ? "راجع مواعيد الحصص: توجد أوقات غير صحيحة أو تعارضات"
+          ? "راجع مواعيد الحصص: توجد أوقات غير صحيحة أو قاعات غير محددة أو تعارضات"
           : undefined,
     })
   )
   const { values, setField } = form
 
-  const branchRooms = roomsOfBranch(values.branchId, lookups.rooms).filter(
-    (r) => r.status === "ACTIVE" || r.id === values.roomId
-  )
+  const branchRooms = values.branchId ? roomsOfBranch(values.branchId, lookups.rooms) : null
   const teachers = lookups.teachers.filter(
     (t) => t.status === "ACTIVE" || t.id === values.supervisorId || values.assistantIds.includes(t.id)
   )
@@ -148,8 +142,9 @@ export function ClassFormSheet({
       groupClass: { ...draft, id: groupClass?.id },
       studentIds: v.studentIds,
       currentMemberIds: currentMembers,
-      slots: v.slots.map(({ id, day, start, end }) => ({ id, day, start, end })),
+      slots: v.slots.map(({ id, day, start, end, roomId }) => ({ id, day, start, end, roomId })),
       previousSlots: groupClass ? schedulesOf(groupClass.id, lookups.schedules) : [],
+      previousBranchId: groupClass?.branchId,
     })
   })
 
@@ -158,7 +153,7 @@ export function ClassFormSheet({
       open={open}
       onOpenChange={onOpenChange}
       title={groupClass ? `تعديل قسم ${indexes.branchesById.get(groupClass.branchId)?.name ?? ""}` : `قسم جديد — ${group.name}`}
-      description={`${group.name}: لكل قسم فرعه وقاعته ومدرسه المشرف وطلبته ومواعيده.`}
+      description={`${group.name}: لكل قسم فرعه ومدرسه المشرف وطلبته ومواعيده، ولكل موعد قاعته.`}
       onSubmit={submit}
       submitLabel={groupClass ? "حفظ التعديلات" : "إنشاء القسم"}
       pending={form.pending}
@@ -170,10 +165,11 @@ export function ClassFormSheet({
             id={form.field("branchId").id}
             value={values.branchId}
             onValueChange={(v) => {
-              // Radix also reports programmatic changes — only a real switch resets the room
+              // Radix also reports programmatic changes — only a real switch clears the rooms
               if (v === values.branchId) return
               setField("branchId", v)
-              setField("roomId", "")
+              // Rooms belong to one branch: keep only the row rooms still valid in the new one
+              setField("slots", keepRoomsOfBranch(values.slots, v, lookups.rooms))
               form.touch("branchId")
             }}
             placeholder="اختر الفرع"
@@ -181,20 +177,6 @@ export function ClassFormSheet({
             options={lookups.branches
               .filter((b) => b.status === "ACTIVE" || b.id === values.branchId)
               .map((b) => ({ value: b.id, label: b.name }))}
-          />
-        </FormField>
-        <FormField label="القاعة" required description={values.branchId ? "كل حصص القسم في هذه القاعة." : "اختر الفرع أولًا"} {...form.field("roomId")}>
-          <SimpleSelect
-            id={form.field("roomId").id}
-            value={values.roomId}
-            onValueChange={(v) => {
-              setField("roomId", v)
-              form.touch("roomId")
-            }}
-            placeholder="اختر القاعة"
-            disabled={!values.branchId}
-            invalid={Boolean(form.field("roomId").error)}
-            options={branchRooms.map((r) => ({ value: r.id, label: r.name }))}
           />
         </FormField>
         <FormField label="الحالة" required {...form.field("status")}>
@@ -277,7 +259,7 @@ export function ClassFormSheet({
         title="المواعيد الأسبوعية"
         description={
           isRunning
-            ? "يُتحقَّق مباشرة من توفّر قاعة القسم ومن عدم ارتباط معلميه بقسم آخر في نفس الوقت."
+            ? "لكل موعد قاعته من قاعات فرع القسم. يُتحقَّق مباشرة من توفّر قاعة كل حصة ومن عدم ارتباط المعلمين بقسم آخر في نفس الوقت."
             : "القسم أو المجموعة غير نشطين: لا تحجز حصصهما القاعات ولا المعلمين، لذلك لا يُتحقَّق من التعارضات."
         }
       >
@@ -292,7 +274,7 @@ export function ClassFormSheet({
           onChange={(rows) => setField("slots", rows)}
           lookups={lookups}
           checks={slotChecks(values)}
-          onPickRoom={(roomId) => setField("roomId", roomId)}
+          rooms={branchRooms}
           showErrors={form.submitted}
         />
       </FormSection>

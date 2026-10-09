@@ -118,3 +118,22 @@ describe("API → screen adapters", () => {
     expect(toResourceView(dto)).toMatchObject({ targets: ["مجموعة — فرع"], publisher: "أ ب", groupClassIds: ["c1"], file: { url: "/api/files/f1" } })
   })
 })
+
+describe("room per weekly slot", () => {
+  it("a weekly slot carries its own room; a class has no room of its own", async () => {
+    const { toGroupClass, toSchedule } = await import("./academic")
+    expect(
+      toSchedule({ id: "s1", dayOfWeek: "MON", startTime: "09:00", endTime: "11:00", groupClass: { id: "c1" }, room: { id: "r2", name: "القاعة 2" } })
+    ).toEqual({ id: "s1", groupClassId: "c1", day: "MON", start: "09:00", end: "11:00", roomId: "r2" })
+    const cls = toGroupClass({
+      id: "c1",
+      status: "ACTIVE",
+      group: { id: "g1", name: "م" },
+      branch: { id: "b1", name: "ف" },
+      rooms: [{ id: "r1", name: "القاعة 1" }, { id: "r2", name: "القاعة 2" }],
+      supervisor: { id: "t1", firstName: "أ", lastName: "ب", photoUrl: null, status: "ACTIVE" },
+      assistants: [],
+    } as unknown as Parameters<typeof toGroupClass>[0])
+    expect(cls).not.toHaveProperty("roomId")
+  })
+})

@@ -44,25 +44,40 @@ export interface ClassSaveInput {
   studentIds: string[]
   currentMemberIds: string[]
   /** The class's weekly slots after saving (id = existing slot) */
-  slots: (Pick<WeeklySchedule, "day" | "start" | "end"> & { id?: string })[]
+  slots: (Pick<WeeklySchedule, "day" | "start" | "end" | "roomId"> & { id?: string })[]
   previousSlots: WeeklySchedule[]
+  /** The class's branch before editing (a branch change moves every kept slot to a room of the new branch) */
+  previousBranchId?: string
 }
 
 /**
- * Saves a class as the API models it: the class (place + team), its status,
- * its weekly slots (deleted first so freed times can be reused, then
- * updated, then created) and the students transferred into it. The API
+ * Saves a class as the API models it: the class (branch + team), its status,
+ * its weekly slots, each in its own room (deleted first so freed times can be
+ * reused, then updated, then created) and the students transferred into it.
+ * A branch change sends the new room of every kept slot with the class itself
+ * (the API applies both atomically). The API
  * checks every conflict and rule; on a refusal the error is shown and the
  * screens reload the real state (steps already accepted stay applied).
  */
 export function useSaveClass() {
   return useApiMutation(async (input: ClassSaveInput) => {
     const c = input.groupClass
-    const team = { roomId: c.roomId, supervisorId: c.supervisorId, assistantTeacherIds: c.assistantIds }
+    const team = { supervisorId: c.supervisorId, assistantTeacherIds: c.assistantIds }
+    const kept = new Map(input.slots.filter((s) => s.id).map((s) => [s.id!, s]))
+    const branchChanged = !!c.id && input.previousBranchId !== undefined && input.previousBranchId !== c.branchId
+    const base = (id: string) => `/admin/group-classes/${id}/schedules`
+    if (c.id)
+      for (const old of input.previousSlots.filter((s) => !kept.has(s.id)))
+        await api(`${base(c.id)}/${old.id}`, { method: "DELETE" })
+
     const saved = c.id
       ? await api<{ id: string; status: string }>(`/admin/group-classes/${c.id}`, {
           method: "PATCH",
-          body: { branchId: c.branchId, ...team },
+          body: {
+            branchId: c.branchId,
+            ...team,
+            ...(branchChanged && { scheduleRooms: [...kept].map(([scheduleId, s]) => ({ scheduleId, roomId: s.roomId })) }),
+          },
         })
       : await api<{ id: string; status: string }>("/admin/group-classes", {
           method: "POST",
@@ -70,17 +85,24 @@ export function useSaveClass() {
         })
     if (saved.status !== c.status) await api(`/admin/group-classes/${saved.id}/status`, { method: "PATCH", body: { status: c.status } })
 
-    const base = `/admin/group-classes/${saved.id}/schedules`
-    const kept = new Map(input.slots.filter((s) => s.id).map((s) => [s.id!, s]))
-    for (const old of input.previousSlots.filter((s) => !kept.has(s.id)))
-      await api(`${base}/${old.id}`, { method: "DELETE" })
     for (const old of input.previousSlots) {
       const next = kept.get(old.id)
-      if (next && (next.day !== old.day || next.start !== old.start || next.end !== old.end))
-        await api(`${base}/${old.id}`, { method: "PATCH", body: { dayOfWeek: next.day, startTime: next.start, endTime: next.end } })
+      if (!next) continue
+      const body = {
+        ...((next.start !== old.start || next.end !== old.end || next.day !== old.day) && {
+          dayOfWeek: next.day,
+          startTime: next.start,
+          endTime: next.end,
+        }),
+        ...(!branchChanged && next.roomId !== old.roomId && { roomId: next.roomId }),
+      }
+      if (Object.keys(body).length) await api(`${base(saved.id)}/${old.id}`, { method: "PATCH", body })
     }
     for (const slot of input.slots.filter((s) => !s.id))
-      await api(base, { method: "POST", body: { dayOfWeek: slot.day, startTime: slot.start, endTime: slot.end } })
+      await api(base(saved.id), {
+        method: "POST",
+        body: { dayOfWeek: slot.day, startTime: slot.start, endTime: slot.end, roomId: slot.roomId },
+      })
 
     for (const studentId of input.studentIds.filter((id) => !input.currentMemberIds.includes(id)))
       await api(`/admin/students/${studentId}/group-class`, { method: "PATCH", body: { groupClassId: saved.id } })

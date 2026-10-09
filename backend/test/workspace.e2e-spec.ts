@@ -11,6 +11,7 @@ import { PasswordService } from '../src/auth/password.service.js';
 import { todayIn } from '../src/common/dates.js';
 import { Role } from '../src/generated/prisma/enums.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { classRooms } from './class-rooms.js';
 
 const RUN = randomUUID().slice(0, 8);
 const PASSWORD = 'initial-pass-123';
@@ -42,7 +43,14 @@ describe('Workspaces (e2e)', () => {
     method: 'post' | 'patch' | 'put' | 'delete',
     path: string,
     body: object = {},
-  ) => http()[method](`/api/${path}`).set(as(who)).send(body);
+  ) =>
+    method === 'post'
+      ? rooms.post(path, body, (b) =>
+          http().post(`/api/${path}`).set(as(who)).send(b),
+        )
+      : http()[method](`/api/${path}`).set(as(who)).send(body);
+  // Each class's usual room: applied to its weekly slots / ad-hoc sessions (rooms are per slot)
+  const rooms = classRooms();
 
   async function login(key: string) {
     token[key] = (
@@ -249,6 +257,7 @@ describe('Workspaces (e2e)', () => {
       expect(body.schedules).toEqual([
         expect.objectContaining({
           groupClassId: id.A,
+          roomId: id.R1, // the slot's own room
           dayOfWeek: 'MON',
           startTime: '08:00',
           endTime: '09:00',
@@ -261,9 +270,8 @@ describe('Workspaces (e2e)', () => {
       expect(body.students[0]).not.toHaveProperty('cin');
       expect(body.students[0]).not.toHaveProperty('address');
       expect(body.branches).toHaveLength(1);
-      expect(body.rooms.map((r: { id: string }) => r.id).sort()).toEqual(
-        [id.R1, id.R3].sort(),
-      );
+      // Rooms of my weekly slots (C has no slot yet, so no room)
+      expect(body.rooms.map((r: { id: string }) => r.id)).toEqual([id.R1]);
     });
 
     it('an assistant sees the class too; another teacher does not', async () => {

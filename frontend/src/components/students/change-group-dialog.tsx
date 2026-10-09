@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { fullName, indexLookups, studentClass, type Lookups } from "@/lib/domain"
+import { fullName, indexLookups, type Lookups, roomsLabel, studentClass } from "@/lib/domain"
 import { labels } from "@/lib/i18n"
 import type { ID, Student } from "@/types/domain"
 
@@ -80,7 +80,7 @@ export function ChangeGroupDialog({
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <DoorOpen className="size-3.5" aria-hidden />
-                  {current.room?.name}
+                  {roomsLabel(current.rooms)}
                 </span>
               </p>
             </div>

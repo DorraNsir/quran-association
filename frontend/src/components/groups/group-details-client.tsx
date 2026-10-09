@@ -13,17 +13,7 @@ import { ScheduleSummary } from "@/components/shared/schedule"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import {
-  ageOn,
-  classesOf,
-  countActiveStudentsByClass,
-  describeClass,
-  fullName,
-  indexLookups,
-  schedulesOf,
-  studentClass,
-  type Lookups,
-} from "@/lib/domain"
+import { ageOn, classesOf, countActiveStudentsByClass, describeClass, fullName, indexLookups, type Lookups, roomsLabel, schedulesOf, studentClass } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { todayInTunis } from "@/lib/dates"
 import { cn } from "@/lib/utils"
@@ -90,7 +80,7 @@ export function GroupClassList({ group, lookups, students }: { group: Group; loo
                       {v.groupClass.status !== "ACTIVE" && <StatusBadge status={v.groupClass.status} />}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {v.room?.name} · {countLabels.students(counts.get(v.groupClass.id) ?? 0)}
+                      {roomsLabel(v.rooms)} · {countLabels.students(counts.get(v.groupClass.id) ?? 0)}
                     </p>
                   </div>
                   <ActionsMenu label={`إجراءات قسم ${v.branch?.name ?? ""}`} actions={classActions(group, v.groupClass, runClass)} />

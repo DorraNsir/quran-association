@@ -22,7 +22,11 @@ const select = {
   name: true,
   status: true,
   branch: { select: { id: true, name: true, status: true } },
-  _count: { select: { groupClasses: { where: { status: 'ACTIVE' } } } },
+  // Classes are counted through their weekly slots in this room (once per class)
+  weeklySchedules: {
+    where: { groupClass: { status: 'ACTIVE' } },
+    select: { groupClassId: true },
+  },
 } satisfies Prisma.RoomSelect;
 
 const toDto = (
@@ -32,7 +36,8 @@ const toDto = (
   name: r.name,
   status: r.status,
   branch: r.branch,
-  activeClassesCount: r._count.groupClasses,
+  activeClassesCount: new Set(r.weeklySchedules.map((w) => w.groupClassId))
+    .size,
 });
 
 export const roomNotFound = () =>

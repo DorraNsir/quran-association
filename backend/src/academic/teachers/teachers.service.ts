@@ -17,6 +17,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import {
   accountSummarySelect,
   classBriefSelect,
+  toClassRef,
 } from '../teacher-assignments.js';
 import type {
   CreateTeacherDto,
@@ -144,8 +145,10 @@ export class TeachersService {
     });
     if (!teacher) throw teacherNotFound();
     return Object.assign(toDto(teacher), {
-      supervisedClasses: teacher.supervisedClasses,
-      assistedClasses: teacher.assistedClasses.map((a) => a.groupClass),
+      supervisedClasses: teacher.supervisedClasses.map(toClassRef),
+      assistedClasses: teacher.assistedClasses.map((a) =>
+        toClassRef(a.groupClass),
+      ),
     });
   }
 

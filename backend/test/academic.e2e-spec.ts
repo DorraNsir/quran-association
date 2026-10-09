@@ -10,6 +10,7 @@ import { configureApp } from '../src/app.setup.js';
 import { PasswordService } from '../src/auth/password.service.js';
 import { Role } from '../src/generated/prisma/enums.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { classRooms } from './class-rooms.js';
 
 const RUN = randomUUID().slice(0, 8);
 const PASSWORD = 'initial-pass-123';
@@ -25,8 +26,12 @@ describe('Academic structure APIs (e2e)', () => {
 
   const http = () => request(app.getHttpServer());
   const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+  // Each class's usual room: applied to its weekly slots / ad-hoc sessions (rooms are per slot)
+  const rooms = classRooms();
   const post = (path: string, body: object) =>
-    http().post(`/api/admin/${path}`).set(as(admin)).send(body);
+    rooms.post(path, body, (b) =>
+      http().post(`/api/admin/${path}`).set(as(admin)).send(b),
+    );
   const patch = (path: string, body: object) =>
     http().patch(`/api/admin/${path}`).set(as(admin)).send(body);
   const get = (path: string, query: object = {}) =>
@@ -514,11 +519,10 @@ describe('Academic structure APIs (e2e)', () => {
   // ───────────────────────── group classes ─────────────────────────
 
   describe('group classes', () => {
-    it('creates a class with one supervisor and several assistants', async () => {
+    it('creates a class with one supervisor and several assistants; each weekly slot has its own room', async () => {
       const res = await post('group-classes', {
         groupId: id.group,
         branchId: id.branch,
-        roomId: id.room,
         supervisorId: id.t1,
         assistantTeacherIds: [id.t2, id.t3],
       }).expect(201);
@@ -526,18 +530,39 @@ describe('Academic structure APIs (e2e)', () => {
         status: 'ACTIVE',
         group: { id: id.group },
         branch: { id: id.branch },
-        room: { id: id.room },
+        rooms: [],
         supervisor: { id: id.t1 },
       });
       expect(
         res.body.assistants.map((a: { id: string }) => a.id).sort(),
       ).toEqual([id.t2, id.t3].sort());
       id.class1 = res.body.id;
+      // Two weekly slots of the SAME class in two different rooms
+      const mon = await post(`group-classes/${id.class1}/schedules`, {
+        dayOfWeek: 'MON',
+        startTime: '09:00',
+        endTime: '11:00',
+        roomId: id.room,
+      }).expect(201);
+      expect(mon.body.room).toEqual({ id: id.room, name: expect.any(String) });
+      id.slotMon = mon.body.id;
+      id.slotTue = (
+        await post(`group-classes/${id.class1}/schedules`, {
+          dayOfWeek: 'TUE',
+          startTime: '09:00',
+          endTime: '11:00',
+          roomId: id.room2,
+        }).expect(201)
+      ).body.id;
+      const detail = await get(`group-classes/${id.class1}`).expect(200);
+      expect(detail.body.rooms.map((r: { id: string }) => r.id)).toEqual([
+        id.room,
+        id.room2,
+      ]);
       id.class2 = (
         await post('group-classes', {
           groupId: id.group,
           branchId: id.branch,
-          roomId: id.room2,
           supervisorId: id.t2,
         }).expect(201)
       ).body.id;
@@ -547,16 +572,28 @@ describe('Academic structure APIs (e2e)', () => {
       const base = {
         groupId: id.group,
         branchId: id.branch,
-        roomId: id.room,
         supervisorId: id.t1,
       };
+      // A slot's room must belong to the class's branch
       expect(
         (
-          await post('group-classes', { ...base, roomId: id.otherRoom }).expect(
-            400,
-          )
+          await post(`group-classes/${id.class1}/schedules`, {
+            dayOfWeek: 'WED',
+            startTime: '09:00',
+            endTime: '10:00',
+            roomId: id.otherRoom,
+          }).expect(400)
         ).body.code,
       ).toBe('ROOM_NOT_IN_BRANCH');
+      expect(
+        (
+          await post(`group-classes/${id.class1}/schedules`, {
+            dayOfWeek: 'WED',
+            startTime: '09:00',
+            endTime: '10:00',
+          }).expect(400)
+        ).body.message,
+      ).toBeDefined(); // roomId is required
       expect(
         (
           await post('group-classes', {
@@ -610,13 +647,13 @@ describe('Academic structure APIs (e2e)', () => {
       await patch(`teachers/${id.t4}/status`, { status: 'ACTIVE' }).expect(200);
     });
 
-    it('the database itself enforces room-in-branch and supervisor ≠ assistant', async () => {
+    it('the database itself enforces slot rooms and supervisor ≠ assistant', async () => {
       await expect(
-        prisma.groupClass.update({
-          where: { id: id.class1 },
-          data: { roomId: id.otherRoom },
+        prisma.weeklySchedule.update({
+          where: { id: id.slotMon },
+          data: { roomId: randomUUID() },
         }),
-      ).rejects.toThrow();
+      ).rejects.toThrow(); // FK to rooms
       await expect(
         prisma.groupClassAssistant.create({
           data: { groupClassId: id.class1, teacherId: id.t1 },
@@ -655,30 +692,58 @@ describe('Academic structure APIs (e2e)', () => {
           }).expect(200)
         ).body.assistants,
       ).toEqual([]);
-      expect(
-        (
-          await patch(`group-classes/${id.class1}`, {
-            roomId: id.otherRoom,
-          }).expect(400)
-        ).body.code,
-      ).toBe('ROOM_NOT_IN_BRANCH');
+      await patch(`group-classes/${id.class1}`, { roomId: id.room }).expect(
+        400,
+      ); // no class-level room any more
       await patch(`group-classes/${id.class1}`, { groupId: id.group2 }).expect(
         400,
       ); // a class never changes group
 
+      // Changing the branch: every weekly slot needs a room of the NEW branch, atomically
+      expect(
+        (
+          await patch(`group-classes/${id.class1}`, {
+            branchId: id.branch2,
+          }).expect(400)
+        ).body.code,
+      ).toBe('SCHEDULE_ROOMS_REQUIRED');
+      expect(
+        (
+          await patch(`group-classes/${id.class1}`, {
+            branchId: id.branch2,
+            scheduleRooms: [
+              { scheduleId: id.slotMon, roomId: id.otherRoom },
+              { scheduleId: id.slotTue, roomId: id.room2 },
+            ],
+          }).expect(400)
+        ).body.code,
+      ).toBe('ROOM_NOT_IN_BRANCH');
+      const unchanged = await get(`group-classes/${id.class1}`).expect(200);
+      expect(unchanged.body.branch.id).toBe(id.branch); // nothing half-applied
       const moved = await patch(`group-classes/${id.class1}`, {
         branchId: id.branch2,
-        roomId: id.otherRoom,
+        scheduleRooms: [
+          { scheduleId: id.slotMon, roomId: id.otherRoom },
+          { scheduleId: id.slotTue, roomId: id.otherRoom },
+        ],
       }).expect(200);
       expect(moved.body).toMatchObject({
         branch: { id: id.branch2 },
-        room: { id: id.otherRoom },
+        rooms: [{ id: id.otherRoom }],
       });
-      await patch(`group-classes/${id.class1}`, {
+      // …and back, each slot to its own room again
+      const back = await patch(`group-classes/${id.class1}`, {
         branchId: id.branch,
-        roomId: id.room,
+        scheduleRooms: [
+          { scheduleId: id.slotMon, roomId: id.room },
+          { scheduleId: id.slotTue, roomId: id.room2 },
+        ],
         assistantTeacherIds: [id.t3],
       }).expect(200);
+      expect(back.body.rooms.map((r: { id: string }) => r.id)).toEqual([
+        id.room,
+        id.room2,
+      ]);
     });
 
     it('lists with filters; teacher detail separates supervised and assisted classes', async () => {

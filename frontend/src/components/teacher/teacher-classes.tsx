@@ -25,7 +25,7 @@ import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { weekdayOf } from "@/lib/dates"
-import { fullName, schedulesOf, type Lookups, type TeacherAssignment } from "@/lib/domain"
+import { fullName, type Lookups, roomsLabel, schedulesOf, type TeacherAssignment } from "@/lib/domain"
 import { countLabels, formatShortDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
@@ -79,7 +79,7 @@ export function TeacherClasses({
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
                   <span className="inline-flex items-center gap-1.5"><MapPin className="size-4" aria-hidden />{a.branch?.name}</span>
-                  <span className="inline-flex items-center gap-1.5"><DoorOpen className="size-4" aria-hidden />{a.room?.name}</span>
+                  <span className="inline-flex items-center gap-1.5"><DoorOpen className="size-4" aria-hidden />{roomsLabel(a.rooms)}</span>
                   <span className="inline-flex items-center gap-1.5"><GraduationCap className="size-4" aria-hidden />{countLabels.students(count)}</span>
                 </div>
                 <ScheduleSummary schedule={schedulesOf(id, lookups.schedules)} />
@@ -122,7 +122,7 @@ export function TeacherClassDetails({
   teacherId: ID
 }) {
   const academicYears = useAcademicYears()
-  const { groupClass, group, branch, room, supervisor, assistants } = assignment
+  const { groupClass, group, branch, rooms, supervisor, assistants } = assignment
   const sessionRows = useTeacherSessionRows(today).rows.filter((r) => r.session.groupClassId === groupClass.id)
   const roster = students
     .filter((s) => s.groupClassId === groupClass.id && s.status === "ACTIVE")
@@ -155,7 +155,7 @@ export function TeacherClassDetails({
         meta={
           <>
             <MetaItem icon={MapPin}>{branch?.name}</MetaItem>
-            <MetaItem icon={DoorOpen}>{room?.name}</MetaItem>
+            <MetaItem icon={DoorOpen}>{roomsLabel(rooms)}</MetaItem>
             <MetaItem icon={GraduationCap}>{countLabels.students(roster.length)}</MetaItem>
           </>
         }
@@ -224,7 +224,7 @@ export function TeacherClassDetails({
               items={[
                 { label: "الفئة", value: group?.audience, icon: UsersRound },
                 { label: "الفرع", value: branch?.name, icon: MapPin },
-                { label: "القاعة", value: room?.name, icon: DoorOpen },
+                { label: "القاعة", value: roomsLabel(rooms), icon: DoorOpen },
                 { label: "البرنامج الأسبوعي", value: <ScheduleSummary schedule={schedulesOf(groupClass.id, lookups.schedules)} />, icon: Repeat },
               ]}
             />

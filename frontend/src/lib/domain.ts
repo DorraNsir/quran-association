@@ -107,13 +107,24 @@ export interface Lookups {
   schedules: WeeklySchedule[]
 }
 
-export function indexLookups({ branches, rooms, groups, groupClasses, teachers }: Lookups) {
+export function indexLookups({ branches, rooms, groups, groupClasses, teachers, schedules }: Lookups) {
+  const roomsById = indexById(rooms)
+  // Rooms are chosen per weekly slot: a class uses the distinct rooms of its slots (in slot order)
+  const roomsByClass = new Map<ID, Room[]>()
+  for (const slot of sortSlots(schedules)) {
+    const room = roomsById.get(slot.roomId)
+    if (!room) continue
+    const list = roomsByClass.get(slot.groupClassId) ?? []
+    if (!list.some((r) => r.id === room.id)) list.push(room)
+    roomsByClass.set(slot.groupClassId, list)
+  }
   return {
     branchesById: indexById(branches),
-    roomsById: indexById(rooms),
+    roomsById,
     groupsById: indexById(groups),
     classesById: indexById(groupClasses),
     teachersById: indexById(teachers),
+    roomsByClass,
   }
 }
 
@@ -124,7 +135,8 @@ export interface ClassView {
   groupClass: GroupClass
   group?: Group
   branch?: Branch
-  room?: Room
+  /** Distinct rooms of its weekly slots (each slot has its own room) */
+  rooms: Room[]
   supervisor?: Teacher
   assistants: Teacher[]
 }
@@ -134,9 +146,14 @@ export function describeClass(groupClass: GroupClass, indexes: Indexes): ClassVi
     groupClass,
     group: indexes.groupsById.get(groupClass.groupId),
     branch: indexes.branchesById.get(groupClass.branchId),
-    room: indexes.roomsById.get(groupClass.roomId),
+    rooms: indexes.roomsByClass.get(groupClass.id) ?? [],
     ...classTeachers(groupClass, indexes.teachersById),
   }
+}
+
+/** "القاعة 1، القاعة 3" — the rooms a class uses ("—" before any weekly slot). */
+export function roomsLabel(rooms: Pick<Room, "name">[]) {
+  return rooms.length ? rooms.map((r) => r.name).join("، ") : "—"
 }
 
 /** The class view of a student's current class (Student → GroupClass → Group, supervisor…). */
@@ -162,11 +179,16 @@ export function teacherAssignments(teacherId: ID, lookups: Lookups): TeacherAssi
 
 /** A teacher's weekly slots across all their running classes, for previews and workload. */
 export function teacherWeeklySlots(teacherId: ID, lookups: Lookups) {
-  const { groupsById } = indexLookups(lookups)
+  const { groupsById, roomsById } = indexLookups(lookups)
   return teacherAssignments(teacherId, lookups)
     .filter((a) => isRunning(a.groupClass, groupsById))
     .flatMap((assignment) =>
-      schedulesOf(assignment.groupClass.id, lookups.schedules).map((slot) => ({ slot, ...assignment }))
+      schedulesOf(assignment.groupClass.id, lookups.schedules).map((slot) => ({
+        slot,
+        ...assignment,
+        // The room of THIS slot (a class may meet in different rooms)
+        room: roomsById.get(slot.roomId),
+      }))
     )
 }
 
@@ -198,15 +220,6 @@ export function countActiveStudentsByGroup(students: Student[], classesById: Map
   return counts
 }
 
-/** "Branch · Room" label for anything with a branchId and roomId (e.g. a class). */
-export function locationLabel(
-  where: { branchId: ID; roomId: ID },
-  branchesById: Map<ID, Branch>,
-  roomsById: Map<ID, Room>
-) {
-  return `${branchesById.get(where.branchId)?.name ?? "—"} · ${roomName(roomsById, where.roomId)}`
-}
-
 /** Weekly slots of running classes held in a room/branch — what "using a room" means. */
 export function activeSchedulesIn(where: { roomId?: ID; branchId?: ID }, lookups: Lookups) {
   const { classesById, groupsById } = indexLookups(lookups)
@@ -214,7 +227,7 @@ export function activeSchedulesIn(where: { roomId?: ID; branchId?: ID }, lookups
     const groupClass = classesById.get(s.groupClassId)
     return (
       isRunning(groupClass, groupsById) &&
-      (where.roomId === undefined || groupClass?.roomId === where.roomId) &&
+      (where.roomId === undefined || s.roomId === where.roomId) &&
       (where.branchId === undefined || groupClass?.branchId === where.branchId)
     )
   })

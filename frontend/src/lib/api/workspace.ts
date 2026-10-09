@@ -37,9 +37,9 @@ interface WsBundle {
   branches: { id: string; name: string; address: string; phone: string | null; status: ActivationStatus }[]
   rooms: { id: string; branchId: string; name: string; status: ActivationStatus }[]
   groups: { id: string; name: string; audience: string | null; status: RecordStatus; createdAt: ISODate }[]
-  groupClasses: { id: string; groupId: string; branchId: string; roomId: string; supervisorId: string; assistantIds: string[]; status: RecordStatus }[]
+  groupClasses: { id: string; groupId: string; branchId: string; supervisorId: string; assistantIds: string[]; status: RecordStatus }[]
   teachers: WsTeacher[]
-  schedules: { id: string; groupClassId: string; dayOfWeek: Weekday; startTime: string; endTime: string }[]
+  schedules: { id: string; groupClassId: string; dayOfWeek: Weekday; startTime: string; endTime: string; roomId: string }[]
 }
 interface TeacherWorkspaceDto extends WsBundle {
   teacher: WsTeacher
@@ -85,7 +85,7 @@ function toLookups(b: WsBundle): Lookups {
     groups: b.groups.map((g): Group => ({ ...g, audience: g.audience ?? "" })),
     groupClasses: b.groupClasses as GroupClass[],
     teachers: b.teachers.map(toTeacher),
-    schedules: b.schedules.map((x): WeeklySchedule => ({ id: x.id, groupClassId: x.groupClassId, day: x.dayOfWeek, start: x.startTime, end: x.endTime })),
+    schedules: b.schedules.map((x): WeeklySchedule => ({ id: x.id, groupClassId: x.groupClassId, day: x.dayOfWeek, start: x.startTime, end: x.endTime, roomId: x.roomId })),
   }
 }
 

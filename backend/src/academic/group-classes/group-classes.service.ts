@@ -18,10 +18,10 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { ScheduleConflictService } from '../../scheduling/schedule-conflicts.service.js';
 import { branchNotFound } from '../branches/branches.service.js';
 import { groupNotFound } from '../groups/groups.service.js';
-import { roomNotFound } from '../rooms/rooms.service.js';
 import {
   assignedToTeacher,
   classBriefSelect,
+  roomsOfSlots,
   personNameSelect,
 } from '../teacher-assignments.js';
 import type {
@@ -68,7 +68,7 @@ function toDto(c: Row): GroupClassDto {
     status: c.status,
     group: c.group,
     branch: c.branch,
-    room: c.room,
+    rooms: roomsOfSlots(c.schedules),
     supervisor: teacherRef(c.supervisor),
     assistants: c.assistants.map((a) => teacherRef(a.teacher)),
     activeStudentsCount: c._count.students,
@@ -105,7 +105,9 @@ export class GroupClassesService {
     const where: Prisma.GroupClassWhereInput = {
       ...(query.groupId ? { groupId: query.groupId } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
-      ...(query.roomId ? { roomId: query.roomId } : {}),
+      ...(query.roomId
+        ? { schedules: { some: { roomId: query.roomId } } }
+        : {}),
       ...(query.supervisorId ? { supervisorId: query.supervisorId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.teacherId ? assignedToTeacher(query.teacherId) : {}),
@@ -181,7 +183,7 @@ export class GroupClassesService {
             'لا يمكن فتح قسم نشط في مجموعة غير مفعّلة',
           );
         }
-        await this.assertPlace(tx, dto.branchId, dto.roomId, status);
+        await this.assertBranch(tx, dto.branchId, status);
         this.assertStaffShape(dto.supervisorId, assistants);
         await this.assertTeachersAssignable(tx, [
           dto.supervisorId,
@@ -191,7 +193,6 @@ export class GroupClassesService {
           data: {
             groupId: dto.groupId,
             branchId: dto.branchId,
-            roomId: dto.roomId,
             supervisorId: dto.supervisorId,
             status,
             assistants: {
@@ -206,7 +207,12 @@ export class GroupClassesService {
     return this.get(id);
   }
 
-  /** Relocation and re-staffing in one locked transaction (assistant list = full replacement). */
+  /**
+   * Relocation and re-staffing in one locked transaction (assistant list =
+   * full replacement). Weekly slots can get new rooms (scheduleRooms) — and
+   * MUST all get one of the new branch when the branch changes; the slots'
+   * upcoming scheduled sessions follow, history keeps its rooms.
+   */
   async update(
     id: string,
     dto: UpdateGroupClassDto,
@@ -215,13 +221,20 @@ export class GroupClassesService {
       this.prisma.$transaction(async (tx) => {
         const current = await this.lock(tx, id);
         const branchId = dto.branchId ?? current.branchId;
-        const roomId = dto.roomId ?? current.roomId;
         const supervisorId = dto.supervisorId ?? current.supervisorId;
         const currentAssistants = current.assistants.map((a) => a.teacherId);
         const assistants = dto.assistantTeacherIds ?? currentAssistants;
 
-        if (dto.branchId !== undefined || dto.roomId !== undefined)
-          await this.assertPlace(tx, branchId, roomId, current.status);
+        if (branchId !== current.branchId)
+          await this.assertBranch(tx, branchId, current.status);
+        const rooms = await this.slotRooms(
+          tx,
+          id,
+          branchId,
+          branchId !== current.branchId,
+          dto.scheduleRooms ?? [],
+          current.status === RecordStatus.ACTIVE,
+        );
         this.assertStaffShape(supervisorId, assistants);
         // Only NEW assignments must be active teachers (existing ones are kept as they are)
         const added = [
@@ -230,25 +243,22 @@ export class GroupClassesService {
         ];
         await this.assertTeachersAssignable(tx, added);
 
-        // Same weekly slots / upcoming sessions, new room or team: must not create conflicts
-        const occupancyChanged =
-          roomId !== current.roomId ||
+        // Same weekly slots / upcoming sessions, new rooms or team: must not create conflicts
+        const teamChanged =
           supervisorId !== current.supervisorId ||
           assistants.length !== currentAssistants.length ||
           assistants.some((t) => !currentAssistants.includes(t));
-        if (occupancyChanged) {
+        const today = await platformToday(tx);
+        if (teamChanged || rooms.size > 0) {
           await this.conflicts.assertClassOccupancyFree(
             tx,
-            {
-              groupClassId: id,
-              roomId,
-              teacherIds: [supervisorId, ...assistants],
-            },
-            await platformToday(tx),
+            { groupClassId: id, teacherIds: [supervisorId, ...assistants] },
+            today,
             {
               checkWeekly:
                 current.status === RecordStatus.ACTIVE &&
                 current.group.status === RecordStatus.ACTIVE,
+              roomOverrides: rooms,
             },
           );
         }
@@ -260,8 +270,13 @@ export class GroupClassesService {
         }
         await tx.groupClass.update({
           where: { id },
-          data: { branchId, roomId, supervisorId },
+          data: { branchId, supervisorId },
         });
+        for (const [scheduleId, roomId] of rooms)
+          await tx.weeklySchedule.update({
+            where: { id: scheduleId },
+            data: { roomId },
+          });
         if (dto.assistantTeacherIds) {
           await tx.groupClassAssistant.createMany({
             data: assistants.map((teacherId) => ({
@@ -271,20 +286,18 @@ export class GroupClassesService {
             skipDuplicates: true,
           });
         }
-        // Upcoming SCHEDULED sessions follow the class (history keeps its snapshot)
-        if (occupancyChanged)
-          await this.conflicts.syncUpcomingSessions(
-            tx,
-            id,
-            await platformToday(tx),
-          );
+        // Upcoming SCHEDULED sessions follow (history keeps its snapshot)
+        if (rooms.size > 0)
+          await this.conflicts.syncSlotRooms(tx, rooms, today);
+        if (teamChanged)
+          await this.conflicts.syncUpcomingSessions(tx, id, today);
         return id;
       }),
     );
     return this.get(id);
   }
 
-  /** (Re)activation re-checks group, branch, room and supervisor. Students stay assigned. */
+  /** (Re)activation re-checks group, branch, the rooms of its weekly slots and supervisor. Students stay assigned. */
   async setStatus(
     id: string,
     status: RecordStatus,
@@ -304,14 +317,25 @@ export class GroupClassesService {
             'GROUP_INACTIVE',
             'لا يمكن تفعيل قسم في مجموعة غير مفعّلة',
           );
-        await this.assertPlace(tx, current.branchId, current.roomId, status);
+        await this.assertBranch(tx, current.branchId, status);
+        const inactiveRoom = await tx.weeklySchedule.findFirst({
+          where: {
+            groupClassId: id,
+            room: { status: { not: ActivationStatus.ACTIVE } },
+          },
+          select: { id: true },
+        });
+        if (inactiveRoom)
+          throw conflict(
+            'ROOM_INACTIVE',
+            'إحدى قاعات المواعيد الأسبوعية غير مفعّلة: غيّر قاعة الموعد أولًا',
+          );
         await this.assertTeachersAssignable(tx, [current.supervisorId]);
-        // Its weekly slots start occupying room and teachers again
+        // Its weekly slots start occupying their rooms and the teachers again
         await this.conflicts.assertClassOccupancyFree(
           tx,
           {
             groupClassId: id,
-            roomId: current.roomId,
             teacherIds: [
               current.supervisorId,
               ...current.assistants.map((a) => a.teacherId),
@@ -337,7 +361,6 @@ export class GroupClassesService {
       select: {
         groupId: true,
         branchId: true,
-        roomId: true,
         supervisorId: true,
         status: true,
         group: { select: { status: true } },
@@ -348,35 +371,57 @@ export class GroupClassesService {
     return current;
   }
 
-  private async assertPlace(
-    tx: Tx,
-    branchId: string,
-    roomId: string,
-    status: RecordStatus,
-  ) {
-    const [branch, room] = await Promise.all([
-      tx.branch.findUnique({
-        where: { id: branchId },
-        select: { status: true },
-      }),
-      tx.room.findUnique({
-        where: { id: roomId },
-        select: { branchId: true, status: true },
-      }),
-    ]);
+  private async assertBranch(tx: Tx, branchId: string, status: RecordStatus) {
+    const branch = await tx.branch.findUnique({
+      where: { id: branchId },
+      select: { status: true },
+    });
     if (!branch) throw branchNotFound();
-    if (!room) throw roomNotFound();
-    if (room.branchId !== branchId)
-      throw badRequest(
-        'ROOM_NOT_IN_BRANCH',
-        'القاعة المختارة لا تنتمي إلى هذا الفرع',
-      );
-    if (status === RecordStatus.ACTIVE) {
-      if (branch.status !== ActivationStatus.ACTIVE)
-        throw conflict('BRANCH_INACTIVE', 'الفرع غير مفعّل');
-      if (room.status !== ActivationStatus.ACTIVE)
-        throw conflict('ROOM_INACTIVE', 'القاعة غير مفعّلة');
+    if (
+      status === RecordStatus.ACTIVE &&
+      branch.status !== ActivationStatus.ACTIVE
+    )
+      throw conflict('BRANCH_INACTIVE', 'الفرع غير مفعّل');
+  }
+
+  /**
+   * The requested slot rooms (scheduleId → roomId), validated: slots of THIS
+   * class, rooms of `branchId` (active for an active class). On a branch
+   * change every slot of the class must be given a room of the new branch.
+   */
+  private async slotRooms(
+    tx: Tx,
+    groupClassId: string,
+    branchId: string,
+    branchChanged: boolean,
+    requested: { scheduleId: string; roomId: string }[],
+    requireActive: boolean,
+  ): Promise<Map<string, string>> {
+    const slots = await tx.weeklySchedule.findMany({
+      where: { groupClassId },
+      select: { id: true, roomId: true },
+    });
+    const own = new Map(slots.map((s) => [s.id, s.roomId]));
+    const rooms = new Map<string, string>();
+    for (const r of requested) {
+      if (!own.has(r.scheduleId))
+        throw badRequest(
+          'SCHEDULE_NOT_IN_CLASS',
+          'أحد المواعيد الأسبوعية لا ينتمي إلى هذا القسم',
+        );
+      if (own.get(r.scheduleId) !== r.roomId || branchChanged)
+        rooms.set(r.scheduleId, r.roomId);
     }
+    if (branchChanged && slots.some((s) => !rooms.has(s.id)))
+      throw badRequest(
+        'SCHEDULE_ROOMS_REQUIRED',
+        'عند تغيير الفرع اختر لكل موعد أسبوعي قاعة من الفرع الجديد',
+      );
+    for (const roomId of new Set(rooms.values()))
+      await this.conflicts.assertRoomForClass(tx, roomId, branchId, {
+        requireActive,
+      });
+    return rooms;
   }
 
   private assertStaffShape(supervisorId: string, assistants: string[]) {
@@ -411,12 +456,6 @@ export class GroupClassesService {
     try {
       return await op();
     } catch (error) {
-      if (violatesConstraint(error, 'group_classes_roomId_branchId_fkey')) {
-        throw badRequest(
-          'ROOM_NOT_IN_BRANCH',
-          'القاعة المختارة لا تنتمي إلى هذا الفرع',
-        );
-      }
       if (violatesConstraint(error, 'group_class_supervisor_not_assistant')) {
         throw badRequest(
           'SUPERVISOR_IS_ASSISTANT',

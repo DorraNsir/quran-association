@@ -23,14 +23,7 @@ import { ScheduleSummary, WeeklyScheduleGrid } from "@/components/shared/schedul
 import { TeacherProfileActions } from "@/components/teachers/teacher-profile-actions"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  countActiveStudentsByClass,
-  fullName,
-  schedulesOf,
-  teacherAssignments,
-  teacherWeeklySlots,
-  weeklyMinutes,
-} from "@/lib/domain"
+import { countActiveStudentsByClass, fullName, roomsLabel, schedulesOf, teacherAssignments, teacherWeeklySlots, weeklyMinutes } from "@/lib/domain"
 import { countLabels, formatDate, formatDuration } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -126,7 +119,7 @@ function TeacherProfileBody({
               />
             ) : (
               <ul className="grid gap-3 sm:grid-cols-2">
-                {assignments.map(({ groupClass, group, branch, room, role }) => (
+                {assignments.map(({ groupClass, group, branch, rooms, role }) => (
                   <li key={groupClass.id}>
                     <Link
                       href={`/admin/groups/${groupClass.groupId}`}
@@ -144,7 +137,7 @@ function TeacherProfileBody({
                       </div>
                       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <MapPin className="size-3.5" aria-hidden />
-                        {branch?.name} · {room?.name}
+                        {branch?.name} · {roomsLabel(rooms)}
                         {groupClass.status !== "ACTIVE" && ` · ${labels.status[groupClass.status]}`}
                       </p>
                       <div className="flex items-end justify-between gap-2 border-t pt-3">

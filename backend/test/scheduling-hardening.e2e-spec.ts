@@ -12,6 +12,7 @@ import { todayIn } from '../src/common/dates.js';
 import { Role } from '../src/generated/prisma/enums.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { SessionsService } from '../src/scheduling/sessions.service.js';
+import { classRooms } from './class-rooms.js';
 
 const RUN = randomUUID().slice(0, 8);
 const PASSWORD = 'initial-pass-123';
@@ -44,8 +45,12 @@ describe('Scheduling hardening (e2e)', () => {
 
   const http = () => request(app.getHttpServer());
   const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+  // Each class's usual room: applied to its weekly slots / ad-hoc sessions (rooms are per slot)
+  const rooms = classRooms();
   const post = (path: string, body: object) =>
-    http().post(`/api/admin/${path}`).set(as(admin)).send(body);
+    rooms.post(path, body, (b) =>
+      http().post(`/api/admin/${path}`).set(as(admin)).send(b),
+    );
   const patch = (path: string, body: object) =>
     http().patch(`/api/admin/${path}`).set(as(admin)).send(body);
   const get = (path: string, query: object = {}) =>
@@ -168,12 +173,14 @@ describe('Scheduling hardening (e2e)', () => {
   // ───────────────────────── 1. historical integrity ─────────────────────────
 
   describe('session snapshots (where / who really applied)', () => {
-    it('sessions snapshot the class room and team at planning time', async () => {
-      await post(`group-classes/${id.C}/schedules`, {
-        dayOfWeek: 'MON',
-        startTime: '10:00',
-        endTime: '11:00',
-      }).expect(201);
+    it('sessions snapshot the slot room and the class team at planning time', async () => {
+      id.slotC = (
+        await post(`group-classes/${id.C}/schedules`, {
+          dayOfWeek: 'MON',
+          startTime: '10:00',
+          endTime: '11:00',
+        }).expect(201)
+      ).body.id;
       await post('sessions/generate', {
         from: MON1,
         to: addDays(MON2, 6),
@@ -204,9 +211,11 @@ describe('Scheduling hardening (e2e)', () => {
       );
     });
 
-    it('moving / re-staffing the class updates ONLY upcoming SCHEDULED sessions', async () => {
-      await patch(`group-classes/${id.C}`, {
+    it('moving the slot / re-staffing the class updates ONLY upcoming SCHEDULED sessions', async () => {
+      await patch(`group-classes/${id.C}/schedules/${id.slotC}`, {
         roomId: id.R2,
+      }).expect(200);
+      await patch(`group-classes/${id.C}`, {
         assistantTeacherIds: [id.T3],
       }).expect(200);
 
@@ -261,7 +270,7 @@ describe('Scheduling hardening (e2e)', () => {
       }).expect(201);
     });
 
-    it('restoring a cancelled upcoming session takes the class’s current room/team and re-checks it', async () => {
+    it('restoring a cancelled upcoming session takes its slot’s current room and the class team, re-checked', async () => {
       const restored = await patch(`sessions/${id.cancelledC}/status`, {
         status: 'SCHEDULED',
       }).expect(200);
@@ -575,22 +584,22 @@ describe('Scheduling hardening (e2e)', () => {
       ]);
     });
 
-    it('a class move racing a session creation never leaves a double-booked room', async () => {
+    it('a room move racing a session creation never leaves a double-booked room', async () => {
       const date = addDays(MON2, 4);
       await post('sessions', {
         groupClassId: id.X,
         date,
-        startTime: '11:00',
-        endTime: '12:00',
-      }).expect(201); // X in R4
-      await post('sessions', {
+        startTime: '13:00',
+        endTime: '14:00',
+      }).expect(201); // X in R4, later that day
+      const f = await post('sessions', {
         groupClassId: id.F,
         date,
         startTime: '11:00',
         endTime: '12:00',
       }).expect(201); // F in R3
       await Promise.all([
-        patch(`group-classes/${id.F}`, { roomId: id.R4 }), // would put F's session into R4
+        patch(`sessions/${f.body.id}`, { roomId: id.R4 }), // would put F's lesson into R4
         post('sessions', {
           groupClassId: id.Y,
           date,

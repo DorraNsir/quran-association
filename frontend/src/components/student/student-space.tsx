@@ -32,7 +32,7 @@ import { useStudentMemorization } from "@/lib/api/memorization"
 import { toResourceView, useResources } from "@/lib/api/resources"
 import { toSession, useSessionRange } from "@/lib/api/sessions"
 import { addDays, weekdayOf } from "@/lib/dates"
-import { fullName, type ClassView } from "@/lib/domain"
+import { type ClassView, fullName, roomsLabel } from "@/lib/domain"
 import { countLabels, formatDate, formatRelativeDay, formatShortDate, formatTimeRange, formatWeekdayDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { defaultPeriod, SEMESTERS } from "@/lib/memorization"
@@ -51,14 +51,17 @@ import { useAcademicYears, useCurrentAcademicYear } from "@/lib/store/settings"
 /** Sessions of the student's current class around today (30 days back, 30 ahead). */
 function useMySessions(today: ISODate) {
   const query = useSessionRange("student", { from: addDays(today, -30), to: addDays(today, 30) })
-  return { sessions: (query.data ?? []).map(toSession), query }
+  // Each session keeps its own room (the room of its weekly slot when it was planned)
+  return { sessions: (query.data ?? []).map((s): MySession => ({ ...toSession(s), roomName: s.room.name })), query }
 }
 
-const nextSessionOf = (sessions: Session[], today: ISODate) =>
+type MySession = Session & { roomName: string }
+
+const nextSessionOf = (sessions: MySession[], today: ISODate) =>
   sessions.find((s) => s.date >= today && s.status !== "CANCELLED")
 
 /** "الحصة القادمة": when and where — or a clear empty state. */
-function NextSession({ session, view, today }: { session?: Session; view?: ClassView; today: ISODate }) {
+function NextSession({ session, view, today }: { session?: MySession; view?: ClassView; today: ISODate }) {
   if (!session) {
     return <p className="py-2 text-sm text-muted-foreground">لا توجد حصة قادمة حالياً</p>
   }
@@ -75,7 +78,7 @@ function NextSession({ session, view, today }: { session?: Session; view?: Class
         </p>
         <p className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
           <span className="inline-flex items-center gap-1"><MapPin className="size-3.5" aria-hidden />{view?.branch?.name}</span>
-          <span className="inline-flex items-center gap-1"><DoorOpen className="size-3.5" aria-hidden />{view?.room?.name}</span>
+          <span className="inline-flex items-center gap-1"><DoorOpen className="size-3.5" aria-hidden />{session.roomName}</span>
         </p>
       </div>
     </div>
@@ -125,7 +128,7 @@ export function StudentDashboard({ student, view, today }: { student: Student; v
             </p>
             <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <MapPin className="size-4" aria-hidden />
-              {view.branch?.name} · {view.room?.name}
+              {view.branch?.name} · {roomsLabel(view.rooms)}
             </p>
           </div>
         ) : (
@@ -215,7 +218,7 @@ export function MySessions({ view, today }: { view?: ClassView; today: ISODate }
   const upcoming = sessions.filter((s) => s.date >= today).slice(0, 4)
   const recent = sessions.filter((s) => s.date < today).slice(-4).reverse()
 
-  const list = (items: Session[], empty: string) =>
+  const list = (items: MySession[], empty: string) =>
     items.length === 0 ? (
       <EmptyState icon={CalendarX2} title={empty} className="py-6" />
     ) : (
@@ -228,7 +231,7 @@ export function MySessions({ view, today }: { view?: ClassView; today: ISODate }
                 {s.date === today && <span className="ms-1.5 text-xs text-primary">اليوم</span>}
               </p>
               <p className="text-xs text-muted-foreground">
-                <span dir="ltr" className="inline-block tabular-nums">{formatTimeRange(s.start, s.end)}</span> · {view?.branch?.name} · {view?.room?.name}
+                <span dir="ltr" className="inline-block tabular-nums">{formatTimeRange(s.start, s.end)}</span> · {view?.branch?.name} · {s.roomName}
               </p>
             </div>
             {s.status !== "SCHEDULED" && <SessionStatusBadge status={s.status} />}

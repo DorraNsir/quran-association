@@ -73,7 +73,7 @@ export function CalendarView({
 
   const live: Lookups = { ...lookups, schedules }
   const indexes = indexLookups(live)
-  const { branchesById, classesById, groupsById } = indexes
+  const { branchesById, classesById, groupsById, roomsById } = indexes
   const studentCounts = countActiveStudentsByClass(students)
   const hours = visibleHours(lookups.schedules)
 
@@ -88,6 +88,7 @@ export function CalendarView({
         ...view,
         group: view.group,
         schedule,
+        room: roomsById.get(schedule.roomId),
         studentCount: studentCounts.get(groupClass.id) ?? 0,
         tone: Math.max(0, lookups.branches.findIndex((b) => b.id === groupClass.branchId)),
       },
@@ -95,9 +96,9 @@ export function CalendarView({
   })
   // Group filter keeps every class of the group; teacher filter keeps only that teacher's classes
   const visible = entries.filter(
-    ({ groupClass, group }) =>
+    ({ groupClass, group, schedule }) =>
       (filters.branch === ALL || groupClass.branchId === filters.branch) &&
-      (filters.room === ALL || groupClass.roomId === filters.room) &&
+      (filters.room === ALL || schedule.roomId === filters.room) &&
       (filters.group === ALL || group.id === filters.group) &&
       (filters.teacher === ALL || classTeacherIds(groupClass).includes(filters.teacher))
   )
@@ -109,7 +110,13 @@ export function CalendarView({
   const entriesOn = (d: ISODate) =>
     visible
       .filter((e) => e.schedule.day === weekdayOf(d))
-      .map((e) => ({ ...e, occurrence: occurrences.get(`${e.schedule.id}|${d}`) }))
+      .map((e) => {
+        const occurrence = occurrences.get(`${e.schedule.id}|${d}`)
+        // A session keeps its own room (moved for one date, or planned before a slot's room change)
+        const room = occurrence ? (roomsById.get(occurrence.roomId) ?? e.room) : e.room
+        return { ...e, occurrence, room }
+      })
+      .filter((e) => filters.room === ALL || e.room?.id === filters.room)
       .sort((a, b) => a.schedule.start.localeCompare(b.schedule.start))
 
   const setFilter = (key: keyof CalendarFilters) => (value: string) =>
@@ -136,12 +143,12 @@ export function CalendarView({
 
   const saveMutation = useApiMutation(
     (saved: WeeklySchedule) => {
-      const body = { dayOfWeek: saved.day, startTime: saved.start, endTime: saved.end }
+      const body = { dayOfWeek: saved.day, startTime: saved.start, endTime: saved.end, roomId: saved.roomId }
       return saved.id
         ? api(`/admin/group-classes/${saved.groupClassId}/schedules/${saved.id}`, { method: "PATCH", body })
         : api(`/admin/group-classes/${saved.groupClassId}/schedules`, { method: "POST", body })
     },
-    [keys.schedules, keys.sessions]
+    [keys.schedules, keys.sessions, keys.rooms]
   )
   const removeMutation = useApiMutation(
     (schedule: WeeklySchedule) => api(`/admin/group-classes/${schedule.groupClassId}/schedules/${schedule.id}`, { method: "DELETE" }),
@@ -203,7 +210,7 @@ export function CalendarView({
           </span>
         </>
       ),
-      entries: entriesOn(date).filter((e) => e.groupClass.roomId === room.id),
+      entries: entriesOn(date).filter((e) => e.room?.id === room.id),
       emptyHint: `انقر لبرمجة حصة في ${room.name}`,
       onEmptyClick: (start) => openCreate(slotPreset(date, start, room.id)),
     }))

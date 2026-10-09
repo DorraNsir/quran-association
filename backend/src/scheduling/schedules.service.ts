@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { badRequest, conflict, notFound } from '../common/errors.js';
 import { type Prisma, Weekday } from '../generated/prisma/client.js';
+import { platformToday } from '../common/platform-clock.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   classCalendarSelect,
@@ -21,6 +22,7 @@ const select = {
   dayOfWeek: true,
   startTime: true,
   endTime: true,
+  room: { select: { id: true, name: true } },
   groupClass: { select: classCalendarSelect },
 } satisfies Prisma.WeeklyScheduleSelect;
 
@@ -41,6 +43,7 @@ const toDto = (
   dayOfWeek: s.dayOfWeek,
   startTime: fromDbTime(s.startTime),
   endTime: fromDbTime(s.endTime),
+  room: s.room,
   groupClass: toScheduleClass(s.groupClass),
 });
 
@@ -88,10 +91,10 @@ export class SchedulesService {
   async list(query: WeeklyScheduleQueryDto): Promise<WeeklyScheduleDto[]> {
     const where: Prisma.WeeklyScheduleWhereInput = {
       ...(query.dayOfWeek ? { dayOfWeek: query.dayOfWeek } : {}),
+      ...(query.roomId ? { roomId: query.roomId } : {}),
       groupClass: {
         ...(query.groupClassId ? { id: query.groupClassId } : {}),
         ...(query.branchId ? { branchId: query.branchId } : {}),
-        ...(query.roomId ? { roomId: query.roomId } : {}),
         ...(query.groupId ? { groupId: query.groupId } : {}),
         ...(query.teacherId
           ? {
@@ -126,6 +129,14 @@ export class SchedulesService {
           'المعلم المشرف على القسم غير نشط: عيّن مشرفًا بديلًا قبل إضافة مواعيد',
         );
       }
+      await this.conflicts.assertRoomForClass(
+        tx,
+        dto.roomId,
+        current.branchId,
+        {
+          requireActive: true,
+        },
+      );
       this.conflicts.throwIfAny(
         await this.conflicts.weeklyConflicts(
           tx,
@@ -135,6 +146,7 @@ export class SchedulesService {
               dayOfWeek: dto.dayOfWeek,
               start: dto.startTime,
               end: dto.endTime,
+              roomId: dto.roomId,
             },
           ],
           {
@@ -147,6 +159,7 @@ export class SchedulesService {
       const created = await tx.weeklySchedule.create({
         data: {
           groupClassId,
+          roomId: dto.roomId,
           dayOfWeek: dto.dayOfWeek,
           startTime: toDbTime(dto.startTime),
           endTime: toDbTime(dto.endTime),
@@ -158,7 +171,12 @@ export class SchedulesService {
     return this.get(id);
   }
 
-  /** The slot being edited is excluded from its own conflict check. */
+  /**
+   * The slot being edited is excluded from its own conflict check. A new
+   * room must belong to the class's branch; the slot's upcoming scheduled
+   * sessions (no attendance yet) move to it after their own conflict check —
+   * history keeps the room it had.
+   */
   async update(
     groupClassId: string,
     scheduleId: string,
@@ -174,9 +192,18 @@ export class SchedulesService {
         dayOfWeek: dto.dayOfWeek ?? existing.dayOfWeek,
         start: dto.startTime ?? fromDbTime(existing.startTime),
         end: dto.endTime ?? fromDbTime(existing.endTime),
+        roomId: dto.roomId ?? existing.roomId,
       };
       assertTimeRange(slot.start, slot.end);
       const current = (await this.conflicts.occupancyOf(tx, groupClassId))!;
+      const roomChanged = slot.roomId !== existing.roomId;
+      if (roomChanged)
+        await this.conflicts.assertRoomForClass(
+          tx,
+          slot.roomId,
+          current.branchId,
+          { requireActive: true },
+        );
       this.conflicts.throwIfAny(
         await this.conflicts.weeklyConflicts(tx, current.occupancy, [slot], {
           excludeScheduleIds: [scheduleId],
@@ -185,14 +212,27 @@ export class SchedulesService {
         }),
         'SCHEDULE',
       );
+      const today = await platformToday(tx);
+      const rooms = new Map([[scheduleId, slot.roomId]]);
+      if (roomChanged) {
+        // Its upcoming sessions will take the new room: they must fit there too
+        await this.conflicts.assertClassOccupancyFree(
+          tx,
+          current.occupancy,
+          today,
+          { checkWeekly: false, roomOverrides: rooms },
+        );
+      }
       await tx.weeklySchedule.update({
         where: { id: scheduleId },
         data: {
           dayOfWeek: slot.dayOfWeek,
           startTime: toDbTime(slot.start),
           endTime: toDbTime(slot.end),
+          roomId: slot.roomId,
         },
       });
+      if (roomChanged) await this.conflicts.syncSlotRooms(tx, rooms, today);
     });
     return this.get(scheduleId);
   }

@@ -93,12 +93,13 @@ export interface ScheduleSlot {
 
 /**
  * One recurring weekly slot of a GroupClass (a class usually meets 2–3 times).
- * Branch, room and teachers are NOT stored here — they come from the class,
- * so there is a single source of truth.
+ * Each slot has ITS OWN room (a room of the class's branch); branch and
+ * teachers come from the class.
  */
 export interface WeeklySchedule extends ScheduleSlot {
   id: ID
   groupClassId: ID
+  roomId: ID
 }
 
 /** CLASS: the same class already meets at an overlapping time */
@@ -129,19 +130,18 @@ export interface Group {
 export type GroupClassStatus = RecordStatus
 
 /**
- * One actual class of a Group ("قسم" in the UI): its own branch, room,
- * supervisor (exactly one), assistants (zero or more), weekly schedule,
- * sessions and attendance. Students point to it (Student.groupClassId).
+ * One actual class of a Group ("قسم" in the UI): its own branch,
+ * supervisor (exactly one), assistants (zero or more), weekly schedule
+ * (each slot in its own room of the branch), sessions and attendance.
+ * Students point to it (Student.groupClassId).
  *
- *   Group ─┬─ GroupClass A (branch 1, room 1, supervisor A) ─ students, schedule, sessions
- *          └─ GroupClass B (branch 2, room 2, supervisor B) ─ students, schedule, sessions
+ *   Group ─┬─ GroupClass A (branch 1, supervisor A) ─ slots (each with a room), students, sessions
+ *          └─ GroupClass B (branch 2, supervisor B) ─ slots (each with a room), students, sessions
  */
 export interface GroupClass {
   id: ID
   groupId: ID
   branchId: ID
-  /** All of this class's sessions take place in this room */
-  roomId: ID
   supervisorId: ID
   assistantIds: ID[]
   status: GroupClassStatus
@@ -196,6 +196,8 @@ export interface Session extends Omit<ScheduleSlot, "day"> {
   groupClassId: ID
   /** The weekly slot this session comes from */
   scheduleId: ID
+  /** Its own room: the weekly slot's room when planned (kept for history), or moved for this date only */
+  roomId: ID
   date: ISODate
   status: SessionStatus
   cancellationReason?: string

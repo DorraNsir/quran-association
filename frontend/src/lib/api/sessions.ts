@@ -94,6 +94,7 @@ export const toSession = (s: SessionDto): Session => ({
   id: s.id,
   groupClassId: s.groupClass.id,
   scheduleId: s.weeklyScheduleId ?? "",
+  roomId: s.room.id,
   date: s.date,
   start: s.startTime,
   end: s.endTime,

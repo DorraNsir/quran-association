@@ -13,6 +13,7 @@ import { AnnouncementScheduler } from '../src/communication/announcement-schedul
 import { AnnouncementsService } from '../src/communication/announcements.service.js';
 import { Role } from '../src/generated/prisma/enums.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { classRooms } from './class-rooms.js';
 
 const RUN = randomUUID().slice(0, 8);
 const PASSWORD = 'initial-pass-123';
@@ -36,11 +37,15 @@ describe('Resources, announcements & notifications (e2e)', () => {
 
   const http = () => request(app.getHttpServer());
   const as = (t: string) => ({ Authorization: `Bearer ${t}` });
+  // Each class's usual room: applied to its weekly slots / ad-hoc sessions (rooms are per slot)
+  const rooms = classRooms();
   const api = (who: string, space: 'admin' | 'teacher' | 'student') => ({
     get: (path: string, query: object = {}) =>
       http().get(`/api/${space}/${path}`).query(query).set(as(token[who])),
     post: (path: string, body: object = {}) =>
-      http().post(`/api/${space}/${path}`).set(as(token[who])).send(body),
+      rooms.post(path, body, (b) =>
+        http().post(`/api/${space}/${path}`).set(as(token[who])).send(b),
+      ),
     patch: (path: string, body: object) =>
       http().patch(`/api/${space}/${path}`).set(as(token[who])).send(body),
     delete: (path: string) =>

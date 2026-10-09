@@ -13,7 +13,7 @@ import { PaginationMetaDto } from '../../common/pagination.js';
 import { RecordStatus } from '../../generated/prisma/enums.js';
 import { SearchQueryDto, trim } from '../shared.dto.js';
 
-/** The pedagogical group only — branch, room, teachers and students belong to its classes. */
+/** The pedagogical group only — branch, rooms (per weekly slot), teachers and students belong to its classes. */
 export class CreateGroupDto {
   @ApiProperty({ example: 'مجموعة ماهر' })
   @Transform(trim)
@@ -67,7 +67,8 @@ export class GroupClassBriefDto {
   @ApiProperty({ enum: RecordStatus, enumName: 'RecordStatus' })
   status!: RecordStatus;
   @ApiProperty() branch!: { id: string; name: string };
-  @ApiProperty() room!: { id: string; name: string };
+  @ApiProperty({ description: 'Distinct rooms of its weekly slots' })
+  rooms!: { id: string; name: string }[];
   @ApiProperty() supervisor!: {
     id: string;
     firstName: string;

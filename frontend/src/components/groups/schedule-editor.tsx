@@ -15,11 +15,15 @@ import {
 import type { Lookups } from "@/lib/domain"
 import { labels, WEEK_ORDER } from "@/lib/i18n"
 import { isValidTimeRange, type SlotCheck, type SlotDraft } from "@/lib/scheduling"
-import type { ID, Weekday } from "@/types/domain"
+import type { ID, Room, Weekday } from "@/types/domain"
+
+const timeError = (row: SlotDraft) =>
+  isValidTimeRange(row.start, row.end) ? undefined : "يجب أن تكون ساعة النهاية بعد ساعة البداية"
+const roomError = (row: SlotDraft) => (row.roomId ? undefined : "اختر قاعة هذه الحصة")
 
 /** Field-level problem of a row (conflicts are reported separately). */
 export function draftError(row: SlotDraft) {
-  return isValidTimeRange(row.start, row.end) ? undefined : "يجب أن تكون ساعة النهاية بعد ساعة البداية"
+  return timeError(row) ?? roomError(row)
 }
 
 function Labeled({ label, children }: { label: string; children: React.ReactNode }) {
@@ -32,8 +36,9 @@ function Labeled({ label, children }: { label: string; children: React.ReactNode
 }
 
 /**
- * Weekly slots of one class. The room and teachers are the class's own, so
- * a row is just day + time; conflicts are checked with the class's room/team.
+ * Weekly slots of one class: each row is day + time + its OWN room (of the
+ * class's branch); the teachers are the class's. Conflicts are checked per
+ * row in that row's room, with the class's team.
  */
 export function ScheduleEditor({
   id,
@@ -41,7 +46,7 @@ export function ScheduleEditor({
   onChange,
   lookups,
   checks,
-  onPickRoom,
+  rooms,
   showErrors,
 }: {
   id: string
@@ -50,8 +55,8 @@ export function ScheduleEditor({
   lookups: Lookups
   /** Conflicts + free rooms per row key; rows without an entry aren't checked */
   checks: Map<string, SlotCheck>
-  /** Changing the room applies to the whole class (all its slots) */
-  onPickRoom?: (roomId: ID) => void
+  /** Rooms of the class's branch (null until a branch is chosen) */
+  rooms: Room[] | null
   showErrors: boolean
 }) {
   const update = (key: string, patch: Partial<SlotDraft>) =>
@@ -61,7 +66,8 @@ export function ScheduleEditor({
     const usedDays = new Set(rows.map((r) => r.day))
     const day = WEEK_ORDER.find((d) => !usedDays.has(d)) ?? "SAT"
     const last = rows[rows.length - 1]
-    onChange([...rows, { key: `draft-${Date.now()}`, day, start: last?.start ?? "09:00", end: last?.end ?? "11:00" }])
+    // A new row gets its own room choice (required before saving)
+    onChange([...rows, { key: `draft-${Date.now()}`, day, start: last?.start ?? "09:00", end: last?.end ?? "11:00", roomId: "" }])
   }
 
   return (
@@ -74,11 +80,12 @@ export function ScheduleEditor({
       <ol className="space-y-3">
         {rows.map((row, index) => {
           const rowLabel = `يوم الدراسة ${index + 1}`
-          const error = draftError(row)
-          const result = error ? undefined : checks.get(row.key)
+          const tError = timeError(row)
+          const rError = roomError(row)
+          const result = tError || rError ? undefined : checks.get(row.key)
           return (
             <li key={row.key} className="space-y-2 rounded-lg border bg-muted/30 p-3" aria-label={rowLabel}>
-              <div className="grid grid-cols-[1fr_1fr_auto] gap-2 sm:grid-cols-[9rem_1fr_1fr_auto] sm:items-end">
+              <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2 sm:grid-cols-[8rem_minmax(0,7rem)_minmax(0,7rem)_minmax(0,1fr)_auto]">
                 <div className="col-span-3 sm:col-span-1">
                   <Labeled label="اليوم">
                     <Select value={row.day} onValueChange={(day) => update(row.key, { day: day as Weekday })}>
@@ -97,23 +104,54 @@ export function ScheduleEditor({
                 </div>
                 <Labeled label="من">
                   <Input type="time" dir="ltr" step={900} className="bg-background" value={row.start}
-                    aria-invalid={showErrors && error ? true : undefined}
+                    aria-invalid={showErrors && tError ? true : undefined}
                     onChange={(e) => update(row.key, { start: e.target.value })} />
                 </Labeled>
                 <Labeled label="إلى">
                   <Input type="time" dir="ltr" step={900} className="bg-background" value={row.end}
-                    aria-invalid={showErrors && error ? true : undefined}
+                    aria-invalid={showErrors && tError ? true : undefined}
                     onChange={(e) => update(row.key, { end: e.target.value })} />
                 </Labeled>
+                <div className="col-span-2 sm:col-span-1">
+                  <Labeled label="القاعة">
+                    <Select
+                      value={row.roomId}
+                      onValueChange={(roomId) => update(row.key, { roomId })}
+                      disabled={!rooms}
+                    >
+                      <SelectTrigger
+                        className="w-full bg-background"
+                        aria-label={`${rowLabel}: القاعة`}
+                        aria-invalid={showErrors && rError ? true : undefined}
+                      >
+                        <SelectValue placeholder={rooms ? "اختر القاعة" : "اختر الفرع أولًا"} />
+                      </SelectTrigger>
+                      <SelectContent position="popper">
+                        {(rooms ?? [])
+                          .filter((r) => r.status === "ACTIVE" || r.id === row.roomId)
+                          .map((r) => (
+                            <SelectItem key={r.id} value={r.id}>
+                              {r.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </Labeled>
+                </div>
                 <Button type="button" variant="ghost" size="icon" aria-label={`حذف ${rowLabel}`}
                   onClick={() => onChange(rows.filter((r) => r.key !== row.key))}>
                   <Trash2 />
                 </Button>
               </div>
 
-              {error && (
+              {tError && (
                 <p role="alert" className="text-xs text-destructive">
-                  {error}
+                  {tError}
+                </p>
+              )}
+              {!tError && rError && showErrors && (
+                <p role="alert" className="text-xs text-destructive">
+                  {rError}
                 </p>
               )}
               {result && result.conflicts.length > 0 && (
@@ -121,8 +159,8 @@ export function ScheduleEditor({
                   conflicts={result.conflicts}
                   lookups={lookups}
                   freeRooms={result.freeRooms}
-                  onPickRoom={onPickRoom}
-                  pickRoomHint="تغيير قاعة القسم (يشمل كل حصصه) إلى:"
+                  onPickRoom={(roomId: ID) => update(row.key, { roomId })}
+                  pickRoomHint="تغيير قاعة هذه الحصة إلى:"
                 />
               )}
               {result && result.conflicts.length === 0 && (

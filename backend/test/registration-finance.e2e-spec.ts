@@ -12,6 +12,7 @@ import { todayIn } from '../src/common/dates.js';
 import { Role } from '../src/generated/prisma/enums.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { RegistrationRateLimiter } from '../src/registration/registration-rate-limit.guard.js';
+import { classRooms } from './class-rooms.js';
 
 const RUN = randomUUID().slice(0, 8);
 const PASSWORD = 'initial-pass-123';
@@ -32,11 +33,15 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
 
   const http = () => request(app.getHttpServer());
   const as = (t: string) => ({ Authorization: `Bearer ${t}` });
+  // Each class's usual room: applied to its weekly slots / ad-hoc sessions (rooms are per slot)
+  const rooms = classRooms();
   const admin = {
     get: (path: string, query: object = {}) =>
       http().get(`/api/admin/${path}`).query(query).set(as(token.admin)),
     post: (path: string, body: object = {}) =>
-      http().post(`/api/admin/${path}`).set(as(token.admin)).send(body),
+      rooms.post(path, body, (b) =>
+        http().post(`/api/admin/${path}`).set(as(token.admin)).send(b),
+      ),
     put: (path: string, body: object) =>
       http().put(`/api/admin/${path}`).set(as(token.admin)).send(body),
     patch: (path: string, body: object) =>

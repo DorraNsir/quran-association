@@ -60,7 +60,6 @@ const classSelect = {
   id: true,
   groupId: true,
   branchId: true,
-  roomId: true,
   supervisorId: true,
   status: true,
   assistants: { select: { teacherId: true }, orderBy: { assignedAt: 'asc' } },
@@ -76,9 +75,15 @@ const classSelect = {
   branch: {
     select: { id: true, name: true, address: true, phone: true, status: true },
   },
-  room: { select: { id: true, branchId: true, name: true, status: true } },
   schedules: {
-    select: { id: true, dayOfWeek: true, startTime: true, endTime: true },
+    select: {
+      id: true,
+      dayOfWeek: true,
+      startTime: true,
+      endTime: true,
+      // Each weekly slot has its own room
+      room: { select: { id: true, branchId: true, name: true, status: true } },
+    },
     orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
   },
 } as const satisfies Prisma.GroupClassSelect;
@@ -148,7 +153,7 @@ export class WorkspaceService {
     });
     return {
       branches: unique(classes.map((c) => c.branch)),
-      rooms: unique(classes.map((c) => c.room)),
+      rooms: unique(classes.flatMap((c) => c.schedules.map((s) => s.room))),
       groups: unique(
         classes.map((c) => ({
           ...c.group,
@@ -159,7 +164,6 @@ export class WorkspaceService {
         id: c.id,
         groupId: c.groupId,
         branchId: c.branchId,
-        roomId: c.roomId,
         supervisorId: c.supervisorId,
         assistantIds: c.assistants.map((a) => a.teacherId),
         status: c.status,
@@ -169,6 +173,7 @@ export class WorkspaceService {
         c.schedules.map((s) => ({
           id: s.id,
           groupClassId: c.id,
+          roomId: s.room.id,
           dayOfWeek: s.dayOfWeek,
           startTime: fromDbTime(s.startTime),
           endTime: fromDbTime(s.endTime),

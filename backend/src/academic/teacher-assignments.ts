@@ -18,8 +18,28 @@ export const classBriefSelect = {
   status: true,
   group: { select: { id: true, name: true } },
   branch: { select: { id: true, name: true } },
-  room: { select: { id: true, name: true } },
+  // Rooms are per weekly slot: the class shows the distinct rooms it uses
+  schedules: {
+    select: { room: { select: { id: true, name: true } } },
+    orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+  },
 } satisfies Prisma.GroupClassSelect;
+
+/** Distinct rooms of a class's weekly slots, in schedule order. */
+export function roomsOfSlots(
+  schedules: { room: { id: string; name: string } }[],
+) {
+  return [...new Map(schedules.map((s) => [s.room.id, s.room])).values()];
+}
+
+/** Brief class → its API shape (rooms derived from its weekly slots). */
+export function toClassRef<
+  T extends {
+    schedules: { room: { id: string; name: string } }[];
+  },
+>({ schedules, ...c }: T) {
+  return { ...c, rooms: roomsOfSlots(schedules) };
+}
 
 export const personNameSelect = {
   id: true,

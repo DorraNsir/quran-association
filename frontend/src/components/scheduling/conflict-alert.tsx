@@ -33,7 +33,7 @@ export function ConflictAlert({
 }) {
   if (conflicts.length === 0) return null
   const indexes = indexLookups(lookups)
-  const { classesById, teachersById } = indexes
+  const { classesById, teachersById, roomsById } = indexes
   const hasRoomConflict = conflicts.some((c) => c.type === "ROOM")
 
   return (
@@ -58,6 +58,8 @@ export function ConflictAlert({
                   const other = classesById.get(c.schedule.groupClassId)
                   const view = other ? describeClass(other, indexes) : undefined
                   const group = view?.group
+                  // The room of the conflicting weekly slot (each slot has its own room)
+                  const room = roomsById.get(c.schedule.roomId)
                   const when = (
                     <span className="text-muted-foreground">
                       {labels.weekday[c.schedule.day]}{" "}
@@ -73,7 +75,7 @@ export function ConflictAlert({
                     >
                       {c.type === "ROOM" && (
                         <p>
-                          <strong className="font-medium">{view?.room?.name}</strong>{" "}
+                          <strong className="font-medium">{room?.name}</strong>{" "}
                           محجوزة لـ <strong className="font-medium">{group?.name}</strong>
                           {view?.supervisor && ` (${fullName(view.supervisor)})`} · {when}
                         </p>
@@ -89,7 +91,7 @@ export function ConflictAlert({
                           </strong>{" "}
                           يدرّس في <strong className="font-medium">{group?.name}</strong> · {when}
                           <span className="block text-xs text-muted-foreground">
-                            {view?.branch?.name} · {view?.room?.name}
+                            {view?.branch?.name} · {room?.name}
                           </span>
                         </p>
                       )}

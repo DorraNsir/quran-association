@@ -58,7 +58,6 @@ export class WsGroupClassDto {
   @ApiProperty() id!: string;
   @ApiProperty() groupId!: string;
   @ApiProperty() branchId!: string;
-  @ApiProperty() roomId!: string;
   @ApiProperty() supervisorId!: string;
   @ApiProperty({ type: [String] }) assistantIds!: string[];
   @ApiProperty({ enum: RecordStatus, enumName: 'RecordStatus' })
@@ -81,6 +80,7 @@ export class WsTeacherDto {
 export class WsScheduleDto {
   @ApiProperty() id!: string;
   @ApiProperty() groupClassId!: string;
+  @ApiProperty({ description: 'The room of this weekly slot' }) roomId!: string;
   @ApiProperty({ enum: Weekday, enumName: 'Weekday' }) dayOfWeek!: Weekday;
   @ApiProperty({ example: '17:00' }) startTime!: string;
   @ApiProperty({ example: '19:00' }) endTime!: string;

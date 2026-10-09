@@ -11,6 +11,7 @@ import { PasswordService } from '../src/auth/password.service.js';
 import { todayIn } from '../src/common/dates.js';
 import { Role } from '../src/generated/prisma/enums.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { classRooms } from './class-rooms.js';
 
 const RUN = randomUUID().slice(0, 8);
 const PASSWORD = 'initial-pass-123';
@@ -41,8 +42,12 @@ describe('Weekly scheduling & sessions (e2e)', () => {
 
   const http = () => request(app.getHttpServer());
   const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+  // Each class's usual room: applied to its weekly slots / ad-hoc sessions (rooms are per slot)
+  const rooms = classRooms();
   const post = (path: string, body: object) =>
-    http().post(`/api/admin/${path}`).set(as(admin)).send(body);
+    rooms.post(path, body, (b) =>
+      http().post(`/api/admin/${path}`).set(as(admin)).send(b),
+    );
   const patch = (path: string, body: object) =>
     http().patch(`/api/admin/${path}`).set(as(admin)).send(body);
   const get = (path: string, query: object = {}) =>
@@ -127,6 +132,16 @@ describe('Weekly scheduling & sessions (e2e)', () => {
       id[r] = (
         await post('rooms', { branchId: id.branch, name: tag(r) }).expect(201)
       ).body.id;
+    const otherBranch = (
+      await post('branches', { name: tag('فرع آخر'), address: 'نابل' }).expect(
+        201,
+      )
+    ).body.id;
+    id.otherBranchRoom = (
+      await post('rooms', { branchId: otherBranch, name: tag('R9') }).expect(
+        201,
+      )
+    ).body.id;
     id.group = (
       await post('groups', { name: tag('مجموعة أ'), audience: 'أطفال' }).expect(
         201,
@@ -205,12 +220,13 @@ describe('Weekly scheduling & sessions (e2e)', () => {
         dayOfWeek: 'TUE',
         startTime: '17:00',
         endTime: '19:00',
+        room: { id: id.R1 }, // the slot's own room
         groupClass: {
           id: id.A,
-          room: { id: id.R1 },
           supervisor: { id: id.T1 },
         },
       });
+      expect(res.body.groupClass).not.toHaveProperty('room');
       expect(
         res.body.groupClass.assistants.map((a: { id: string }) => a.id),
       ).toEqual([id.T2]);
@@ -228,6 +244,7 @@ describe('Weekly scheduling & sessions (e2e)', () => {
         dayOfWeek: 'MON',
         startTime: '09:00',
         endTime: '10:00',
+        roomId: id.R1,
       }).expect(404);
     });
 
@@ -328,14 +345,31 @@ describe('Weekly scheduling & sessions (e2e)', () => {
 
   describe('class changes cannot silently create conflicts', () => {
     // A: TUE 17:00–18:30 in R1 (T1 + T2); B: TUE 17:00–19:00 in R2 (T3)
-    it('changing the room', async () => {
-      const res = await patch(`group-classes/${id.B}`, {
+    it('changing the room of ONE weekly slot', async () => {
+      // B's Tuesday slot into R1, where A is at the same time
+      const res = await patch(`group-classes/${id.B}/schedules/${id.slotB}`, {
         roomId: id.R1,
       }).expect(409);
       expect(res.body.code).toBe('ROOM_SCHEDULE_CONFLICT');
+      const slots = await get(`group-classes/${id.B}/schedules`).expect(200);
+      expect(slots.body[0].room.id).toBe(id.R2); // rolled back
+      // Same time, another free room of the branch: allowed
+      const moved = await patch(`group-classes/${id.B}/schedules/${id.slotB}`, {
+        roomId: id.R4,
+      }).expect(200);
+      expect(moved.body.room.id).toBe(id.R4);
+      await patch(`group-classes/${id.B}/schedules/${id.slotB}`, {
+        roomId: id.R2,
+      }).expect(200);
+      // A room of another branch never fits; there is no class-level room any more
       expect(
-        (await get(`group-classes/${id.B}`).expect(200)).body.room.id,
-      ).toBe(id.R2); // rolled back
+        (
+          await patch(`group-classes/${id.B}/schedules/${id.slotB}`, {
+            roomId: id.otherBranchRoom,
+          }).expect(400)
+        ).body.code,
+      ).toBe('ROOM_NOT_IN_BRANCH');
+      await patch(`group-classes/${id.B}`, { roomId: id.R1 }).expect(400);
     });
 
     it('changing the supervisor or the assistants', async () => {

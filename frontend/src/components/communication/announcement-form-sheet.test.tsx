@@ -10,7 +10,7 @@ const lookups: Lookups = {
   branches: [{ id: "b1", name: "فرع المركز", address: "نابل", status: "ACTIVE" }],
   rooms: [{ id: "r1", branchId: "b1", name: "قاعة 1", status: "ACTIVE" }],
   groups: [{ id: "g1", name: "مجموعة الأطفال", audience: "أطفال", status: "ACTIVE", createdAt: "2026-09-01" }],
-  groupClasses: [{ id: "c1", groupId: "g1", branchId: "b1", roomId: "r1", supervisorId: "t1", assistantIds: [], status: "ACTIVE" }],
+  groupClasses: [{ id: "c1", groupId: "g1", branchId: "b1", supervisorId: "t1", assistantIds: [], status: "ACTIVE" }],
   teachers: [],
   schedules: [],
 }

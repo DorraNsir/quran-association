@@ -11,7 +11,6 @@ export const classCalendarSelect = {
   status: true,
   group: { select: { id: true, name: true } },
   branch: { select: { id: true, name: true } },
-  room: { select: { id: true, name: true } },
   supervisor: teacher,
   assistants: { select: { teacher }, orderBy: { assignedAt: 'asc' } },
 } satisfies Prisma.GroupClassSelect;
@@ -28,7 +27,6 @@ export const toScheduleClass = (c: Row): ScheduleClassDto => ({
   status: c.status,
   group: c.group,
   branch: c.branch,
-  room: c.room,
   supervisor: brief(c.supervisor),
   assistants: c.assistants.map((a) => brief(a.teacher)),
 });

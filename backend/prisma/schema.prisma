@@ -403,12 +403,12 @@ model Room {
   createdAt DateTime         @default(now()) @db.Timestamptz(3)
   updatedAt DateTime         @updatedAt @db.Timestamptz(3)
 
-  branch       Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  groupClasses GroupClass[]
-  sessions     Session[]
+  branch          Branch           @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  /// Weekly slots taught in this room (each slot of a class has its own room)
+  weeklySchedules WeeklySchedule[]
+  sessions        Session[]
 
   @@unique([branchId, name])
-  /// Target of GroupClass's composite FK (roomId, branchId): a class's room is always in its branch
   @@unique([id, branchId])
   @@map("rooms")
 }
@@ -439,8 +439,8 @@ model Group {
 model GroupClass {
   id           String       @id @default(uuid(7)) @db.Uuid
   groupId      String       @db.Uuid
+  /// Rooms are chosen per weekly slot (WeeklySchedule.roomId), within this branch
   branchId     String       @db.Uuid
-  roomId       String       @db.Uuid
   supervisorId String       @db.Uuid
   status       RecordStatus @default(ACTIVE)
   createdAt    DateTime     @default(now()) @db.Timestamptz(3)
@@ -448,8 +448,6 @@ model GroupClass {
 
   group      Group   @relation(fields: [groupId], references: [id], onDelete: Restrict)
   branch     Branch  @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  /// Composite FK: the room must belong to the class's branch (enforced by PostgreSQL)
-  room       Room    @relation(fields: [roomId, branchId], references: [id, branchId], onDelete: Restrict, onUpdate: Restrict)
   supervisor Teacher @relation("GroupClassSupervisor", fields: [supervisorId], references: [id], onDelete: Restrict)
 
   assistants          GroupClassAssistant[]
@@ -464,7 +462,6 @@ model GroupClass {
 
   @@index([groupId])
   @@index([branchId])
-  @@index([roomId])
   @@index([supervisorId])
   @@index([status])
   @@map("group_classes")
@@ -489,6 +486,8 @@ model GroupClassAssistant {
 model WeeklySchedule {
   id           String   @id @default(uuid(7)) @db.Uuid
   groupClassId String   @db.Uuid
+  /// The room of THIS slot (a room of the class's branch — checked by the API)
+  roomId       String   @db.Uuid
   dayOfWeek    Weekday
   startTime    DateTime @db.Time(0)
   endTime      DateTime @db.Time(0)
@@ -496,10 +495,12 @@ model WeeklySchedule {
   updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
   groupClass GroupClass @relation(fields: [groupClassId], references: [id], onDelete: Cascade)
+  room       Room       @relation(fields: [roomId], references: [id], onDelete: Restrict)
   sessions   Session[]
 
   @@index([groupClassId])
   @@index([dayOfWeek, startTime])
+  @@index([roomId, dayOfWeek])
   @@map("weekly_schedules")
 }
 
@@ -568,7 +569,7 @@ model Session {
   groupClassId       String            @db.Uuid
   /// The weekly slot it was generated from (null for an ad-hoc session)
   weeklyScheduleId   String?           @db.Uuid
-  /// Room actually used (snapshot of the class's room)
+  /// Room actually used (snapshot of the weekly slot's room, or chosen for an ad-hoc session)
   roomId             String            @db.Uuid
   date               DateTime          @db.Date
   startTime          DateTime          @db.Time(0)

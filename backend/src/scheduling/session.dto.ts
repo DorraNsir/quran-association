@@ -24,6 +24,12 @@ import { IsTimeOfDay } from './time.js';
 /** A real lesson on a real date (manual — never changes the weekly schedule). */
 export class CreateSessionDto {
   @ApiProperty({ format: 'uuid' }) @IsUUID() groupClassId!: string;
+  @ApiProperty({
+    format: 'uuid',
+    description: "Room of this lesson: a room of the class's branch (active)",
+  })
+  @IsUUID()
+  roomId!: string;
   @IsDateOnly() date!: string;
   @IsTimeOfDay() startTime!: string;
   @IsTimeOfDay() endTime!: string;
@@ -42,6 +48,14 @@ export class UpdateSessionDto {
   @IsDateOnly({ optional: true }) date?: string;
   @IsTimeOfDay({ optional: true }) startTime?: string;
   @IsTimeOfDay({ optional: true }) endTime?: string;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "Move THIS lesson to another room of the class's branch (conflicts checked; its weekly slot is unchanged)",
+  })
+  @IsOptional()
+  @IsUUID()
+  roomId?: string;
 }
 
 export class SetSessionStatusDto {
@@ -80,7 +94,10 @@ class SessionFilters extends PaginationQueryDto {
   @IsOptional()
   @IsUUID()
   branchId?: string;
-  @ApiPropertyOptional({ format: 'uuid', description: 'Through the class' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'The room of the session',
+  })
   @IsOptional()
   @IsUUID()
   roomId?: string;

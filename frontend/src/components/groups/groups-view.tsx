@@ -13,16 +13,7 @@ import { PageHeader } from "@/components/shared/page-header"
 import { ScheduleSummary } from "@/components/shared/schedule"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import {
-  classesOf,
-  countActiveStudentsByClass,
-  describeClass,
-  fullName,
-  indexLookups,
-  schedulesOf,
-  type ClassView,
-  type Lookups,
-} from "@/lib/domain"
+import { classesOf, type ClassView, countActiveStudentsByClass, describeClass, fullName, indexLookups, type Lookups, roomsLabel, schedulesOf } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -122,7 +113,7 @@ export function GroupsView({ lookups, students }: { lookups: Lookups; students: 
     <>
       <PageHeader
         title="المجموعات"
-        description="المجموعات البيداغوجية وأقسامها: لكل قسم فرعه وقاعته ومدرسه المشرف وطلبته ومواعيده."
+        description="المجموعات البيداغوجية وأقسامها: لكل قسم فرعه ومدرسه المشرف وطلبته ومواعيده، ولكل موعد قاعته."
         actions={
           <Button onClick={() => run("create")}>
             <Plus />
@@ -223,7 +214,7 @@ function GroupCard({
             <div className="flex items-center justify-between gap-2 text-sm">
               <span className="inline-flex items-center gap-1.5 font-medium">
                 <DoorOpen className="size-3.5 text-muted-foreground" aria-hidden />
-                {v.branch?.name} · {v.room?.name}
+                {v.branch?.name} · {roomsLabel(v.rooms)}
               </span>
               {v.groupClass.status !== "ACTIVE" && <StatusBadge status={v.groupClass.status} />}
             </div>

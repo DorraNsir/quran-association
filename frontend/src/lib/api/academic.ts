@@ -71,7 +71,7 @@ export interface GroupClassDto {
   status: RecordStatus
   group: Ref
   branch: Ref
-  room: Ref
+  rooms: Ref[]
   supervisor: TeacherRef
   assistants: TeacherRef[]
   activeStudentsCount: number
@@ -124,6 +124,7 @@ export interface ScheduleDto {
   startTime: string
   endTime: string
   groupClass: { id: string }
+  room: Ref
 }
 export interface AcademicYearDto {
   id: string
@@ -163,7 +164,6 @@ export const toGroupClass = (c: GroupClassDto): GroupClass => ({
   id: c.id,
   groupId: c.group.id,
   branchId: c.branch.id,
-  roomId: c.room.id,
   supervisorId: c.supervisor.id,
   assistantIds: c.assistants.map((a) => a.id),
   status: c.status,
@@ -202,6 +202,7 @@ export const toSchedule = (s: ScheduleDto): WeeklySchedule => ({
   day: s.dayOfWeek,
   start: s.startTime,
   end: s.endTime,
+  roomId: s.room.id,
 })
 export const toAcademicYear = (y: AcademicYearDto): AcademicYear => ({
   id: y.id,

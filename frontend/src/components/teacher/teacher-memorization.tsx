@@ -12,7 +12,7 @@ import { SectionCard } from "@/components/shared/info-list"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { fullName, type Lookups } from "@/lib/domain"
+import { fullName, type Lookups, roomsLabel } from "@/lib/domain"
 import { countLabels, formatShortDate } from "@/lib/format"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
 import { useClassesMemorization } from "@/lib/api/memorization"
@@ -98,7 +98,7 @@ export function TeacherMemorization({
             >
               <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <TeacherRoleBadge role={assignment.role} />
-                <span>{assignment.room?.name}</span>·<span>{countLabels.students(roster.length)}</span>
+                <span>{roomsLabel(assignment.rooms)}</span>·<span>{countLabels.students(roster.length)}</span>
                 {missing > 0 && <span className="text-warning">· {missing} دون تحديد</span>}
               </div>
               {shown.length === 0 ? (

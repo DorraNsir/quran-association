@@ -8,7 +8,7 @@ import { countLabels, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import type { ClassView } from "@/lib/domain"
-import type { Group, Session, WeeklySchedule } from "@/types/domain"
+import type { Group, Room, Session, WeeklySchedule } from "@/types/domain"
 
 import { toMinutes } from "./calendar-utils"
 
@@ -16,6 +16,8 @@ import { toMinutes } from "./calendar-utils"
 export interface CalendarEntry extends ClassView {
   schedule: WeeklySchedule
   group: Group
+  /** The room of this slot — or of the dated session when it was moved for that date */
+  room?: Room
   studentCount: number
   tone: number
   /** The dated session for the displayed date, when one exists (Part 3) */

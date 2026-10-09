@@ -124,7 +124,11 @@ export class ClassRefDto {
   status!: RecordStatus;
   @ApiProperty() group!: { id: string; name: string };
   @ApiProperty() branch!: { id: string; name: string };
-  @ApiProperty() room!: { id: string; name: string };
+  @ApiProperty({
+    description:
+      'Distinct rooms of its weekly slots (each slot has its own room)',
+  })
+  rooms!: { id: string; name: string }[];
 }
 
 export class TeacherDto {

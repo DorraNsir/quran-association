@@ -29,16 +29,7 @@ import { WeeklyScheduleGrid } from "@/components/shared/schedule"
 import { StatCard } from "@/components/shared/stat-card"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
-import {
-  classesOf,
-  classTeacherIds,
-  describeClass,
-  fullName,
-  indexLookups,
-  schedulesOf,
-  studentClass,
-  studentsInGroup,
-} from "@/lib/domain"
+import { classesOf, classTeacherIds, describeClass, fullName, indexLookups, roomsLabel, schedulesOf, studentClass, studentsInGroup } from "@/lib/domain"
 import { countLabels, formatDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { Student, Teacher, TeachingRole } from "@/types/domain"
@@ -182,7 +173,7 @@ function GroupDetailsBody({ id, lookups, students }: { id: string; lookups: Look
             content: (
               <div className="space-y-6">
                 {classes.map((v) => (
-                  <SectionCard key={v.groupClass.id} title={`قسم ${v.branch?.name ?? ""} · ${v.room?.name ?? ""}`} icon={DoorOpen}>
+                  <SectionCard key={v.groupClass.id} title={`قسم ${v.branch?.name ?? ""} · ${roomsLabel(v.rooms)}`} icon={DoorOpen}>
                     <div className="grid gap-3 sm:grid-cols-2">
                       {v.supervisor && <TeacherCard teacher={v.supervisor} role="SUPERVISOR" />}
                       {v.assistants.map((t) => (
@@ -217,7 +208,7 @@ function GroupDetailsBody({ id, lookups, students }: { id: string; lookups: Look
                   entries={weeklySlots.map(({ slot, view }) => ({
                     slot,
                     title: view.branch?.name ?? group.name,
-                    subtitle: `${view.room?.name ?? ""} · ${view.supervisor ? fullName(view.supervisor) : ""}`,
+                    subtitle: `${roomsLabel(view.rooms)} · ${view.supervisor ? fullName(view.supervisor) : ""}`,
                     emphasis: true,
                   }))}
                 />

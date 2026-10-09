@@ -27,7 +27,7 @@ import { ProfileTabs } from "@/components/shared/profile-tabs"
 import { WeeklyScheduleGrid } from "@/components/shared/schedule"
 import { WithTeacherWorkspace } from "@/components/shared/with-workspace"
 import { todayInTunis, weekdayOf } from "@/lib/dates"
-import { ageOn, fullName, indexLookups, studentClass, teacherWeeklySlots, weeklyMinutes } from "@/lib/domain"
+import { ageOn, fullName, indexLookups, roomsLabel, studentClass, teacherWeeklySlots, weeklyMinutes } from "@/lib/domain"
 import { formatDate, formatDuration } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { getTeacherGroupClasses } from "@/lib/teacher-access"
@@ -205,7 +205,7 @@ export function TeacherStudentScreen({ id, tab }: { id: string; tab?: string }) 
                         items={[
                           { label: "المجموعة", value: view?.group?.name, icon: BookOpen },
                           { label: "الفرع", value: view?.branch?.name, icon: MapPin },
-                          { label: "القاعة", value: view?.room?.name, icon: DoorOpen },
+                          { label: "القاعة", value: view ? roomsLabel(view.rooms) : undefined, icon: DoorOpen },
                           { label: "المدرس المشرف", value: view?.supervisor && fullName(view.supervisor), icon: ShieldCheck },
                           ...(student.phone ? [{ label: "هاتف الطالب", value: <PhoneLink phone={student.phone} />, icon: Phone }] : []),
                           { label: "هاتف الولي", value: student.guardianPhone && <PhoneLink phone={student.guardianPhone} />, icon: Phone },

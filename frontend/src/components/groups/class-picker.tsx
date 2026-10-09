@@ -11,16 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  classesOf,
-  countActiveStudentsByClass,
-  describeClass,
-  fullName,
-  indexLookups,
-  isRunning,
-  schedulesOf,
-  type Lookups,
-} from "@/lib/domain"
+import { classesOf, countActiveStudentsByClass, describeClass, fullName, indexLookups, isRunning, type Lookups, roomsLabel, schedulesOf } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -126,7 +117,7 @@ export function ClassPicker({
                   </span>
                   <span className="inline-flex items-center gap-1">
                     <DoorOpen className="size-3.5" aria-hidden />
-                    {view.room?.name}
+                    {roomsLabel(view.rooms)}
                   </span>
                   {counts && (
                     <span className="inline-flex items-center gap-1">

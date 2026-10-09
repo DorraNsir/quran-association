@@ -270,7 +270,7 @@ export class SessionsService {
     return toDto(session, today, counts.get(id));
   }
 
-  /** Manual session (snapshot of the class's room and active team); the weekly schedule is NOT modified. */
+  /** Manual (ad-hoc) session in the given room of the class's branch, with the class's active team; the weekly schedule is NOT modified. */
   async create(
     dto: CreateSessionDto,
     actorUserId?: string,
@@ -283,6 +283,9 @@ export class SessionsService {
       if (!team.classActive)
         throw conflict('GROUP_CLASS_INACTIVE', 'القسم غير نشط');
       if (!team.supervisorActive) throw supervisorInactive();
+      await this.conflicts.assertRoomForClass(tx, dto.roomId, team.branchId, {
+        requireActive: true,
+      });
       const status = dto.status ?? SessionStatus.SCHEDULED;
       if (status === SessionStatus.COMPLETED)
         await this.assertNotFuture(tx, dto.date);
@@ -290,7 +293,14 @@ export class SessionsService {
         await this.conflicts.sessionConflicts(
           tx,
           team.occupancy,
-          [{ date: dto.date, start: dto.startTime, end: dto.endTime }],
+          [
+            {
+              date: dto.date,
+              start: dto.startTime,
+              end: dto.endTime,
+              roomId: dto.roomId,
+            },
+          ],
           {
             includeSameClass: true,
           },
@@ -300,7 +310,7 @@ export class SessionsService {
       const created = await tx.session.create({
         data: {
           groupClassId: dto.groupClassId,
-          roomId: team.roomId,
+          roomId: dto.roomId,
           date: toDbDate(dto.date),
           startTime: toDbTime(dto.startTime),
           endTime: toDbTime(dto.endTime),
@@ -318,9 +328,10 @@ export class SessionsService {
   }
 
   /**
-   * Reschedule a SCHEDULED session; it is excluded from its own check. A
-   * session moved to today or later takes the class's CURRENT room and active
-   * team; one kept in the past keeps its snapshot.
+   * Reschedule a SCHEDULED session (date, times and/or ROOM); it is excluded
+   * from its own check. It keeps its own room unless a new one (of the
+   * class's branch) is given. A session moved to today or later takes the
+   * class's active team; one kept in the past keeps its snapshot.
    */
   async update(id: string, dto: UpdateSessionDto): Promise<SessionDto> {
     await this.prisma.$transaction(async (tx) => {
@@ -342,8 +353,18 @@ export class SessionsService {
         date: dto.date ?? fromDbDate(session.date),
         start: dto.startTime ?? fromDbTime(session.startTime),
         end: dto.endTime ?? fromDbTime(session.endTime),
+        roomId: dto.roomId ?? session.roomId,
       };
       assertTimeRange(slot.start, slot.end);
+      if (slot.roomId !== session.roomId) {
+        const { branchId } = await tx.groupClass.findUniqueOrThrow({
+          where: { id: session.groupClassId },
+          select: { branchId: true },
+        });
+        await this.conflicts.assertRoomForClass(tx, slot.roomId, branchId, {
+          requireActive: true,
+        });
+      }
       const refresh = await this.refreshSnapshotIfUpcoming(
         tx,
         session.groupClassId,
@@ -363,7 +384,7 @@ export class SessionsService {
           date: toDbDate(slot.date),
           startTime: toDbTime(slot.start),
           endTime: toDbTime(slot.end),
-          ...(refresh ? { roomId: refresh.roomId } : {}),
+          roomId: slot.roomId,
         },
       });
       if (refresh) await this.conflicts.writeSessionTeams(tx, [id], refresh);
@@ -432,6 +453,7 @@ export class SessionsService {
       let refresh: Awaited<
         ReturnType<SessionsService['refreshSnapshotIfUpcoming']>
       >;
+      let roomId = session.roomId;
       if (from === SessionStatus.CANCELLED && to === SessionStatus.SCHEDULED) {
         // A cancelled session freed its slot: restoring must not double-book
         const date = fromDbDate(session.date);
@@ -440,6 +462,14 @@ export class SessionsService {
           session.groupClassId,
           date,
         );
+        // An upcoming lesson of a weekly slot takes the slot's CURRENT room
+        if (refresh && session.weeklyScheduleId) {
+          const slot = await tx.weeklySchedule.findUnique({
+            where: { id: session.weeklyScheduleId },
+            select: { roomId: true },
+          });
+          if (slot) roomId = slot.roomId;
+        }
         this.conflicts.throwIfAny(
           await this.conflicts.sessionConflicts(
             tx,
@@ -449,6 +479,7 @@ export class SessionsService {
                 date,
                 start: fromDbTime(session.startTime),
                 end: fromDbTime(session.endTime),
+                roomId,
               },
             ],
             { excludeSessionIds: [id], includeSameClass: true },
@@ -471,7 +502,7 @@ export class SessionsService {
                 completedByUserId: null,
                 completionSource: null,
               }),
-          ...(refresh ? { roomId: refresh.roomId } : {}),
+          roomId,
         },
       });
       if (refresh) await this.conflicts.writeSessionTeams(tx, [id], refresh);
@@ -514,7 +545,7 @@ export class SessionsService {
    *  - it does not collide with a non-cancelled session of another class in
    *    the same room or with a shared teacher (reported, not created).
    * Classes whose supervisor is inactive are skipped (reported). Each new
-   * session snapshots the class's room and active team. Existing sessions
+   * session takes the room of its weekly slot and the class's active team. Existing sessions
    * are never modified.
    */
   async generate(dto: GenerateSessionsDto): Promise<GenerateSessionsResultDto> {
@@ -539,7 +570,6 @@ export class SessionsService {
           },
           select: {
             id: true,
-            roomId: true,
             supervisor: { select: { id: true, status: true } },
             assistants: {
               select: { teacher: { select: { id: true, status: true } } },
@@ -550,6 +580,7 @@ export class SessionsService {
                 dayOfWeek: true,
                 startTime: true,
                 endTime: true,
+                roomId: true,
               },
             },
           },
@@ -566,7 +597,6 @@ export class SessionsService {
           plannable.map((c) => [
             c.id,
             {
-              roomId: c.roomId,
               supervisorId: c.supervisor.id,
               assistantIds: c.assistants
                 .map((a) => a.teacher)
@@ -609,7 +639,7 @@ export class SessionsService {
                   s.status !== SessionStatus.CANCELLED &&
                   s.groupClassId !== c.id &&
                   overlaps(s, slot) &&
-                  (s.roomId === t.roomId ||
+                  (s.roomId === ws.roomId ||
                     s.teachers.some((x) => teachers.includes(x))),
               );
               if (blocking) {
@@ -619,7 +649,7 @@ export class SessionsService {
                   date,
                   startTime: slot.start,
                   endTime: slot.end,
-                  reason: blocking.roomId === t.roomId ? 'ROOM' : 'TEACHER',
+                  reason: blocking.roomId === ws.roomId ? 'ROOM' : 'TEACHER',
                   conflictingSessionId: blocking.id,
                 });
                 continue;
@@ -627,7 +657,8 @@ export class SessionsService {
               planned.push({
                 groupClassId: c.id,
                 weeklyScheduleId: ws.id,
-                roomId: t.roomId,
+                // Each occurrence takes the room of ITS weekly slot
+                roomId: ws.roomId,
                 date: toDbDate(date),
                 startTime: ws.startTime,
                 endTime: ws.endTime,
@@ -641,7 +672,7 @@ export class SessionsService {
                 status: SessionStatus.SCHEDULED,
                 groupClassId: c.id,
                 weeklyScheduleId: ws.id,
-                roomId: t.roomId,
+                roomId: ws.roomId,
                 teachers,
               };
               existing.push(added);
@@ -697,7 +728,7 @@ export class SessionsService {
     };
   }
 
-  /** A session dated today or later takes the class's current room and active team. */
+  /** A session dated today or later takes the class's current active team (it keeps its own room). */
   private async refreshSnapshotIfUpcoming(
     tx: Tx,
     groupClassId: string,

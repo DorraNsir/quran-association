@@ -1,11 +1,13 @@
 import { applyDecorators } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   ArrayUnique,
   IsArray,
   IsEnum,
   IsOptional,
   IsUUID,
+  ValidateNested,
 } from 'class-validator';
 
 import {
@@ -29,13 +31,24 @@ const AssistantIds = () =>
     IsUUID('all', { each: true }),
   );
 
-/** The operational class: one group, one branch, a room OF that branch, one supervisor, assistants. */
+/** A weekly slot of the class and the room it moves to. */
+export class ScheduleRoomDto {
+  @ApiProperty({ format: 'uuid' }) @IsUUID() scheduleId!: string;
+  @ApiProperty({
+    format: 'uuid',
+    description: "A room of the class's (new) branch",
+  })
+  @IsUUID()
+  roomId!: string;
+}
+
+/**
+ * The operational class: one group, one branch, one supervisor, assistants.
+ * Rooms are chosen per weekly slot (POST …/schedules with roomId).
+ */
 export class CreateGroupClassDto {
   @ApiProperty({ format: 'uuid' }) @IsUUID() groupId!: string;
   @ApiProperty({ format: 'uuid' }) @IsUUID() branchId!: string;
-  @ApiProperty({ format: 'uuid', description: 'Must belong to branchId' })
-  @IsUUID()
-  roomId!: string;
   @ApiProperty({ format: 'uuid', description: 'The ONE supervising teacher' })
   @IsUUID()
   supervisorId!: string;
@@ -51,18 +64,30 @@ export class CreateGroupClassDto {
 }
 
 /**
- * Re-locate (branch + room) and/or re-staff (supervisor, full assistant list).
- * The group of a class never changes; status via PATCH …/status.
+ * Re-locate (branch, with a new room for each weekly slot) and/or re-staff
+ * (supervisor, full assistant list). The group never changes; status via
+ * PATCH …/status.
  */
 export class UpdateGroupClassDto {
-  @ApiPropertyOptional({ format: 'uuid' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'New branch: every existing weekly slot must get a room of it in scheduleRooms (same request, atomic)',
+  })
   @IsOptional()
   @IsUUID()
   branchId?: string;
-  @ApiPropertyOptional({ format: 'uuid' })
+  @ApiPropertyOptional({
+    type: ScheduleRoomDto,
+    isArray: true,
+    description:
+      "New rooms of weekly slots (rooms of the class's branch); their upcoming scheduled sessions move with them",
+  })
   @IsOptional()
-  @IsUUID()
-  roomId?: string;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ScheduleRoomDto)
+  scheduleRooms?: ScheduleRoomDto[];
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
   @IsUUID()
@@ -79,7 +104,10 @@ export class GroupClassListQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsUUID()
   branchId?: string;
-  @ApiPropertyOptional({ format: 'uuid' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Classes with a weekly slot in this room',
+  })
   @IsOptional()
   @IsUUID()
   roomId?: string;
