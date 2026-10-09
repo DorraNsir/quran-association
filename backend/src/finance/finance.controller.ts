@@ -24,6 +24,8 @@ import {
 import { AdminApi } from '../academic/admin-api.decorator.js';
 import type { AuthPrincipal } from '../auth/auth.types.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
+import { StudentAccessService } from '../student-space/student-access.service.js';
+import { StudentApi } from '../student-space/student-api.decorator.js';
 import { FinanceSummaryService } from './finance-summary.service.js';
 import {
   ApplicableFeeDto,
@@ -349,5 +351,41 @@ export class FinanceSummaryController {
   @ApiOkResponse({ type: FinanceSummaryDto })
   overall(@Query() query: FinanceSummaryQueryDto): Promise<FinanceSummaryDto> {
     return this.summary.overall(query);
+  }
+}
+
+/** My own fees, payments and receipts (read-only; amounts and statuses computed by the API). */
+@ApiTags('student / finance')
+@StudentApi()
+@Controller('student')
+export class StudentFinanceController {
+  constructor(
+    private readonly summaries: FinanceSummaryService,
+    private readonly payments: PaymentsService,
+    private readonly access: StudentAccessService,
+  ) {}
+
+  @Get('finance/summary')
+  @ApiOperation({
+    summary: 'My obligations with balances, totals and statuses',
+  })
+  @ApiOkResponse({ type: StudentFinanceSummaryDto })
+  async summary(
+    @CurrentUser() user: AuthPrincipal,
+    @Query() query: YearFilterQueryDto,
+  ): Promise<StudentFinanceSummaryDto> {
+    const { studentId } = await this.access.scopeOf(user.userId);
+    return this.summaries.forStudent(studentId, query.academicYearId);
+  }
+
+  @Get('payments')
+  @ApiOperation({ summary: 'My payments (voided ones flagged), oldest first' })
+  @ApiOkResponse({ type: [PaymentDto] })
+  async mine(
+    @CurrentUser() user: AuthPrincipal,
+    @Query() query: YearFilterQueryDto,
+  ): Promise<PaymentDto[]> {
+    const { studentId } = await this.access.scopeOf(user.userId);
+    return this.payments.forStudent(studentId, query.academicYearId);
   }
 }

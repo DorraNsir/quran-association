@@ -1,5 +1,8 @@
+"use client"
+
 import {
   ExternalLink,
+  Loader2,
   FileAudio,
   FileImage,
   FileText,
@@ -9,11 +12,16 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { useState } from "react"
+import { toast } from "sonner"
+
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { errorMessage } from "@/lib/api/errors"
+import { openPrivateFile, type ResourceView } from "@/lib/api/resources"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import type { Resource, ResourceType } from "@/types/domain"
+import type { ResourceType } from "@/types/domain"
 
 export const RESOURCE_TYPES: ResourceType[] = ["PDF", "IMAGE", "AUDIO", "VIDEO_LINK", "EXTERNAL_LINK", "FILE"]
 
@@ -55,31 +63,45 @@ export function formatFileSize(bytes?: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} م.ب`
 }
 
-/** The resource's link: an external URL, or the stored file's URL when one exists. */
-export function resourceHref(resource: Resource) {
-  return resource.externalUrl ?? resource.fileUrl
-}
-
 /**
- * Opens the resource in a new tab. Seed files have metadata only (no
- * storage yet), so their action is shown disabled — never a fake URL.
+ * Opens the resource: an external link directly, an uploaded file through
+ * an authenticated fetch (the file is private — never a public URL).
  */
-export function ResourceAction({ resource, size = "sm" }: { resource: Resource; size?: "sm" | "default" }) {
-  const href = resourceHref(resource)
+export function ResourceAction({ resource, size = "sm" }: { resource: ResourceView; size?: "sm" | "default" }) {
+  const [pending, setPending] = useState(false)
   const label = ACTION_LABEL[resource.type]
-  if (!href) {
+  if (resource.externalUrl) {
     return (
-      <Button size={size} variant="outline" disabled title="الملف غير متوفر في النسخة التجريبية (لا يوجد تخزين بعد)">
+      <Button asChild size={size} variant="outline">
+        <a href={resource.externalUrl} target="_blank" rel="noopener noreferrer">
+          <ExternalLink />
+          {label}
+        </a>
+      </Button>
+    )
+  }
+  const file = resource.file
+  if (!file) {
+    return (
+      <Button size={size} variant="outline" disabled title="لا يوجد ملف مرفق">
         {label}
       </Button>
     )
   }
   return (
-    <Button asChild size={size} variant="outline">
-      <a href={href} target="_blank" rel="noopener noreferrer" download={resource.type === "FILE" ? resource.fileName : undefined}>
-        <ExternalLink />
-        {label}
-      </a>
+    <Button
+      size={size}
+      variant="outline"
+      disabled={pending}
+      onClick={() => {
+        setPending(true)
+        openPrivateFile(file, resource.type === "FILE")
+          .catch((error: unknown) => toast.error(errorMessage(error)))
+          .finally(() => setPending(false))
+      }}
+    >
+      {pending ? <Loader2 className="animate-spin" /> : <ExternalLink />}
+      {label}
     </Button>
   )
 }

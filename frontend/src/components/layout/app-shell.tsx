@@ -14,13 +14,10 @@ import { WorkspaceSwitcher } from "./workspace-switcher"
 export function AppShell({
   workspace,
   user,
-  accounts,
   children,
 }: {
   workspace: Workspace
   user: User
-  /** Mock accounts offered by the prototype account switcher */
-  accounts: User[]
   children: React.ReactNode
 }) {
   return (
@@ -41,7 +38,7 @@ export function AppShell({
         </div>
       </aside>
       <div className="flex min-h-svh flex-col">
-        <AppHeader user={user} accounts={accounts} workspace={workspace} />
+        <AppHeader user={user} workspace={workspace} />
         <main id="main" className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <div className="mx-auto w-full max-w-7xl">{children}</div>
         </main>

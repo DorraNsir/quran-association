@@ -8,11 +8,12 @@ import type { RowAction } from "@/components/shared/actions-menu"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { classesOf, indexLookups, schedulesOf, type Lookups } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
-import { labels } from "@/lib/i18n"
+import { errorMessage } from "@/lib/api/errors"
+import { useSaveClass, useSaveGroup, useSetClassStatus, useSetGroupStatus } from "@/lib/api/hooks/groups"
 import { checkClassSlots } from "@/lib/scheduling"
 import type { Group, GroupClass, Student } from "@/types/domain"
 
-import { ClassFormSheet, type ClassSaveResult } from "./class-form-sheet"
+import { ClassFormSheet } from "./class-form-sheet"
 import { GroupFormSheet } from "./group-form-sheet"
 
 export type GroupAction = "create" | "edit" | "deactivate" | "archive" | "activate" | "add-class"
@@ -26,24 +27,16 @@ type DialogContent =
 
 type DialogState = DialogContent & { key: number; open: boolean }
 
-const mockSaved = { description: labels.common.mockNotice }
-
 /**
  * Dialogs for a pedagogical group and its classes. Group changes and class
  * changes are reported separately because they are separate records.
  */
-export function useGroupDialogs({
-  lookups,
-  students,
-  onGroupChange,
-  onClassChange,
-}: {
-  lookups: Lookups
-  students: Student[]
-  onGroupChange?: (group: Group, isNew: boolean) => void
-  onClassChange?: (result: ClassSaveResult, isNew: boolean) => void
-}) {
+export function useGroupDialogs({ lookups, students }: { lookups: Lookups; students: Student[] }) {
   const [state, setState] = useState<DialogState | null>(null)
+  const saveGroup = useSaveGroup()
+  const setGroupStatus = useSetGroupStatus()
+  const saveClass = useSaveClass()
+  const setClassStatus = useSetClassStatus()
   const { branchesById } = indexLookups(lookups)
 
   const close = (open: boolean) => {
@@ -52,10 +45,6 @@ export function useGroupDialogs({
   const openDialog = (next: DialogContent) =>
     setState((prev) => ({ ...next, key: (prev?.key ?? 0) + 1, open: true }))
 
-  const unchanged = (groupClass: GroupClass): Omit<ClassSaveResult, "groupClass"> => ({
-    studentIds: students.filter((s) => s.groupClassId === groupClass.id).map((s) => s.id),
-    schedules: schedulesOf(groupClass.id, lookups.schedules),
-  })
   const activeIn = (classes: GroupClass[]) =>
     students.filter((s) => s.status === "ACTIVE" && classes.some((c) => c.id === s.groupClassId)).length
 
@@ -66,15 +55,15 @@ export function useGroupDialogs({
     return [...checkClassSlots(drafts, groupClass, data).values()].some((c) => c.conflicts.length > 0)
   }
 
-  function commitGroup(group: Group, message: string, isNew = false) {
-    onGroupChange?.(group, isNew)
-    toast.success(message, mockSaved)
-    close(false)
-  }
-  function commitClass(result: ClassSaveResult, message: string, isNew = false) {
-    onClassChange?.(result, isNew)
-    toast.success(message, mockSaved)
-    close(false)
+  /** Toasts success only after the API confirmed; failures are toasted in Arabic. */
+  async function attempt(action: () => Promise<unknown>, message: string) {
+    try {
+      await action()
+      toast.success(message)
+      close(false)
+    } catch (error) {
+      toast.error(errorMessage(error))
+    }
   }
 
   function run(action: GroupAction, group?: Group) {
@@ -95,7 +84,7 @@ export function useGroupDialogs({
       })
       return openDialog({ kind: "class-form", group: activated, groupClass: blocked })
     }
-    commitGroup(activated, `تم تفعيل ${group.name}`)
+    void attempt(() => setGroupStatus.mutateAsync({ id: group.id, status: "ACTIVE" }), `تم تفعيل ${group.name}`)
   }
 
   function runClass(action: ClassAction, group: Group, groupClass: GroupClass) {
@@ -115,7 +104,7 @@ export function useGroupDialogs({
       })
       return openDialog({ kind: "class-form", group, groupClass: activated })
     }
-    commitClass({ groupClass: activated, ...unchanged(groupClass) }, "تم تفعيل الحلقة")
+    void attempt(() => setClassStatus.mutateAsync({ id: groupClass.id, status: "ACTIVE" }), "تم تفعيل الحلقة")
   }
 
   function renderDialog(d: DialogState) {
@@ -128,13 +117,11 @@ export function useGroupDialogs({
             onOpenChange={close}
             group={d.group}
             otherNames={lookups.groups.filter((g) => g.id !== d.group?.id).map((g) => g.name.trim())}
-            onSave={(saved) =>
-              commitGroup(
-                saved,
-                d.group ? `تم حفظ تعديلات ${saved.name}` : `تم إنشاء ${saved.name} — أضف حلقاتها من صفحتها`,
-                !d.group
-              )
-            }
+            onSave={async (values) => {
+              await saveGroup.mutateAsync({ id: d.group?.id, ...values })
+              toast.success(d.group ? `تم حفظ تعديلات ${values.name}` : `تم إنشاء ${values.name} — أضف حلقاتها من صفحتها`)
+              close(false)
+            }}
           />
         )
       case "class-form":
@@ -147,13 +134,18 @@ export function useGroupDialogs({
             groupClass={d.groupClass}
             lookups={lookups}
             students={students}
-            onSave={(result) =>
-              commitClass(
-                result,
-                `${d.groupClass ? "تم حفظ حلقة" : "تم إنشاء حلقة"} ${branchesById.get(result.groupClass.branchId)?.name ?? ""} — ${d.group.name}`,
-                !d.groupClass
+            onSave={async (input) => {
+              try {
+                await saveClass.mutateAsync(input)
+              } catch (error) {
+                // Some steps may have been applied: the screens reload the real state
+                throw error
+              }
+              toast.success(
+                `${d.groupClass ? "تم حفظ حلقة" : "تم إنشاء حلقة"} ${branchesById.get(input.groupClass.branchId)?.name ?? ""} — ${d.group.name}`
               )
-            }
+              close(false)
+            }}
           />
         )
       case "group-status": {
@@ -169,12 +161,11 @@ export function useGroupDialogs({
               active > 0 ? ` و${countLabels.students(active)} نشطين — يُنصح بنقلهم أولًا` : ""
             }.`}
             confirmLabel={d.to === "ARCHIVED" ? "أرشفة" : "إيقاف مؤقت"}
-            onConfirm={() =>
-              commitGroup(
-                { ...d.group, status: d.to },
-                d.to === "ARCHIVED" ? `تمت أرشفة ${d.group.name}` : `تم إيقاف ${d.group.name} مؤقتًا`
-              )
-            }
+            onConfirm={async () => {
+              await setGroupStatus.mutateAsync({ id: d.group.id, status: d.to })
+              toast.success(d.to === "ARCHIVED" ? `تمت أرشفة ${d.group.name}` : `تم إيقاف ${d.group.name} مؤقتًا`)
+              close(false)
+            }}
           />
         )
       }
@@ -192,12 +183,11 @@ export function useGroupDialogs({
                 : `لا تضم الحلقة طلبة نشطين. بقية حلقات ${d.group.name} لا تتأثر.`
             }
             confirmLabel={d.to === "ARCHIVED" ? "أرشفة" : "إيقاف مؤقت"}
-            onConfirm={() =>
-              commitClass(
-                { groupClass: { ...d.groupClass, status: d.to }, ...unchanged(d.groupClass) },
-                d.to === "ARCHIVED" ? "تمت أرشفة الحلقة" : "تم إيقاف الحلقة مؤقتًا"
-              )
-            }
+            onConfirm={async () => {
+              await setClassStatus.mutateAsync({ id: d.groupClass.id, status: d.to })
+              toast.success(d.to === "ARCHIVED" ? "تمت أرشفة الحلقة" : "تم إيقاف الحلقة مؤقتًا")
+              close(false)
+            }}
           />
         )
       }

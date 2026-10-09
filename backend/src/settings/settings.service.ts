@@ -5,7 +5,11 @@ import { badRequest, conflict } from '../common/errors.js';
 import { FilesService, privateFileUrl } from '../files/files.service.js';
 import { FilePurpose, type Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import type { SettingsDto, UpdateSettingsDto } from './settings.dto.js';
+import type {
+  PlatformPreferencesDto,
+  SettingsDto,
+  UpdateSettingsDto,
+} from './settings.dto.js';
 
 type Tx = Prisma.TransactionClient;
 
@@ -102,6 +106,62 @@ export class SettingsService {
             label: year.label,
             startDate: fromDbDate(year.startDate),
             endDate: fromDbDate(year.endDate),
+          }
+        : null,
+    };
+  }
+
+  /** Display preferences for every workspace (defaults when the singleton is missing). */
+  async preferences(): Promise<PlatformPreferencesDto> {
+    const [platform, year] = await Promise.all([
+      this.prisma.platformSettings.findUnique({
+        where: { id: 1 },
+        select: {
+          timezone: true,
+          dateFormat: true,
+          defaultCalendarView: true,
+          defaultPageSize: true,
+        },
+      }),
+      this.prisma.academicYear.findFirst({
+        where: { isCurrent: true },
+        select: {
+          id: true,
+          label: true,
+          startDate: true,
+          endDate: true,
+          semester2StartDate: true,
+        },
+      }),
+    ]);
+    const day = (d: Date) => fromDbDate(d);
+    const before = (d: Date) => {
+      const previous = new Date(d);
+      previous.setUTCDate(previous.getUTCDate() - 1);
+      return fromDbDate(previous);
+    };
+    return {
+      ...(platform ?? {
+        timezone: 'Africa/Tunis',
+        dateFormat: 'DD_MM_YYYY',
+        defaultCalendarView: 'WEEK',
+        defaultPageSize: 10,
+      }),
+      // Same semester split as the academic-years API (semester 2 starts on its date)
+      currentAcademicYear: year
+        ? {
+            id: year.id,
+            label: year.label,
+            startDate: day(year.startDate),
+            endDate: day(year.endDate),
+            firstSemester: {
+              startDate: day(year.startDate),
+              endDate: before(year.semester2StartDate),
+            },
+            secondSemester: {
+              startDate: day(year.semester2StartDate),
+              endDate: day(year.endDate),
+            },
           }
         : null,
     };

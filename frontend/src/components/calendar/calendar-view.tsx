@@ -21,8 +21,9 @@ import {
 import { addDays, dateOfWeekday, startOfWeek, weekDates, weekdayOf } from "@/lib/dates"
 import { countLabels, formatDate, formatDayNumber, formatDuration, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { sessionIdFor } from "@/lib/sessions"
-import { useOperations } from "@/lib/store/operations"
+import { keys, useApiMutation } from "@/lib/api/academic"
+import { api } from "@/lib/api/client"
+import { toSession, useSessionRange } from "@/lib/api/sessions"
 import type { ID, ISODate, Student, WeeklySchedule } from "@/types/domain"
 
 import { toneOf, type CalendarEntry } from "./calendar-event"
@@ -43,7 +44,6 @@ export interface CalendarFilters {
 
 const NO_FILTERS: CalendarFilters = { branch: ALL, room: ALL, teacher: ALL, group: ALL }
 const DEFAULT_LENGTH = 90
-const mockSaved = { description: labels.common.mockNotice }
 
 export function CalendarView({
   lookups,
@@ -56,7 +56,7 @@ export function CalendarView({
   today: ISODate
   initialFilters: Partial<CalendarFilters>
 }) {
-  const [schedules, setSchedules] = useState(lookups.schedules)
+  const schedules = lookups.schedules
   const [date, setDate] = useState(today)
   // Initial view = platform preference; the toolbar still switches freely
   const { defaultCalendarView } = usePlatformSettings()
@@ -101,13 +101,15 @@ export function CalendarView({
       (filters.group === ALL || group.id === filters.group) &&
       (filters.teacher === ALL || classTeacherIds(groupClass).includes(filters.teacher))
   )
-  const { sessions } = useOperations()
-  const sessionsById = new Map(sessions.map((s) => [s.id, s]))
+  // Dated sessions of the displayed week (cancellations, attendance) — from the API
+  const week = weekDates(date)
+  const sessionsQuery = useSessionRange("admin", { from: week[0].date, to: week[week.length - 1].date })
+  const occurrences = new Map((sessionsQuery.data ?? []).map((s) => [`${s.weeklyScheduleId}|${s.date}`, toSession(s)]))
   /** A day's entries, each linked to its dated session (attendance, cancellation). */
   const entriesOn = (d: ISODate) =>
     visible
       .filter((e) => e.schedule.day === weekdayOf(d))
-      .map((e) => ({ ...e, occurrence: sessionsById.get(sessionIdFor(e.schedule.id, d)) }))
+      .map((e) => ({ ...e, occurrence: occurrences.get(`${e.schedule.id}|${d}`) }))
       .sort((a, b) => a.schedule.start.localeCompare(b.schedule.start))
 
   const setFilter = (key: keyof CalendarFilters) => (value: string) =>
@@ -132,13 +134,26 @@ export function CalendarView({
     ...(roomId ? { roomId } : {}),
   })
 
-  function saveSchedule(saved: WeeklySchedule) {
-    const exists = schedules.some((s) => s.id === saved.id)
-    setSchedules((prev) => (exists ? prev.map((s) => (s.id === saved.id ? saved : s)) : [...prev, saved]))
+  const saveMutation = useApiMutation(
+    (saved: WeeklySchedule) => {
+      const body = { dayOfWeek: saved.day, startTime: saved.start, endTime: saved.end }
+      return saved.id
+        ? api(`/admin/group-classes/${saved.groupClassId}/schedules/${saved.id}`, { method: "PATCH", body })
+        : api(`/admin/group-classes/${saved.groupClassId}/schedules`, { method: "POST", body })
+    },
+    [keys.schedules, keys.sessions]
+  )
+  const removeMutation = useApiMutation(
+    (schedule: WeeklySchedule) => api(`/admin/group-classes/${schedule.groupClassId}/schedules/${schedule.id}`, { method: "DELETE" }),
+    [keys.schedules, keys.sessions]
+  )
+
+  async function saveSchedule(saved: WeeklySchedule) {
+    const exists = Boolean(saved.id)
+    await saveMutation.mutateAsync(saved)
     const group = groupsById.get(classesById.get(saved.groupClassId)?.groupId ?? "")
     toast.success(
-      `${exists ? "تم تعديل حصة" : "تمت برمجة حصة"} ${group?.name ?? ""} — ${labels.weekday[saved.day]} ${formatTimeRange(saved.start, saved.end)}`,
-      mockSaved
+      `${exists ? "تم تعديل حصة" : "تمت برمجة حصة"} ${group?.name ?? ""} — ${labels.weekday[saved.day]} ${formatTimeRange(saved.start, saved.end)}`
     )
     setFormState((s) => (s ? { ...s, open: false } : s))
     setDetails(null)
@@ -333,11 +348,12 @@ export function CalendarView({
           title="إلغاء هذه الحصة الأسبوعية؟"
           description={`ستُحذف حصة ${removing.entry.group.name} كل ${labels.weekday[removing.entry.schedule.day]} (${formatTimeRange(removing.entry.schedule.start, removing.entry.schedule.end)}) من البرنامج الأسبوعي، وتصبح ${removing.entry.room?.name ?? "القاعة"} متاحة في هذا الوقت.`}
           confirmLabel="إلغاء الحصة"
-          onConfirm={() => {
+          onConfirm={async () => {
             const { schedule, group } = removing.entry
-            setSchedules((prev) => prev.filter((s) => s.id !== schedule.id))
+            await removeMutation.mutateAsync(schedule)
+            setRemoving((r) => (r ? { ...r, open: false } : r))
             setDetails(null)
-            toast.success(`تم إلغاء حصة ${group.name} — ${labels.weekday[schedule.day]}`, mockSaved)
+            toast.success(`تم إلغاء حصة ${group.name} — ${labels.weekday[schedule.day]}`)
           }}
         />
       )}

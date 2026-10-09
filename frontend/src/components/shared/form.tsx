@@ -1,9 +1,10 @@
 "use client"
 
-import { Camera, Loader2, Trash2 } from "lucide-react"
-import { useRef } from "react"
+import { AlertCircle, Camera, Loader2, Trash2 } from "lucide-react"
+import { useRef, useState } from "react"
 
 import { UserAvatar } from "@/components/shared/user-avatar"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { useDirection } from "@/components/ui/direction"
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
@@ -31,6 +32,7 @@ export function FormSheet({
   submitLabel = labels.common.save,
   pending = false,
   submitDisabled = false,
+  error,
   children,
 }: {
   open: boolean
@@ -42,6 +44,8 @@ export function FormSheet({
   pending?: boolean
   /** e.g. while a scheduling conflict is unresolved */
   submitDisabled?: boolean
+  /** The API's Arabic error after a failed save */
+  error?: string | null
   children: React.ReactNode
 }) {
   const dir = useDirection()
@@ -58,7 +62,15 @@ export function FormSheet({
             <SheetTitle className="text-lg font-semibold">{title}</SheetTitle>
             {description && <SheetDescription>{description}</SheetDescription>}
           </SheetHeader>
-          <div className="flex-1 space-y-8 overflow-y-auto px-6 py-6">{children}</div>
+          <div className="flex-1 space-y-8 overflow-y-auto px-6 py-6">
+            {error && (
+              <Alert variant="destructive" role="alert">
+                <AlertCircle aria-hidden />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            {children}
+          </div>
           <SheetFooter className="flex-row justify-end gap-2 border-t bg-muted/30 px-6 py-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {labels.common.cancel}
@@ -139,24 +151,37 @@ export function FormField({
 }
 
 /** Photo picker with live preview. Mock phase: the file stays in the browser. */
+/** Profile photos accepted by the API (PROFILE_PHOTO): JPEG, PNG or WebP, ≤ 5 MB. */
+const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"]
+const PHOTO_MAX_BYTES = 5 * 1024 * 1024
+
 export function PhotoInput({
   id,
   name,
   value,
   onChange,
+  onFile,
 }: {
   id: string
   name: string
   value?: string
   onChange: (url: string | undefined) => void
+  /** The chosen file (uploaded when the form is saved), or null when removed */
+  onFile?: (file: File | null) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const [error, setError] = useState<string | null>(null)
 
   function handleFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
+    event.target.value = ""
     if (!file) return
+    if (!PHOTO_TYPES.includes(file.type)) return setError("الصيغ المقبولة: JPG أو PNG أو WebP.")
+    if (file.size > PHOTO_MAX_BYTES) return setError("حجم الصورة يتجاوز 5 م.ب.")
+    setError(null)
     if (value?.startsWith("blob:")) URL.revokeObjectURL(value)
     onChange(URL.createObjectURL(file))
+    onFile?.(file)
   }
 
   return (
@@ -169,18 +194,30 @@ export function PhotoInput({
             {value ? "تغيير الصورة" : "إضافة صورة"}
           </Button>
           {value && (
-            <Button type="button" variant="ghost" size="sm" onClick={() => onChange(undefined)}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                onChange(undefined)
+                onFile?.(null)
+              }}
+            >
               <Trash2 />
               حذف
             </Button>
           )}
         </div>
-        <p className="text-xs text-muted-foreground">صورة شمسية واضحة — JPG أو PNG.</p>
+        {error ? (
+          <p role="alert" className="text-xs text-destructive">{error}</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">صورة شمسية واضحة — JPG أو PNG أو WebP (5 م.ب كحد أقصى).</p>
+        )}
         <input
           ref={inputRef}
           id={id}
           type="file"
-          accept="image/png,image/jpeg"
+          accept="image/png,image/jpeg,image/webp"
           className="sr-only"
           tabIndex={-1}
           aria-label="صورة شمسية"

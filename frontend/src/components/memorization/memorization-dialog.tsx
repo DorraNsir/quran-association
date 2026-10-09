@@ -17,10 +17,11 @@ import {
 import { Label } from "@/components/ui/label"
 import { fullName, indexLookups, studentClass, type Lookups } from "@/lib/domain"
 import { labels } from "@/lib/i18n"
-import { defaultUpdater, getMemorizationProgress } from "@/lib/memorization"
+import { errorMessage } from "@/lib/api/errors"
+import { useSaveMemorization } from "@/lib/api/memorization"
+import { getMemorizationProgress } from "@/lib/memorization"
 import { surahLabel } from "@/lib/quran/surahs"
-import { operations, useOperations } from "@/lib/store/operations"
-import type { AcademicYear, ID, ISODate, Semester, Student, SurahNumber } from "@/types/domain"
+import type { AcademicYear, ID, MemorizationProgress, Semester, Student, SurahNumber } from "@/types/domain"
 
 /** Last memorized surah, or a concise "not set" state. */
 export function MemorizationValue({ surah, className }: { surah?: SurahNumber; className?: string }) {
@@ -138,25 +139,25 @@ export function MemorizationDialog({
 }
 
 /**
- * Opens the memorization dialog for (student, year, semester) and saves to
- * the shared store (update if a value exists, create otherwise).
- * `updaterId` is the signed-in teacher in Teacher Space; in the admin
- * prototype it defaults to the supervisor of the student's class.
+ * Opens the memorization dialog for (student, year, semester) and saves
+ * through the API (PUT …/students/:id/memorization — one value per
+ * semester, created or updated; the API records who updated it and checks
+ * a teacher's access). `records` are the values the screen already shows.
  * Passing a `queue` (the students of the current list) enables fast
  * sequential updates: "save and next" walks through the list.
  */
 export function useMemorizationDialog({
   lookups,
   academicYears,
-  today,
-  updaterId,
+  records,
+  scope = "admin",
 }: {
   lookups: Lookups
   academicYears: AcademicYear[]
-  today: ISODate
-  updaterId?: ID
+  records: MemorizationProgress[]
+  scope?: "admin" | "teacher"
 }) {
-  const { memorizationProgress } = useOperations()
+  const saveMutation = useSaveMemorization(scope)
   const [target, setTarget] = useState<{
     student: Student
     academicYearId: ID
@@ -174,24 +175,21 @@ export function useMemorizationDialog({
 
   const year = target && academicYears.find((y) => y.id === target.academicYearId)
   const current = target
-    ? getMemorizationProgress(memorizationProgress, target.student.id, target.academicYearId, target.semester)
+    ? getMemorizationProgress(records, target.student.id, target.academicYearId, target.semester)
     : undefined
   const queueIndex = target?.queue?.findIndex((s) => s.id === target.student.id) ?? -1
   const nextStudent = target?.queue && queueIndex >= 0 ? target.queue[queueIndex + 1] : undefined
 
   function save(surah: SurahNumber) {
     if (!target) return
-    const teacherId = updaterId ?? defaultUpdater(target.student, lookups.groupClasses)
-    if (!teacherId) return
-    operations.saveMemorization({
-      studentId: target.student.id,
-      academicYearId: target.academicYearId,
-      semester: target.semester,
-      lastMemorizedSurah: surah,
-      updatedByTeacherId: teacherId,
-      updatedAt: today,
-    })
-    toast.success("تم تحديث متابعة الحفظ بنجاح", { description: `${fullName(target.student)}: ${surahLabel(surah)}` })
+    const student = target.student
+    saveMutation.mutate(
+      { studentId: student.id, academicYearId: target.academicYearId, semester: target.semester, surah },
+      {
+        onSuccess: () => toast.success("تم تحديث متابعة الحفظ بنجاح", { description: `${fullName(student)}: ${surahLabel(surah)}` }),
+        onError: (error) => toast.error(errorMessage(error), { description: fullName(student) }),
+      }
+    )
   }
 
   const dialog =

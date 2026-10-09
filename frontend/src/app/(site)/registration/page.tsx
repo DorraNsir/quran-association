@@ -2,7 +2,6 @@ import type { Metadata } from "next"
 
 import { PublicRegistrationForm } from "@/components/registration/registration-views"
 import { PageHero } from "@/components/website/blocks"
-import { MOCK_TODAY } from "@/lib/mock"
 
 export const metadata: Metadata = {
   title: "طلب التسجيل",
@@ -20,7 +19,7 @@ export default async function RegistrationPage(props: PageProps<"/registration">
     <>
       <PageHero eyebrow="التسجيل" title="طلب التسجيل" intro="املأ الاستمارة وسيتواصل معك فريق الجمعية لاستكمال التسجيل واختيار الحلقة المناسبة." />
       <div className="px-4 py-10 sm:py-14">
-        <PublicRegistrationForm today={MOCK_TODAY} interestId={typeof interest === "string" ? interest : undefined} />
+        <PublicRegistrationForm interestId={typeof interest === "string" ? interest : undefined} />
       </div>
     </>
   )

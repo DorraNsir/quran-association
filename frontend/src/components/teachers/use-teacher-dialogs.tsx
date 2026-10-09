@@ -7,7 +7,8 @@ import { toast } from "sonner"
 import type { RowAction } from "@/components/shared/actions-menu"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { fullName, teacherAssignments, type Lookups } from "@/lib/domain"
-import { labels } from "@/lib/i18n"
+import { errorMessage } from "@/lib/api/errors"
+import { useSaveTeacher, useSetTeacherStatus } from "@/lib/api/hooks/people"
 import type { Teacher } from "@/types/domain"
 
 import { TeacherFormSheet } from "./teacher-form-sheet"
@@ -21,16 +22,10 @@ type DialogState = {
   open: boolean
 }
 
-const mockSaved = { description: labels.common.mockNotice }
-
-export function useTeacherDialogs({
-  lookups,
-  onChange,
-}: {
-  lookups: Lookups
-  onChange?: (teacher: Teacher, isNew: boolean) => void
-}) {
+export function useTeacherDialogs({ lookups }: { lookups: Lookups }) {
   const [state, setState] = useState<DialogState | null>(null)
+  const saveTeacher = useSaveTeacher()
+  const setStatus = useSetTeacherStatus()
 
   const close = (open: boolean) => {
     if (!open) setState((s) => (s ? { ...s, open: false } : s))
@@ -39,18 +34,15 @@ export function useTeacherDialogs({
   function run(kind: TeacherAction, teacher?: Teacher) {
     if (kind === "activate") {
       if (!teacher) return
-      onChange?.({ ...teacher, status: "ACTIVE" }, false)
-      toast.success(`تم تفعيل ${fullName(teacher)}`, mockSaved)
+      setStatus
+        .mutateAsync({ id: teacher.id, status: "ACTIVE" })
+        .then(() => toast.success(`تم تفعيل ${fullName(teacher)}`))
+        .catch((error: unknown) => toast.error(errorMessage(error)))
       return
     }
     setState({ kind, teacher, key: Date.now(), open: true })
   }
 
-  function commit(teacher: Teacher, message: string, isNew = false) {
-    onChange?.(teacher, isNew)
-    toast.success(message, mockSaved)
-    close(false)
-  }
 
   const teacher = state?.teacher
   const supervised = teacher
@@ -66,13 +58,11 @@ export function useTeacherDialogs({
           onOpenChange={close}
           teacher={teacher}
           lookups={lookups}
-          onSave={(saved) =>
-            commit(
-              saved,
-              teacher ? `تم حفظ تعديلات ${fullName(saved)}` : `تمت إضافة ${fullName(saved)}`,
-              !teacher
-            )
-          }
+          onSave={async (input) => {
+            await saveTeacher.mutateAsync({ id: teacher?.id, input })
+            toast.success(teacher ? `تم حفظ تعديلات ${fullName(input.person)}` : `تمت إضافة ${fullName(input.person)}`)
+            close(false)
+          }}
         />
       )}
       {state?.kind === "deactivate" && teacher && (
@@ -89,9 +79,11 @@ export function useTeacherDialogs({
           }
           confirmLabel="إيقاف النشاط"
           destructive
-          onConfirm={() =>
-            commit({ ...teacher, status: "INACTIVE" }, `تم إيقاف نشاط ${fullName(teacher)}`)
-          }
+          onConfirm={async () => {
+            await setStatus.mutateAsync({ id: teacher.id, status: "INACTIVE" })
+            toast.success(`تم إيقاف نشاط ${fullName(teacher)}`)
+            close(false)
+          }}
         />
       )}
     </>

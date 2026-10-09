@@ -1,6 +1,6 @@
 "use client"
 
-import { CalendarX2, CheckCheck, Lock, Save, SearchX, UsersRound } from "lucide-react"
+import { CalendarX2, CheckCheck, Loader2, Lock, Save, SearchX, UsersRound } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { toast } from "sonner"
@@ -9,7 +9,6 @@ import { SessionHeader } from "@/components/sessions/session-header"
 import type { SessionRow } from "@/components/sessions/use-session-rows"
 import { EmptyState } from "@/components/shared/empty-state"
 import { matchesText, SearchInput } from "@/components/shared/filters"
-import { SectionCard } from "@/components/shared/info-list"
 import { Breadcrumbs } from "@/components/shared/page-header"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
@@ -23,78 +22,91 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
-import { canTakeAttendance } from "@/lib/attendance"
+import type { AttendanceEntry } from "@/lib/attendance"
+import { errorMessage } from "@/lib/api/errors"
+import { todayInTunis } from "@/lib/dates"
+import { useSaveAttendance, type SessionRosterDto } from "@/lib/api/sessions"
 import { fullName } from "@/lib/domain"
 import { countLabels, formatDate } from "@/lib/format"
-import { labels } from "@/lib/i18n"
-import { operations, type AttendanceEntry } from "@/lib/store/operations"
 import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
-import type { AttendanceStatus, ID, ISODate } from "@/types/domain"
+import type { AttendanceStatus, ID } from "@/types/domain"
 
-import { StudentAttendanceRow, TeacherAttendanceList } from "./attendance-rows"
+import { StudentAttendanceRow } from "./attendance-rows"
 import { AttendanceProgress } from "./attendance-stats"
 
 /**
  * Fast attendance taking: mark everyone present, change the exceptions,
  * save. Works as one-tap cards on phones and compact rows on desktop.
- * Remount (key) per session so the draft starts from saved data.
+ * The roster is the API's (enrolled and active ON the session date); the
+ * session becomes completed on the server once every expected student is
+ * recorded. Remount (key) after a save so the draft starts from saved data.
  */
-export function AttendanceTaker({ row, today, workspace = "admin" }: { row: SessionRow; today: ISODate; workspace?: StaffWorkspace }) {
+export function AttendanceTaker({ row, roster: saved, workspace = "admin" }: { row: SessionRow; roster: SessionRosterDto; workspace?: StaffWorkspace }) {
   const router = useRouter()
   const paths = workspacePaths(workspace)
-  const { session, group, roster } = row
+  const { session, group } = row
+  const save = useSaveAttendance(workspace, session.id)
+  // Expected students, plus anyone already recorded who has since left the class
+  const roster = saved.students
+    .filter((s) => s.expected || s.recorded)
+    .map((s) => ({ id: s.studentId, firstName: s.firstName, lastName: s.lastName, photoUrl: s.photoUrl ?? undefined, expected: s.expected }))
   const [students, setStudents] = useState(
-    () => new Map<ID, AttendanceEntry>(row.records.map((r) => [r.studentId, { status: r.status, note: r.note }]))
-  )
-  const [teachers, setTeachers] = useState(
-    () => new Map<ID, AttendanceEntry>(row.teacherRecords.map((r) => [r.teacherId, { status: r.status, note: r.note }]))
+    () =>
+      new Map<ID, AttendanceEntry>(
+        saved.students.filter((s) => s.status).map((s) => [s.studentId, { status: s.status!, note: s.note ?? undefined }])
+      )
   )
   const [query, setQuery] = useState("")
   const [onlyUnmarked, setOnlyUnmarked] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
 
-  const editable = canTakeAttendance(session, today)
-  const isEdit = row.records.length > 0
-  const unmarked = roster.filter((s) => !students.has(s.id))
+  const editable = saved.editable
+  const isEdit = saved.recordedCount > 0
+  const unmarked = roster.filter((s) => s.expected && !students.has(s.id))
+  const expectedCount = roster.filter((s) => s.expected).length
   const visible = roster.filter(
     (s) => (!query.trim() || matchesText(fullName(s), query)) && (!onlyUnmarked || !students.has(s.id))
   )
-  const team = [
-    ...(row.supervisor ? [{ teacher: row.supervisor, role: "SUPERVISOR" as const }] : []),
-    ...row.assistants.map((teacher) => ({ teacher, role: "ASSISTANT" as const })),
-  ]
 
-  function update<T>(setter: React.Dispatch<React.SetStateAction<Map<ID, T>>>, id: ID, fn: (prev?: T) => T) {
-    setter((prev) => new Map(prev).set(id, fn(prev.get(id))))
+  function update(id: ID, fn: (prev?: AttendanceEntry) => AttendanceEntry) {
+    setStudents((prev) => new Map(prev).set(id, fn(prev.get(id))))
     setDirty(true)
   }
-  const setStatus = (id: ID, status: AttendanceStatus) =>
-    update(setStudents, id, (prev) => ({ ...prev, status }))
-  const setNote = (id: ID, note: string) =>
-    update(setStudents, id, (prev) => ({ status: prev?.status ?? "PRESENT", note }))
+  const setStatus = (id: ID, status: AttendanceStatus) => update(id, (prev) => ({ ...prev, status }))
+  const setNote = (id: ID, note: string) => update(id, (prev) => ({ status: prev?.status ?? "PRESENT", note }))
 
   /** Never overwrites a status already chosen — it only fills the gaps. */
   function markRemainingPresent() {
     setStudents((prev) => {
       const next = new Map(prev)
-      for (const s of roster) if (!next.has(s.id)) next.set(s.id, { status: "PRESENT" })
+      for (const s of roster) if (s.expected && !next.has(s.id)) next.set(s.id, { status: "PRESENT" })
       return next
     })
     setDirty(true)
   }
 
-  function save(complete: boolean) {
-    operations.saveAttendance(session.id, students, teachers, { complete })
-    setDirty(false)
-    if (complete) {
-      toast.success("تم حفظ الحضور بنجاح", { description: labels.common.mockNotice })
-      router.push(paths.session(session.id))
-    } else {
-      toast.warning(`حُفظ تسجيل جزئي — ${countLabels.students(unmarked.length)} دون تسجيل`, {
-        description: "تبقى الحصة في قائمة الحضور غير المكتمل.",
-      })
-    }
+  function submit() {
+    if (save.isPending) return
+    const records = [...students].map(([studentId, entry]) => ({ studentId, status: entry.status, note: entry.note?.trim() || null }))
+    save.mutate(records, {
+      onSuccess: (result) => {
+        setDirty(false)
+        setConfirmOpen(false)
+        if (result.complete) {
+          toast.success("تم حفظ الحضور بنجاح")
+          router.push(paths.session(session.id))
+        } else {
+          toast.warning(`حُفظ تسجيل جزئي — ${countLabels.students(result.expectedCount - result.recordedCount)} دون تسجيل`, {
+            description: "تبقى الحصة في قائمة الحضور غير المكتمل.",
+          })
+        }
+      },
+      onError: (error) => {
+        setConfirmOpen(false)
+        toast.error(errorMessage(error))
+      },
+    })
   }
 
   const crumbs = [
@@ -111,24 +123,21 @@ export function AttendanceTaker({ row, today, workspace = "admin" }: { row: Sess
       {!editable && (
         <Alert className="mb-6">
           {session.status === "CANCELLED" ? <CalendarX2 /> : <Lock />}
-          <AlertTitle>{session.status === "CANCELLED" ? "هذه الحصة ملغاة" : "لم يحن موعد هذه الحصة بعد"}</AlertTitle>
+          <AlertTitle>
+            {session.status === "CANCELLED"
+              ? "هذه الحصة ملغاة"
+              : session.date > todayInTunis()
+                ? "لم يحن موعد هذه الحصة بعد"
+                : "انتهت مهلة تسجيل الحضور"}
+          </AlertTitle>
           <AlertDescription>
             {session.status === "CANCELLED"
               ? "لا يُسجَّل الحضور في حصة ملغاة."
-              : "يمكن تسجيل الحضور يوم الحصة أو بعدها."}
+              : session.date > todayInTunis()
+                ? "يمكن تسجيل الحضور يوم الحصة أو بعدها."
+                : "انقضت المهلة المسموح بها للمعلمين لتسجيل الحضور أو تعديله. تواصل مع الإدارة."}
           </AlertDescription>
         </Alert>
-      )}
-
-      {team.length > 0 && (
-        <SectionCard title="حضور المعلمين" icon={UsersRound} className="mb-6">
-          <TeacherAttendanceList
-            teachers={team}
-            entries={teachers}
-            disabled={!editable}
-            onStatus={(id, status) => update(setTeachers, id, (prev) => ({ ...prev, status }))}
-          />
-        </SectionCard>
       )}
 
       <section aria-labelledby="students-heading" className="space-y-4">
@@ -180,15 +189,16 @@ export function AttendanceTaker({ row, today, workspace = "admin" }: { row: Sess
 
       {editable && roster.length > 0 && (
         <div className="sticky bottom-3 z-10 mt-4 flex flex-col gap-3 rounded-xl border bg-card/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:gap-6 sm:p-4">
-          <AttendanceProgress recorded={roster.length - unmarked.length} expected={roster.length} className="flex-1" />
+          <AttendanceProgress recorded={expectedCount - unmarked.length} expected={expectedCount} className="flex-1" />
           <div className="flex items-center gap-3">
             {dirty && <span className="text-xs text-warning">تغييرات غير محفوظة</span>}
             <Button
               size="lg"
               className="flex-1 sm:min-w-40 sm:flex-none"
-              onClick={() => (unmarked.length > 0 ? setConfirmOpen(true) : save(true))}
+              disabled={save.isPending || students.size === 0}
+              onClick={() => (unmarked.length > 0 ? setConfirmOpen(true) : submit())}
             >
-              <Save />
+              {save.isPending ? <Loader2 className="animate-spin" /> : <Save />}
               حفظ الحضور
             </Button>
           </div>
@@ -207,7 +217,14 @@ export function AttendanceTaker({ row, today, workspace = "admin" }: { row: Sess
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel variant="default">متابعة التسجيل</AlertDialogCancel>
-            <AlertDialogAction variant="outline" onClick={() => save(false)}>
+            <AlertDialogAction
+              variant="outline"
+              disabled={save.isPending}
+              onClick={(e) => {
+                e.preventDefault()
+                submit()
+              }}
+            >
               حفظ كتسجيل جزئي
             </AlertDialogAction>
           </AlertDialogFooter>

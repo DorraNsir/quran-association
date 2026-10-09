@@ -52,6 +52,10 @@ export interface Branch {
  */
 export interface User {
   id: ID
+  /** Login name (real accounts) */
+  username?: string
+  /** The canonical Person of the account */
+  personId?: ID
   firstName: string
   lastName: string
   email: string
@@ -315,7 +319,7 @@ export interface ResourceTarget {
   targetId: ID
 }
 
-export type AnnouncementAudienceType = "EVERYONE" | "TEACHERS" | "STUDENTS" | "SPECIFIC_GROUP_CLASSES"
+export type AnnouncementAudienceType = "EVERYONE" | "TEACHERS" | "STUDENTS" | "SPECIFIC_GROUP_CLASSES" | "SPECIFIC_BRANCHES"
 
 export interface Announcement {
   id: ID

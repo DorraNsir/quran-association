@@ -32,31 +32,18 @@ import { groupActions, useGroupDialogs } from "./use-group-dialogs"
 
 type ViewMode = "cards" | "table"
 
-export function GroupsView({ lookups, initialStudents }: { lookups: Lookups; initialStudents: Student[] }) {
-  const [groups, setGroups] = useState(lookups.groups)
-  const [groupClasses, setGroupClasses] = useState(lookups.groupClasses)
-  const [students, setStudents] = useState(initialStudents)
-  const [schedules, setSchedules] = useState(lookups.schedules)
+export function GroupsView({ lookups, students }: { lookups: Lookups; students: Student[] }) {
+  const { groups, groupClasses, schedules } = lookups
   const [query, setQuery] = useState("")
   const [branchId, setBranchId] = useState(ALL)
   const [status, setStatus] = useState(ALL)
   const [view, setView] = useState<ViewMode>("cards")
 
-  const live: Lookups = { ...lookups, groups, groupClasses, schedules }
+  const live: Lookups = lookups
   const indexes = indexLookups(live)
   const counts = countActiveStudentsByClass(students)
 
-  const { run, dialogs } = useGroupDialogs({
-    lookups: live,
-    students,
-    onGroupChange: (group, isNew) =>
-      setGroups((prev) => (isNew ? [...prev, group] : prev.map((g) => (g.id === group.id ? group : g)))),
-    onClassChange: ({ groupClass, studentIds, schedules: slots }, isNew) => {
-      setGroupClasses((prev) => (isNew ? [...prev, groupClass] : prev.map((c) => (c.id === groupClass.id ? groupClass : c))))
-      setSchedules((prev) => [...prev.filter((s) => s.groupClassId !== groupClass.id), ...slots])
-      setStudents((prev) => prev.map((s) => (studentIds.includes(s.id) ? { ...s, groupClassId: groupClass.id } : s)))
-    },
-  })
+  const { run, dialogs } = useGroupDialogs({ lookups: live, students })
 
   /** A group's classes, each resolved to its own place and team. */
   const classViews = (g: Group) => classesOf(g.id, groupClasses).map((c) => describeClass(c, indexes))

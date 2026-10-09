@@ -19,6 +19,8 @@ import {
 import { AdminApi } from '../academic/admin-api.decorator.js';
 import type { AuthPrincipal } from '../auth/auth.types.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
+import { StudentAccessService } from '../student-space/student-access.service.js';
+import { StudentApi } from '../student-space/student-api.decorator.js';
 import { TeacherApi } from '../teaching/teacher-api.decorator.js';
 import {
   ClassMemorizationDto,
@@ -166,5 +168,30 @@ export class TeacherMemorizationController {
       kind: 'teacher',
       userId: user.userId,
     });
+  }
+}
+
+/** My own memorization progress (the student profile of the authenticated account). */
+@ApiTags('student / memorization')
+@StudentApi()
+@Controller('student/memorization')
+export class StudentMemorizationController {
+  constructor(
+    private readonly memorization: MemorizationService,
+    private readonly access: StudentAccessService,
+  ) {}
+
+  @Get()
+  @ApiOperation({
+    summary: 'My records (newest year first; optional academic year)',
+  })
+  @ApiOkResponse({ type: [MemorizationRecordDto] })
+  @ApiNotFoundResponse({ description: 'ACADEMIC_YEAR_NOT_FOUND' })
+  async mine(
+    @CurrentUser() user: AuthPrincipal,
+    @Query() query: StudentMemorizationQueryDto,
+  ): Promise<MemorizationRecordDto[]> {
+    const { studentId } = await this.access.scopeOf(user.userId);
+    return this.memorization.forStudent(studentId, query);
   }
 }

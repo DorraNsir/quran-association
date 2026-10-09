@@ -193,3 +193,39 @@ export class AttendanceSummaryDto {
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true }) to!:
     string | null;
 }
+
+/** Association-wide monitoring: records grouped by student (counts only). */
+export class StudentsSummaryQueryDto {
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  academicYearId?: string;
+  @IsDateOnly({ optional: true }) from?: string;
+  @IsDateOnly({ optional: true }) to?: string;
+  @ApiPropertyOptional({ format: 'uuid', description: "The session's group" })
+  @IsOptional()
+  @IsUUID()
+  groupId?: string;
+  @ApiPropertyOptional({ format: 'uuid', description: "The session's class" })
+  @IsOptional()
+  @IsUUID()
+  groupClassId?: string;
+  @ApiPropertyOptional({ format: 'uuid', description: "The session's branch" })
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+}
+
+export class StudentSummaryLineDto {
+  @ApiProperty() studentId!: string;
+  @ApiProperty() firstName!: string;
+  @ApiProperty() lastName!: string;
+  @ApiPropertyOptional({ type: String, nullable: true }) photoUrl!:
+    string | null;
+  @ApiProperty() recorded!: number;
+  @ApiProperty() present!: number;
+  @ApiProperty() absent!: number;
+  @ApiProperty() late!: number;
+  @ApiProperty() excused!: number;
+  @ApiPropertyOptional({ type: Number, nullable: true }) rate!: number | null;
+}

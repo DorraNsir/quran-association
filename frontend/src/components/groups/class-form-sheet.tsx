@@ -15,9 +15,9 @@ import { useFormState } from "@/hooks/use-form-state"
 import { fullName, indexLookups, roomsOfBranch, schedulesOf, studentClass, type Lookups } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { newMockId } from "@/lib/mock/reference-date"
+import type { ClassSaveInput } from "@/lib/api/hooks/groups"
 import { checkClassSlots, type SlotDraft } from "@/lib/scheduling"
-import type { Group, GroupClass, GroupClassStatus, ID, Student, WeeklySchedule } from "@/types/domain"
+import type { Group, GroupClass, GroupClassStatus, Student } from "@/types/domain"
 
 import { draftError, ScheduleEditor } from "./schedule-editor"
 
@@ -31,13 +31,6 @@ interface ClassFormValues {
   status: GroupClassStatus
 }
 
-export interface ClassSaveResult {
-  groupClass: GroupClass
-  /** Students who now belong to this class */
-  studentIds: ID[]
-  /** Replaces all of this class's weekly slots */
-  schedules: WeeklySchedule[]
-}
 
 /** Id used for conflict checks while a new class has no id yet. */
 const DRAFT_CLASS_ID = "draft-class"
@@ -106,7 +99,8 @@ export function ClassFormSheet({
   groupClass?: GroupClass
   lookups: Lookups
   students: Student[]
-  onSave: (result: ClassSaveResult) => void
+  /** Saves through the API (class, slots, transfers); a rejection is shown in the form */
+  onSave: (input: ClassSaveInput) => Promise<void>
 }) {
   const indexes = indexLookups(lookups)
   const currentMembers = groupClass ? students.filter((s) => s.groupClassId === groupClass.id).map((s) => s.id) : []
@@ -148,11 +142,14 @@ export function ClassFormSheet({
   const isRunning = values.status === "ACTIVE" && group.status === "ACTIVE"
 
   const submit = form.handleSubmit((v) => {
-    const saved = { ...toDraftClass(v, group, groupClass), id: groupClass?.id ?? newMockId("gc") }
-    onSave({
-      groupClass: saved,
+    const { id: _draft, ...draft } = toDraftClass(v, group, groupClass)
+    void _draft
+    return onSave({
+      groupClass: { ...draft, id: groupClass?.id },
       studentIds: v.studentIds,
-      schedules: v.slots.map(({ id, day, start, end }) => ({ id: id ?? newMockId("ws"), groupClassId: saved.id, day, start, end })),
+      currentMemberIds: currentMembers,
+      slots: v.slots.map(({ id, day, start, end }) => ({ id, day, start, end })),
+      previousSlots: groupClass ? schedulesOf(groupClass.id, lookups.schedules) : [],
     })
   })
 
@@ -164,6 +161,8 @@ export function ClassFormSheet({
       description={`${group.name}: لكل حلقة فرعها وقاعتها ومدرسها المشرف وطلبتها ومواعيدها.`}
       onSubmit={submit}
       submitLabel={groupClass ? "حفظ التعديلات" : "إنشاء الحلقة"}
+      pending={form.pending}
+      error={form.serverError}
     >
       <FormSection title="المكان">
         <FormField label="الفرع" required {...form.field("branchId")}>

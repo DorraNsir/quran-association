@@ -8,7 +8,7 @@ import { PersonCell, UserAvatar } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { fullName } from "@/lib/domain"
-import type { AttendanceEntry } from "@/lib/store/operations"
+import type { AttendanceEntry } from "@/lib/attendance"
 import { cn } from "@/lib/utils"
 import type { AttendanceStatus, Student, Teacher, TeachingRole } from "@/types/domain"
 
@@ -26,7 +26,7 @@ export function StudentAttendanceRow({
   onStatus,
   onNote,
 }: {
-  student: Student
+  student: Pick<Student, "id" | "firstName" | "lastName" | "photoUrl">
   entry?: AttendanceEntry
   disabled?: boolean
   onStatus: (status: AttendanceStatus) => void

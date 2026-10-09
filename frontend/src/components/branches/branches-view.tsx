@@ -27,16 +27,12 @@ import type { Branch } from "@/types/domain"
 import { branchActions, useBranchDialogs } from "./use-branch-dialogs"
 
 export function BranchesView({ lookups }: { lookups: Lookups }) {
-  const [branches, setBranches] = useState(lookups.branches)
+  const { branches } = lookups
   const [query, setQuery] = useState("")
   const [status, setStatus] = useState(ALL)
 
-  const liveLookups = { ...lookups, branches }
-  const { run, dialogs } = useBranchDialogs({
-    lookups: liveLookups,
-    onChange: (saved, isNew) =>
-      setBranches((prev) => (isNew ? [...prev, saved] : prev.map((b) => (b.id === saved.id ? saved : b)))),
-  })
+  const liveLookups = lookups
+  const { run, dialogs } = useBranchDialogs({ lookups })
 
   const filtered = branches.filter((b) => {
     if (query.trim() && !matchesText(`${b.name} ${b.address}`, query)) return false

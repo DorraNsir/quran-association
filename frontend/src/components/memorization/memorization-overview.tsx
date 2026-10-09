@@ -14,8 +14,8 @@ import { Button } from "@/components/ui/button"
 import { classesOf, describeClass, fullName, indexLookups, studentClass, type ClassView, type Lookups } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
-import { useOperations } from "@/lib/store/operations"
-import type { ISODate, MemorizationProgress, Student } from "@/types/domain"
+import { useClassesMemorization } from "@/lib/api/memorization"
+import type { ISODate, MemorizationProgress, Semester, Student } from "@/types/domain"
 
 import { MemorizationValue, useMemorizationDialog } from "./memorization-dialog"
 import { AcademicYearSelect, SemesterSelect } from "./period-selectors"
@@ -40,17 +40,23 @@ export function MemorizationOverview({
 }) {
   const adminDate = useAdminDate()
   const academicYears = useAcademicYears()
-  const { memorizationProgress } = useOperations()
   const initial = defaultPeriod(academicYears, today)
-  const [academicYearId, setAcademicYearId] = useState(initial.academicYearId)
-  const [semester, setSemester] = useState(initial.semester)
+  // The years load asynchronously: until the user picks a period, the default (current) one applies
+  const [pickedYearId, setAcademicYearId] = useState<string>()
+  const [pickedSemester, setSemester] = useState<Semester>()
+  const academicYearId = pickedYearId ?? initial.academicYearId
+  const semester = pickedSemester ?? initial.semester
   const [query, setQuery] = useState("")
   const [groupId, setGroupId] = useState(ALL)
   const [classId, setClassId] = useState(ALL)
   const [supervisorId, setSupervisorId] = useState(ALL)
   const [branchId, setBranchId] = useState(ALL)
   const [onlyMissing, setOnlyMissing] = useState(false)
-  const memorization = useMemorizationDialog({ lookups, academicYears, today })
+  // Values of the classes the active students are in, for the selected semester
+  const classIds = [...new Set(students.filter((s) => s.status === "ACTIVE" && s.groupClassId).map((s) => s.groupClassId))]
+  const memo = useClassesMemorization("admin", classIds, { academicYearId: academicYearId || undefined, semester })
+  const memorizationProgress = memo.records
+  const memorization = useMemorizationDialog({ lookups, academicYears, records: memorizationProgress })
 
   const indexes = indexLookups(lookups)
   const byKey = indexMemorization(memorizationProgress)

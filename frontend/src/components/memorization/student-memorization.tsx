@@ -9,7 +9,8 @@ import { fullName, indexLookups, studentClass, type Lookups } from "@/lib/domain
 import { formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { defaultPeriod, getMemorizationProgress, SEMESTERS } from "@/lib/memorization"
-import { useOperations } from "@/lib/store/operations"
+import { QueryState } from "@/components/shared/query-state"
+import { useClassesMemorization, useStudentMemorization } from "@/lib/api/memorization"
 import { cn } from "@/lib/utils"
 import type { ID, ISODate, Student } from "@/types/domain"
 
@@ -23,22 +24,29 @@ export function StudentMemorization({
   lookups,
   students,
   today,
-  updaterId,
+  scope = "admin",
 }: {
   studentId: ID
   lookups: Lookups
   students: Student[]
   today: ISODate
-  /** The signed-in teacher in Teacher Space */
-  updaterId?: ID
+  /** Teacher Space reads the student's class list (teacher endpoint, access-checked) */
+  scope?: "admin" | "teacher"
 }) {
   const academicYears = useAcademicYears()
-  const { memorizationProgress } = useOperations()
   const initial = defaultPeriod(academicYears, today)
-  const [academicYearId, setAcademicYearId] = useState(initial.academicYearId)
-  const memorization = useMemorizationDialog({ lookups, academicYears, today, updaterId })
+  const [pickedYearId, setAcademicYearId] = useState<string>()
+  const academicYearId = pickedYearId ?? initial.academicYearId
   const student = students.find((s) => s.id === studentId)
+  const own = useStudentMemorization("admin", studentId, scope === "admin")
+  const teacherClass = scope === "teacher" && student?.groupClassId ? [student.groupClassId] : []
+  const year = academicYearId || undefined
+  const first = useClassesMemorization("teacher", teacherClass, { academicYearId: year, semester: "SEMESTER_1" })
+  const second = useClassesMemorization("teacher", teacherClass, { academicYearId: year, semester: "SEMESTER_2" })
+  const memorizationProgress = scope === "admin" ? (own.data ?? []) : [...first.records, ...second.records]
+  const memorization = useMemorizationDialog({ lookups, academicYears, records: memorizationProgress, scope })
   if (!student) return null
+  if (scope === "admin" && !own.data) return <QueryState query={own}>{null}</QueryState>
 
   const indexes = indexLookups(lookups)
   const view = studentClass(student, indexes)
@@ -58,7 +66,6 @@ export function StudentMemorization({
       <ul className="grid gap-4 sm:grid-cols-2">
         {SEMESTERS.map((semester) => {
           const record = getMemorizationProgress(memorizationProgress, student.id, academicYearId, semester)
-          const teacher = record ? indexes.teachersById.get(record.updatedByTeacherId) : undefined
           const isCurrent = academicYearId === initial.academicYearId && semester === initial.semester
           return (
             <li key={semester}>
@@ -73,7 +80,7 @@ export function StudentMemorization({
                 </div>
                 {record ? (
                   <p className="text-xs text-muted-foreground">
-                    آخر تحديث: {formatDate(record.updatedAt)} · المدرس: {teacher ? fullName(teacher) : "—"}
+                    آخر تحديث: {formatDate(record.updatedAt)}
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground">لم يتم تحديد آخر سورة محفوظة بعد</p>

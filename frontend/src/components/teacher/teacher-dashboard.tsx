@@ -22,7 +22,7 @@ import type { Lookups } from "@/lib/domain"
 import { formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
-import { useOperations } from "@/lib/store/operations"
+import { useClassesMemorization } from "@/lib/api/memorization"
 import { getTeacherGroupClasses } from "@/lib/teacher-access"
 import { cn } from "@/lib/utils"
 import type { ID, ISODate, Student } from "@/types/domain"
@@ -44,11 +44,10 @@ export function TeacherDashboard({
   today: ISODate
 }) {
   const academicYears = useAcademicYears()
-  const { memorizationProgress } = useOperations()
-  const rows = useTeacherSessionRows(teacherId, lookups, students, today)
+  const { rows } = useTeacherSessionRows(today)
   const classes = getTeacherGroupClasses(teacherId, lookups)
   const active = students.filter((s) => s.status === "ACTIVE")
-  const latestAnnouncements = useReaderAnnouncements({ workspace: "teacher", teacherId }, lookups, today).slice(0, 2)
+  const latestAnnouncements = useReaderAnnouncements("teacher", 2)
 
   const todayRows = rows.filter((r) => r.session.date === today)
   const pending = rows.filter((r) => isAttendancePending(r, today)).reverse()
@@ -56,7 +55,11 @@ export function TeacherDashboard({
 
   const period = defaultPeriod(academicYears, today)
   const year = academicYears.find((y) => y.id === period.academicYearId)
-  const byKey = indexMemorization(memorizationProgress)
+  const memo = useClassesMemorization("teacher", classes.map((a) => a.groupClass.id), {
+    academicYearId: period.academicYearId || undefined,
+    semester: period.semester,
+  })
+  const byKey = indexMemorization(memo.records)
   const missing = (list: Student[]) =>
     list.filter((s) => !byKey.has(memorizationKey(s.id, period.academicYearId, period.semester))).length
   const missingTotal = missing(active)

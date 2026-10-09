@@ -3,25 +3,41 @@
 import { Bell, CheckCheck, FolderOpen, Megaphone } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
+import { toast } from "sonner"
 
 import { EmptyState } from "@/components/shared/empty-state"
 import { PageHeader } from "@/components/shared/page-header"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { getNotificationsForUser, notificationHref } from "@/lib/communication"
+import { Pager } from "@/components/shared/pager"
+import { QueryState } from "@/components/shared/query-state"
+import { api } from "@/lib/api/client"
+import { ApiError, errorMessage } from "@/lib/api/errors"
+import {
+  toNotification,
+  useMarkAllNotificationsRead,
+  useMarkNotificationRead,
+  useNotifications,
+  useUnreadCount,
+} from "@/lib/api/notifications"
+import { useAuth } from "@/lib/auth/auth-provider"
+import { notificationHref } from "@/lib/communication"
+import { todayInTunis } from "@/lib/dates"
 import { formatRelativeDay } from "@/lib/format"
-import { operations, useOperations } from "@/lib/store/operations"
 import { cn } from "@/lib/utils"
 import type { Workspace } from "@/lib/workspace"
-import type { ID, ISODate, UserNotification } from "@/types/domain"
+import type { ISODate, UserNotification } from "@/types/domain"
 
-/** The signed-in user's own notifications (never anyone else's). */
-function useMyNotifications(userId: ID) {
-  const { notifications } = useOperations()
-  const mine = getNotificationsForUser(userId, notifications)
-  return { mine, unread: mine.filter((n) => !n.isRead).length }
+/** The signed-in user's own notifications (the API only ever returns those). */
+function useMyNotifications(pageSize: number) {
+  const { user } = useAuth()
+  const list = useNotifications({ pageSize })
+  const unread = useUnreadCount()
+  const mine = (list.data?.data ?? []).map((n) => toNotification(n, user?.id ?? ""))
+  return { mine, unread: unread.data ?? 0, list, total: list.data?.meta.total ?? 0 }
 }
 
 function NotificationItem({
@@ -58,22 +74,40 @@ function NotificationItem({
   )
 }
 
-/** Opening a notification marks it read, then follows it inside the current workspace. */
-function useOpenNotification(userId: ID, workspace: Workspace, after?: () => void) {
+/**
+ * Opening a notification marks it read, then follows it inside the current
+ * workspace — only if the content is still accessible NOW (a notification
+ * grants no access: the API answers 404 for content the account lost).
+ */
+function useOpenNotification(workspace: Workspace, after?: () => void) {
   const router = useRouter()
-  return (n: UserNotification) => {
-    operations.markNotificationRead(n.id, userId)
+  const queryClient = useQueryClient()
+  const markRead = useMarkNotificationRead()
+  return async (n: UserNotification) => {
+    if (!n.isRead) markRead.mutate(n.id)
     after?.()
     const href = notificationHref(n, workspace)
-    if (href) router.push(href)
+    if (!href || !n.entityId) return
+    const section = n.entityType === "RESOURCE" ? "resources" : "announcements"
+    try {
+      await queryClient.fetchQuery({
+        queryKey: [section, workspace, "detail", n.entityId],
+        queryFn: ({ signal }) => api(`/${workspace}/${section}/${n.entityId}`, { signal }),
+      })
+      router.push(href)
+    } catch (error) {
+      toast.error(error instanceof ApiError && error.isNotFound ? "لم يعد هذا المحتوى متاحًا لحسابك." : errorMessage(error))
+    }
   }
 }
 
 /** Header bell with unread count and the latest notifications. */
-export function NotificationBell({ userId, workspace, today }: { userId: ID; workspace: Workspace; today: ISODate }) {
+export function NotificationBell({ workspace }: { workspace: Workspace }) {
   const [open, setOpen] = useState(false)
-  const { mine, unread } = useMyNotifications(userId)
-  const openNotification = useOpenNotification(userId, workspace, () => setOpen(false))
+  const today = todayInTunis()
+  const { mine, unread } = useMyNotifications(6)
+  const markAll = useMarkAllNotificationsRead()
+  const openNotification = useOpenNotification(workspace, () => setOpen(false))
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -91,7 +125,7 @@ export function NotificationBell({ userId, workspace, today }: { userId: ID; wor
         <div className="flex items-center justify-between gap-2 border-b px-3 py-2.5">
           <p className="text-sm font-semibold">الإشعارات</p>
           {unread > 0 && (
-            <Button variant="ghost" size="sm" className="h-7 text-primary" onClick={() => operations.markAllNotificationsRead(userId)}>
+            <Button variant="ghost" size="sm" className="h-7 text-primary" disabled={markAll.isPending} onClick={() => markAll.mutate()}>
               تحديد الكل كمقروء
             </Button>
           )}
@@ -101,7 +135,7 @@ export function NotificationBell({ userId, workspace, today }: { userId: ID; wor
             <EmptyState icon={Bell} title="لا توجد إشعارات جديدة" className="py-8" />
           ) : (
             mine.slice(0, 6).map((n) => (
-              <NotificationItem key={n.id} notification={n} today={today} onOpen={() => openNotification(n)} />
+              <NotificationItem key={n.id} notification={n} today={today} onOpen={() => void openNotification(n)} />
             ))
           )}
         </div>
@@ -115,10 +149,18 @@ export function NotificationBell({ userId, workspace, today }: { userId: ID; wor
   )
 }
 
-/** Full list of the user's notifications, per workspace route. */
-export function NotificationsPage({ userId, workspace, today }: { userId: ID; workspace: Workspace; today: ISODate }) {
-  const { mine, unread } = useMyNotifications(userId)
-  const openNotification = useOpenNotification(userId, workspace)
+/** Full list of the user's notifications, per workspace route (newest first, paginated). */
+export function NotificationsPage({ workspace }: { workspace: Workspace }) {
+  const [page, setPage] = useState(1)
+  const today = todayInTunis()
+  const { user } = useAuth()
+  const list = useNotifications({ page, pageSize: 20 })
+  const unread = useUnreadCount().data ?? 0
+  const markRead = useMarkNotificationRead()
+  const markAll = useMarkAllNotificationsRead()
+  const openNotification = useOpenNotification(workspace)
+  const mine = (list.data?.data ?? []).map((n) => toNotification(n, user?.id ?? ""))
+  const totalPages = list.data?.meta.totalPages ?? 1
 
   return (
     <>
@@ -127,7 +169,7 @@ export function NotificationsPage({ userId, workspace, today }: { userId: ID; wo
         description={unread > 0 ? `${unread} غير مقروءة` : "كل إشعاراتك مقروءة."}
         actions={
           unread > 0 && (
-            <Button variant="outline" onClick={() => operations.markAllNotificationsRead(userId)}>
+            <Button variant="outline" disabled={markAll.isPending} onClick={() => markAll.mutate()}>
               <CheckCheck />
               تحديد الكل كمقروء
             </Button>
@@ -135,19 +177,22 @@ export function NotificationsPage({ userId, workspace, today }: { userId: ID; wo
         }
       />
       <Card className="gap-0 p-1.5">
-        {mine.length === 0 ? (
-          <EmptyState icon={Bell} title="لا توجد إشعارات جديدة" />
-        ) : (
+        <QueryState query={list} empty={mine.length === 0} emptyIcon={Bell} emptyTitle="لا توجد إشعارات">
           <ul className="space-y-0.5">
             {mine.map((n) => (
               <li key={n.id}>
-                <NotificationItem notification={n} today={today} onOpen={() => openNotification(n)}
-                  onMarkRead={() => operations.markNotificationRead(n.id, userId)} />
+                <NotificationItem
+                  notification={n}
+                  today={today}
+                  onOpen={() => void openNotification(n)}
+                  onMarkRead={() => markRead.mutate(n.id)}
+                />
               </li>
             ))}
           </ul>
-        )}
+        </QueryState>
       </Card>
+      <Pager page={page} totalPages={totalPages} onPage={setPage} />
     </>
   )
 }

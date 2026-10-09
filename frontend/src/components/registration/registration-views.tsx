@@ -1,17 +1,22 @@
 "use client"
 
-import { BookOpen, CalendarDays, CheckCircle2, ClipboardList, Eye, Globe, Phone, Plus, SearchX, ShieldCheck, UserCheck, UserX } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
+import { BookOpen, CalendarDays, CheckCircle2, ClipboardList, Eye, Globe, Loader2, Phone, Plus, SearchX, ShieldCheck, UserCheck, UserPlus, UserX } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
+import { useDeferredValue, useState } from "react"
 import { toast } from "sonner"
 
 import { StudentFormSheet } from "@/components/students/student-form-sheet"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { DataTable, type Column } from "@/components/shared/data-table"
 import { EmptyState } from "@/components/shared/empty-state"
-import { ALL, FilterBar, FilterSelect, matchesText, SearchInput } from "@/components/shared/filters"
+import { ALL, FilterBar, FilterSelect, SearchInput } from "@/components/shared/filters"
 import { InfoList, PhoneLink } from "@/components/shared/info-list"
-import { Breadcrumbs, PageHeader } from "@/components/shared/page-header"
+import { NotFoundState } from "@/components/shared/not-found-state"
+import { PageHeader, Breadcrumbs } from "@/components/shared/page-header"
+import { Pager } from "@/components/shared/pager"
+import { ErrorState, LoadingState, QueryState } from "@/components/shared/query-state"
+import { WithLookups } from "@/components/shared/with-lookups"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -24,17 +29,32 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { fullName, type Lookups } from "@/lib/domain"
+import { Textarea } from "@/components/ui/textarea"
+import { api } from "@/lib/api/client"
+import { ApiError, errorMessage } from "@/lib/api/errors"
+import {
+  toRegistrationRequest,
+  useAcceptRegistration,
+  useAddRegistrationRequest,
+  useRegistrationRequest,
+  useRegistrationRequests,
+  useRejectRegistration,
+  useSubmitPublicRegistration,
+  type AcceptInput,
+  type DuplicateCandidate,
+} from "@/lib/api/hooks/registration"
+import type { StudentInput } from "@/lib/api/hooks/people"
+import { usePublicSiteSettings } from "@/lib/api/public-settings"
+import { todayInTunis } from "@/lib/dates"
+import type { Lookups } from "@/lib/domain"
 import { formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { canReviewRequest, requestAge } from "@/lib/registration"
-import { allStudents, operations, useOperations } from "@/lib/store/operations"
+import { useAdminDate, usePlatformSettings } from "@/lib/store/settings"
 import { cn } from "@/lib/utils"
-import type { ID, ISODate, RegistrationRequest, RegistrationRequestStatus } from "@/types/domain"
+import type { ID, RegistrationRequest, RegistrationRequestStatus } from "@/types/domain"
 
 import { useRegistrationForm } from "./registration-form"
-import { getCurrentAcademicYear } from "@/lib/academic-years"
-import { useAdminDate } from "@/lib/store/settings"
 
 export function RegistrationStatusBadge({ status }: { status: RegistrationRequestStatus }) {
   const tone = { PENDING: "bg-warning-soft text-warning", ACCEPTED: "bg-brand-soft text-brand-soft-foreground", REFUSED: "bg-muted text-muted-foreground" }[status]
@@ -51,18 +71,35 @@ export function RegistrationSourceBadge({ source }: { source: RegistrationReques
   )
 }
 
+/** An announced group of the public site (GET /api/public/upcoming-groups). */
+interface PublicGroupListing {
+  id: string
+  title: string
+  groupId: string | null
+  registrationOpen: boolean
+}
+
 /**
  * Public pre-registration — creates a PENDING request only (no student, no
  * account, no class, no payment). `interestId` (an announced upcoming group)
  * is recorded as interest; the class stays an admission decision.
  */
-export function PublicRegistrationForm({ today, interestId }: { today: ISODate; interestId?: string }) {
+export function PublicRegistrationForm({ interestId }: { interestId?: string }) {
+  const today = todayInTunis()
   const form = useRegistrationForm(today)
   const [sent, setSent] = useState(false)
-  const { publicGroups, siteSettings } = useOperations()
-  const interest = interestId ? publicGroups.find((g) => g.id === interestId && g.isPublished && g.registrationOpen) : undefined
+  const settings = usePublicSiteSettings()
+  const groups = useQuery({
+    queryKey: ["public", "upcoming-groups"],
+    queryFn: ({ signal }) => api<PublicGroupListing[]>("/public/upcoming-groups", { auth: false, signal }),
+    enabled: !!interestId,
+  })
+  const submit = useSubmitPublicRegistration()
+  const interest = interestId ? groups.data?.find((g) => g.id === interestId && g.registrationOpen) : undefined
 
-  if (!siteSettings.registrationEnabled) {
+  if (settings.isPending) return <LoadingState />
+  if (settings.isError) return <Card className="mx-auto w-full max-w-xl p-0"><ErrorState error={settings.error} onRetry={() => settings.refetch()} /></Card>
+  if (!settings.data.registrationEnabled) {
     return (
       <Card className="mx-auto w-full max-w-xl p-8 text-center">
         <p className="text-lg font-semibold">التسجيل عبر الموقع مغلق حالياً</p>
@@ -75,7 +112,7 @@ export function PublicRegistrationForm({ today, interestId }: { today: ISODate; 
     <div className="mx-auto w-full max-w-xl space-y-4">
       {interest && !sent && (
         <p className="rounded-2xl bg-brand-soft px-4 py-3 text-sm text-brand-soft-foreground">
-          طلب تسجيل في: <span className="font-semibold">{interest.titleAr}</span> — تحدّد الإدارة الحلقة المناسبة عند قبول الطلب.
+          طلب تسجيل في: <span className="font-semibold">{interest.title}</span> — تحدّد الإدارة الحلقة المناسبة عند قبول الطلب.
         </p>
       )}
       <Card className="rounded-3xl p-5 sm:p-7">
@@ -91,18 +128,23 @@ export function PublicRegistrationForm({ today, interestId }: { today: ISODate; 
             className="space-y-6"
             onSubmit={(e) => {
               e.preventDefault()
+              if (submit.isPending) return
               const fields = form.collect()
               if (!fields) return
-              operations.submitRegistrationRequest(
-                { ...fields, interestedGroupId: interest?.groupId, interestedProgramLabel: interest?.titleAr },
-                "PUBLIC_WEBSITE",
-                today
+              submit.mutate(
+                { ...fields, interestedGroupId: interest?.groupId ?? undefined, interestedProgramLabel: interest?.title },
+                { onSuccess: () => setSent(true) }
               )
-              setSent(true)
             }}
           >
             {form.fields("public", "self")}
-            <Button type="submit" size="lg" className="h-12 w-full rounded-full text-base">إرسال طلب التسجيل</Button>
+            {submit.isError && (
+              <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{errorMessage(submit.error)}</p>
+            )}
+            <Button type="submit" size="lg" className="h-12 w-full rounded-full text-base" disabled={submit.isPending}>
+              {submit.isPending && <Loader2 className="animate-spin" />}
+              إرسال طلب التسجيل
+            </Button>
           </form>
         )}
       </Card>
@@ -111,21 +153,26 @@ export function PublicRegistrationForm({ today, interestId }: { today: ISODate; 
 }
 
 /** Admin entry of a request (visit, phone call…): same entity, source ADMIN, still PENDING. */
-function AddRequestDialog({ open, onOpenChange, today }: { open: boolean; onOpenChange: (open: boolean) => void; today: ISODate }) {
-  const form = useRegistrationForm(today)
+function AddRequestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const form = useRegistrationForm(todayInTunis())
+  const add = useAddRegistrationRequest()
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => !add.isPending && onOpenChange(next)}>
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
         <form
           noValidate
           className="grid gap-4"
           onSubmit={(e) => {
             e.preventDefault()
+            if (add.isPending) return
             const fields = form.collect()
             if (!fields) return
-            operations.submitRegistrationRequest(fields, "ADMIN", today)
-            onOpenChange(false)
-            toast.success("تمت إضافة طلب التسجيل", { description: "الحالة: قيد الانتظار — لم يُنشأ ملف طالب بعد." })
+            add.mutate(fields, {
+              onSuccess: () => {
+                onOpenChange(false)
+                toast.success("تمت إضافة طلب التسجيل", { description: "الحالة: قيد الانتظار — لم يُنشأ ملف طالب بعد." })
+              },
+            })
           }}
         >
           <DialogHeader>
@@ -133,10 +180,13 @@ function AddRequestDialog({ open, onOpenChange, today }: { open: boolean; onOpen
             <DialogDescription>لمن حضر إلى الجمعية أو اتصل هاتفيًا. يُراجَع الطلب ثم يُقبل أو يُرفض.</DialogDescription>
           </DialogHeader>
           {form.fields("admin-req", "applicant")}
+          {add.isError && (
+            <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{errorMessage(add.error)}</p>
+          )}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{labels.common.cancel}</Button>
-            <Button type="submit">
-              <Plus />
+            <Button type="button" variant="outline" disabled={add.isPending} onClick={() => onOpenChange(false)}>{labels.common.cancel}</Button>
+            <Button type="submit" disabled={add.isPending}>
+              {add.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
               إضافة الطلب
             </Button>
           </DialogFooter>
@@ -146,28 +196,40 @@ function AddRequestDialog({ open, onOpenChange, today }: { open: boolean; onOpen
   )
 }
 
-export function RegistrationRequestsView({ today }: { today: ISODate }) {
+type RequestRow = ReturnType<typeof toRegistrationRequest>
+
+/** Server-side filters and pagination (GET /api/admin/registration-requests). */
+export function RegistrationRequestsView() {
+  const today = todayInTunis()
   const adminDate = useAdminDate()
-  const { registrationRequests } = useOperations()
+  const pageSize = usePlatformSettings().defaultPageSize
   const [query, setQuery] = useState("")
   const [status, setStatus] = useState(ALL)
   const [source, setSource] = useState(ALL)
+  const [page, setPage] = useState(1)
   const [adding, setAdding] = useState({ key: 0, open: false })
-  const list = [...registrationRequests].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt) || b.id.localeCompare(a.id))
-  const shown = list.filter(
-    (r) =>
-      (!query.trim() || matchesText(`${r.firstName} ${r.lastName} ${r.phone}`, query)) &&
-      (status === ALL || r.status === status) &&
-      (source === ALL || r.source === source)
-  )
-  const pending = list.filter((r) => r.status === "PENDING").length
+  const search = useDeferredValue(query.trim())
+  const list = useRegistrationRequests({
+    page,
+    pageSize,
+    search: search || undefined,
+    status: status === ALL ? undefined : status,
+    source: source === ALL ? undefined : source,
+  })
+  const pending = useRegistrationRequests({ page: 1, pageSize: 1, status: "PENDING" }).data?.meta.total ?? 0
+  const rows = (list.data?.data ?? []).map(toRegistrationRequest)
+  const filtered = Boolean(search) || status !== ALL || source !== ALL
   const href = (r: RegistrationRequest) => `/admin/registration-requests/${r.id}`
   const ageCell = (r: RegistrationRequest) => {
     const age = requestAge(r, today)
     return age === undefined ? "—" : `${age} سنة`
   }
+  const reset = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v)
+    setPage(1)
+  }
 
-  const columns: Column<RegistrationRequest>[] = [
+  const columns: Column<RequestRow>[] = [
     {
       id: "applicant",
       header: "المترشح",
@@ -208,80 +270,163 @@ export function RegistrationRequestsView({ today }: { today: ISODate }) {
         }
       />
       <FilterBar
-        hasActiveFilters={Boolean(query) || status !== ALL || source !== ALL}
+        hasActiveFilters={filtered}
         onReset={() => {
           setQuery("")
           setStatus(ALL)
           setSource(ALL)
+          setPage(1)
         }}
-        resultLabel={`${shown.length} طلب`}
-        search={<SearchInput value={query} onChange={setQuery} label="البحث في الطلبات" placeholder="ابحث بالاسم أو الهاتف…" />}
+        resultLabel={list.data ? `${list.data.meta.total} طلب` : ""}
+        search={<SearchInput value={query} onChange={reset(setQuery)} label="البحث في الطلبات" placeholder="ابحث بالاسم أو الهاتف…" />}
       >
-        <FilterSelect label="الحالة" allLabel="كل الحالات" value={status} onValueChange={setStatus}
+        <FilterSelect label="الحالة" allLabel="كل الحالات" value={status} onValueChange={reset(setStatus)}
           options={(["PENDING", "ACCEPTED", "REFUSED"] as const).map((s) => ({ value: s, label: labels.registrationStatus[s] }))} />
-        <FilterSelect label="المصدر" allLabel="كل المصادر" value={source} onValueChange={setSource}
+        <FilterSelect label="المصدر" allLabel="كل المصادر" value={source} onValueChange={reset(setSource)}
           options={(["PUBLIC_WEBSITE", "ADMIN"] as const).map((s) => ({ value: s, label: labels.registrationSource[s] }))} />
       </FilterBar>
-      <DataTable
-        key={`${query}|${status}|${source}`}
-        caption="طلبات التسجيل"
-        columns={columns}
-        rows={shown}
-        getRowId={(r) => r.id}
-        emptyState={<EmptyState icon={list.length === 0 ? ClipboardList : SearchX} title={list.length === 0 ? "لا توجد طلبات تسجيل" : "لا توجد طلبات مطابقة"} />}
-        renderMobileCard={(r) => (
-          <Link href={href(r)} className="block space-y-2">
-            <div className="flex items-start justify-between gap-2">
-              <p className="font-medium">{r.firstName} {r.lastName}</p>
-              <RegistrationStatusBadge status={r.status} />
-            </div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-              <span dir="ltr" className="tabular-nums">{r.phone}</span>
-              <span>{ageCell(r)}</span>
-              <span>{formatDate(r.submittedAt)}</span>
-              <RegistrationSourceBadge source={r.source} />
-            </div>
-          </Link>
-        )}
-      />
-      <AddRequestDialog key={adding.key} open={adding.open} onOpenChange={(open) => setAdding((p) => ({ ...p, open }))} today={today} />
+      <QueryState query={list}>
+        <DataTable
+          key={`${search}|${status}|${source}|${page}`}
+          caption="طلبات التسجيل"
+          columns={columns}
+          rows={rows}
+          getRowId={(r) => r.id}
+          emptyState={<EmptyState icon={filtered ? SearchX : ClipboardList} title={filtered ? "لا توجد طلبات مطابقة" : "لا توجد طلبات تسجيل"} />}
+          renderMobileCard={(r) => (
+            <Link href={href(r)} className="block space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-medium">{r.firstName} {r.lastName}</p>
+                <RegistrationStatusBadge status={r.status} />
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span dir="ltr" className="tabular-nums">{r.phone}</span>
+                <span>{ageCell(r)}</span>
+                <span>{formatDate(r.submittedAt)}</span>
+                <RegistrationSourceBadge source={r.source} />
+              </div>
+            </Link>
+          )}
+        />
+        <Pager page={page} totalPages={list.data?.meta.totalPages ?? 1} onPage={setPage} />
+      </QueryState>
+      <AddRequestDialog key={adding.key} open={adding.open} onOpenChange={(open) => setAdding((p) => ({ ...p, open }))} />
     </>
   )
 }
 
-/** Review: accept (through the student admission form) or refuse. */
-export function RegistrationRequestDetails({
-  requestId,
-  reviewerId,
-  lookups,
-  today,
+/** People the API flagged as possible duplicates: link one (no student profile yet) or confirm a new person. */
+function DuplicateDialog({
+  candidates,
+  pending,
+  error,
+  onLink,
+  onCreateNew,
+  onCancel,
 }: {
-  requestId: ID
-  reviewerId: ID
-  lookups: Lookups
-  today: ISODate
+  candidates: DuplicateCandidate[]
+  pending: boolean
+  error?: string
+  onLink: (personId: string) => void
+  onCreateNew: () => void
+  onCancel: () => void
 }) {
-  const state = useOperations()
-  // Obligations of an admitted student belong to the CURRENT academic year (set in /admin/settings)
-  const academicYearId = getCurrentAcademicYear(state.academicYears).id
+  return (
+    <Dialog open onOpenChange={(open) => !open && !pending && onCancel()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>يوجد شخص بنفس الاسم أو رقم الهاتف</DialogTitle>
+          <DialogDescription>لا يُدمج أي شخص تلقائيًا: اربط الطلب بشخص موجود ليس له ملف طالب، أو أكّد إنشاء شخص جديد.</DialogDescription>
+        </DialogHeader>
+        <ul className="divide-y rounded-xl border">
+          {candidates.map((c) => (
+            <li key={c.personId} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
+              <div>
+                <p className="font-medium">{c.firstName} {c.lastName}</p>
+                <p className="text-xs text-muted-foreground">
+                  {c.dateOfBirth ? formatDate(c.dateOfBirth) : "تاريخ الميلاد غير معروف"}
+                  {c.phone && <> · <span dir="ltr">{c.phone}</span></>}
+                </p>
+              </div>
+              {c.studentId ? (
+                <Button asChild size="sm" variant="ghost">
+                  <Link href={`/admin/students/${c.studentId}`}>طالب مسجّل — عرض</Link>
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" disabled={pending} onClick={() => onLink(c.personId)}>
+                  ربط هذا الشخص
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+        {error && <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+        <DialogFooter>
+          <Button variant="outline" disabled={pending} onClick={onCancel}>{labels.common.cancel}</Button>
+          <Button disabled={pending} onClick={onCreateNew}>
+            {pending ? <Loader2 className="animate-spin" /> : <UserPlus />}
+            إنشاء شخص جديد
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Review page: accept (through the student admission form) or refuse. */
+export function RegistrationRequestDetails({ requestId }: { requestId: ID }) {
+  return <WithLookups>{(lookups) => <RequestDetails requestId={requestId} lookups={lookups} />}</WithLookups>
+}
+
+function RequestDetails({ requestId, lookups }: { requestId: ID; lookups: Lookups }) {
+  const today = todayInTunis()
+  const query = useRegistrationRequest(requestId)
+  const accept = useAcceptRegistration(requestId)
+  const reject = useRejectRegistration(requestId)
   const [admission, setAdmission] = useState({ key: 0, open: false })
-  const [refusing, setRefusing] = useState(false)
-  const request = state.registrationRequests.find((r) => r.id === requestId)
+  const [refusing, setRefusing] = useState({ key: 0, open: false })
+  const [reason, setReason] = useState("")
+  const [duplicates, setDuplicates] = useState<{ input: AcceptInput; candidates: DuplicateCandidate[]; error?: string } | null>(null)
   const back = "/admin/registration-requests"
 
-  if (!request) {
-    return (
-      <Card className="p-0">
-        <EmptyState icon={ClipboardList} title="الطلب غير موجود"
-          action={<Button asChild variant="outline"><Link href={back}>العودة إلى الطلبات</Link></Button>} />
-      </Card>
-    )
-  }
+  if (query.isError && query.error instanceof ApiError && query.error.isNotFound)
+    return <NotFoundState title="الطلب غير موجود" backHref={back} backLabel="العودة إلى الطلبات" />
+  if (!query.data) return <QueryState query={query}>{null}</QueryState>
+
+  const request = toRegistrationRequest(query.data)
   const name = `${request.firstName} ${request.lastName}`
   const age = requestAge(request, today)
-  const student = request.createdStudentId ? allStudents(state).find((s) => s.id === request.createdStudentId) : undefined
   const reviewable = canReviewRequest(request)
   const isMinor = age !== undefined && age < 18
+
+  const accepted = (linked: boolean) => {
+    setDuplicates(null)
+    setAdmission((p) => ({ ...p, open: false }))
+    toast.success(`تم قبول ${name} وإنشاء ملف الطالب`, linked ? { description: "رُبط الطلب بشخص موجود." } : undefined)
+  }
+  /** Runs the acceptance; a duplicate warning opens the choice dialog instead of failing. */
+  const run = async (input: AcceptInput) => {
+    try {
+      const result = await accept.mutateAsync(input)
+      accepted(result.linkedExistingPerson)
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "POSSIBLE_DUPLICATE_PERSON") {
+        const candidates = (error.body as { candidates?: DuplicateCandidate[] } | undefined)?.candidates ?? []
+        setDuplicates({ input, candidates })
+        return
+      }
+      if (duplicates) setDuplicates({ ...duplicates, error: errorMessage(error) })
+      else throw error
+    }
+  }
+  const fromForm = (input: StudentInput): AcceptInput => ({
+    groupClassId: input.groupClassId,
+    registrationDate: input.registrationDate,
+    person: input.person,
+    guardianPhone: input.guardianPhone,
+    cin: input.cin,
+    photo: input.photo ?? undefined,
+  })
 
   return (
     <>
@@ -301,7 +446,14 @@ export function RegistrationRequestDetails({
                 <UserCheck />
                 قبول الطلب
               </Button>
-              <Button variant="outline" className="text-destructive" onClick={() => setRefusing(true)}>
+              <Button
+                variant="outline"
+                className="text-destructive"
+                onClick={() => {
+                  setReason("")
+                  setRefusing((p) => ({ key: p.key + 1, open: true }))
+                }}
+              >
                 <UserX />
                 رفض الطلب
               </Button>
@@ -311,6 +463,7 @@ export function RegistrationRequestDetails({
         <InfoList
           items={[
             { label: "الهاتف", value: <PhoneLink phone={request.phone} />, icon: Phone },
+            ...(request.guardianPhone ? [{ label: "هاتف الولي", value: <PhoneLink phone={request.guardianPhone} />, icon: Phone }] : []),
             { label: request.birthDate ? "تاريخ الميلاد" : "العمر", value: request.birthDate ? `${formatDate(request.birthDate)} (${age} سنة)` : age !== undefined ? `${age} سنة` : undefined, icon: CalendarDays },
             { label: "دراسة القرآن سابقًا", value: request.hasStudiedQuranBefore ? `نعم${request.previousExperience ? ` — ${request.previousExperience}` : ""}` : "لا", icon: BookOpen },
             { label: "تاريخ الطلب", value: formatDate(request.submittedAt), icon: CalendarDays },
@@ -326,7 +479,7 @@ export function RegistrationRequestDetails({
           <CheckCircle2 className="text-primary" />
           <AlertTitle>تم إنشاء ملف الطالب</AlertTitle>
           <AlertDescription className="flex flex-wrap items-center gap-3">
-            <span>{student ? fullName(student) : "ملف الطالب"} — لا يمكن تحويل هذا الطلب مرة أخرى.</span>
+            <span>{request.createdStudentName ?? "ملف الطالب"} — لا يمكن تحويل هذا الطلب مرة أخرى.</span>
             {request.createdStudentId && (
               <Button asChild size="sm" variant="outline">
                 <Link href={`/admin/students/${request.createdStudentId}`}>عرض الطالب</Link>
@@ -339,7 +492,10 @@ export function RegistrationRequestDetails({
         <Alert>
           <UserX />
           <AlertTitle>تم رفض الطلب</AlertTitle>
-          <AlertDescription>يبقى الطلب في السجل ولم يُنشأ أي ملف طالب.</AlertDescription>
+          <AlertDescription>
+            يبقى الطلب في السجل ولم يُنشأ أي ملف طالب.
+            {request.rejectionReason && <> السبب: {request.rejectionReason}</>}
+          </AlertDescription>
         </Alert>
       )}
 
@@ -356,31 +512,42 @@ export function RegistrationRequestDetails({
             firstName: request.firstName,
             lastName: request.lastName,
             dateOfBirth: request.birthDate,
-            ...(isMinor ? { guardianPhone: request.phone } : { phone: request.phone }),
+            ...(isMinor ? { guardianPhone: request.guardianPhone ?? request.phone } : { phone: request.phone, guardianPhone: request.guardianPhone }),
             registrationDate: today,
             status: "ACTIVE",
           }}
-          onSave={(saved) => {
-            const ok = operations.admitRegistrationRequest(request.id, saved, reviewerId, today, academicYearId)
-            setAdmission((p) => ({ ...p, open: false }))
-            if (ok) toast.success(`تم قبول ${name} وإنشاء ملف الطالب`, { description: labels.common.mockNotice })
-            else toast.error("لا يمكن قبول هذا الطلب")
+          onSave={(input) => run(fromForm(input))}
+        />
+      )}
+      {duplicates && (
+        <DuplicateDialog
+          candidates={duplicates.candidates}
+          pending={accept.isPending}
+          error={duplicates.error}
+          onCancel={() => setDuplicates(null)}
+          onLink={(personId) => {
+            // Linking an existing person: the request data is not used to create one
+            void run({ ...duplicates.input, person: undefined, personId })
           }}
+          onCreateNew={() => void run({ ...duplicates.input, confirmNewPerson: true })}
         />
       )}
       <ConfirmDialog
-        open={refusing}
-        onOpenChange={setRefusing}
+        key={refusing.key}
+        open={refusing.open}
+        onOpenChange={(open) => setRefusing((p) => ({ ...p, open }))}
         title={`رفض طلب ${name}؟`}
         description="يبقى الطلب في السجل بحالة «مرفوض» ولن يُنشأ أي ملف طالب."
         confirmLabel="رفض الطلب"
         destructive
-        onConfirm={() => {
-          operations.refuseRegistrationRequest(request.id, reviewerId, today)
-          setRefusing(false)
+        onConfirm={async () => {
+          await reject.mutateAsync(reason.trim() || null)
+          setRefusing((p) => ({ ...p, open: false }))
           toast.success("تم رفض الطلب")
         }}
-      />
+      >
+        <Textarea aria-label="سبب الرفض (اختياري)" placeholder="سبب الرفض (اختياري)" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
+      </ConfirmDialog>
     </>
   )
 }

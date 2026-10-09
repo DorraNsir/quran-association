@@ -1,7 +1,11 @@
 "use client"
 
 import { DoorOpen, ShieldCheck } from "lucide-react"
+import { AlertCircle, Loader2 } from "lucide-react"
 import { useState } from "react"
+
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { errorMessage } from "@/lib/api/errors"
 
 import { ClassPicker } from "@/components/groups/class-picker"
 import { Button } from "@/components/ui/button"
@@ -32,9 +36,24 @@ export function ChangeGroupDialog({
   student: Student
   lookups: Lookups
   students?: Student[]
-  onConfirm: (groupClassId: ID) => void
+  /** Transfers through the API; a rejection is shown in the dialog */
+  onConfirm: (groupClassId: ID) => Promise<void>
 }) {
   const [targetId, setTargetId] = useState("")
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function confirm() {
+    setPending(true)
+    setError(null)
+    try {
+      await onConfirm(targetId)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setPending(false)
+    }
+  }
   const current = studentClass(student, indexLookups(lookups))
 
   return (
@@ -80,11 +99,18 @@ export function ChangeGroupDialog({
           </div>
         </div>
 
+        {error && (
+          <Alert variant="destructive" role="alert">
+            <AlertCircle aria-hidden />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {labels.common.cancel}
           </Button>
-          <Button disabled={!targetId || targetId === student.groupClassId} onClick={() => onConfirm(targetId)}>
+          <Button disabled={pending || !targetId || targetId === student.groupClassId} onClick={() => void confirm()}>
+            {pending && <Loader2 className="animate-spin" />}
             تأكيد النقل
           </Button>
         </DialogFooter>

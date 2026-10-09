@@ -34,9 +34,9 @@ export interface DateRange {
  * Date-range presets, including the academic year and its two semesters — the
  * filters the end-of-year attendance count relies on.
  */
-export function resolvePeriod(period: Period, today: ISODate, year: AcademicYear): DateRange {
+export function resolvePeriod(period: Period, today: ISODate, year: AcademicYear | undefined): DateRange {
   const monthStart = `${today.slice(0, 8)}01`
-  const semester = year.semesters[period.preset as Semester]
+  const semester = year?.semesters[period.preset as Semester]
   if (semester) return { from: semester.startDate, to: semester.endDate }
   switch (period.preset) {
     case "today":
@@ -49,7 +49,7 @@ export function resolvePeriod(period: Period, today: ISODate, year: AcademicYear
       return { from: monthStart, to: addDays(next.toISOString().slice(0, 10), -1) }
     }
     case "year":
-      return { from: year.startDate, to: year.endDate }
+      return year ? { from: year.startDate, to: year.endDate } : {}
     case "custom":
       return { from: period.from, to: period.to }
     default:
@@ -83,16 +83,20 @@ export function PeriodFilter({
           <SelectItem value="today">اليوم</SelectItem>
           <SelectItem value="week">هذا الأسبوع</SelectItem>
           <SelectItem value="month">هذا الشهر</SelectItem>
-          <SelectSeparator />
-          <SelectGroup>
-            <SelectLabel>السنة الدراسية <span dir="ltr">{currentYear.label}</span></SelectLabel>
-            <SelectItem value="year">كامل السنة الدراسية</SelectItem>
-            {SEMESTERS.map((s) => (
-              <SelectItem key={s} value={s}>
-                {labels.semester[s]}
-              </SelectItem>
-            ))}
-          </SelectGroup>
+          {currentYear && (
+            <>
+              <SelectSeparator />
+              <SelectGroup>
+                <SelectLabel>السنة الدراسية <span dir="ltr">{currentYear.label}</span></SelectLabel>
+                <SelectItem value="year">كامل السنة الدراسية</SelectItem>
+                {SEMESTERS.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {labels.semester[s]}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </>
+          )}
           <SelectSeparator />
           <SelectItem value="custom">فترة مخصصة…</SelectItem>
         </SelectContent>

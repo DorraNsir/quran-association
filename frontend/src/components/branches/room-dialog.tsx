@@ -1,6 +1,9 @@
 "use client"
 
+import { AlertCircle, Loader2 } from "lucide-react"
+
 import { FormField } from "@/components/shared/form"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -20,7 +23,6 @@ import {
 } from "@/components/ui/select"
 import { useFormState } from "@/hooks/use-form-state"
 import { labels } from "@/lib/i18n"
-import { newMockId } from "@/lib/mock/reference-date"
 import { requiredText } from "@/lib/validation"
 import type { Branch, Room, RoomStatus } from "@/types/domain"
 
@@ -47,7 +49,8 @@ export function RoomDialog({
   branches: Branch[]
   /** All rooms, to prevent duplicate names inside a branch */
   rooms: Room[]
-  onSave: (room: Room) => void
+  /** Saves through the API; a rejection is shown in the dialog */
+  onSave: (values: { name: string; branchId: string; status: RoomStatus }) => Promise<void>
 }) {
   const form = useFormState<RoomFormValues>(
     `room-${room?.id ?? "new"}`,
@@ -66,9 +69,7 @@ export function RoomDialog({
     })
   )
 
-  const submit = form.handleSubmit((v) =>
-    onSave({ id: room?.id ?? newMockId("room"), name: v.name.trim(), branchId: v.branchId, status: v.status })
-  )
+  const submit = form.handleSubmit((v) => onSave({ name: v.name.trim(), branchId: v.branchId, status: v.status }))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -78,12 +79,19 @@ export function RoomDialog({
             <DialogTitle>{room ? `تعديل ${room.name}` : "إضافة قاعة"}</DialogTitle>
             <DialogDescription>القاعات تُستعمل في برمجة حصص المجموعات.</DialogDescription>
           </DialogHeader>
+          {form.serverError && (
+            <Alert variant="destructive" role="alert">
+              <AlertCircle aria-hidden />
+              <AlertDescription>{form.serverError}</AlertDescription>
+            </Alert>
+          )}
           <FormField label="اسم القاعة" required {...form.field("name")}>
             <Input placeholder="مثال: القاعة 4" {...form.inputProps("name")} />
           </FormField>
           <div className="grid gap-4 sm:grid-cols-2">
             <FormField label="الفرع" required {...form.field("branchId")}>
-              <Select value={form.values.branchId} onValueChange={(v) => form.setField("branchId", v)}>
+              {/* A room never changes branch (classes reference the room + branch pair) */}
+              <Select value={form.values.branchId} onValueChange={(v) => form.setField("branchId", v)} disabled={Boolean(room)}>
                 <SelectTrigger id={form.field("branchId").id} className="w-full">
                   <SelectValue placeholder="اختر الفرع" />
                 </SelectTrigger>
@@ -115,7 +123,10 @@ export function RoomDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {labels.common.cancel}
             </Button>
-            <Button type="submit">{room ? "حفظ" : "إضافة القاعة"}</Button>
+            <Button type="submit" disabled={form.pending}>
+              {form.pending && <Loader2 className="animate-spin" />}
+              {room ? "حفظ" : "إضافة القاعة"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

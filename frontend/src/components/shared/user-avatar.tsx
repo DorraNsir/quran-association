@@ -1,4 +1,7 @@
+"use client"
+
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { usePrivateFileUrl } from "@/lib/api/private-file"
 import { cn } from "@/lib/utils"
 
 const sizes = {
@@ -40,9 +43,11 @@ export function UserAvatar({
   size?: keyof typeof sizes
   className?: string
 }) {
+  // Profile photos are private files: fetched with the token, shown as an object URL
+  const { src } = usePrivateFileUrl(photoUrl)
   return (
     <Avatar className={cn(sizes[size], className)}>
-      {photoUrl && <AvatarImage src={photoUrl} alt={name} />}
+      {src && <AvatarImage src={src} alt={name} />}
       <AvatarFallback className={cn("font-semibold", toneFor(name))}>
         <span aria-hidden>{initial(name)}</span>
       </AvatarFallback>

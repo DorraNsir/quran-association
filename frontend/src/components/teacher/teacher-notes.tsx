@@ -27,8 +27,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { fullName, indexLookups, studentClass, type Lookups } from "@/lib/domain"
 import { formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { operations, useOperations } from "@/lib/store/operations"
-import { getTeacherNotes } from "@/lib/teacher-access"
+import { QueryState } from "@/components/shared/query-state"
+import { errorMessage } from "@/lib/api/errors"
+import { useDeleteTeacherNote, useSaveTeacherNote, useStudentTeacherNotes, useTeacherNotes } from "@/lib/api/teacher-notes"
 import type { ID, ISODate, Student, TeacherNote } from "@/types/domain"
 
 const MAX_LENGTH = 1000
@@ -63,7 +64,10 @@ export function TeacherNotes({
   today: ISODate
   studentId?: ID
 }) {
-  const { teacherNotes } = useOperations()
+  const notesQuery = useTeacherNotes(teacherId)
+  const teacherNotes = notesQuery.data ?? []
+  const saveNote = useSaveTeacherNote()
+  const deleteNote = useDeleteTeacherNote()
   const [query, setQuery] = useState("")
   const [studentFilter, setStudentFilter] = useState(ALL)
   const [editor, setEditor] = useState<{ note?: TeacherNote; key: number; open: boolean }>({ key: 0, open: false })
@@ -71,7 +75,7 @@ export function TeacherNotes({
 
   const indexes = indexLookups(lookups)
   const studentsById = new Map(students.map((s) => [s.id, s]))
-  const mine = getTeacherNotes(teacherId, teacherNotes)
+  const mine = teacherNotes
     // Only notes about students the teacher still teaches
     .filter((n) => studentsById.has(n.studentId) && (!studentId || n.studentId === studentId))
     .sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt))
@@ -165,15 +169,19 @@ export function TeacherNotes({
         students={students}
         fixedStudentId={studentId}
         today={today}
+        pending={saveNote.isPending}
+        error={saveNote.isError ? errorMessage(saveNote.error) : undefined}
         onSave={(values) => {
-          const student = studentsById.get(values.studentId)
-          if (!student) return
-          operations.saveTeacherNote(
-            { id: editor.note?.id, studentId: student.id, teacherId, groupClassId: editor.note?.groupClassId ?? student.groupClassId, date: values.date, content: values.content },
-            today
+          if (saveNote.isPending) return
+          saveNote.mutate(
+            { id: editor.note?.id, studentId: values.studentId, date: values.date, content: values.content },
+            {
+              onSuccess: () => {
+                setEditor((prev) => ({ ...prev, open: false }))
+                toast.success(editor.note ? "تم تعديل الملاحظة" : "تمت إضافة الملاحظة")
+              },
+            }
           )
-          setEditor((prev) => ({ ...prev, open: false }))
-          toast.success(editor.note ? "تم تعديل الملاحظة" : "تمت إضافة الملاحظة", { description: labels.common.mockNotice })
         }}
       />
 
@@ -184,8 +192,9 @@ export function TeacherNotes({
         description="لا يمكن التراجع عن الحذف."
         confirmLabel="حذف"
         destructive
-        onConfirm={() => {
-          if (deleting) operations.deleteTeacherNote(deleting.id)
+        onConfirm={async () => {
+          if (!deleting) return
+          await deleteNote.mutateAsync(deleting.id)
           setDeleting(null)
           toast.success("تم حذف الملاحظة")
         }}
@@ -202,6 +211,8 @@ function NoteDialog({
   fixedStudentId,
   today,
   onSave,
+  pending,
+  error,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -210,6 +221,8 @@ function NoteDialog({
   fixedStudentId?: ID
   today: ISODate
   onSave: (values: { studentId: ID; date: ISODate; content: string }) => void
+  pending?: boolean
+  error?: string
 }) {
   const [studentId, setStudentId] = useState(note?.studentId ?? fixedStudentId ?? "")
   const [date, setDate] = useState(note?.date ?? today)
@@ -284,11 +297,12 @@ function NoteDialog({
 
           <PrivateNotice />
 
+          {error && <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>
               {labels.common.cancel}
             </Button>
-            <Button type="submit" className="min-w-24">
+            <Button type="submit" className="min-w-24" disabled={pending}>
               حفظ
             </Button>
           </DialogFooter>
@@ -300,11 +314,10 @@ function NoteDialog({
 
 /** Admin read-only view of the notes teachers wrote about one student. */
 export function StudentTeacherNotes({ studentId, lookups }: { studentId: ID; lookups: Lookups }) {
-  const { teacherNotes } = useOperations()
+  const query = useStudentTeacherNotes(studentId)
   const indexes = indexLookups(lookups)
-  const notes = teacherNotes
-    .filter((n) => n.studentId === studentId)
-    .sort((a, b) => b.date.localeCompare(a.date))
+  const notes = query.data ?? []
+  if (!query.data) return <QueryState query={query}>{null}</QueryState>
 
   return (
     <div className="space-y-3">
@@ -319,7 +332,7 @@ export function StudentTeacherNotes({ studentId, lookups }: { studentId: ID; loo
       ) : (
         <ul className="space-y-3">
           {notes.map((note) => {
-            const teacher = indexes.teachersById.get(note.teacherId)
+            const teacher = note.teacher
             const view = studentClass({ groupClassId: note.groupClassId }, indexes)
             return (
               <li key={note.id}>

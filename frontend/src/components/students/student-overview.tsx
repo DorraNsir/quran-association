@@ -28,14 +28,14 @@ import {
 } from "@/lib/domain"
 import { formatDate, formatElapsed } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { MOCK_TODAY } from "@/lib/mock/reference-date"
+import { todayInTunis } from "@/lib/dates"
 import type { Student } from "@/types/domain"
 
 export function StudentOverview({ student, lookups }: { student: Student; lookups: Lookups }) {
   // Student → class → group, place, teachers: the supervisor is the CLASS's, not the group's
   const cls = studentClass(student, indexLookups(lookups))
   const group = cls?.group
-  const age = ageOn(student.dateOfBirth, MOCK_TODAY)
+  const age = ageOn(student.dateOfBirth, todayInTunis())
 
   return (
     <div className="grid gap-6 lg:grid-cols-3">
@@ -83,7 +83,7 @@ export function StudentOverview({ student, lookups }: { student: Student; lookup
               { label: "تاريخ التسجيل", value: formatDate(student.registrationDate), icon: CalendarDays },
               {
                 label: "مدة الانخراط",
-                value: formatElapsed(student.registrationDate, MOCK_TODAY),
+                value: formatElapsed(student.registrationDate, todayInTunis()),
                 icon: Clock,
               },
               { label: "حالة الملف", value: <StatusBadge status={student.status} /> },

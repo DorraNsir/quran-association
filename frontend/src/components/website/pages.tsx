@@ -1,32 +1,28 @@
-"use client"
-
 import { ArrowRight, CalendarDays, Clock, ExternalLink, Mail, MapPin, Phone } from "lucide-react"
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
-import { formatDate, formatPhone } from "@/lib/format"
-import { branches, MOCK_TODAY, teachers } from "@/lib/mock"
-import { allStudents, useOperations } from "@/lib/store/operations"
 import {
-  achievementYear,
-  getActiveHeroSlides,
-  getFeaturedAchievements,
-  getPastPublicEvents,
-  getPublicBranches,
-  getPublicStatistics,
-  getPublicUpcomingGroups,
-  getPublishedAchievements,
-  getPublishedAdministrationMembers,
-  getPublishedGalleryImages,
-  getPublishedGraduates,
-  getPublishedNews,
-  getPublishedOfferings,
-  getPublishedPrograms,
-  getUpcomingPublicEvents,
-  lines,
-  paragraphs,
-} from "@/lib/website"
-import type { ID } from "@/types/domain"
+  getAchievements,
+  getBranches,
+  getEvents,
+  getGallery,
+  getGraduates,
+  getHome,
+  getMembers,
+  getNews,
+  getNewsArticle,
+  getPrograms,
+  getServices,
+  getSiteSettings,
+  getStatistics,
+  getUpcomingGroups,
+  type PublicStatistics,
+} from "@/lib/api/public-site"
+import { FALLBACK_ASSOCIATION_NAME } from "@/lib/api/public-settings"
+import { todayInTunis } from "@/lib/dates"
+import { formatDate, formatPhone } from "@/lib/format"
+import { achievementYear, lines, paragraphs } from "@/lib/website"
 
 import {
   AchievementCard,
@@ -50,17 +46,12 @@ import {
 import { CmsImage } from "./cms-image"
 
 /*
- * Public pages. They read ONLY through lib/website selectors (published /
- * active / public content) and aggregate counts — never personal data.
+ * Public pages — server components reading the public API at request time
+ * (lib/api/public-site): only published / public content and aggregate
+ * counts, never personal data.
  */
 
-const today = MOCK_TODAY
-const publicBranches = getPublicBranches(branches)
-const branchById = (id?: ID) => publicBranches.find((b) => b.id === id)
-
-function useStats() {
-  const state = useOperations()
-  const s = getPublicStatistics({ students: allStudents(state), teachers, branches, graduates: state.quranGraduates })
+function statsOf(s: PublicStatistics) {
   return [
     { label: "طالب وطالبة", value: s.students },
     { label: "معلم ومعلمة", value: s.teachers },
@@ -69,31 +60,32 @@ function useStats() {
   ]
 }
 
-export function HomePage() {
-  const state = useOperations()
-  const settings = state.siteSettings
-  const slides = getActiveHeroSlides(state.heroSlides)
-  const offerings = getPublishedOfferings(state.serviceOfferings).slice(0, 6)
-  const programs = getPublishedPrograms(state.publicPrograms).slice(0, 3)
-  const upcomingGroups = getPublicUpcomingGroups(state.publicGroups).slice(0, 3)
-  const events = getUpcomingPublicEvents(state.publicEvents, today).slice(0, 3)
-  const featured = getFeaturedAchievements(state.achievements)
-  const graduates = getPublishedGraduates(state.quranGraduates).slice(0, 4)
-  const news = getPublishedNews(state.newsArticles, today).slice(0, 3)
-  const gallery = getPublishedGalleryImages(state.galleryImages).slice(0, 5)
-  const stats = useStats()
-  const aboutImage = getPublishedGalleryImages(state.galleryImages)[0]?.imageUrl ?? slides[0]?.imageUrl
+export async function HomePage() {
+  const today = todayInTunis()
+  const home = await getHome()
+  const settings = home.settings
+  const slides = home.slides
+  const offerings = home.offerings.slice(0, 6)
+  const programs = home.programs.slice(0, 3)
+  const upcomingGroups = home.groups.slice(0, 3)
+  const events = home.events.slice(0, 3)
+  const featured = home.featured
+  const graduates = home.graduates.slice(0, 4)
+  const news = home.news.slice(0, 3)
+  const gallery = home.gallery.slice(0, 5)
+  const stats = statsOf(home.statistics)
+  const aboutImage = home.gallery[0]?.imageUrl ?? slides[0]?.imageUrl
 
   return (
     <>
-      <HeroCarousel slides={slides} fallbackTitle="بيئة تربوية لحفظ كتاب الله وتعلّمه" fallbackSubtitle={settings.shortDescriptionAr} />
+      <HeroCarousel slides={slides} fallbackTitle="بيئة تربوية لحفظ كتاب الله وتعلّمه" fallbackSubtitle={settings?.shortDescription ?? ""} />
 
       <section aria-labelledby="about-title" className="py-14 sm:py-20">
         <Container className="grid items-center gap-10 lg:grid-cols-2">
           <div className="space-y-5">
             <p className="flex items-center gap-2 text-sm font-medium text-primary"><span aria-hidden className="h-px w-6 bg-current" />من نحن</p>
-            <h2 id="about-title" className="font-display text-3xl leading-tight font-bold sm:text-4xl">{state.associationSettings.name}</h2>
-            {paragraphs(settings.aboutAr).slice(0, 2).map((p) => (
+            <h2 id="about-title" className="font-display text-3xl leading-tight font-bold sm:text-4xl">{settings?.name ?? FALLBACK_ASSOCIATION_NAME}</h2>
+            {paragraphs(settings?.about ?? "").slice(0, 2).map((p) => (
               <p key={p} className="leading-relaxed text-muted-foreground">{p}</p>
             ))}
             <Button asChild variant="outline" className="rounded-full">
@@ -127,7 +119,7 @@ export function HomePage() {
           <PublicEmpty message="لا توجد مجموعات جديدة معلنة حالياً" />
         ) : (
           <CardGrid count={upcomingGroups.length}>
-            {upcomingGroups.map((g) => <GroupListingCard key={g.id} listing={g} branch={branchById(g.branchId)} />)}
+            {upcomingGroups.map((g) => <GroupListingCard key={g.id} listing={g} branch={g.branchName ? { name: g.branchName } : undefined} />)}
           </CardGrid>
         )}
       </Section>
@@ -176,34 +168,32 @@ export function HomePage() {
         </Section>
       )}
 
-      <JoinBand enabled={settings.registrationEnabled} />
+      <JoinBand enabled={settings?.registrationEnabled ?? false} />
     </>
   )
 }
 
-export function AboutPage() {
-  const state = useOperations()
-  const s = state.siteSettings
-  const members = getPublishedAdministrationMembers(state.administrationMembers)
-  const stats = useStats()
+export async function AboutPage() {
+  const [s, members, statistics, publicBranches] = await Promise.all([getSiteSettings(), getMembers(), getStatistics(), getBranches()])
+  const stats = statsOf(statistics)
   const blocks = [
-    { title: "رسالتنا", text: s.missionAr },
-    { title: "رؤيتنا", text: s.visionAr },
+    { title: "رسالتنا", text: s.mission },
+    { title: "رؤيتنا", text: s.vision },
   ]
 
   return (
     <>
-      <PageHero eyebrow="عن الجمعية" title="من نحن" intro={s.shortDescriptionAr} />
-      <Section title={state.associationSettings.name}>
+      <PageHero eyebrow="عن الجمعية" title="من نحن" intro={s.shortDescription} />
+      <Section title={s.name}>
         <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr]">
           <div className="space-y-4 text-lg leading-loose text-foreground/85">
-            {paragraphs(s.aboutAr).map((p) => <p key={p}>{p}</p>)}
+            {paragraphs(s.about).map((p) => <p key={p}>{p}</p>)}
           </div>
-          {s.historyAr && (
+          {s.history && (
             <aside className="rounded-3xl bg-[#f4f1e8] p-6">
               <h3 className="mb-3 font-display text-2xl font-bold">تاريخ الجمعية</h3>
               <div className="space-y-3 leading-relaxed text-muted-foreground">
-                {paragraphs(s.historyAr).map((p) => <p key={p}>{p}</p>)}
+                {paragraphs(s.history).map((p) => <p key={p}>{p}</p>)}
               </div>
             </aside>
           )}
@@ -217,11 +207,11 @@ export function AboutPage() {
               <p className="leading-relaxed text-muted-foreground">{b.text}</p>
             </div>
           ))}
-          {lines(s.valuesAr).length > 0 && (
+          {lines(s.values ?? undefined).length > 0 && (
             <div className="rounded-3xl bg-[#1f2421] p-6 text-white">
               <h3 className="mb-3 font-display text-2xl font-bold text-[#7fd09b]">قيمنا</h3>
               <ul className="space-y-2 text-white/80">
-                {lines(s.valuesAr).map((v) => (
+                {lines(s.values ?? undefined).map((v) => (
                   <li key={v} className="flex gap-2"><span aria-hidden className="mt-2.5 size-1.5 shrink-0 rounded-full bg-[#d8b45a]" />{v}</li>
                 ))}
               </ul>
@@ -253,10 +243,8 @@ export function AboutPage() {
   )
 }
 
-export function ProgramsPage() {
-  const state = useOperations()
-  const programs = getPublishedPrograms(state.publicPrograms)
-  const offerings = getPublishedOfferings(state.serviceOfferings)
+export async function ProgramsPage() {
+  const [programs, offerings, settings] = await Promise.all([getPrograms(), getServices(), getSiteSettings()])
   return (
     <>
       <PageHero eyebrow="برامجنا" title="ما نقدّمه في الجمعية" intro="برامج متنوّعة تناسب كل الأعمار والمستويات، من الحفظ الأول إلى الإتقان." />
@@ -274,21 +262,20 @@ export function ProgramsPage() {
           </div>
         </Section>
       )}
-      <JoinBand enabled={state.siteSettings.registrationEnabled} />
+      <JoinBand enabled={settings.registrationEnabled} />
     </>
   )
 }
 
-export function GroupsPage() {
-  const state = useOperations()
-  const groups = getPublicUpcomingGroups(state.publicGroups)
+export async function GroupsPage() {
+  const groups = await getUpcomingGroups()
   return (
     <>
       <PageHero eyebrow="المجموعات" title="مجموعات ستفتح قريباً" intro="حلقات وبرامج جديدة تستعدّ الجمعية لإطلاقها — سجّل اهتمامك وسنتواصل معك." />
       <Section title="المجموعات المعلنة">
         {groups.length === 0 ? <PublicEmpty message="لا توجد مجموعات جديدة معلنة حالياً" /> : (
           <CardGrid count={groups.length}>
-            {groups.map((g) => <GroupListingCard key={g.id} listing={g} branch={branchById(g.branchId)} />)}
+            {groups.map((g) => <GroupListingCard key={g.id} listing={g} branch={g.branchName ? { name: g.branchName } : undefined} />)}
           </CardGrid>
         )}
       </Section>
@@ -296,10 +283,9 @@ export function GroupsPage() {
   )
 }
 
-export function EventsPage() {
-  const state = useOperations()
-  const upcoming = getUpcomingPublicEvents(state.publicEvents, today)
-  const past = getPastPublicEvents(state.publicEvents, today)
+export async function EventsPage() {
+  const today = todayInTunis()
+  const [upcoming, past] = await Promise.all([getEvents("UPCOMING"), getEvents("PAST")])
   return (
     <>
       <PageHero eyebrow="الفعاليات" title="أجندة الجمعية" intro="مسابقات، حفلات تكريم وأمسيات قرآنية مفتوحة للعائلات." />
@@ -322,9 +308,8 @@ export function EventsPage() {
 }
 
 /** Achievements grouped by year — a simple timeline. */
-export function AchievementsPage() {
-  const state = useOperations()
-  const items = getPublishedAchievements(state.achievements)
+export async function AchievementsPage() {
+  const items = await getAchievements()
   const years = [...new Set(items.map(achievementYear))]
   return (
     <>
@@ -349,9 +334,8 @@ export function AchievementsPage() {
   )
 }
 
-export function NewsPage() {
-  const state = useOperations()
-  const news = getPublishedNews(state.newsArticles, today)
+export async function NewsPage() {
+  const news = await getNews()
   return (
     <>
       <PageHero eyebrow="الأخبار" title="أخبار الجمعية" />
@@ -367,9 +351,8 @@ export function NewsPage() {
 }
 
 /** One article — only when published (an unpublished id behaves like a missing page). */
-export function NewsArticlePage({ id }: { id: ID }) {
-  const state = useOperations()
-  const article = getPublishedNews(state.newsArticles, today).find((n) => n.id === id)
+export async function NewsArticlePage({ id }: { id: string }) {
+  const article = await getNewsArticle(id)
   if (!article) {
     return (
       <Container className="py-24 text-center">
@@ -404,9 +387,8 @@ export function NewsArticlePage({ id }: { id: ID }) {
   )
 }
 
-export function GraduatesPage() {
-  const state = useOperations()
-  const graduates = getPublishedGraduates(state.quranGraduates)
+export async function GraduatesPage() {
+  const graduates = await getGraduates()
   return (
     <>
       <PageHero eyebrow="بارك الله فيهم" title="الخاتمون" intro="نعتزّ بطلبتنا الذين أتمّوا حفظ كتاب الله، ونسأل الله أن يجعله حجّة لهم." />
@@ -421,9 +403,8 @@ export function GraduatesPage() {
   )
 }
 
-export function GalleryPage() {
-  const state = useOperations()
-  const images = getPublishedGalleryImages(state.galleryImages)
+export async function GalleryPage() {
+  const images = await getGallery()
   return (
     <>
       <PageHero eyebrow="صور" title="معرض الصور" intro="لقطات من الحلقات والأنشطة وحفلات التكريم." />
@@ -434,13 +415,14 @@ export function GalleryPage() {
   )
 }
 
-export function ContactPage() {
-  const { siteSettings: s, associationSettings: a } = useOperations()
+export async function ContactPage() {
+  const [s, publicBranches] = await Promise.all([getSiteSettings(), getBranches()])
+  const a = s
   const items = [
     a.phone && { icon: Phone, label: "الهاتف", value: <a href={`tel:${a.phone}`} dir="ltr" className="hover:underline">{formatPhone(a.phone)}</a> },
     a.email && { icon: Mail, label: "البريد الإلكتروني", value: <a href={`mailto:${a.email}`} dir="ltr" className="hover:underline">{a.email}</a> },
     a.address && { icon: MapPin, label: "العنوان", value: a.address },
-    s.openingHoursAr && { icon: Clock, label: "أوقات الاستقبال", value: s.openingHoursAr },
+    s.openingHours && { icon: Clock, label: "أوقات الاستقبال", value: s.openingHours },
   ].filter(Boolean) as { icon: typeof Phone; label: string; value: React.ReactNode }[]
 
   return (

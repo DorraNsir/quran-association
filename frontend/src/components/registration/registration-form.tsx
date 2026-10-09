@@ -6,6 +6,7 @@ import { ChoiceGroup } from "@/components/shared/choice-group"
 import { FormField } from "@/components/shared/form"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { ageOn } from "@/lib/domain"
 import type { RegistrationFields } from "@/lib/registration"
 import { normalizePhone, PHONE_HINT, phoneError } from "@/lib/validation"
 import type { ISODate } from "@/types/domain"
@@ -22,6 +23,7 @@ export function useRegistrationForm(today: ISODate) {
     age: "",
     birthDate: "",
     phone: "",
+    guardianPhone: "",
     studied: "no" as "yes" | "no",
     previousExperience: "",
     notes: "",
@@ -29,6 +31,10 @@ export function useRegistrationForm(today: ISODate) {
   const [submitted, setSubmitted] = useState(false)
   const set = <K extends keyof typeof values>(key: K, value: (typeof values)[K]) => setValues((v) => ({ ...v, [key]: value }))
   const age = Number(values.age)
+  // Same rule as the API: a minor (< 18) gives a guardian phone
+  const effectiveAge =
+    values.ageMode === "age" ? (Number.isInteger(age) ? age : undefined) : values.birthDate ? ageOn(values.birthDate, today) : undefined
+  const isMinor = effectiveAge !== undefined && effectiveAge < 18
   const errors = {
     firstName: !values.firstName.trim() ? "الاسم مطلوب" : undefined,
     lastName: !values.lastName.trim() ? "اللقب مطلوب" : undefined,
@@ -37,12 +43,13 @@ export function useRegistrationForm(today: ISODate) {
         ? !(Number.isInteger(age) && age >= 3 && age <= 99) ? "أدخل عمرًا صحيحًا (بين 3 و99)" : undefined
         : !values.birthDate ? "أدخل تاريخ الميلاد" : values.birthDate >= today ? "تاريخ ميلاد غير منطقي" : undefined,
     phone: phoneError(values.phone, { required: true }),
+    guardianPhone: phoneError(values.guardianPhone, { required: isMinor }),
   }
   const valid = Object.values(errors).every((e) => !e)
   const err = (key: keyof typeof errors) => (submitted ? errors[key] : undefined)
 
   /** Returns the request fields when valid (and shows errors otherwise). */
-  function collect(): RegistrationFields | undefined {
+  function collect(): (RegistrationFields & { guardianPhone?: string }) | undefined {
     setSubmitted(true)
     if (!valid) return undefined
     return {
@@ -51,6 +58,7 @@ export function useRegistrationForm(today: ISODate) {
       age: values.ageMode === "age" ? age : undefined,
       birthDate: values.ageMode === "birthDate" ? values.birthDate : undefined,
       phone: normalizePhone(values.phone),
+      guardianPhone: isMinor ? normalizePhone(values.guardianPhone) : undefined,
       hasStudiedQuranBefore: values.studied === "yes",
       previousExperience: values.studied === "yes" ? values.previousExperience.trim() || undefined : undefined,
       notes: values.notes.trim() || undefined,
@@ -83,6 +91,13 @@ export function useRegistrationForm(today: ISODate) {
       <FormField id={`${idPrefix}-phone`} label="رقم الهاتف" required error={err("phone")} description={PHONE_HINT} className="sm:col-span-2">
         <Input id={`${idPrefix}-phone`} type="tel" inputMode="tel" dir="ltr" value={values.phone} onChange={(e) => set("phone", e.target.value)} className="sm:w-56" />
       </FormField>
+      {isMinor && (
+        <FormField id={`${idPrefix}-guardian`} label="هاتف الولي" required error={err("guardianPhone")}
+          description="المترشح قاصر: نحتاج رقم هاتف وليّ أمره." className="sm:col-span-2">
+          <Input id={`${idPrefix}-guardian`} type="tel" inputMode="tel" dir="ltr" value={values.guardianPhone}
+            onChange={(e) => set("guardianPhone", e.target.value)} className="sm:w-56" />
+        </FormField>
+      )}
       <div className="space-y-2 sm:col-span-2">
         <p className="text-sm font-medium">{subject === "self" ? "هل سبق لك دراسة القرآن؟" : "هل سبق له دراسة القرآن؟"}</p>
         <ChoiceGroup label="دراسة القرآن سابقًا" value={values.studied} onChange={(v) => set("studied", v)} className="grid-cols-2"

@@ -29,27 +29,19 @@ import { TeacherAssignments } from "./teacher-assignments"
 import { teacherActions, useTeacherDialogs } from "./use-teacher-dialogs"
 
 export function TeachersView({
-  initialTeachers,
   lookups,
   adminTeacherIds,
 }: {
-  initialTeachers: Teacher[]
   lookups: Lookups
   /** Teachers whose user account also has the ADMIN role */
   adminTeacherIds: ID[]
 }) {
-  const [teachers, setTeachers] = useState(initialTeachers)
+  const { teachers } = lookups
   const [query, setQuery] = useState("")
   const [status, setStatus] = useState(ALL)
   const [branchId, setBranchId] = useState(ALL)
 
-  const { run, dialogs } = useTeacherDialogs({
-    lookups,
-    onChange: (saved, isNew) =>
-      setTeachers((prev) =>
-        isNew ? [saved, ...prev] : prev.map((t) => (t.id === saved.id ? saved : t))
-      ),
-  })
+  const { run, dialogs } = useTeacherDialogs({ lookups })
 
   const assignmentsOf = (t: Teacher) => teacherAssignments(t.id, lookups)
   const weeklyLoad = (t: Teacher) =>

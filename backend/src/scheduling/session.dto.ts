@@ -111,6 +111,14 @@ export class SessionListQueryDto extends SessionFilters {
   @IsDateOnly({ optional: true, description: 'From (inclusive)' })
   from?: string;
   @IsDateOnly({ optional: true, description: 'To (inclusive)' }) to?: string;
+  @ApiPropertyOptional({
+    enum: ['asc', 'desc'],
+    default: 'asc',
+    description: 'By date then start time (desc: latest first, for history)',
+  })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc';
 }
 
 /** Calendar: a bounded date range (≤ 62 days), not paginated. */
@@ -187,6 +195,20 @@ export class SessionCompletionDto {
   completedBy!: string | null;
 }
 
+/** Attendance of the session (roster on its date vs. records) — what lists show without opening it. */
+export class SessionAttendanceCountsDto {
+  @ApiProperty({
+    description:
+      'Students expected (enrolled in the class and active ON the session date)',
+  })
+  expected!: number;
+  @ApiProperty({ description: 'Attendance records saved' }) recorded!: number;
+  @ApiProperty() present!: number;
+  @ApiProperty() absent!: number;
+  @ApiProperty() late!: number;
+  @ApiProperty() excused!: number;
+}
+
 /**
  * A session with WHERE (room + branch) and WHO (team) as they apply to THIS
  * session (snapshot), and attention flags for upcoming SCHEDULED sessions
@@ -224,6 +246,8 @@ export class SessionDto {
       'Upcoming SCHEDULED sessions needing an admin decision (never auto-cancelled)',
   })
   attention!: AttentionFlag[];
+  @ApiProperty({ type: SessionAttendanceCountsDto })
+  attendance!: SessionAttendanceCountsDto;
 }
 
 export class SessionListDto {

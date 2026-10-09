@@ -1,10 +1,9 @@
 "use client"
 
-import { Check, FlaskConical, Languages, LogOut, Menu, UserRound } from "lucide-react"
+import { Check, KeyRound, Languages, LogOut, Menu, UserRound } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useState } from "react"
-import { toast } from "sonner"
 
 import { NotificationBell } from "@/components/communication/notifications"
 import { UserAvatar } from "@/components/shared/user-avatar"
@@ -16,8 +15,6 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -28,11 +25,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { setMockAccount } from "@/lib/auth/mock-account"
+import { useAuth } from "@/lib/auth/auth-provider"
+import { canUseWorkspace } from "@/lib/auth/session-user"
 import { fullName } from "@/lib/domain"
-import { MOCK_TODAY } from "@/lib/mock/reference-date"
 import { defaultLocale, labels, locales, type Locale } from "@/lib/i18n"
-import { homeOf, type Workspace } from "@/lib/workspace"
+import type { Workspace } from "@/lib/workspace"
 import type { User } from "@/types/domain"
 
 import { Brand } from "./brand"
@@ -75,7 +72,7 @@ function MobileNav({ user, workspace }: { user: User; workspace: Workspace }) {
   )
 }
 
-function LanguageSwitcher() {
+/**function LanguageSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -103,22 +100,24 @@ function LanguageSwitcher() {
       </DropdownMenuContent>
     </DropdownMenu>
   )
-}
+}**/
 
-function UserMenu({ user, accounts, workspace }: { user: User; accounts: User[]; workspace: Workspace }) {
+function UserMenu({ user, workspace }: { user: User; workspace: Workspace }) {
   const router = useRouter()
+  const { logout } = useAuth()
+  const [leaving, setLeaving] = useState(false)
   const name = fullName(user)
   // The other workspaces this account may open (one account, several roles)
-  const others = workspaces.filter((w) => w.id !== workspace && user.roles.includes(w.role))
+  const others = workspaces.filter(
+    (w) =>
+      w.id !== workspace &&
+      canUseWorkspace({ roles: user.roles, teacherId: user.teacherId ?? null, studentId: user.studentId ?? null }, w.id)
+  )
 
-  function switchAccount(id: string) {
-    const account = accounts.find((a) => a.id === id)
-    if (!account || account.id === user.id) return
-    setMockAccount(account.id)
-    // Client-side navigation keeps the in-memory mock store across the switch
-    router.push(homeOf(account))
-    router.refresh()
-    toast.success(`أنت الآن تتصفح بحساب ${fullName(account)}`)
+  async function signOut() {
+    setLeaving(true)
+    await logout()
+    router.replace("/login")
   }
 
   return (
@@ -137,15 +136,24 @@ function UserMenu({ user, accounts, workspace }: { user: User; accounts: User[];
         <DropdownMenuLabel className="font-normal">
           <p className="font-medium text-foreground">{name}</p>
           <p className="truncate text-xs text-muted-foreground" dir="ltr">
-            {user.email}
+            {user.username ?? user.email}
           </p>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem disabled>
-            <UserRound />
-            <span className="flex-1">ملفي الشخصي</span>
-            <span className="text-xs text-muted-foreground">{labels.common.comingSoon}</span>
+          {workspace === "student" ? (
+            <DropdownMenuItem asChild>
+              <Link href="/student/profile">
+                <UserRound />
+                ملفي الشخصي
+              </Link>
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem asChild>
+            <Link href="/change-password">
+              <KeyRound />
+              تغيير كلمة المرور
+            </Link>
           </DropdownMenuItem>
           {others.map((w) => {
             const Icon = w.icon
@@ -160,25 +168,7 @@ function UserMenu({ user, accounts, workspace }: { user: User; accounts: User[];
           })}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        {/* PROTOTYPE ONLY: replaces login until real authentication exists */}
-        <DropdownMenuLabel className="flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
-          <FlaskConical className="size-3.5" aria-hidden />
-          حساب تجريبي (للعرض فقط)
-        </DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={user.id} onValueChange={switchAccount}>
-          {accounts.map((account) => (
-            <DropdownMenuRadioItem key={account.id} value={account.id}>
-              <span className="flex min-w-0 flex-col leading-tight">
-                <span>{fullName(account)}</span>
-                <span className="text-xs text-muted-foreground">{account.roles.map((r) => labels.role[r]).join(" · ")}</span>
-              </span>
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={() => toast.info("تسجيل الدخول والخروج سيُفعَّلان مع ربط الخادم.")}
-        >
+        <DropdownMenuItem disabled={leaving} onSelect={() => void signOut()}>
           <LogOut />
           تسجيل الخروج
         </DropdownMenuItem>
@@ -187,7 +177,7 @@ function UserMenu({ user, accounts, workspace }: { user: User; accounts: User[];
   )
 }
 
-export function AppHeader({ user, accounts, workspace }: { user: User; accounts: User[]; workspace: Workspace }) {
+export function AppHeader({ user, workspace }: { user: User; workspace: Workspace }) {
   const pathname = usePathname()
   const section = findActiveNavItem(pathname, workspace)
   const workspaceLabel = workspaceNav[workspace].label
@@ -206,10 +196,10 @@ export function AppHeader({ user, accounts, workspace }: { user: User; accounts:
         </p>
       </div>
       <div className="flex items-center gap-1">
-        <LanguageSwitcher />
-        <NotificationBell userId={user.id} workspace={workspace} today={MOCK_TODAY} />
+        {/* <LanguageSwitcher /> */}
+        <NotificationBell workspace={workspace} />
         <div className="mx-1 h-6 w-px bg-border" aria-hidden />
-        <UserMenu user={user} accounts={accounts} workspace={workspace} />
+        <UserMenu user={user} workspace={workspace} />
       </div>
     </header>
   )

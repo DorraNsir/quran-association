@@ -11,8 +11,8 @@ import { Button } from "@/components/ui/button"
 import { classesOf, describeClass, fullName, indexLookups, type ClassView, type Lookups } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
-import { useOperations } from "@/lib/store/operations"
-import type { ID, ISODate, Semester, Student } from "@/types/domain"
+import { useClassesMemorization } from "@/lib/api/memorization"
+import type { ID, ISODate, MemorizationProgress, Semester, Student } from "@/types/domain"
 
 import { MemorizationValue, useMemorizationDialog } from "./memorization-dialog"
 import { AcademicYearSelect, SemesterSelect } from "./period-selectors"
@@ -32,13 +32,17 @@ export function GroupMemorization({
 }) {
   const academicYears = useAcademicYears()
   const initial = defaultPeriod(academicYears, today)
-  const [academicYearId, setAcademicYearId] = useState(initial.academicYearId)
-  const [semester, setSemester] = useState<Semester>(initial.semester)
-  const memorization = useMemorizationDialog({ lookups, academicYears, today })
+  // The years load asynchronously: until the user picks a period, the default (current) one applies
+  const [pickedYearId, setAcademicYearId] = useState<string>()
+  const [pickedSemester, setSemester] = useState<Semester>()
+  const academicYearId = pickedYearId ?? initial.academicYearId
+  const semester = pickedSemester ?? initial.semester
   const indexes = indexLookups(lookups)
   const classes = classesOf(groupId, lookups.groupClasses)
     .filter((c) => c.status !== "ARCHIVED")
     .map((c) => describeClass(c, indexes))
+  const memo = useClassesMemorization("admin", classes.map((c) => c.groupClass.id), { academicYearId: academicYearId || undefined, semester })
+  const memorization = useMemorizationDialog({ lookups, academicYears, records: memo.records })
 
   return (
     <div className="space-y-5">
@@ -56,6 +60,7 @@ export function GroupMemorization({
             students={students.filter((s) => s.groupClassId === view.groupClass.id && s.status === "ACTIVE")}
             academicYearId={academicYearId}
             semester={semester}
+            records={memo.records}
             onUpdate={(student) => memorization.open(student, academicYearId, semester)}
           />
         ))
@@ -70,16 +75,17 @@ function ClassMemorization({
   students,
   academicYearId,
   semester,
+  records,
   onUpdate,
 }: {
   view: ClassView
   students: Student[]
   academicYearId: ID
   semester: Semester
+  records: MemorizationProgress[]
   onUpdate: (student: Student) => void
 }) {
-  const { memorizationProgress } = useOperations()
-  const byKey = indexMemorization(memorizationProgress)
+  const byKey = indexMemorization(records)
   const missing = students.filter((s) => !byKey.has(memorizationKey(s.id, academicYearId, semester))).length
 
   return (

@@ -7,92 +7,141 @@ import { FormField, FormSection, FormSheet } from "@/components/shared/form"
 import { MultiSelect } from "@/components/shared/multi-select"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import type { AnnouncementDto, AnnouncementInput, PublicationMode } from "@/lib/api/announcements"
 import { groupClassLabel } from "@/lib/communication"
+import { todayInTunis, tunisTimeOf } from "@/lib/dates"
 import type { Lookups } from "@/lib/domain"
 import { labels } from "@/lib/i18n"
-import type { AnnouncementDraft } from "@/lib/store/operations"
-import type { Announcement, AnnouncementAudienceType, ID, ISODate } from "@/types/domain"
+import type { AnnouncementAudienceType, ID } from "@/types/domain"
 
-/** Create / edit an announcement (admin only in this phase). */
+export interface AnnouncementFormResult {
+  input: AnnouncementInput
+  mode: PublicationMode
+  /** Africa/Tunis wall clock "YYYY-MM-DDTHH:mm" (SCHEDULE only) */
+  scheduledAt?: string
+}
+
+const AUDIENCES: AnnouncementAudienceType[] = ["EVERYONE", "TEACHERS", "STUDENTS", "SPECIFIC_GROUP_CLASSES", "SPECIFIC_BRANCHES"]
+const AUDIENCE_HINT: Record<AnnouncementAudienceType, string> = {
+  EVERYONE: "الطلبة والمعلمون والإدارة",
+  TEACHERS: "كل المعلمين",
+  STUDENTS: "كل الطلبة النشطين",
+  SPECIFIC_GROUP_CLASSES: "طلبة ومعلمو فصول بعينها",
+  SPECIFIC_BRANCHES: "طلبة ومعلمو فروع بعينها",
+}
+
+/**
+ * Create / edit an announcement (admin). A new one is published now
+ * (default), scheduled at a Tunis date and time, or saved as a draft.
+ * After publication only the title, content and expiry can change.
+ */
 export function AnnouncementFormSheet({
   open,
   onOpenChange,
   announcement,
-  initialClassIds,
   lookups,
-  today,
+  pending,
+  error,
   onSave,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  announcement?: Announcement
-  initialClassIds: ID[]
+  announcement?: AnnouncementDto
   lookups: Lookups
-  today: ISODate
-  onSave: (draft: AnnouncementDraft, groupClassIds: ID[]) => void
+  pending?: boolean
+  error?: string | null
+  onSave: (result: AnnouncementFormResult) => void
 }) {
+  const today = todayInTunis()
+  const locked = announcement ? announcement.status === "PUBLISHED" || announcement.status === "ARCHIVED" : false
   const [title, setTitle] = useState(announcement?.title ?? "")
   const [content, setContent] = useState(announcement?.content ?? "")
-  const [audience, setAudience] = useState<AnnouncementAudienceType>(announcement?.audienceType ?? "EVERYONE")
-  const [classIds, setClassIds] = useState<ID[]>(initialClassIds)
-  const [publishedAt, setPublishedAt] = useState(announcement?.publishedAt ?? today)
+  const [audience, setAudience] = useState<AnnouncementAudienceType>(announcement?.audience ?? "EVERYONE")
+  const [classIds, setClassIds] = useState<ID[]>(announcement?.groupClasses.map((c) => c.id) ?? [])
+  const [branchIds, setBranchIds] = useState<ID[]>(announcement?.branches.map((b) => b.id) ?? [])
   const [expiresAt, setExpiresAt] = useState(announcement?.expiresAt ?? "")
-  const [isActive, setIsActive] = useState(announcement?.isActive ?? true)
+  const [mode, setMode] = useState<PublicationMode>("PUBLISH_NOW")
+  const [scheduleDate, setScheduleDate] = useState(today)
+  const [scheduleTime, setScheduleTime] = useState("")
   const [submitted, setSubmitted] = useState(false)
+  const [inPast, setInPast] = useState(false)
 
+  const scheduledAt = `${scheduleDate}T${scheduleTime}`
   const errors = {
     title: !title.trim() ? "العنوان مطلوب" : undefined,
     content: !content.trim() ? "المحتوى مطلوب" : undefined,
     classes: audience === "SPECIFIC_GROUP_CLASSES" && classIds.length === 0 ? "اختر فصلًا واحدًا على الأقل" : undefined,
-    publishedAt: !publishedAt ? "حدّد تاريخ النشر" : undefined,
-    expiresAt: expiresAt && expiresAt < publishedAt ? "تاريخ الانتهاء يجب أن يكون بعد تاريخ النشر" : undefined,
+    branches: audience === "SPECIFIC_BRANCHES" && branchIds.length === 0 ? "اختر فرعًا واحدًا على الأقل" : undefined,
+    schedule:
+      !announcement && mode === "SCHEDULE"
+        ? !scheduleDate || !scheduleTime
+          ? "حدّد تاريخ ووقت النشر"
+          : inPast
+            ? "يجب أن يكون موعد النشر في المستقبل"
+            : undefined
+        : undefined,
+    expiresAt:
+      expiresAt && expiresAt < (mode === "SCHEDULE" && !announcement ? scheduleDate : today)
+        ? "تاريخ الانتهاء يجب أن يكون بعد تاريخ النشر"
+        : undefined,
   }
   const shown = (key: keyof typeof errors) => (submitted ? errors[key] : undefined)
+  const submitLabel = announcement
+    ? "حفظ التعديلات"
+    : mode === "PUBLISH_NOW"
+      ? "نشر الإعلان"
+      : mode === "SCHEDULE"
+        ? "جدولة النشر"
+        : "حفظ كمسودة"
 
   return (
     <FormSheet
       open={open}
       onOpenChange={onOpenChange}
       title={announcement ? "تعديل الإعلان" : "إعلان جديد"}
-      submitLabel={announcement ? "حفظ التعديلات" : "نشر الإعلان"}
+      submitLabel={submitLabel}
+      pending={pending}
+      error={error}
       onSubmit={(e) => {
         e.preventDefault()
         setSubmitted(true)
-        if (Object.values(errors).some(Boolean)) return
-        onSave(
-          {
-            id: announcement?.id,
+        // "Now" is read at submit time (Africa/Tunis wall clock)
+        const past = !announcement && mode === "SCHEDULE" && scheduledAt <= `${todayInTunis()}T${tunisTimeOf(Date.now())}`
+        setInPast(past)
+        if (pending || past || Object.values(errors).some(Boolean)) return
+        onSave({
+          input: {
             title: title.trim(),
             content: content.trim(),
-            audienceType: audience,
-            publishedAt,
-            expiresAt: expiresAt || undefined,
-            isActive,
+            audience,
+            groupClassIds: classIds,
+            branchIds,
+            expiresAt: expiresAt || null,
           },
-          audience === "SPECIFIC_GROUP_CLASSES" ? classIds : []
-        )
+          mode,
+          scheduledAt: mode === "SCHEDULE" ? scheduledAt : undefined,
+        })
       }}
     >
       <FormSection title="الإعلان" className="sm:grid-cols-1">
         <FormField id="ann-title" label="العنوان" required error={shown("title")}>
-          <Input id="ann-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} aria-invalid={!!shown("title") || undefined} />
+          <Input id="ann-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} aria-invalid={!!shown("title") || undefined} />
         </FormField>
         <FormField id="ann-content" label="المحتوى" required error={shown("content")}>
-          <Textarea id="ann-content" value={content} onChange={(e) => setContent(e.target.value)} rows={5} maxLength={2000} aria-invalid={!!shown("content") || undefined} />
+          <Textarea id="ann-content" value={content} onChange={(e) => setContent(e.target.value)} rows={5} maxLength={10000} aria-invalid={!!shown("content") || undefined} />
         </FormField>
       </FormSection>
 
-      <FormSection title="الجمهور المستهدف" className="sm:grid-cols-1">
+      <FormSection
+        title="الجمهور المستهدف"
+        description={locked ? "لا يمكن تغيير الجمهور بعد النشر." : undefined}
+        className="sm:grid-cols-1"
+      >
         <ChoiceGroup
           label="الجمهور المستهدف"
           value={audience}
-          onChange={setAudience}
-          choices={[
-            { value: "EVERYONE", label: labels.announcementAudience.EVERYONE, description: "الطلبة والمعلمون والإدارة" },
-            { value: "TEACHERS", label: labels.announcementAudience.TEACHERS, description: "كل المعلمين" },
-            { value: "STUDENTS", label: labels.announcementAudience.STUDENTS, description: "كل الطلبة النشطين" },
-            { value: "SPECIFIC_GROUP_CLASSES", label: labels.announcementAudience.SPECIFIC_GROUP_CLASSES, description: "طلبة ومعلمو فصول بعينها" },
-          ]}
+          onChange={(value: AnnouncementAudienceType) => !locked && setAudience(value)}
+          choices={AUDIENCES.map((value) => ({ value, label: labels.announcementAudience[value], description: AUDIENCE_HINT[value] }))}
         />
         {audience === "SPECIFIC_GROUP_CLASSES" && (
           <FormField id="ann-classes" label="الفصول المستهدفة" required error={shown("classes")}>
@@ -100,7 +149,7 @@ export function AnnouncementFormSheet({
               id="ann-classes"
               options={lookups.groupClasses.filter((c) => c.status !== "ARCHIVED").map((c) => ({ value: c.id, label: groupClassLabel(c, lookups) }))}
               selected={classIds}
-              onChange={setClassIds}
+              onChange={(ids) => !locked && setClassIds(ids)}
               placeholder="اختر الفصول"
               searchPlaceholder="ابحث عن فصل…"
               countLabel={(n) => `${n} فصل مختار`}
@@ -108,20 +157,51 @@ export function AnnouncementFormSheet({
             />
           </FormField>
         )}
+        {audience === "SPECIFIC_BRANCHES" && (
+          <FormField id="ann-branches" label="الفروع المستهدفة" required error={shown("branches")}>
+            <MultiSelect
+              id="ann-branches"
+              options={lookups.branches.filter((b) => b.status === "ACTIVE").map((b) => ({ value: b.id, label: b.name }))}
+              selected={branchIds}
+              onChange={(ids) => !locked && setBranchIds(ids)}
+              placeholder="اختر الفروع"
+              searchPlaceholder="ابحث عن فرع…"
+              countLabel={(n) => `${n} فرع مختار`}
+              invalid={!!shown("branches")}
+            />
+          </FormField>
+        )}
       </FormSection>
 
-      <FormSection title="النشر">
-        <FormField id="ann-published" label="تاريخ النشر" required error={shown("publishedAt")}>
-          <Input id="ann-published" type="date" value={publishedAt} onChange={(e) => setPublishedAt(e.target.value)} />
+      {!announcement && (
+        <FormSection title="النشر" className="sm:grid-cols-1">
+          <ChoiceGroup
+            label="طريقة النشر"
+            value={mode}
+            onChange={setMode}
+            choices={[
+              { value: "PUBLISH_NOW", label: "نشر الآن", description: "يظهر فورًا ويُرسل إشعار إلى المعنيين." },
+              { value: "SCHEDULE", label: "جدولة النشر", description: "يُنشر تلقائيًا في الموعد المحدد (توقيت تونس)." },
+              { value: "DRAFT", label: "حفظ كمسودة", description: "لا يظهر لأحد ولا يُرسل أي إشعار." },
+            ]}
+          />
+          {mode === "SCHEDULE" && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField id="ann-schedule-date" label="تاريخ النشر" required error={shown("schedule")}>
+                <Input id="ann-schedule-date" type="date" min={today} value={scheduleDate} onChange={(e) => { setScheduleDate(e.target.value); setInPast(false) }} />
+              </FormField>
+              <FormField id="ann-schedule-time" label="الساعة (توقيت تونس)" required>
+                <Input id="ann-schedule-time" type="time" dir="ltr" value={scheduleTime} onChange={(e) => { setScheduleTime(e.target.value); setInPast(false) }} />
+              </FormField>
+            </div>
+          )}
+        </FormSection>
+      )}
+
+      <FormSection title="مدة العرض" className="sm:grid-cols-1">
+        <FormField id="ann-expires" label="تاريخ الانتهاء" optional error={shown("expiresAt")} description="آخر يوم يظهر فيه الإعلان في فضاء المعلمين والطلبة.">
+          <Input id="ann-expires" type="date" value={expiresAt} min={today} onChange={(e) => setExpiresAt(e.target.value)} className="sm:w-48" />
         </FormField>
-        <FormField id="ann-expires" label="تاريخ الانتهاء" optional error={shown("expiresAt")} description="بعده يختفي الإعلان من فضاء المعلمين والطلبة.">
-          <Input id="ann-expires" type="date" value={expiresAt} min={publishedAt} onChange={(e) => setExpiresAt(e.target.value)} />
-        </FormField>
-        <label className="flex cursor-pointer items-center gap-2 text-sm sm:col-span-2">
-          <input type="checkbox" className="size-4 accent-primary" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-          الإعلان مفعّل
-          <span className="text-xs text-muted-foreground">(غير المفعّل لا يظهر إلا للإدارة)</span>
-        </label>
       </FormSection>
     </FormSheet>
   )

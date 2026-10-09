@@ -20,32 +20,38 @@ import { StudentMemorization } from "@/components/memorization/student-memorizat
 import { StudentPayments } from "@/components/payments/payments-views"
 import { StudentTeacherNotes } from "@/components/teacher/teacher-notes"
 
+import { EnrollmentHistory } from "./enrollment-history"
 import { StudentOverview } from "./student-overview"
 import { StudentProfileActions } from "./student-profile-actions"
 import { ageOn, fullName, indexLookups, studentClass } from "@/lib/domain"
-import { lookups, MOCK_TODAY } from "@/lib/mock"
-import type { ID, Student } from "@/types/domain"
+import { todayInTunis } from "@/lib/dates"
+import type { Lookups } from "@/lib/domain"
+import { AccountCard } from "@/components/shared/account-card"
+import type { AccountSummary } from "@/lib/api/academic"
+import type { Student } from "@/types/domain"
 
 export const STUDENT_PROFILE_TABS = ["overview", "attendance", "memorization", "payments", "notes"]
 
 /**
- * Admin student profile. Rendered by the server page for seed students and
- * by a client wrapper for students admitted in this session (store only).
+ * Admin student profile (API data).
  * Financial data is admin-only: teachers and students never get this view.
  */
 export function StudentProfile({
   student,
   students,
+  lookups,
   initialTab,
-  userId,
+  access,
 }: {
   student: Student
   /** All known students (rosters for attendance / memorization) */
   students: Student[]
+  lookups: Lookups
   initialTab?: string
-  /** Admin recording payments */
-  userId: ID
+  /** The student's Person and login account (admin account management) */
+  access?: { personId: string; account: AccountSummary | null }
 }) {
+  const today = todayInTunis()
   const cls = studentClass(student, indexLookups(lookups))
   const group = cls?.group
   const name = fullName(student)
@@ -72,7 +78,7 @@ export function StudentProfile({
                 المدرس المشرف: {fullName(cls.supervisor)} · {cls.branch?.name}
               </MetaItem>
             )}
-            <MetaItem icon={CalendarDays}>{ageOn(student.dateOfBirth, MOCK_TODAY)} سنة</MetaItem>
+            <MetaItem icon={CalendarDays}>{ageOn(student.dateOfBirth, today)} سنة</MetaItem>
             {(student.phone || student.guardianPhone) && (
               <MetaItem icon={Phone}>
                 <PhoneLink phone={student.phone ?? student.guardianPhone} />
@@ -90,14 +96,20 @@ export function StudentProfile({
             value: "overview",
             label: "نظرة عامة",
             icon: <LayoutGrid aria-hidden />,
-            content: <StudentOverview student={student} lookups={lookups} />,
+            content: (
+              <div className="space-y-6">
+                <StudentOverview student={student} lookups={lookups} />
+                {access && <AccountCard personId={access.personId} account={access.account} role="STUDENT" />}
+                <EnrollmentHistory studentId={student.id} />
+              </div>
+            ),
           },
           {
             value: "attendance",
             label: "الحضور",
             icon: <ClipboardCheck aria-hidden />,
             content: (
-              <StudentAttendanceHistory studentId={student.id} lookups={lookups} students={students} today={MOCK_TODAY} />
+              <StudentAttendanceHistory studentId={student.id} />
             ),
           },
           {
@@ -105,7 +117,7 @@ export function StudentProfile({
             label: "متابعة الحفظ",
             icon: <BookOpenCheck aria-hidden />,
             content: (
-              <StudentMemorization studentId={student.id} lookups={lookups} students={students} today={MOCK_TODAY} />
+              <StudentMemorization studentId={student.id} lookups={lookups} students={students} today={today} />
             ),
           },
           {
@@ -113,7 +125,7 @@ export function StudentProfile({
             label: "المدفوعات",
             icon: <Wallet aria-hidden />,
             content: (
-              <StudentPayments studentId={student.id} mode="admin" userId={userId} today={MOCK_TODAY} />
+              <StudentPayments studentId={student.id} mode="admin" groupClassId={student.groupClassId || undefined} />
             ),
           },
           {

@@ -9,9 +9,8 @@ import { AssociationLogo } from "@/components/layout/brand"
 import { Button } from "@/components/ui/button"
 import { useDirection } from "@/components/ui/direction"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { FALLBACK_ASSOCIATION_NAME, type PublicSiteSettings } from "@/lib/api/public-settings"
 import { formatPhone } from "@/lib/format"
-import { MOCK_TODAY } from "@/lib/mock/reference-date"
-import { useOperations } from "@/lib/store/operations"
 import { cn } from "@/lib/utils"
 
 
@@ -42,11 +41,11 @@ function SiteBrand({ compact }: { compact?: boolean }) {
 }
 
 /** Public header: full navigation on large screens, a sheet on smaller ones; "سجل الآن" always visible. */
-export function SiteHeader() {
+export function SiteHeader({ settings }: { settings: PublicSiteSettings | null }) {
   const pathname = usePathname()
   const dir = useDirection()
   const [open, setOpen] = useState(false)
-  const { siteSettings } = useOperations()
+  const registrationEnabled = settings?.registrationEnabled ?? false
 
   return (
     <header className="sticky top-0 z-40 border-b border-black/5 bg-white/90 backdrop-blur supports-backdrop-filter:bg-white/75">
@@ -74,7 +73,7 @@ export function SiteHeader() {
               تسجيل الدخول
             </Link>
           </Button>
-          {siteSettings.registrationEnabled && (
+          {registrationEnabled && (
             <Button asChild size="sm" className="rounded-full px-4">
               <Link href="/registration">سجل الآن</Link>
             </Button>
@@ -109,7 +108,7 @@ export function SiteHeader() {
             ))}
           </nav>
           <div className="mt-auto grid gap-2 border-t p-4">
-            {siteSettings.registrationEnabled && (
+            {registrationEnabled && (
               <Button asChild size="lg" className="rounded-full" onClick={() => setOpen(false)}>
                 <Link href="/registration">سجل الآن</Link>
               </Button>
@@ -128,13 +127,14 @@ export function SiteHeader() {
 }
 
 /** Footer — identity from AssociationSettings, website content from SiteSettings. */
-export function SiteFooter() {
-  const { siteSettings: s, associationSettings: a } = useOperations()
+export function SiteFooter({ settings, year }: { settings: PublicSiteSettings | null; year: string }) {
+  const a = { name: settings?.name ?? FALLBACK_ASSOCIATION_NAME, address: settings?.address, phone: settings?.phone, email: settings?.email }
+  const s = { shortDescription: settings?.shortDescription ?? "", registrationEnabled: settings?.registrationEnabled ?? false }
   const socials = [
-    { href: s.facebookUrl, icon: Globe, label: "فيسبوك" },
-    { href: s.instagramUrl, icon: Camera, label: "إنستغرام" },
-    { href: s.youtubeUrl, icon: PlayCircle, label: "يوتيوب" },
-  ].filter((x) => x.href)
+    { href: settings?.social.facebook, icon: Globe, label: "فيسبوك" },
+    { href: settings?.social.instagram, icon: Camera, label: "إنستغرام" },
+    { href: settings?.social.youtube, icon: PlayCircle, label: "يوتيوب" },
+  ].filter((x): x is typeof x & { href: string } => Boolean(x.href))
 
   return (
     <footer className="bg-[#1f2421] text-white/80">
@@ -146,7 +146,7 @@ export function SiteFooter() {
             </span>
             <p className="font-display text-xl font-bold text-white">{a.name}</p>
           </div>
-          <p className="max-w-md text-sm leading-relaxed">{s.shortDescriptionAr}</p>
+          <p className="max-w-md text-sm leading-relaxed">{s.shortDescription}</p>
           {socials.length > 0 && (
             <ul className="flex gap-2">
               {socials.map(({ href, icon: Icon, label }) => (
@@ -189,7 +189,7 @@ export function SiteFooter() {
       </div>
       <div className="border-t border-white/10">
         <p className="mx-auto max-w-7xl px-4 py-5 text-xs text-white/60 sm:px-6 lg:px-8">
-          © {MOCK_TODAY.slice(0, 4)} {a.name}. جميع الحقوق محفوظة.
+          © {year} {a.name}. جميع الحقوق محفوظة.
         </p>
       </div>
     </footer>

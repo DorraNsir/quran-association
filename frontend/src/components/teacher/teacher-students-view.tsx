@@ -9,16 +9,16 @@ import { DataTable, type Column } from "@/components/shared/data-table"
 import { EmptyState } from "@/components/shared/empty-state"
 import { ALL, FilterBar, FilterSelect, matchesText, SearchInput } from "@/components/shared/filters"
 import { PersonCell } from "@/components/shared/user-avatar"
-import { summarize } from "@/lib/attendance"
 import { fullName, indexLookups, studentClass, type ClassView, type Lookups } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
-import { useOperations } from "@/lib/store/operations"
-import { getTeacherGroupClasses, getTeacherNotes } from "@/lib/teacher-access"
+import { useTeacherStudentRates } from "@/lib/api/attendance"
+import { useClassesMemorization } from "@/lib/api/memorization"
+import { useTeacherNotes } from "@/lib/api/teacher-notes"
+import { getTeacherGroupClasses } from "@/lib/teacher-access"
 import type { ID, ISODate, MemorizationProgress, Student } from "@/types/domain"
 
-import { useTeacherSessionRows } from "./teacher-sessions"
 import { useAcademicYears } from "@/lib/store/settings"
 
 interface Row {
@@ -43,23 +43,26 @@ export function TeacherStudentsView({
   today: ISODate
 }) {
   const academicYears = useAcademicYears()
-  const { memorizationProgress, teacherNotes } = useOperations()
-  const sessionRows = useTeacherSessionRows(teacherId, lookups, students, today)
   const [query, setQuery] = useState("")
   const [classId, setClassId] = useState(ALL)
   const classes = getTeacherGroupClasses(teacherId, lookups)
   const indexes = indexLookups(lookups)
   const period = defaultPeriod(academicYears, today)
-  const byKey = indexMemorization(memorizationProgress)
-  const myNotes = getTeacherNotes(teacherId, teacherNotes)
+  const memo = useClassesMemorization("teacher", classes.map((a) => a.groupClass.id), {
+    academicYearId: period.academicYearId || undefined,
+    semester: period.semester,
+  })
+  const byKey = indexMemorization(memo.records)
+  const myNotes = useTeacherNotes(teacherId).data ?? []
+  const active = students.filter((s) => s.status === "ACTIVE")
+  const rates = useTeacherStudentRates(active.map((s) => s.id))
 
-  const rows: Row[] = students
-    .filter((s) => s.status === "ACTIVE")
+  const rows: Row[] = active
     .map((student) => ({
       student,
       view: studentClass(student, indexes),
       record: byKey.get(memorizationKey(student.id, period.academicYearId, period.semester)),
-      rate: summarize(sessionRows.flatMap((r) => r.records.filter((rec) => rec.studentId === student.id))).rate,
+      rate: rates.get(student.id) ?? null,
       notes: myNotes.filter((n) => n.studentId === student.id).length,
     }))
     .sort((a, b) => fullName(a.student).localeCompare(fullName(b.student), "ar"))

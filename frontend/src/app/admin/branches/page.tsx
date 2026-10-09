@@ -1,10 +1,9 @@
 import type { Metadata } from "next"
 
-import { BranchesView } from "@/components/branches/branches-view"
-import { lookups } from "@/lib/mock"
+import { BranchesScreen } from "@/components/admin/admin-screens"
 
 export const metadata: Metadata = { title: "الفروع" }
 
-export default function BranchesPage() {
-  return <BranchesView lookups={lookups} />
+export default function Page() {
+  return <BranchesScreen />
 }

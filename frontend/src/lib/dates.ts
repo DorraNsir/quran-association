@@ -43,3 +43,33 @@ export function eachDate(from: ISODate, to: ISODate): ISODate[] {
 export function isWithin(date: ISODate, range: { from?: ISODate; to?: ISODate }) {
   return (!range.from || date >= range.from) && (!range.to || date <= range.to)
 }
+
+/** The platform's calendar (read-only setting on the API). */
+export const PLATFORM_TIMEZONE = "Africa/Tunis"
+
+/**
+ * Calendar day ("YYYY-MM-DD") of an instant in Africa/Tunis. Calendar-only
+ * values from the API (DATE columns) are already "YYYY-MM-DD" and must NOT
+ * go through this (no UTC conversion → no off-by-one day).
+ */
+export function tunisDateOf(instant: Date | string | number): ISODate {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: PLATFORM_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(instant))
+}
+
+/** Today in Africa/Tunis (whatever the browser's own zone). */
+export const todayInTunis = (): ISODate => tunisDateOf(Date.now())
+
+/** "HH:mm" of an instant in Africa/Tunis. */
+export function tunisTimeOf(instant: Date | string | number) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: PLATFORM_TIMEZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(instant))
+}

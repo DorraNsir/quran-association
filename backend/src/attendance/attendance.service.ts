@@ -8,15 +8,18 @@ import { PageSizeService } from '../common/page-size.service.js';
 import { paginationMeta } from '../common/pagination.js';
 import { platformToday } from '../common/platform-clock.js';
 import {
-  type Prisma,
+  Prisma,
   AttendanceStatus,
   SessionStatus,
 } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { expectedOnDate } from '../scheduling/roster.sql.js';
 import { SessionsService } from '../scheduling/sessions.service.js';
 import { fromDbTime } from '../scheduling/time.js';
 import { TeacherAccessService } from '../teaching/teacher-access.service.js';
 import type {
+  StudentsSummaryQueryDto,
+  StudentSummaryLineDto,
   AttendanceSummaryDto,
   RosterStudentDto,
   SaveAttendanceDto,
@@ -287,6 +290,109 @@ export class AttendanceService {
     };
   }
 
+  /**
+   * A teacher reading one student's attendance: the period defaults to the
+   * current academic year, and the teacher must have taught the student
+   * during it (TeacherAccessService.assertStudentAccess) — the records are
+   * then those of that period. Returns the concrete range to query.
+   */
+  async teacherStudentRange(
+    userId: string,
+    studentId: string,
+    query: { academicYearId?: string; from?: string; to?: string },
+  ): Promise<{ from: string; to: string }> {
+    await this.assertStudent(studentId);
+    let { from, to } = await this.range(query);
+    const today = await platformToday(this.prisma);
+    if (!query.academicYearId && !query.from && !query.to) {
+      const current = await this.prisma.academicYear.findFirst({
+        where: { isCurrent: true },
+        select: { startDate: true, endDate: true },
+      });
+      from = current ? fromDbDate(current.startDate) : today;
+      to = current ? fromDbDate(current.endDate) : today;
+    }
+    const range = { from: from ?? '1900-01-01', to: to ?? today };
+    await this.access.assertStudentAccess(userId, studentId, range);
+    return range;
+  }
+
+  /**
+   * Counts per student over non-cancelled sessions matching the filters
+   * (session's class / group / branch, period) — one grouped query, same
+   * rate rule as `summary`. Students without records are not listed.
+   */
+  async studentsSummary(
+    query: StudentsSummaryQueryDto,
+  ): Promise<StudentSummaryLineDto[]> {
+    const range = await this.range(query);
+    const groups = await this.prisma.studentAttendance.groupBy({
+      by: ['studentId', 'status'],
+      where: {
+        session: {
+          status: { not: SessionStatus.CANCELLED },
+          ...(range.from || range.to
+            ? {
+                date: {
+                  ...(range.from ? { gte: toDbDate(range.from) } : {}),
+                  ...(range.to ? { lte: toDbDate(range.to) } : {}),
+                },
+              }
+            : {}),
+          ...(query.groupClassId ? { groupClassId: query.groupClassId } : {}),
+          ...(query.groupId ? { groupClass: { groupId: query.groupId } } : {}),
+          ...(query.branchId ? { room: { branchId: query.branchId } } : {}),
+        },
+      },
+      _count: { _all: true },
+    });
+    const byStudent = new Map<string, Record<AttendanceStatus, number>>();
+    for (const g of groups) {
+      const counts =
+        byStudent.get(g.studentId) ??
+        ({ PRESENT: 0, ABSENT: 0, LATE: 0, EXCUSED: 0 } as Record<
+          AttendanceStatus,
+          number
+        >);
+      counts[g.status] = g._count._all;
+      byStudent.set(g.studentId, counts);
+    }
+    const students = await this.prisma.student.findMany({
+      where: { id: { in: [...byStudent.keys()] } },
+      select: {
+        id: true,
+        person: {
+          select: { firstName: true, lastName: true, photoUrl: true },
+        },
+      },
+    });
+    return students
+      .map((s) => {
+        const c = byStudent.get(s.id)!;
+        const recorded = c.PRESENT + c.ABSENT + c.LATE + c.EXCUSED;
+        const denominator = recorded - c.EXCUSED;
+        return {
+          studentId: s.id,
+          ...s.person,
+          recorded,
+          present: c.PRESENT,
+          absent: c.ABSENT,
+          late: c.LATE,
+          excused: c.EXCUSED,
+          rate:
+            denominator > 0
+              ? Math.round(((c.PRESENT + c.LATE) / denominator) * 1000) / 10
+              : null,
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.absent - a.absent ||
+          a.lastName.localeCompare(b.lastName, 'ar') ||
+          a.firstName.localeCompare(b.firstName, 'ar'),
+      );
+  }
+
   // ───────────────────────── helpers ─────────────────────────
 
   private async assertEditable(
@@ -345,14 +451,7 @@ export class AttendanceService {
         SELECT e."studentId"
         FROM student_enrollments e
         WHERE e."groupClassId" = ${session.groupClassId}::uuid
-          AND e."startDate" <= ${date}::date
-          AND (e."endDate" IS NULL OR e."endDate" > ${date}::date)
-          AND (
-            SELECT c.status FROM student_status_changes c
-            WHERE c."studentId" = e."studentId" AND c."effectiveDate" <= ${date}::date
-            ORDER BY c."effectiveDate" DESC
-            LIMIT 1
-          ) = 'ACTIVE'`,
+          AND ${expectedOnDate('e', Prisma.sql`${date}::date`)}`,
       db.studentAttendance.findMany({
         where: { sessionId },
         select: { studentId: true },

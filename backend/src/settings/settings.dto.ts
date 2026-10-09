@@ -194,3 +194,35 @@ export class SettingsDto {
   })
   currentAcademicYear!: CurrentYearDto | null;
 }
+
+/** Display preferences every signed-in account needs (read-only, no secrets). */
+export class PlatformPreferencesDto {
+  @ApiProperty({ example: 'Africa/Tunis' }) timezone!: string;
+  @ApiProperty({ enum: DateFormat, enumName: 'DateFormat' })
+  dateFormat!: DateFormat;
+  @ApiProperty({ enum: CalendarView, enumName: 'CalendarView' })
+  defaultCalendarView!: CalendarView;
+  @ApiProperty({ enum: [10, 20, 50] }) defaultPageSize!: number;
+  @ApiPropertyOptional({
+    type: () => CurrentYearPreferenceDto,
+    nullable: true,
+    description: 'The current academic year and its two semesters (read-only)',
+  })
+  currentAcademicYear!: CurrentYearPreferenceDto | null;
+}
+
+class SemesterRangePreferenceDto {
+  @ApiProperty({ format: 'date' }) startDate!: string;
+  @ApiProperty({ format: 'date' }) endDate!: string;
+}
+
+export class CurrentYearPreferenceDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() label!: string;
+  @ApiProperty({ format: 'date' }) startDate!: string;
+  @ApiProperty({ format: 'date' }) endDate!: string;
+  @ApiProperty({ type: SemesterRangePreferenceDto })
+  firstSemester!: SemesterRangePreferenceDto;
+  @ApiProperty({ type: SemesterRangePreferenceDto })
+  secondSemester!: SemesterRangePreferenceDto;
+}

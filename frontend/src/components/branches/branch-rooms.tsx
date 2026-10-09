@@ -12,7 +12,8 @@ import { SectionCard } from "@/components/shared/info-list"
 import { Button } from "@/components/ui/button"
 import { activeSchedulesIn, indexLookups, weeklyMinutes, type Lookups } from "@/lib/domain"
 import { countLabels, formatDuration } from "@/lib/format"
-import { labels } from "@/lib/i18n"
+import { errorMessage } from "@/lib/api/errors"
+import { useSaveRoom, useSetRoomStatus } from "@/lib/api/hooks/branches"
 import { cn } from "@/lib/utils"
 import type { Branch, Room } from "@/types/domain"
 
@@ -20,12 +21,12 @@ import { RoomDialog } from "./room-dialog"
 
 type DialogState = { kind: "form" | "deactivate"; room?: Room; key: number; open: boolean }
 
-const mockSaved = { description: labels.common.mockNotice }
-
 /** Rooms of one branch, with how much each is used by active groups. */
 export function BranchRooms({ branch, lookups }: { branch: Branch; lookups: Lookups }) {
-  const [rooms, setRooms] = useState(lookups.rooms)
+  const { rooms } = lookups
   const [state, setState] = useState<DialogState | null>(null)
+  const saveRoom = useSaveRoom()
+  const setRoomStatus = useSetRoomStatus()
   const { classesById, groupsById } = indexLookups(lookups)
   const branchRooms = rooms.filter((r) => r.branchId === branch.id)
 
@@ -35,10 +36,14 @@ export function BranchRooms({ branch, lookups }: { branch: Branch; lookups: Look
   const open = (kind: DialogState["kind"], room?: Room) =>
     setState({ kind, room, key: Date.now(), open: true })
 
-  function save(room: Room, message: string) {
-    setRooms((prev) => (prev.some((r) => r.id === room.id) ? prev.map((r) => (r.id === room.id ? room : r)) : [...prev, room]))
-    toast.success(message, mockSaved)
-    close(false)
+  async function changeStatus(room: Room, status: Room["status"], message: string) {
+    try {
+      await setRoomStatus.mutateAsync({ id: room.id, status })
+      toast.success(message)
+      close(false)
+    } catch (error) {
+      toast.error(errorMessage(error))
+    }
   }
 
   /** Slots of running classes whose room this is */
@@ -105,7 +110,7 @@ export function BranchRooms({ branch, lookups }: { branch: Branch; lookups: Look
                             label: "إعادة التفعيل",
                             icon: PlayCircle,
                             separated: true,
-                            onSelect: () => save({ ...room, status: "ACTIVE" }, `تم تفعيل ${room.name}`),
+                            onSelect: () => void changeStatus(room, "ACTIVE", `تم تفعيل ${room.name}`),
                           },
                     ]}
                   />
@@ -125,16 +130,11 @@ export function BranchRooms({ branch, lookups }: { branch: Branch; lookups: Look
           defaultBranchId={branch.id}
           branches={lookups.branches}
           rooms={rooms}
-          onSave={(room) =>
-            save(
-              room,
-              room.branchId !== branch.id
-                ? `تم نقل ${room.name} إلى فرع آخر`
-                : pending
-                  ? `تم حفظ ${room.name}`
-                  : `تمت إضافة ${room.name}`
-            )
-          }
+          onSave={async (values) => {
+            await saveRoom.mutateAsync({ id: pending?.id, ...values })
+            toast.success(pending ? `تم حفظ ${values.name}` : `تمت إضافة ${values.name}`)
+            close(false)
+          }}
         />
       )}
       {state?.kind === "deactivate" && pending && (
@@ -149,7 +149,11 @@ export function BranchRooms({ branch, lookups }: { branch: Branch; lookups: Look
               : "لن تظهر القاعة عند برمجة الحصص الجديدة."
           }
           confirmLabel="إيقاف القاعة"
-          onConfirm={() => save({ ...pending, status: "INACTIVE" }, `تم إيقاف ${pending.name}`)}
+          onConfirm={async () => {
+            await setRoomStatus.mutateAsync({ id: pending.id, status: "INACTIVE" })
+            toast.success(`تم إيقاف ${pending.name}`)
+            close(false)
+          }}
         />
       )}
     </SectionCard>

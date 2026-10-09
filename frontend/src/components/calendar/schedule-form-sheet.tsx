@@ -18,7 +18,6 @@ import {
 import { useFormState } from "@/hooks/use-form-state"
 import { describeClass, fullName, indexLookups, type Lookups } from "@/lib/domain"
 import { labels, WEEK_ORDER } from "@/lib/i18n"
-import { newMockId } from "@/lib/mock/reference-date"
 import { findConflicts, freeRooms, isValidTimeRange } from "@/lib/scheduling"
 import type { ID, Student, Weekday, WeeklySchedule } from "@/types/domain"
 
@@ -50,7 +49,8 @@ export function ScheduleFormSheet({
   preset?: SchedulePreset
   lookups: Lookups
   students?: Student[]
-  onSave: (schedule: WeeklySchedule) => void
+  /** Saves through the API (it re-checks room / teacher / class conflicts); a rejection is shown in the form */
+  onSave: (schedule: WeeklySchedule) => Promise<void>
 }) {
   const indexes = indexLookups(lookups)
   const form = useFormState<ScheduleValues>(
@@ -83,7 +83,7 @@ export function ScheduleFormSheet({
 
   const submit = form.handleSubmit((v) => {
     if (conflicts.length > 0) return
-    onSave({ ...v, id: schedule?.id ?? newMockId("ws") })
+    return onSave({ ...v, id: schedule?.id ?? "" })
   })
 
   return (
@@ -95,6 +95,8 @@ export function ScheduleFormSheet({
       onSubmit={submit}
       submitLabel={schedule ? "حفظ التعديلات" : "برمجة الحصة"}
       submitDisabled={conflicts.length > 0}
+      pending={form.pending}
+      error={form.serverError}
     >
       <FormSection title="الحلقة">
         <FormField label="المجموعة والحلقة" required className="sm:col-span-2" {...form.field("groupClassId")}>

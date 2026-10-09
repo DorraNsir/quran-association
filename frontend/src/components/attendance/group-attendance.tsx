@@ -4,14 +4,17 @@ import { ClipboardList, Users } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 
-import { useSessionRows } from "@/components/sessions/use-session-rows"
+import { toSessionRow } from "@/components/sessions/use-session-rows"
+import { QueryState } from "@/components/shared/query-state"
+import { useStudentsAttendanceSummary } from "@/lib/api/attendance"
+import { MAX_PAGE, useSessionPage } from "@/lib/api/sessions"
 import { EmptyState } from "@/components/shared/empty-state"
 import { FilterSelect } from "@/components/shared/filters"
 import { SectionCard } from "@/components/shared/info-list"
 import { PeriodFilter, resolvePeriod, type Period } from "@/components/shared/period-filter"
 import { PersonCell } from "@/components/shared/user-avatar"
-import { summarize } from "@/lib/attendance"
-import { isWithin, weekdayOf } from "@/lib/dates"
+import type { AttendanceSummary } from "@/lib/attendance"
+import { weekdayOf } from "@/lib/dates"
 import { classesOf, fullName, indexLookups, studentClass, type Lookups } from "@/lib/domain"
 import { countLabels, formatShortDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
@@ -46,15 +49,28 @@ export function GroupAttendance({
     return v ? `${v.branch?.name ?? ""} — ${v.supervisor ? fullName(v.supervisor) : "—"}` : ""
   }
   const inClass = (groupClassId?: ID) => (classId === "all" ? classes.some((c) => c.id === groupClassId) : groupClassId === classId)
-  const rows = useSessionRows(lookups, students, today).filter(
-    (r) => inClass(r.session.groupClassId) && r.session.date <= today && isWithin(r.session.date, range)
+  // Sessions that have happened (or happen today), latest first — counts and per-student totals from the API
+  const to = range.to && range.to < today ? range.to : today
+  const valid = !range.from || range.from <= to
+  const scope = { from: range.from, to, groupId, groupClassId: classId === "all" ? undefined : classId }
+  const list = useSessionPage("admin", { ...scope, order: "desc" }, 1, MAX_PAGE, valid)
+  const completedQuery = useSessionPage("admin", { ...scope, status: "COMPLETED" }, 1, 1, valid)
+  const pendingQuery = useSessionPage("admin", { ...scope, status: "SCHEDULED" }, 1, 1, valid)
+  const cancelledQuery = useSessionPage("admin", { ...scope, status: "CANCELLED" }, 1, 1, valid)
+  const held = valid ? (completedQuery.data?.meta.total ?? 0) : 0
+  const pending = valid ? (pendingQuery.data?.meta.total ?? 0) : 0
+  const cancelled = valid ? (cancelledQuery.data?.meta.total ?? 0) : 0
+  const lines = useStudentsAttendanceSummary(scope, valid)
+  const rows = valid ? (list.data?.data ?? []).map((s) => toSessionRow(s, today)) : []
+  const byStudent = new Map((valid ? (lines.data ?? []) : []).map((l) => [l.studentId, l]))
+  const total = [...byStudent.values()].reduce<AttendanceSummary>(
+    (sum, l) => ({ recorded: sum.recorded + l.recorded, present: sum.present + l.present, absent: sum.absent + l.absent, late: sum.late + l.late, excused: sum.excused + l.excused, rate: null }),
+    { recorded: 0, present: 0, absent: 0, late: 0, excused: 0, rate: null }
   )
-  const records = rows.flatMap((r) => r.records)
-  const summary = summarize(records)
-  const held = rows.filter((r) => r.session.status === "COMPLETED").length
-  const cancelled = rows.filter((r) => r.session.status === "CANCELLED").length
-  const pending = rows.filter((r) => r.progress.state === "NOT_RECORDED" || r.progress.state === "PARTIAL").length
+  const eligible = total.recorded - total.excused
+  const summary = { ...total, rate: eligible > 0 ? Math.round(((total.present + total.late) / eligible) * 1000) / 10 : null }
   const members = students.filter((s) => inClass(s.groupClassId) && s.status === "ACTIVE")
+  const empty: AttendanceSummary = { recorded: 0, present: 0, absent: 0, late: 0, excused: 0, rate: null }
 
   return (
     <div className="space-y-6">
@@ -77,11 +93,12 @@ export function GroupAttendance({
 
       <div className="grid gap-6 lg:grid-cols-5">
         <SectionCard title="سجل الحصص" icon={ClipboardList} className="lg:col-span-2">
+          <QueryState query={list}>
           {rows.length === 0 ? (
             <EmptyState icon={ClipboardList} title="لا توجد حصص في هذه الفترة" className="py-6" />
           ) : (
             <ol className="-mx-2 max-h-[32rem] space-y-1 overflow-y-auto">
-              {[...rows].reverse().map((r) => (
+              {rows.map((r) => (
                 <li key={r.session.id}>
                   <Link
                     href={`/admin/sessions/${r.session.id}`}
@@ -107,6 +124,10 @@ export function GroupAttendance({
               ))}
             </ol>
           )}
+          {(list.data?.meta.total ?? 0) > rows.length && (
+            <p className="mt-2 text-xs text-muted-foreground">آخر {rows.length} حصة — بقية الحصص في صفحة الحصص.</p>
+          )}
+          </QueryState>
         </SectionCard>
 
         <SectionCard title="حضور الطلبة" icon={Users} className="lg:col-span-3">
@@ -127,7 +148,7 @@ export function GroupAttendance({
                 </thead>
                 <tbody className="divide-y">
                   {members.map((student) => {
-                    const s = summarize(records.filter((r) => r.studentId === student.id))
+                    const s = byStudent.get(student.id) ?? empty
                     return (
                       <tr key={student.id}>
                         <td className="px-6 py-2">

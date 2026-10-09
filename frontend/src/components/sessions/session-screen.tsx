@@ -1,39 +1,32 @@
 "use client"
 
-import { CalendarX2 } from "lucide-react"
-
 import { AttendanceTaker } from "@/components/attendance/attendance-taker"
-import { EmptyState } from "@/components/shared/empty-state"
-import type { Lookups } from "@/lib/domain"
-import type { StaffWorkspace } from "@/lib/workspace"
-import type { ID, ISODate, Student } from "@/types/domain"
+import { NotFoundState } from "@/components/shared/not-found-state"
+import { QueryState } from "@/components/shared/query-state"
+import { ApiError } from "@/lib/api/errors"
+import { toSessionRow, useSession, useSessionRoster } from "@/lib/api/sessions"
+import { todayInTunis } from "@/lib/dates"
+import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
+import type { ID } from "@/types/domain"
 
 import { SessionDetails } from "./session-details"
-import { useSessionRows } from "./use-session-rows"
 
-/** Resolves one live session from the store, then shows its details or the attendance sheet. */
-export function SessionScreen({
-  sessionId,
-  mode,
-  lookups,
-  students,
-  today,
-  workspace = "admin",
-}: {
-  sessionId: ID
-  mode: "details" | "attendance"
-  lookups: Lookups
-  students: Student[]
-  today: ISODate
-  workspace?: StaffWorkspace
-}) {
-  const row = useSessionRows(lookups, students, today).find((r) => r.session.id === sessionId)
-  if (!row) {
-    return <EmptyState icon={CalendarX2} title="الحصة غير موجودة" />
-  }
+/**
+ * One session from the API (admin endpoint, or the teacher endpoint that
+ * checks the session's team), with its roster on the session date — then
+ * its details or the attendance sheet.
+ */
+export function SessionScreen({ sessionId, mode, workspace = "admin" }: { sessionId: ID; mode: "details" | "attendance"; workspace?: StaffWorkspace }) {
+  const today = todayInTunis()
+  const session = useSession(workspace, sessionId)
+  const roster = useSessionRoster(workspace, sessionId, session.isSuccess)
+  if (session.error instanceof ApiError && (session.error.isNotFound || session.error.status === 400))
+    return <NotFoundState title="الحصة غير موجودة" backHref={workspacePaths(workspace).sessions} backLabel="العودة إلى الحصص" />
+  if (!session.data || !roster.data) return <QueryState query={[session, roster]}>{null}</QueryState>
+  const row = toSessionRow(session.data, today)
   return mode === "details" ? (
-    <SessionDetails row={row} today={today} workspace={workspace} />
+    <SessionDetails row={row} roster={roster.data} today={today} workspace={workspace} />
   ) : (
-    <AttendanceTaker key={row.session.id} row={row} today={today} workspace={workspace} />
+    <AttendanceTaker key={`${row.session.id}-${roster.dataUpdatedAt}`} row={row} roster={roster.data} workspace={workspace} />
   )
 }

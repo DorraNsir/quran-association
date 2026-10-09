@@ -7,11 +7,11 @@ import { useRouter } from "next/navigation"
 import { Breadcrumbs, PageHeader } from "@/components/shared/page-header"
 import { Card } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { getCurrentAcademicYear } from "@/lib/academic-years"
+import { todayInTunis } from "@/lib/dates"
+import { useAdminSettings } from "@/lib/api/hooks/settings"
 import { formatNumericDate } from "@/lib/format"
 import { CALENDAR_VIEWS } from "@/lib/platform-settings"
-import { MOCK_TODAY } from "@/lib/mock/reference-date"
-import { useOperations } from "@/lib/store/operations"
+import { usePlatformSettings } from "@/lib/store/settings"
 import { cn } from "@/lib/utils"
 
 export type SettingsSlug = "association" | "system" | "academic-year" | "preferences" | "backups"
@@ -22,7 +22,7 @@ export const SETTINGS_SECTIONS: { slug: SettingsSlug; label: string; description
   { slug: "system", label: "إعدادات النظام", description: "المنطقة الزمنية وتنسيق التاريخ", icon: Settings2 },
   { slug: "academic-year", label: "السنة الدراسية", description: "السنة الحالية والسنوات الدراسية وسداسياتها", icon: CalendarRange },
   { slug: "preferences", label: "التفضيلات", description: "العرض الافتراضي للرزنامة وعدد العناصر في الجداول", icon: SlidersHorizontal },
-  { slug: "backups", label: "النسخ الاحتياطي", description: "يتوفر بعد ربط المنصة بقاعدة البيانات", icon: DatabaseBackup },
+  { slug: "backups", label: "النسخ الاحتياطي", description: "غير متوفر في المنصة حاليًا", icon: DatabaseBackup },
 ]
 
 const hrefOf = (slug: SettingsSlug) => `/admin/settings/${slug}`
@@ -91,14 +91,16 @@ export function SettingsShell({
 
 /** /admin/settings — entry cards with the current value of each section. */
 export function SettingsOverview() {
-  const { associationSettings, platformSettings, academicYears } = useOperations()
+  const settings = useAdminSettings().data
+  const platformSettings = usePlatformSettings()
   const view = CALENDAR_VIEWS.find((v) => v.value === platformSettings.defaultCalendarView)?.label
+  const year = settings?.currentAcademicYear
   const summary: Record<SettingsSlug, string> = {
-    association: associationSettings.name,
-    system: `${platformSettings.timezone} · ${formatNumericDate(MOCK_TODAY, platformSettings.dateFormat)}`,
-    "academic-year": `السنة الحالية: ${getCurrentAcademicYear(academicYears).label}`,
+    association: settings?.association?.name ?? "",
+    system: `${platformSettings.timezone} · ${formatNumericDate(todayInTunis(), platformSettings.dateFormat)}`,
+    "academic-year": settings ? (year ? `السنة الحالية: ${year.label}` : "لم تُحدَّد سنة حالية بعد") : "",
     preferences: `الرزنامة: ${view} · ${platformSettings.defaultPageSize} عناصر في الصفحة`,
-    backups: "يتوفر بعد ربط المنصة بقاعدة البيانات",
+    backups: "غير متوفر في المنصة حاليًا",
   }
 
   return (
@@ -141,7 +143,7 @@ export function SettingsOverview() {
           <div className="space-y-1 text-sm">
             <p className="font-medium">إدارة الحسابات</p>
             <p className="text-muted-foreground">
-              المستخدمون والأدوار وكلمات المرور ستكون وحدة مستقلة، تُضاف بعد إرساء نظام المصادقة الفعلي على الخادم.
+              المستخدمون والأدوار وكلمات المرور تُدار من ملفات المعلمين والطلبة، ومن خلال واجهة الحسابات في الخادم.
             </p>
           </div>
         </Card>

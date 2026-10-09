@@ -15,7 +15,7 @@ import { Card } from "@/components/ui/card"
 import { fullName, type Lookups } from "@/lib/domain"
 import { countLabels, formatShortDate } from "@/lib/format"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
-import { useOperations } from "@/lib/store/operations"
+import { useClassesMemorization } from "@/lib/api/memorization"
 import { getTeacherGroupClasses } from "@/lib/teacher-access"
 import type { ID, ISODate, Semester, Student } from "@/types/domain"
 import { useAcademicYears } from "@/lib/store/settings"
@@ -38,15 +38,18 @@ export function TeacherMemorization({
   today: ISODate
 }) {
   const academicYears = useAcademicYears()
-  const { memorizationProgress } = useOperations()
   const initial = defaultPeriod(academicYears, today)
-  const [academicYearId, setAcademicYearId] = useState(initial.academicYearId)
-  const [semester, setSemester] = useState<Semester>(initial.semester)
+  // The years load asynchronously: until the user picks a period, the default (current) one applies
+  const [pickedYearId, setAcademicYearId] = useState<string>()
+  const [pickedSemester, setSemester] = useState<Semester>()
+  const academicYearId = pickedYearId ?? initial.academicYearId
+  const semester = pickedSemester ?? initial.semester
   const [onlyMissing, setOnlyMissing] = useState(false)
-  const memorization = useMemorizationDialog({ lookups, academicYears, today, updaterId: teacherId })
-  const byKey = indexMemorization(memorizationProgress)
-  const recordOf = (s: Student) => byKey.get(memorizationKey(s.id, academicYearId, semester))
   const classes = getTeacherGroupClasses(teacherId, lookups)
+  const memo = useClassesMemorization("teacher", classes.map((a) => a.groupClass.id), { academicYearId: academicYearId || undefined, semester })
+  const memorization = useMemorizationDialog({ lookups, academicYears, records: memo.records, scope: "teacher" })
+  const byKey = indexMemorization(memo.records)
+  const recordOf = (s: Student) => byKey.get(memorizationKey(s.id, academicYearId, semester))
   const active = students.filter((s) => s.status === "ACTIVE")
   const missingTotal = active.filter((s) => !recordOf(s)).length
   const isCurrentPeriod = academicYearId === initial.academicYearId && semester === initial.semester

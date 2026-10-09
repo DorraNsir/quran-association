@@ -1,11 +1,15 @@
-import { redirect } from "next/navigation"
+import type { Metadata } from "next"
+import { Suspense } from "react"
 
-import { getCurrentUser, homeOf } from "@/lib/auth/current-user"
+import { LoginForm } from "@/components/auth/login-form"
+import { FullPageLoader } from "@/components/auth/workspace-gate"
 
-/**
- * "تسجيل الدخول" from the public site. PROTOTYPE: there is no real login yet —
- * the mock account opens its own workspace (admin, teacher or student).
- */
-export default async function LoginPage() {
-  redirect(homeOf(await getCurrentUser()))
+export const metadata: Metadata = { title: "تسجيل الدخول" }
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<FullPageLoader />}>
+      <LoginForm />
+    </Suspense>
+  )
 }

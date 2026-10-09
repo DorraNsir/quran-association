@@ -1,6 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
+
+import { errorMessage } from "@/lib/api/errors"
 
 type Errors<T> = Partial<Record<keyof T, string>>
 
@@ -17,6 +19,10 @@ export function useFormState<T extends object>(
   const [values, setValues] = useState(initial)
   const [touched, setTouched] = useState<Partial<Record<keyof T, boolean>>>({})
   const [submitted, setSubmitted] = useState(false)
+  // Server round-trip: pending flag (no double submit) and the API's Arabic error
+  const [pending, setPending] = useState(false)
+  const [serverError, setServerError] = useState<string | null>(null)
+  const inFlight = useRef(false)
 
   const errors = validate(values)
   const isValid = Object.values(errors).every((e) => !e)
@@ -55,12 +61,29 @@ export function useFormState<T extends object>(
     }
   }
 
-  function handleSubmit(onValid: (values: T) => void) {
+  /**
+   * Validates, then calls onValid. When it returns a promise (an API call),
+   * the form is pending until it settles and a failure is shown as
+   * serverError — the backend stays the authority on validation.
+   */
+  function handleSubmit(onValid: (values: T) => void | Promise<unknown>) {
     return (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault()
+      if (inFlight.current) return
       setSubmitted(true)
       if (isValid) {
-        onValid(values)
+        const result = onValid(values)
+        if (result && typeof (result as Promise<unknown>).then === "function") {
+          inFlight.current = true
+          setPending(true)
+          setServerError(null)
+          ;(result as Promise<unknown>)
+            .catch((error: unknown) => setServerError(errorMessage(error)))
+            .finally(() => {
+              inFlight.current = false
+              setPending(false)
+            })
+        }
         return
       }
       const firstInvalid = (Object.keys(errors) as (keyof T)[]).find((k) => errors[k])
@@ -72,5 +95,5 @@ export function useFormState<T extends object>(
     }
   }
 
-  return { values, setField, touch, errors, field, inputProps, handleSubmit, submitted, isValid }
+  return { values, setValues, setField, touch, errors, field, inputProps, handleSubmit, submitted, isValid, pending, serverError, setServerError }
 }

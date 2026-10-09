@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/select"
 import { useFormState } from "@/hooks/use-form-state"
 import { labels } from "@/lib/i18n"
-import { newMockId } from "@/lib/mock/reference-date"
 import { normalizePhone, PHONE_HINT, phoneError, requiredText } from "@/lib/validation"
 import type { Branch, BranchStatus } from "@/types/domain"
 
@@ -34,7 +33,8 @@ export function BranchFormSheet({
   branch?: Branch
   /** Names of the other branches, to prevent duplicates */
   otherNames: string[]
-  onSave: (branch: Branch) => void
+  /** Saves through the API; a rejection is shown in the form */
+  onSave: (values: { name: string; address: string; phone: string | null; status: BranchStatus }) => Promise<void>
 }) {
   const form = useFormState<BranchFormValues>(
     `branch-${branch?.id ?? "new"}`,
@@ -55,10 +55,9 @@ export function BranchFormSheet({
 
   const submit = form.handleSubmit((v) =>
     onSave({
-      id: branch?.id ?? newMockId("b"),
       name: v.name.trim(),
       address: v.address.trim(),
-      phone: normalizePhone(v.phone) || undefined,
+      phone: normalizePhone(v.phone) || null,
       status: v.status,
     })
   )
@@ -71,6 +70,8 @@ export function BranchFormSheet({
       description="القاعات تُضاف من صفحة الفرع بعد إنشائه."
       onSubmit={submit}
       submitLabel={branch ? "حفظ التعديلات" : "إضافة الفرع"}
+      pending={form.pending}
+      error={form.serverError}
     >
       <FormSection title="معلومات الفرع">
         <FormField label="اسم الفرع" required className="sm:col-span-2" {...form.field("name")}>

@@ -5,27 +5,22 @@ import Link from "next/link"
 
 import { AttendanceStateLabel } from "@/components/attendance/attendance-badges"
 import { AttendanceAction } from "@/components/sessions/attendance-action"
-import { useSessionRows } from "@/components/sessions/use-session-rows"
 import { EmptyState } from "@/components/shared/empty-state"
 import { SectionCard } from "@/components/shared/info-list"
+import { QueryState } from "@/components/shared/query-state"
 import { Button } from "@/components/ui/button"
+import { toSessionRow, useSessionRange } from "@/lib/api/sessions"
 import { weekdayOf } from "@/lib/dates"
 import { fullName, type Lookups } from "@/lib/domain"
 import { countLabels, formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import type { ISODate, Student } from "@/types/domain"
+import type { ISODate } from "@/types/domain"
 
 /** "Which groups meet today, where, with whom — and is attendance recorded?" */
-export function TodaySessions({
-  today,
-  lookups,
-  students,
-}: {
-  today: ISODate
-  lookups: Lookups
-  students: Student[]
-}) {
-  const sessions = useSessionRows(lookups, students, today).filter((r) => r.session.date === today)
+export function TodaySessions({ today, lookups }: { today: ISODate; lookups: Lookups }) {
+  const query = useSessionRange("admin", { from: today, to: today })
+  const sessions = (query.data ?? []).map((s) => toSessionRow(s, today))
+  const audienceOf = (groupId: string) => lookups.groups.find((g) => g.id === groupId)?.audience
 
   return (
     <SectionCard
@@ -41,6 +36,7 @@ export function TodaySessions({
         </div>
       }
     >
+      <QueryState query={query}>
       {sessions.length === 0 ? (
         <EmptyState icon={CalendarX2} title="لا توجد حصص اليوم" className="py-6" />
       ) : (
@@ -63,7 +59,7 @@ export function TodaySessions({
                   <div className="min-w-0 flex-1 space-y-1 sm:border-s sm:ps-4">
                     <p className="font-medium">
                       {group?.name}
-                      <span className="ms-2 text-xs font-normal text-muted-foreground">{group?.audience}</span>
+                      <span className="ms-2 text-xs font-normal text-muted-foreground">{audienceOf(group.id)}</span>
                     </p>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
@@ -79,7 +75,7 @@ export function TodaySessions({
                       )}
                       <span className="inline-flex items-center gap-1">
                         <Users className="size-3.5" aria-hidden />
-                        {countLabels.students(row.roster.length)}
+                        {countLabels.students(row.expected)}
                       </span>
                     </div>
                     <AttendanceStateLabel {...row.progress} className="text-xs" />
@@ -91,6 +87,7 @@ export function TodaySessions({
           })}
         </ol>
       )}
+      </QueryState>
     </SectionCard>
   )
 }

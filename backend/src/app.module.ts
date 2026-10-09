@@ -17,6 +17,7 @@ import { ProfileModule } from './profile/profile.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { RegistrationModule } from './registration/registration.module.js';
 import { SchedulingModule } from './scheduling/scheduling.module.js';
+import { WorkspaceModule } from './workspace/workspace.module.js';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { SchedulingModule } from './scheduling/scheduling.module.js';
     CommunicationModule,
     CmsModule,
     SettingsModule,
+    WorkspaceModule,
     HealthModule,
   ],
 })

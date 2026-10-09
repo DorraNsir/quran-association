@@ -15,12 +15,15 @@ import {
 import { useFormState } from "@/hooks/use-form-state"
 import { teacherAssignments, type Lookups } from "@/lib/domain"
 import { labels } from "@/lib/i18n"
-import { MOCK_TODAY, newMockId } from "@/lib/mock/reference-date"
+import type { PhotoChange, TeacherInput } from "@/lib/api/hooks/people"
+import { todayInTunis } from "@/lib/dates"
 import { normalizePhone, PHONE_HINT, phoneError, requiredText } from "@/lib/validation"
 import type { Gender, Teacher, TeacherStatus } from "@/types/domain"
 
 interface TeacherFormValues {
   photoUrl?: string
+  /** undefined = unchanged, null = removed, File = new photo */
+  photoFile: PhotoChange
   firstName: string
   lastName: string
   gender: Gender | ""
@@ -34,13 +37,14 @@ interface TeacherFormValues {
 function toValues(t?: Teacher): TeacherFormValues {
   return {
     photoUrl: t?.photoUrl,
+    photoFile: undefined,
     firstName: t?.firstName ?? "",
     lastName: t?.lastName ?? "",
     gender: t?.gender ?? "",
     qualification: t?.qualification ?? "",
     phone: t?.phone ?? "",
     email: t?.email ?? "",
-    joinedAt: t?.joinedAt ?? MOCK_TODAY,
+    joinedAt: t?.joinedAt ?? todayInTunis(),
     status: t?.status ?? "ACTIVE",
   }
 }
@@ -68,7 +72,8 @@ export function TeacherFormSheet({
   onOpenChange: (open: boolean) => void
   teacher?: Teacher
   lookups: Lookups
-  onSave: (teacher: Teacher) => void
+  /** Saves through the API (record, status, photo); a rejection is shown in the form */
+  onSave: (input: TeacherInput) => Promise<void>
 }) {
   const form = useFormState(`teacher-${teacher?.id ?? "new"}`, toValues(teacher), validate)
   const { values, setField } = form
@@ -76,17 +81,17 @@ export function TeacherFormSheet({
 
   const submit = form.handleSubmit((v) =>
     onSave({
-      ...teacher,
-      id: teacher?.id ?? newMockId("t"),
-      firstName: v.firstName.trim(),
-      lastName: v.lastName.trim(),
-      gender: v.gender as Gender,
-      qualification: v.qualification.trim() || undefined,
-      phone: normalizePhone(v.phone),
-      email: v.email.trim() || undefined,
-      photoUrl: v.photoUrl,
+      person: {
+        firstName: v.firstName.trim(),
+        lastName: v.lastName.trim(),
+        gender: v.gender as Gender,
+        phone: normalizePhone(v.phone),
+        email: v.email.trim() || null,
+      },
+      qualification: v.qualification.trim() || null,
       joinedAt: v.joinedAt,
       status: v.status,
+      photo: v.photoFile,
     })
   )
 
@@ -98,6 +103,8 @@ export function TeacherFormSheet({
       description="الحقول المعلَّمة بـ * إلزامية."
       onSubmit={submit}
       submitLabel={teacher ? "حفظ التعديلات" : "إضافة المعلم"}
+      pending={form.pending}
+      error={form.serverError}
     >
       <FormSection title="الهوية">
         <PhotoInput
@@ -105,6 +112,7 @@ export function TeacherFormSheet({
           name={`${values.firstName} ${values.lastName}`.trim()}
           value={values.photoUrl}
           onChange={(url) => setField("photoUrl", url)}
+          onFile={(file) => setField("photoFile", file)}
         />
         <FormField label="الاسم" required {...form.field("firstName")}>
           <Input {...form.inputProps("firstName")} autoComplete="given-name" />

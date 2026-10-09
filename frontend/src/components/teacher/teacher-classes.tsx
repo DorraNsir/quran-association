@@ -24,13 +24,13 @@ import { ScheduleSummary } from "@/components/shared/schedule"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { summarize } from "@/lib/attendance"
 import { weekdayOf } from "@/lib/dates"
 import { fullName, schedulesOf, type Lookups, type TeacherAssignment } from "@/lib/domain"
 import { countLabels, formatShortDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
-import { useOperations } from "@/lib/store/operations"
+import { useTeacherStudentRates } from "@/lib/api/attendance"
+import { useClassesMemorization } from "@/lib/api/memorization"
 import { getTeacherGroupClasses } from "@/lib/teacher-access"
 import type { ID, ISODate, Student } from "@/types/domain"
 
@@ -49,7 +49,7 @@ export function TeacherClasses({
   students: Student[]
   today: ISODate
 }) {
-  const rows = useTeacherSessionRows(teacherId, lookups, students, today)
+  const { rows } = useTeacherSessionRows(today)
   const classes = getTeacherGroupClasses(teacherId, lookups)
 
   if (classes.length === 0) {
@@ -123,18 +123,18 @@ export function TeacherClassDetails({
 }) {
   const academicYears = useAcademicYears()
   const { groupClass, group, branch, room, supervisor, assistants } = assignment
-  const { memorizationProgress } = useOperations()
-  const sessionRows = useTeacherSessionRows(teacherId, lookups, students, today).filter((r) => r.session.groupClassId === groupClass.id)
+  const sessionRows = useTeacherSessionRows(today).rows.filter((r) => r.session.groupClassId === groupClass.id)
   const roster = students
     .filter((s) => s.groupClassId === groupClass.id && s.status === "ACTIVE")
     .sort((a, b) => fullName(a).localeCompare(fullName(b), "ar"))
   const period = defaultPeriod(academicYears, today)
-  const byKey = indexMemorization(memorizationProgress)
+  const memo = useClassesMemorization("teacher", [groupClass.id], { academicYearId: period.academicYearId || undefined, semester: period.semester })
+  const byKey = indexMemorization(memo.records)
+  const rates = useTeacherStudentRates(roster.map((s) => s.id))
 
   const upcoming = sessionRows.filter((r) => r.session.date >= today && r.session.status !== "CANCELLED").slice(0, 3)
   const recent = sessionRows.filter((r) => r.session.date < today).slice(-5).reverse()
-  const rateOf = (studentId: ID) =>
-    summarize(sessionRows.flatMap((r) => r.records.filter((rec) => rec.studentId === studentId))).rate
+  const rateOf = (studentId: ID) => rates.get(studentId) ?? null
 
   return (
     <>

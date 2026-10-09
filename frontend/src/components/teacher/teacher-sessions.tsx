@@ -5,19 +5,24 @@ import Link from "next/link"
 
 import { AttendanceStateLabel } from "@/components/attendance/attendance-badges"
 import { AttendanceAction } from "@/components/sessions/attendance-action"
-import { useSessionRows, type SessionRow } from "@/components/sessions/use-session-rows"
+import { toSessionRow, type SessionRow } from "@/components/sessions/use-session-rows"
 import { EmptyState } from "@/components/shared/empty-state"
-import { weekDates, weekdayOf } from "@/lib/dates"
-import type { Lookups } from "@/lib/domain"
+import { QueryState } from "@/components/shared/query-state"
+import { useSessionRange } from "@/lib/api/sessions"
+import { addDays, weekDates, weekdayOf } from "@/lib/dates"
 import { countLabels, formatShortDate, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { getTeacherClassIds } from "@/lib/teacher-access"
-import type { ID, ISODate, Student } from "@/types/domain"
+import type { ISODate } from "@/types/domain"
 
-/** Live sessions of the teacher's classes only (from the shared store). */
-export function useTeacherSessionRows(teacherId: ID, lookups: Lookups, students: Student[], today: ISODate) {
-  const classIds = getTeacherClassIds(teacherId, lookups)
-  return useSessionRows(lookups, students, today).filter((r) => classIds.has(r.session.groupClassId))
+/**
+ * The signed-in teacher's sessions around today (30 days back, 30 ahead —
+ * the API's team snapshot rule), in date order. Enough for the dashboard,
+ * class cards and the week; the full history is on /teacher/sessions.
+ */
+export function useTeacherSessionRows(today: ISODate) {
+  const query = useSessionRange("teacher", { from: addDays(today, -30), to: addDays(today, 30) })
+  const rows = (query.data ?? []).map((s) => toSessionRow(s, today))
+  return { rows, query }
 }
 
 /** Past or today's sessions whose attendance is missing or incomplete. */
@@ -64,7 +69,7 @@ export function TeacherSessionList({
                   </span>
                   <span className="inline-flex items-center gap-1">
                     <Users className="size-3.5" aria-hidden />
-                    {countLabels.students(row.roster.length)}
+                    {countLabels.students(row.expected)}
                   </span>
                 </div>
                 <AttendanceStateLabel {...row.progress} className="text-xs" />
@@ -81,22 +86,15 @@ export function TeacherSessionList({
 }
 
 /** This week's dated sessions of the teacher (cancellations included, so they are visible). */
-export function TeacherWeekSessions({
-  teacherId,
-  lookups,
-  students,
-  today,
-}: {
-  teacherId: ID
-  lookups: Lookups
-  students: Student[]
-  today: ISODate
-}) {
+export function TeacherWeekSessions({ today }: { today: ISODate }) {
   const week = weekDates(today)
   const from = week[0].date
   const to = week[week.length - 1].date
-  const rows = useTeacherSessionRows(teacherId, lookups, students, today).filter(
-    (r) => r.session.date >= from && r.session.date <= to
+  const query = useSessionRange("teacher", { from, to })
+  const rows = (query.data ?? []).map((s) => toSessionRow(s, today))
+  return (
+    <QueryState query={query}>
+      <TeacherSessionList rows={rows} today={today} emptyTitle="لا توجد حصص هذا الأسبوع" />
+    </QueryState>
   )
-  return <TeacherSessionList rows={rows} today={today} emptyTitle="لا توجد حصص هذا الأسبوع" />
 }

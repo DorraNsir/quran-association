@@ -418,7 +418,7 @@ model Group {
   id        String       @id @default(uuid(7)) @db.Uuid
   name      String       @unique
   /// Target audience, e.g. "أطفال 7–10 سنوات"
-  audience  String
+  audience  String?
   status    RecordStatus @default(ACTIVE)
   createdAt DateTime     @default(now()) @db.Timestamptz(3)
   updatedAt DateTime     @updatedAt @db.Timestamptz(3)

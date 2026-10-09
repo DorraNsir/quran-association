@@ -22,8 +22,7 @@ import { Button } from "@/components/ui/button"
 import { ageOn, fullName, indexLookups, studentClass, type Lookups } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { MOCK_TODAY } from "@/lib/mock/reference-date"
-import { useOperations } from "@/lib/store/operations"
+import { todayInTunis } from "@/lib/dates"
 import type { Student, StudentStatus } from "@/types/domain"
 
 import { studentActions, useStudentDialogs } from "./use-student-dialogs"
@@ -32,19 +31,15 @@ import { useAdminDate } from "@/lib/store/settings"
 const STATUSES: StudentStatus[] = ["ACTIVE", "INACTIVE", "ARCHIVED"]
 
 export function StudentsView({
-  initialStudents,
+  students,
   initialGroupId,
   lookups,
 }: {
-  initialStudents: Student[]
+  students: Student[]
   initialGroupId?: string
   lookups: Lookups
 }) {
   const adminDate = useAdminDate()
-  const [localStudents, setStudents] = useState(initialStudents)
-  // Students admitted from registration requests (shared store) join the list
-  const { admittedStudents } = useOperations()
-  const students = [...admittedStudents.filter((a) => !localStudents.some((s) => s.id === a.id)), ...localStudents]
   const [query, setQuery] = useState("")
   const [groupId, setGroupId] = useState(initialGroupId ?? ALL)
   const [branchId, setBranchId] = useState(ALL)
@@ -54,13 +49,7 @@ export function StudentsView({
   const indexes = indexLookups(lookups)
   /** Student → class → group, branch, supervisor (never read from the group itself) */
   const classOf = (s: Student) => studentClass(s, indexes)
-  const { run, dialogs } = useStudentDialogs({
-    lookups,
-    onChange: (saved, isNew) =>
-      setStudents((prev) =>
-        isNew ? [saved, ...prev] : prev.map((s) => (s.id === saved.id ? saved : s))
-      ),
-  })
+  const { run, dialogs } = useStudentDialogs({ lookups })
 
   const digits = query.replace(/\D/g, "")
   const filtered = students.filter((s) => {
@@ -98,7 +87,7 @@ export function StudentsView({
           <PersonCell
             name={fullName(s)}
             photoUrl={s.photoUrl}
-            secondary={`${ageOn(s.dateOfBirth, MOCK_TODAY)} سنة`}
+            secondary={`${ageOn(s.dateOfBirth, todayInTunis())} سنة`}
           />
         </Link>
       ),
@@ -252,7 +241,7 @@ export function StudentsView({
                   <PersonCell
                     name={fullName(s)}
                     photoUrl={s.photoUrl}
-                    secondary={`${ageOn(s.dateOfBirth, MOCK_TODAY)} سنة · ${cls?.branch?.name ?? ""}`}
+                    secondary={`${ageOn(s.dateOfBirth, todayInTunis())} سنة · ${cls?.branch?.name ?? ""}`}
                   />
                 </Link>
                 <ActionsMenu label={`إجراءات ${fullName(s)}`} actions={studentActions(s, run)} />

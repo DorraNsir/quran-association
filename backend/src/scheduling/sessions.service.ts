@@ -6,11 +6,12 @@ import { PageSizeService } from '../common/page-size.service.js';
 import { paginationMeta } from '../common/pagination.js';
 import { platformToday } from '../common/platform-clock.js';
 import {
-  type Prisma,
+  Prisma,
   CompletionSource,
   SessionStatus,
 } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { expectedOnDate } from './roster.sql.js';
 import { ScheduleConflictService } from './schedule-conflicts.service.js';
 import { classNotFound } from './schedules.service.js';
 import type {
@@ -18,6 +19,7 @@ import type {
   CreateSessionDto,
   GenerateSessionsDto,
   GenerateSessionsResultDto,
+  SessionAttendanceCountsDto,
   SessionCalendarQueryDto,
   SessionDto,
   SessionListDto,
@@ -102,7 +104,20 @@ function attentionOf(s: Row, today: string): AttentionFlag[] {
   return flags;
 }
 
-const toDto = (s: Row, today: string): SessionDto => ({
+const NO_ATTENDANCE: SessionAttendanceCountsDto = {
+  expected: 0,
+  recorded: 0,
+  present: 0,
+  absent: 0,
+  late: 0,
+  excused: 0,
+};
+
+const toDto = (
+  s: Row,
+  today: string,
+  attendance: SessionAttendanceCountsDto = NO_ATTENDANCE,
+): SessionDto => ({
   id: s.id,
   date: fromDbDate(s.date),
   startTime: fromDbTime(s.startTime),
@@ -127,10 +142,13 @@ const toDto = (s: Row, today: string): SessionDto => ({
     status: t.teacher.status,
   })),
   attention: attentionOf(s, today),
+  attendance,
 });
 
 /** Prisma filter equivalent of attentionOf (for ?needsAttention=true). */
-const needsAttentionWhere = (today: string): Prisma.SessionWhereInput => ({
+export const needsAttentionWhere = (
+  today: string,
+): Prisma.SessionWhereInput => ({
   status: SessionStatus.SCHEDULED,
   date: { gte: toDbDate(today) },
   OR: [
@@ -213,13 +231,18 @@ export class SessionsService {
       this.prisma.session.findMany({
         where,
         select,
-        orderBy: [{ date: 'asc' }, { startTime: 'asc' }, { id: 'asc' }],
+        orderBy: [
+          { date: query.order ?? 'asc' },
+          { startTime: query.order ?? 'asc' },
+          { id: query.order ?? 'asc' },
+        ],
         skip: (query.page - 1) * pageSize,
         take: pageSize,
       }),
     ]);
+    const counts = await this.attendanceCounts(rows.map((r) => r.id));
     return {
-      data: rows.map((r) => toDto(r, today)),
+      data: rows.map((r) => toDto(r, today, counts.get(r.id))),
       meta: paginationMeta(query.page, pageSize, total),
     };
   }
@@ -233,7 +256,8 @@ export class SessionsService {
       select,
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }, { id: 'asc' }],
     });
-    return rows.map((r) => toDto(r, today));
+    const counts = await this.attendanceCounts(rows.map((r) => r.id));
+    return rows.map((r) => toDto(r, today, counts.get(r.id)));
   }
 
   async get(id: string): Promise<SessionDto> {
@@ -242,7 +266,8 @@ export class SessionsService {
       platformToday(this.prisma),
     ]);
     if (!session) throw sessionNotFound();
-    return toDto(session, today);
+    const counts = await this.attendanceCounts([id]);
+    return toDto(session, today, counts.get(id));
   }
 
   /** Manual session (snapshot of the class's room and active team); the weekly schedule is NOT modified. */
@@ -712,6 +737,33 @@ export class SessionsService {
     if (query.to) and.push({ date: { lte: toDbDate(query.to) } });
     if (query.needsAttention) and.push(needsAttentionWhere(today));
     return and.length ? { AND: and } : {};
+  }
+
+  /**
+   * Expected / recorded / per-status counts of many sessions in ONE query
+   * (the roster rule is shared with the attendance service).
+   */
+  private async attendanceCounts(
+    ids: string[],
+  ): Promise<Map<string, SessionAttendanceCountsDto>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.prisma.$queryRaw<
+      (SessionAttendanceCountsDto & { sessionId: string })[]
+    >`
+      SELECT s.id AS "sessionId",
+        (SELECT count(*) FROM student_enrollments e
+          WHERE e."groupClassId" = s."groupClassId"
+            AND ${expectedOnDate('e', Prisma.sql`s.date`)})::int AS expected,
+        count(a.id)::int AS recorded,
+        (count(a.id) FILTER (WHERE a.status = 'PRESENT'))::int AS present,
+        (count(a.id) FILTER (WHERE a.status = 'ABSENT'))::int AS absent,
+        (count(a.id) FILTER (WHERE a.status = 'LATE'))::int AS late,
+        (count(a.id) FILTER (WHERE a.status = 'EXCUSED'))::int AS excused
+      FROM sessions s
+      LEFT JOIN student_attendance a ON a."sessionId" = s.id
+      WHERE s.id IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))})
+      GROUP BY s.id`;
+    return new Map(rows.map(({ sessionId, ...counts }) => [sessionId, counts]));
   }
 
   /** All sessions of the range with THEIR room and team snapshot (bounded by the range). */

@@ -18,42 +18,40 @@ import Link from "next/link"
 import { useState } from "react"
 
 import { AttendanceStatusBadge, SessionStatusBadge } from "@/components/attendance/attendance-badges"
-import { AttendanceStats } from "@/components/attendance/attendance-stats"
-import { AnnouncementItem } from "@/components/communication/announcements-views"
+import { StudentAttendanceHistory } from "@/components/attendance/student-attendance-history"
+import { AnnouncementItem, useReaderAnnouncements } from "@/components/communication/announcements-views"
 import { ResourceTypeBadge } from "@/components/communication/resource-badges"
-import type { PublisherNames } from "@/components/communication/resources-views"
 import { MemorizationValue } from "@/components/memorization/memorization-dialog"
 import { AcademicYearSelect } from "@/components/memorization/period-selectors"
 import { EmptyState } from "@/components/shared/empty-state"
 import { SectionCard } from "@/components/shared/info-list"
-import { PeriodFilter, resolvePeriod, type Period } from "@/components/shared/period-filter"
+import { QueryState } from "@/components/shared/query-state"
 import { Card } from "@/components/ui/card"
-import { summarize } from "@/lib/attendance"
-import { getAnnouncementsForStudent, getResourcesForStudent } from "@/lib/communication"
-import { isWithin, weekdayOf } from "@/lib/dates"
-import { fullName, type ClassView, type Lookups } from "@/lib/domain"
+import { useStudentAttendanceRecords, useStudentAttendanceSummary } from "@/lib/api/attendance"
+import { useStudentMemorization } from "@/lib/api/memorization"
+import { toResourceView, useResources } from "@/lib/api/resources"
+import { toSession, useSessionRange } from "@/lib/api/sessions"
+import { addDays, weekdayOf } from "@/lib/dates"
+import { fullName, type ClassView } from "@/lib/domain"
 import { countLabels, formatDate, formatRelativeDay, formatShortDate, formatTimeRange, formatWeekdayDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { defaultPeriod, SEMESTERS } from "@/lib/memorization"
-import { useOperations } from "@/lib/store/operations"
-import { getStudentAttendance, getStudentMemorization, getStudentSessions } from "@/lib/student-access"
+import { getStudentMemorization } from "@/lib/student-access"
 import { cn } from "@/lib/utils"
 import type { ISODate, Session, Student } from "@/types/domain"
-import { useAcademicYears } from "@/lib/store/settings"
-import { useCurrentAcademicYear } from "@/lib/store/settings"
+import { useAcademicYears, useCurrentAcademicYear } from "@/lib/store/settings"
 
 /*
- * Student Space — READ-ONLY views of the current student's own data.
- * Every list is derived through lib/student-access selectors; nothing here
- * reads TeacherNote, offers an edit action, or shows another student.
+ * Student Space — READ-ONLY views of the current student's own data, from
+ * the /api/student/* endpoints (scope = the signed-in account, never an id
+ * from the page). Nothing here reads TeacherNote, offers an edit action, or
+ * shows another student.
  */
 
-/** The student's own sessions and attendance, live from the shared store. */
-function useStudentRecords(student: Student, lookups: Lookups) {
-  const state = useOperations()
-  const sessions = getStudentSessions(student, state.sessions)
-  const attendance = getStudentAttendance(student.id, state, lookups)
-  return { sessions, attendance, memorization: state.memorizationProgress }
+/** Sessions of the student's current class around today (30 days back, 30 ahead). */
+function useMySessions(today: ISODate) {
+  const query = useSessionRange("student", { from: addDays(today, -30), to: addDays(today, 30) })
+  return { sessions: (query.data ?? []).map(toSession), query }
 }
 
 const nextSessionOf = (sessions: Session[], today: ISODate) =>
@@ -94,27 +92,19 @@ function CardLink({ href, children }: { href: string; children: React.ReactNode 
 }
 
 /** Answers "where, when, with whom, how am I doing?" — in that order on phones. */
-export function StudentDashboard({
-  student,
-  view,
-  lookups,
-  publishers,
-  today,
-}: {
-  student: Student
-  view?: ClassView
-  lookups: Lookups
-  publishers: PublisherNames
-  today: ISODate
-}) {
+export function StudentDashboard({ student, view, today }: { student: Student; view?: ClassView; today: ISODate }) {
   const academicYears = useAcademicYears()
-  const { sessions, attendance, memorization } = useStudentRecords(student, lookups)
-  const { resources, resourceTargets, announcements, announcementTargets } = useOperations()
-  // Same visibility helpers as the resources / announcements pages and their notifications
-  const latestResources = getResourcesForStudent(student, resources, resourceTargets, lookups.groupClasses).slice(0, 3)
-  const latestAnnouncements = getAnnouncementsForStudent(student, announcements, announcementTargets, today).slice(0, 3)
+  const currentYear = useCurrentAcademicYear()
+  const { sessions } = useMySessions(today)
+  const memorization = useStudentMemorization("student").data ?? []
+  // The API resolves what this student may see (same rule as their notifications)
+  const latestResources = (useResources("student", {}, 1, 3).data?.data ?? []).map(toResourceView)
+  const latestAnnouncements = useReaderAnnouncements("student", 3)
+  const yearRange = currentYear ? { from: currentYear.startDate, to: currentYear.endDate } : {}
+  const summaryQuery = useStudentAttendanceSummary("student", undefined, yearRange)
+  const recent = useStudentAttendanceRecords("student", undefined, yearRange, 1, 4).data?.data ?? []
+  const summary = summaryQuery.data ?? { recorded: 0, present: 0, absent: 0, late: 0, excused: 0, rate: null }
   const next = nextSessionOf(sessions, today)
-  const summary = summarize(attendance.map((e) => e.record))
   const period = defaultPeriod(academicYears, today)
   const year = academicYears.find((y) => y.id === period.academicYearId)
   const current = getStudentMemorization(memorization, student.id, period.academicYearId, period.semester)
@@ -169,9 +159,9 @@ export function StudentDashboard({
               </span>
             </p>
             <ul className="flex flex-wrap gap-2" aria-label="آخر الحصص">
-              {attendance.slice(0, 4).map(({ record, session }) => (
-                <li key={record.id} className="flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs">
-                  <span className="text-muted-foreground">{formatShortDate(session.date)}</span>
+              {recent.map((record) => (
+                <li key={record.sessionId} className="flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs">
+                  <span className="text-muted-foreground">{formatShortDate(record.date)}</span>
                   <AttendanceStatusBadge status={record.status} />
                 </li>
               ))}
@@ -191,7 +181,7 @@ export function StudentDashboard({
                   <span className="min-w-0">
                     <span className="block truncate font-medium">{r.title}</span>
                     <span className="block text-xs text-muted-foreground">
-                      {publishers[r.publishedByUserId] ?? "—"} · {formatRelativeDay(r.createdAt, today)}
+                      {r.publisher} · {formatRelativeDay(r.createdAt, today)}
                     </span>
                   </span>
                   <ResourceTypeBadge type={r.type} className="shrink-0" />
@@ -220,8 +210,8 @@ export function StudentDashboard({
 }
 
 /** Upcoming and recent sessions of the student's class (cancellations shown, nothing actionable). */
-export function MySessions({ student, view, lookups, today }: { student: Student; view?: ClassView; lookups: Lookups; today: ISODate }) {
-  const { sessions } = useStudentRecords(student, lookups)
+export function MySessions({ view, today }: { view?: ClassView; today: ISODate }) {
+  const { sessions, query } = useMySessions(today)
   const upcoming = sessions.filter((s) => s.date >= today).slice(0, 4)
   const recent = sessions.filter((s) => s.date < today).slice(-4).reverse()
 
@@ -248,71 +238,30 @@ export function MySessions({ student, view, lookups, today }: { student: Student
     )
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <SectionCard title="الحصص القادمة" icon={CalendarClock}>{list(upcoming, "لا توجد حصة قادمة حالياً")}</SectionCard>
-      <SectionCard title="آخر الحصص" icon={ClipboardList}>{list(recent, "لا توجد حصص سابقة")}</SectionCard>
-    </div>
+    <QueryState query={query}>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <SectionCard title="الحصص القادمة" icon={CalendarClock}>{list(upcoming, "لا توجد حصة قادمة حالياً")}</SectionCard>
+        <SectionCard title="آخر الحصص" icon={ClipboardList}>{list(recent, "لا توجد حصص سابقة")}</SectionCard>
+      </div>
+    </QueryState>
   )
 }
 
-/** Summary (same formula as everywhere) and session-by-session history — read-only. */
-export function MyAttendance({ student, lookups, today }: { student: Student; lookups: Lookups; today: ISODate }) {
-  const { attendance } = useStudentRecords(student, lookups)
-  const [period, setPeriod] = useState<Period>({ preset: "year" })
-  const currentYear = useCurrentAcademicYear()
-  const range = resolvePeriod(period, today, currentYear)
-  const entries = attendance.filter((e) => isWithin(e.session.date, range))
-  const summary = summarize(entries.map((e) => e.record))
-
-  return (
-    <div className="space-y-5">
-      <PeriodFilter value={period} onChange={setPeriod} />
-      <AttendanceStats summary={summary} extra={{ label: "إجمالي الحصص", value: summary.recorded }} />
-
-      <Card className="gap-0 p-0">
-        {entries.length === 0 ? (
-          <EmptyState icon={ClipboardList} title="لا يوجد سجل حضور بعد" />
-        ) : (
-          <ol className="divide-y">
-            {entries.map(({ record, session, groupName, branchName }) => (
-              <li key={record.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="font-medium">
-                    {labels.weekday[weekdayOf(session.date)]} {formatDate(session.date)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {groupName} ({branchName}) ·{" "}
-                    <span dir="ltr" className="inline-block tabular-nums">{formatTimeRange(session.start, session.end)}</span>
-                  </p>
-                </div>
-                <AttendanceStatusBadge status={record.status} className="shrink-0" />
-              </li>
-            ))}
-          </ol>
-        )}
-      </Card>
-      {entries.length > 0 && (
-        <p className="text-xs text-muted-foreground">نسبة الحضور = (حاضر + متأخر) ÷ (الحصص المسجّلة − الغياب المبرر).</p>
-      )}
-    </div>
-  )
+/** Summary (same formula as everywhere) and session-by-session history — read-only (GET /api/student/attendance). */
+export function MyAttendance() {
+  return <StudentAttendanceHistory workspace="student" />
 }
 
 /** Last memorized surah per semester of the chosen year — consult only, no update action. */
-export function MyMemorization({
-  student,
-  lookups,
-  today,
-}: {
-  student: Student
-  lookups: Lookups
-  today: ISODate
-}) {
+export function MyMemorization({ student, today }: { student: Student; today: ISODate }) {
   const academicYears = useAcademicYears()
-  const { memorization } = useStudentRecords(student, lookups)
+  const query = useStudentMemorization("student")
+  const memorization = query.data ?? []
   const initial = defaultPeriod(academicYears, today)
-  const [academicYearId, setAcademicYearId] = useState(initial.academicYearId)
+  const [pickedYearId, setAcademicYearId] = useState<string>()
+  const academicYearId = pickedYearId ?? initial.academicYearId
 
+  if (!query.data) return <QueryState query={query}>{null}</QueryState>
   return (
     <div className="space-y-5">
       <AcademicYearSelect value={academicYearId} onChange={setAcademicYearId} years={academicYears} />

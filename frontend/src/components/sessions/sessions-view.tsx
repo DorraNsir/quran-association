@@ -2,6 +2,7 @@
 
 import { CalendarSearch, DoorOpen, ShieldCheck, Users } from "lucide-react"
 import Link from "next/link"
+import { useQueries } from "@tanstack/react-query"
 import { useState } from "react"
 
 import { AttendanceStateLabel, SessionStatusBadge } from "@/components/attendance/attendance-badges"
@@ -11,17 +12,22 @@ import { ALL, FilterBar, FilterSelect } from "@/components/shared/filters"
 import { PageHeader } from "@/components/shared/page-header"
 import { PeriodFilter, resolvePeriod, type Period } from "@/components/shared/period-filter"
 import { Button } from "@/components/ui/button"
-import { isWithin, weekdayOf } from "@/lib/dates"
-import { classTeacherIds, describeClass, fullName, indexLookups, type Lookups } from "@/lib/domain"
+import { Pager } from "@/components/shared/pager"
+import { QueryState } from "@/components/shared/query-state"
+import { keys } from "@/lib/api/academic"
+import { api, type Page } from "@/lib/api/client"
+import { useSessionPage, type SessionDto, type SessionFilters } from "@/lib/api/sessions"
+import { addDays, weekdayOf } from "@/lib/dates"
+import { describeClass, fullName, indexLookups, type Lookups } from "@/lib/domain"
 import { countLabels, formatShortDate, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
-import type { ID, ISODate, Student } from "@/types/domain"
+import type { ISODate } from "@/types/domain"
 
 import { AttendanceAction } from "./attendance-action"
-import { useSessionRows, type SessionRow } from "./use-session-rows"
-import { useCurrentAcademicYear } from "@/lib/store/settings"
+import { toSessionRow, type SessionRow } from "./use-session-rows"
+import { useCurrentAcademicYear, usePlatformSettings } from "@/lib/store/settings"
 
 export type SessionTab = "today" | "pending" | "upcoming" | "done" | "cancelled" | "all"
 
@@ -34,67 +40,86 @@ const TABS: { value: SessionTab; label: string }[] = [
   { value: "all", label: "الكل" },
 ]
 
-/** Which tab a session belongs to (a session can be both "today" and "pending"). */
-function inTab(row: SessionRow, tab: SessionTab, today: ISODate) {
-  const { session, progress } = row
+/** Each tab is a server query (status + date bounds + order). */
+function tabFilters(tab: SessionTab, today: ISODate): SessionFilters {
   switch (tab) {
     case "today":
-      return session.date === today
+      return { from: today, to: today, order: "asc" }
     case "pending":
-      return session.date <= today && (progress.state === "NOT_RECORDED" || progress.state === "PARTIAL")
+      // Past/today lessons not completed yet: attendance missing or partial
+      return { to: today, status: "SCHEDULED", order: "desc" }
     case "upcoming":
-      return session.date > today && session.status !== "CANCELLED"
+      return { from: addDays(today, 1), status: "SCHEDULED", order: "asc" }
     case "done":
-      return session.status === "COMPLETED"
+      return { status: "COMPLETED", order: "desc" }
     case "cancelled":
-      return session.status === "CANCELLED"
+      return { status: "CANCELLED", order: "desc" }
     default:
-      return true
+      return { order: "desc" }
   }
+}
+
+/** Tab bounds ∩ period bounds; null when they cannot overlap (no request then). */
+function combine(tab: SessionFilters, range: { from?: ISODate; to?: ISODate }, extra: SessionFilters): SessionFilters | null {
+  const from = [tab.from, range.from].filter(Boolean).sort().at(-1)
+  const to = [tab.to, range.to].filter(Boolean).sort()[0]
+  if (from && to && to < from) return null
+  return { ...tab, ...extra, from, to }
 }
 
 export function SessionsView({
   lookups,
-  students,
   today,
   initialTab = "today",
   workspace = "admin",
-  groupClassIds,
 }: {
+  /** Admin: every reference; teacher: the teacher's own classes (workspace bundle) */
   lookups: Lookups
-  students: Student[]
   today: ISODate
   initialTab?: SessionTab
   workspace?: StaffWorkspace
-  /** Teacher workspace: only the sessions of these classes */
-  groupClassIds?: ID[]
 }) {
   const isTeacher = workspace === "teacher"
   const paths = workspacePaths(workspace)
   const indexes = indexLookups(lookups)
-  const rows = useSessionRows(lookups, students, today).filter(
-    (r) => !groupClassIds || groupClassIds.includes(r.session.groupClassId)
-  )
+  const pageSize = usePlatformSettings().defaultPageSize
   const [classId, setClassId] = useState(ALL)
   const [tab, setTab] = useState<SessionTab>(initialTab)
   const [period, setPeriod] = useState<Period>({ preset: "all" })
   const [groupId, setGroupId] = useState(ALL)
   const [branchId, setBranchId] = useState(ALL)
   const [teacherId, setTeacherId] = useState(ALL)
+  const [page, setPage] = useState(1)
+  const resetPage = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v)
+    setPage(1)
+  }
 
   const currentYear = useCurrentAcademicYear()
-
   const range = resolvePeriod(period, today, currentYear)
-  const matchesFilters = (row: SessionRow) =>
-    isWithin(row.session.date, range) &&
-    (groupId === ALL || row.group?.id === groupId) &&
-    (classId === ALL || row.session.groupClassId === classId) &&
-    (branchId === ALL || row.branch?.id === branchId) &&
-    (teacherId === ALL || (row.groupClass ? classTeacherIds(row.groupClass).includes(teacherId) : false))
-  const filteredAll = rows.filter(matchesFilters)
-  const filtered = filteredAll.filter((r) => inTab(r, tab, today))
-  // Future first-to-come; history most-recent first
-  const ordered = tab === "today" || tab === "upcoming" ? filtered : [...filtered].reverse()
+  const extra: SessionFilters = {
+    groupId: groupId === ALL ? undefined : groupId,
+    groupClassId: classId === ALL ? undefined : classId,
+    branchId: branchId === ALL ? undefined : branchId,
+    teacherId: teacherId === ALL ? undefined : teacherId,
+  }
+  const filters = combine(tabFilters(tab, today), range, extra)
+  const list = useSessionPage(workspace, filters ?? {}, page, pageSize, filters !== null)
+  // Tab badges: totals of the same filters per tab (one small request each)
+  const counts = useQueries({
+    queries: TABS.map((t) => {
+      const f = combine(tabFilters(t.value, today), range, extra)
+      return {
+        queryKey: [...keys.sessions, workspace, "count", t.value, f],
+        queryFn: ({ signal }: { signal: AbortSignal }) =>
+          api<Page<SessionDto>>(`/${workspace}/sessions`, { query: { ...f, page: 1, pageSize: 1 }, signal }),
+        enabled: f !== null,
+        select: (p: Page<SessionDto>) => p.meta.total,
+      }
+    }),
+  })
+  const rows = (list.data?.data ?? []).map((s) => toSessionRow(s, today))
+  const total = filters === null ? 0 : (list.data?.meta.total ?? 0)
 
   const hasActiveFilters = period.preset !== "all" || [groupId, classId, branchId, teacherId].some((v) => v !== ALL)
   const resetFilters = () => {
@@ -103,6 +128,7 @@ export function SessionsView({
     setGroupId(ALL)
     setBranchId(ALL)
     setTeacherId(ALL)
+    setPage(1)
   }
 
   const when = (row: SessionRow) => (
@@ -138,7 +164,7 @@ export function SessionsView({
       className: "hidden lg:table-cell",
       cell: (r) => <span className="text-sm">{r.supervisor ? fullName(r.supervisor) : "—"}</span>,
     },
-    { id: "students", header: "الطلبة", cell: (r) => <span className="tabular-nums">{r.roster.length}</span> },
+    { id: "students", header: "الطلبة", cell: (r) => <span className="tabular-nums">{r.expected}</span> },
     { id: "attendance", header: "الحضور", cell: (r) => <AttendanceStateLabel {...r.progress} /> },
     { id: "status", header: "الحالة", cell: (r) => <SessionStatusBadge status={r.session.status} /> },
     {
@@ -166,15 +192,18 @@ export function SessionsView({
       />
 
       <div role="tablist" aria-label="تصنيف الحصص" className="mb-4 flex gap-1 overflow-x-auto rounded-lg border bg-card p-1">
-        {TABS.map((t) => {
-          const count = filteredAll.filter((r) => inTab(r, t.value, today)).length
+        {TABS.map((t, index) => {
+          const count = combine(tabFilters(t.value, today), range, extra) === null ? 0 : counts[index].data
           return (
             <button
               key={t.value}
               type="button"
               role="tab"
               aria-selected={tab === t.value}
-              onClick={() => setTab(t.value)}
+              onClick={() => {
+                setTab(t.value)
+                setPage(1)
+              }}
               className={cn(
                 "flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors",
                 tab === t.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -185,46 +214,45 @@ export function SessionsView({
                 className={cn(
                   "rounded-full px-1.5 text-xs tabular-nums",
                   tab === t.value ? "bg-primary-foreground/20" : "bg-muted",
-                  t.value === "pending" && count > 0 && tab !== t.value && "bg-warning-soft text-warning"
+                  t.value === "pending" && (count ?? 0) > 0 && tab !== t.value && "bg-warning-soft text-warning"
                 )}
               >
-                {count}
+                {count ?? "…"}
               </span>
             </button>
           )
         })}
       </div>
 
-      <FilterBar hasActiveFilters={hasActiveFilters} onReset={resetFilters} resultLabel={countLabels.sessions(ordered.length)}>
-        <PeriodFilter value={period} onChange={setPeriod} />
+      <FilterBar hasActiveFilters={hasActiveFilters} onReset={resetFilters} resultLabel={countLabels.sessions(total)}>
+        <PeriodFilter value={period} onChange={resetPage(setPeriod)} />
         {isTeacher ? (
           // A teacher filters by their own classes only (group + branch)
-          (groupClassIds?.length ?? 0) > 1 && (
-            <FilterSelect label="المجموعة" allLabel="كل مجموعاتي" value={classId} onValueChange={setClassId}
-              options={(groupClassIds ?? []).flatMap((id) => {
-                const groupClass = indexes.classesById.get(id)
-                if (!groupClass) return []
+          lookups.groupClasses.length > 1 && (
+            <FilterSelect label="المجموعة" allLabel="كل مجموعاتي" value={classId} onValueChange={resetPage(setClassId)}
+              options={lookups.groupClasses.map((groupClass) => {
                 const view = describeClass(groupClass, indexes)
-                return [{ value: id, label: `${view.group?.name ?? ""} — ${view.branch?.name ?? ""}` }]
+                return { value: groupClass.id, label: `${view.group?.name ?? ""} — ${view.branch?.name ?? ""}` }
               })} />
           )
         ) : (
           <>
-            <FilterSelect label="المجموعة" allLabel="كل المجموعات" value={groupId} onValueChange={setGroupId}
+            <FilterSelect label="المجموعة" allLabel="كل المجموعات" value={groupId} onValueChange={resetPage(setGroupId)}
               options={lookups.groups.filter((g) => g.status === "ACTIVE").map((g) => ({ value: g.id, label: g.name }))} />
-            <FilterSelect label="الفرع" allLabel="كل الفروع" value={branchId} onValueChange={setBranchId}
+            <FilterSelect label="الفرع" allLabel="كل الفروع" value={branchId} onValueChange={resetPage(setBranchId)}
               options={lookups.branches.filter((b) => b.status === "ACTIVE").map((b) => ({ value: b.id, label: b.name }))} />
-            <FilterSelect label="المعلم" allLabel="كل المعلمين" value={teacherId} onValueChange={setTeacherId}
+            <FilterSelect label="المعلم" allLabel="كل المعلمين" value={teacherId} onValueChange={resetPage(setTeacherId)}
               options={lookups.teachers.filter((t) => t.status === "ACTIVE").map((t) => ({ value: t.id, label: fullName(t) }))} />
           </>
         )}
       </FilterBar>
 
+      <QueryState query={list}>
       <DataTable
-        key={`${tab}|${period.preset}|${range.from}|${range.to}|${groupId}|${classId}|${branchId}|${teacherId}`}
+        key={`${tab}|${period.preset}|${range.from}|${range.to}|${groupId}|${classId}|${branchId}|${teacherId}|${page}`}
         caption="قائمة الحصص"
         columns={columns}
-        rows={ordered}
+        rows={filters === null ? [] : rows}
         getRowId={(r) => r.session.id}
         emptyState={
           <EmptyState
@@ -245,7 +273,7 @@ export function SessionsView({
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1"><DoorOpen className="size-3.5" aria-hidden />{r.room?.name} · {r.branch?.name}</span>
               {r.supervisor && <span className="inline-flex items-center gap-1"><ShieldCheck className="size-3.5" aria-hidden />{fullName(r.supervisor)}</span>}
-              <span className="inline-flex items-center gap-1"><Users className="size-3.5" aria-hidden />{countLabels.students(r.roster.length)}</span>
+              <span className="inline-flex items-center gap-1"><Users className="size-3.5" aria-hidden />{countLabels.students(r.expected)}</span>
             </div>
             <div className="flex items-center justify-between gap-2">
               <AttendanceStateLabel {...r.progress} />
@@ -254,6 +282,8 @@ export function SessionsView({
           </div>
         )}
       />
+      <Pager page={page} totalPages={list.data?.meta.totalPages ?? 1} onPage={setPage} />
+      </QueryState>
     </>
   )
 }

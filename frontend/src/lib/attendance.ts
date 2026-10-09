@@ -11,6 +11,12 @@ import type {
   StudentAttendance,
 } from "@/types/domain"
 
+/** One student's status (and optional note) while taking attendance. */
+export interface AttendanceEntry {
+  status: AttendanceStatus
+  note?: string
+}
+
 export const ATTENDANCE_STATUSES: AttendanceStatus[] = ["PRESENT", "ABSENT", "EXCUSED", "LATE"]
 
 /**

@@ -7,7 +7,8 @@ import { toast } from "sonner"
 import type { RowAction } from "@/components/shared/actions-menu"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { fullName, indexLookups, studentClass, type Lookups } from "@/lib/domain"
-import { labels } from "@/lib/i18n"
+import { errorMessage } from "@/lib/api/errors"
+import { useSaveStudent, useSetStudentStatus, useTransferStudent } from "@/lib/api/hooks/people"
 import type { Student } from "@/types/domain"
 
 import { ChangeGroupDialog } from "./change-group-dialog"
@@ -23,21 +24,16 @@ type DialogState = {
   open: boolean
 }
 
-const mockSaved = { description: labels.common.mockNotice }
-
 /**
  * Owns the student dialogs (form, change group, confirmations) so the list
  * page and the profile page share one behaviour. `onChange` receives the
  * updated record — the list applies it locally; the profile only confirms.
  */
-export function useStudentDialogs({
-  lookups,
-  onChange,
-}: {
-  lookups: Lookups
-  onChange?: (student: Student, isNew: boolean) => void
-}) {
+export function useStudentDialogs({ lookups }: { lookups: Lookups }) {
   const [state, setState] = useState<DialogState | null>(null)
+  const saveStudent = useSaveStudent()
+  const setStatus = useSetStudentStatus()
+  const transfer = useTransferStudent()
 
   const close = (open: boolean) => {
     if (!open) setState((s) => (s ? { ...s, open: false } : s))
@@ -45,19 +41,16 @@ export function useStudentDialogs({
 
   function run(kind: StudentAction, student?: Student) {
     if (kind === "activate" && student) {
-      onChange?.({ ...student, status: "ACTIVE" }, false)
-      toast.success(`تم تفعيل ملف ${fullName(student)}`, mockSaved)
+      setStatus
+        .mutateAsync({ id: student.id, status: "ACTIVE" })
+        .then(() => toast.success(`تم تفعيل ملف ${fullName(student)}`))
+        .catch((error: unknown) => toast.error(errorMessage(error)))
       return
     }
     if (kind === "activate") return
     setState({ kind, student, key: Date.now(), open: true })
   }
 
-  function commit(student: Student, message: string, isNew = false) {
-    onChange?.(student, isNew)
-    toast.success(message, mockSaved)
-    close(false)
-  }
 
   const student = state?.student
   const isForm = state?.kind === "create" || state?.kind === "edit"
@@ -71,13 +64,15 @@ export function useStudentDialogs({
           onOpenChange={close}
           student={student}
           lookups={lookups}
-          onSave={(saved) =>
-            commit(
-              saved,
-              student ? `تم حفظ تعديلات ${fullName(saved)}` : `تمت إضافة ${fullName(saved)}`,
-              !student
-            )
-          }
+          onSave={async (input) => {
+            await saveStudent.mutateAsync({
+              id: student?.id,
+              input,
+              previous: student && { groupClassId: student.groupClassId, status: student.status },
+            })
+            toast.success(student ? `تم حفظ تعديلات ${fullName(input.person)}` : `تمت إضافة ${fullName(input.person)}`)
+            close(false)
+          }}
         />
       )}
       {state?.kind === "changeGroup" && student && (
@@ -87,12 +82,11 @@ export function useStudentDialogs({
           onOpenChange={close}
           student={student}
           lookups={lookups}
-          onConfirm={(groupClassId) => {
+          onConfirm={async (groupClassId) => {
             const target = studentClass({ groupClassId }, indexLookups(lookups))
-            commit(
-              { ...student, groupClassId },
-              `تم نقل ${fullName(student)} إلى ${target?.group?.name ?? ""} — ${target?.branch?.name ?? ""}`
-            )
+            await transfer.mutateAsync({ id: student.id, groupClassId })
+            toast.success(`تم نقل ${fullName(student)} إلى ${target?.group?.name ?? ""} — ${target?.branch?.name ?? ""}`)
+            close(false)
           }}
         />
       )}
@@ -108,14 +102,11 @@ export function useStudentDialogs({
               : `سيصبح ${fullName(student)} غير نشط مع الاحتفاظ بمجموعته وبياناته.`
           }
           confirmLabel={state.kind === "archive" ? "أرشفة" : "إيقاف مؤقت"}
-          onConfirm={() =>
-            commit(
-              { ...student, status: state.kind === "archive" ? "ARCHIVED" : "INACTIVE" },
-              state.kind === "archive"
-                ? `تمت أرشفة ملف ${fullName(student)}`
-                : `تم إيقاف ${fullName(student)} مؤقتًا`
-            )
-          }
+          onConfirm={async () => {
+            await setStatus.mutateAsync({ id: student.id, status: state.kind === "archive" ? "ARCHIVED" : "INACTIVE" })
+            toast.success(state.kind === "archive" ? `تمت أرشفة ملف ${fullName(student)}` : `تم إيقاف ${fullName(student)} مؤقتًا`)
+            close(false)
+          }}
         />
       )}
     </>

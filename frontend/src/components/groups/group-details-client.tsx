@@ -25,7 +25,7 @@ import {
   type Lookups,
 } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
-import { MOCK_TODAY } from "@/lib/mock/reference-date"
+import { todayInTunis } from "@/lib/dates"
 import { cn } from "@/lib/utils"
 import type { Group, Student } from "@/types/domain"
 
@@ -145,7 +145,7 @@ export function GroupStudentsTable({ students, lookups, groupId }: { students: S
       header: "الطالب",
       cell: (s) => (
         <Link href={`/admin/students/${s.id}`} className="block hover:opacity-80">
-          <PersonCell name={fullName(s)} photoUrl={s.photoUrl} secondary={`${ageOn(s.dateOfBirth, MOCK_TODAY)} سنة`} />
+          <PersonCell name={fullName(s)} photoUrl={s.photoUrl} secondary={`${ageOn(s.dateOfBirth, todayInTunis())} سنة`} />
         </Link>
       ),
     },

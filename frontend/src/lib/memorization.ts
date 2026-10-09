@@ -76,8 +76,10 @@ export function semesterOn(year: AcademicYear, date: ISODate): Semester | undefi
 }
 
 /** Default period to show: the current year and the semester "today" falls in (else the first). */
-export function defaultPeriod(years: AcademicYear[], today: ISODate) {
+export function defaultPeriod(years: AcademicYear[], today: ISODate): { academicYearId: ID; semester: Semester } {
   const year = years.find((y) => y.isCurrent) ?? years[years.length - 1]
+  // No academic year configured yet: nothing to select (screens show an empty state)
+  if (!year) return { academicYearId: "", semester: "SEMESTER_1" }
   return { academicYearId: year.id, semester: semesterOn(year, today) ?? "SEMESTER_1" }
 }
 

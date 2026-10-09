@@ -37,33 +37,43 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { canTakeAttendance } from "@/lib/attendance"
+import { errorMessage } from "@/lib/api/errors"
+import { useSetSessionStatus, type SessionRosterDto } from "@/lib/api/sessions"
 import { weekdayOf } from "@/lib/dates"
 import { fullName } from "@/lib/domain"
 import { countLabels, formatDate, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { operations } from "@/lib/store/operations"
 import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
 import type { ISODate } from "@/types/domain"
 
 import { SessionHeader } from "./session-header"
 import type { SessionRow } from "./use-session-rows"
 
-const mockSaved = { description: labels.common.mockNotice }
-
 /**
  * One dated session. In the teacher workspace the management actions
  * (complete / cancel / reschedule) are hidden: teachers only take attendance.
  */
-export function SessionDetails({ row, today, workspace = "admin" }: { row: SessionRow; today: ISODate; workspace?: StaffWorkspace }) {
-  const { session, group, roster, progress } = row
+export function SessionDetails({
+  row,
+  roster,
+  today,
+  workspace = "admin",
+}: {
+  row: SessionRow
+  roster: SessionRosterDto
+  today: ISODate
+  workspace?: StaffWorkspace
+}) {
+  const { session, group, progress } = row
   const paths = workspacePaths(workspace)
   const canManage = workspace === "admin"
+  const setStatus = useSetSessionStatus(session.id)
   const [dialog, setDialog] = useState<"cancel" | "complete" | null>(null)
   const [reason, setReason] = useState("")
-  const editable = canTakeAttendance(session, today)
-  const recordsByStudent = new Map(row.records.map((r) => [r.studentId, r]))
-  const teacherRecords = new Map(row.teacherRecords.map((r) => [r.teacherId, r]))
+  // The server decides (cancelled, future, teacher correction window)
+  const editable = roster.editable
+  // Expected students, plus anyone recorded who has since left the class
+  const students = roster.students.filter((s) => s.expected || s.recorded)
   const team = [
     ...(row.supervisor ? [{ teacher: row.supervisor, role: "SUPERVISOR" as const }] : []),
     ...row.assistants.map((teacher) => ({ teacher, role: "ASSISTANT" as const })),
@@ -79,10 +89,14 @@ export function SessionDetails({ row, today, workspace = "admin" }: { row: Sessi
     secondary.push({
       label: "إعادة برمجة الحصة",
       icon: RotateCcw,
-      onSelect: () => {
-        operations.setSessionStatus(session.id, "SCHEDULED")
-        toast.success("أُعيدت برمجة الحصة", mockSaved)
-      },
+      onSelect: () =>
+        setStatus.mutate(
+          { status: "SCHEDULED" },
+          {
+            onSuccess: () => toast.success("أُعيدت برمجة الحصة"),
+            onError: (error) => toast.error(errorMessage(error)),
+          }
+        ),
     })
   }
 
@@ -100,7 +114,7 @@ export function SessionDetails({ row, today, workspace = "admin" }: { row: Sessi
               <Button asChild>
                 <Link href={paths.attendance(session.id)}>
                   <ClipboardCheck />
-                  {row.records.length > 0 ? "تعديل الحضور" : "تسجيل الحضور"}
+                  {roster.recordedCount > 0 ? "تعديل الحضور" : "تسجيل الحضور"}
                 </Link>
               </Button>
             )}
@@ -141,21 +155,18 @@ export function SessionDetails({ row, today, workspace = "admin" }: { row: Sessi
                 <AttendanceProgress recorded={progress.recorded} expected={progress.expected} />
                 <AttendanceStats summary={row.summary} className="lg:grid-cols-5" />
                 <ul className="divide-y">
-                  {roster.map((student) => {
-                    const record = recordsByStudent.get(student.id)
-                    return (
-                      <li key={student.id} className="flex items-center justify-between gap-3 py-2.5">
-                        <Link href={paths.student(student.id)} className="min-w-0 hover:opacity-80">
-                          <PersonCell name={fullName(student)} photoUrl={student.photoUrl} size="sm" secondary={record?.note} />
-                        </Link>
-                        {record ? (
-                          <AttendanceStatusBadge status={record.status} />
-                        ) : (
-                          <span className="text-xs text-warning">لم يُسجَّل</span>
-                        )}
-                      </li>
-                    )
-                  })}
+                  {students.map((student) => (
+                    <li key={student.studentId} className="flex items-center justify-between gap-3 py-2.5">
+                      <Link href={paths.student(student.studentId)} className="min-w-0 hover:opacity-80">
+                        <PersonCell name={fullName(student)} photoUrl={student.photoUrl ?? undefined} size="sm" secondary={student.note ?? undefined} />
+                      </Link>
+                      {student.status ? (
+                        <AttendanceStatusBadge status={student.status} />
+                      ) : (
+                        <span className="text-xs text-warning">لم يُسجَّل</span>
+                      )}
+                    </li>
+                  ))}
                 </ul>
               </div>
             )}
@@ -191,30 +202,21 @@ export function SessionDetails({ row, today, workspace = "admin" }: { row: Sessi
                   ),
                   icon: Repeat,
                 },
-                { label: "عدد الطلبة", value: countLabels.students(roster.length), icon: Users },
+                { label: "عدد الطلبة", value: countLabels.students(roster.expectedCount), icon: Users },
               ]}
             />
           </SectionCard>
 
-          <SectionCard title="حضور المعلمين" icon={UsersRound}>
+          <SectionCard title="فريق الحصة" icon={UsersRound}>
             <ul className="space-y-3">
-              {team.map(({ teacher, role }) => {
-                const record = teacherRecords.get(teacher.id)
-                return (
-                  <li key={teacher.id} className="space-y-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <PersonCell name={fullName(teacher)} size="sm" />
-                      {record ? (
-                        <AttendanceStatusBadge status={record.status} />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">لم يُسجَّل</span>
-                      )}
-                    </div>
-                    <TeacherRoleBadge role={role} className="ms-10" />
-                  </li>
-                )
-              })}
+              {team.map(({ teacher, role }) => (
+                <li key={teacher.id} className="flex items-center justify-between gap-2">
+                  <PersonCell name={fullName(teacher)} size="sm" />
+                  <TeacherRoleBadge role={role} />
+                </li>
+              ))}
             </ul>
+            <p className="mt-3 text-xs text-muted-foreground">الفريق كما كان عند برمجة الحصة. حضور المعلمين لا يُسجَّل في المنصة حاليًا.</p>
           </SectionCard>
         </div>
       </div>
@@ -237,17 +239,27 @@ export function SessionDetails({ row, today, workspace = "admin" }: { row: Sessi
               maxLength={160}
             />
           </div>
+          {setStatus.isError && dialog === "cancel" && (
+            <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{errorMessage(setStatus.error)}</p>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialog(null)}>
+            <Button variant="outline" disabled={setStatus.isPending} onClick={() => setDialog(null)}>
               {labels.common.cancel}
             </Button>
             <Button
               variant="destructive"
-              onClick={() => {
-                operations.setSessionStatus(session.id, "CANCELLED", reason)
-                setDialog(null)
-                toast.success(`أُلغيت حصة ${formatDate(session.date)}`, mockSaved)
-              }}
+              disabled={setStatus.isPending}
+              onClick={() =>
+                setStatus.mutate(
+                  { status: "CANCELLED", cancellationReason: reason.trim() || undefined },
+                  {
+                    onSuccess: () => {
+                      setDialog(null)
+                      toast.success(`أُلغيت حصة ${formatDate(session.date)}`)
+                    },
+                  }
+                )
+              }
             >
               <CalendarX2 />
               إلغاء الحصة
@@ -262,13 +274,14 @@ export function SessionDetails({ row, today, workspace = "admin" }: { row: Sessi
         title="اعتبار الحصة منجزة؟"
         description={
           progress.recorded < progress.expected
-            ? `انتبه: ${countLabels.students(progress.expected - progress.recorded)} دون تسجيل حضور. يُفضّل إكمال الحضور أولًا.`
+            ? `انتبه: ${countLabels.students(progress.expected - progress.recorded)} دون تسجيل حضور. يُفضّل إكمال الحضور أولًا. سيُسجَّل هذا الإجراء كقرار إداري.`
             : "الحضور مسجَّل لكل الطلبة."
         }
         confirmLabel="تأكيد"
-        onConfirm={() => {
-          operations.setSessionStatus(session.id, "COMPLETED")
-          toast.success("سُجّلت الحصة كمنجزة", mockSaved)
+        onConfirm={async () => {
+          await setStatus.mutateAsync({ status: "COMPLETED", adminOverride: true })
+          setDialog(null)
+          toast.success("سُجّلت الحصة كمنجزة")
         }}
       />
     </>

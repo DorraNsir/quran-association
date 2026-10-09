@@ -1,10 +1,9 @@
 import type { Metadata } from "next"
 
-import { GroupsView } from "@/components/groups/groups-view"
-import { lookups, students } from "@/lib/mock"
+import { GroupsScreen } from "@/components/admin/admin-screens"
 
 export const metadata: Metadata = { title: "المجموعات" }
 
-export default function GroupsPage() {
-  return <GroupsView lookups={lookups} initialStudents={students} />
+export default function Page() {
+  return <GroupsScreen />
 }

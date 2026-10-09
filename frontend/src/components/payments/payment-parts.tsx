@@ -30,9 +30,11 @@ import {
   type ObligationSummary,
   type PaymentStatus,
 } from "@/lib/payments"
-import { operations } from "@/lib/store/operations"
+import { errorMessage } from "@/lib/api/errors"
+import { useRecordPayment as useRecordPaymentMutation, useSetReceipt } from "@/lib/api/finance"
+import { todayInTunis } from "@/lib/dates"
 import { cn } from "@/lib/utils"
-import type { GroupFee, ID, ISODate, Payment } from "@/types/domain"
+import type { GroupFee, Payment } from "@/types/domain"
 
 /** Informational only — never a student or access status. */
 export function PaymentStatusBadge({ status, className }: { status: PaymentStatus; className?: string }) {
@@ -76,6 +78,7 @@ export function ObligationFigures({ summary, className }: { summary: ObligationS
 
 /** Every transaction, with its own receipt state (admins can mark it delivered later). */
 export function PaymentHistory({ payments, canEdit }: { payments: Payment[]; canEdit: boolean }) {
+  const setReceipt = useSetReceipt()
   if (payments.length === 0) return <p className="py-2 text-sm text-muted-foreground">لا توجد دفعات مسجّلة.</p>
   return (
     <ol className="divide-y">
@@ -98,10 +101,16 @@ export function PaymentHistory({ payments, canEdit }: { payments: Payment[]; can
                 size="sm"
                 variant="outline"
                 className="h-7"
-                onClick={() => {
-                  operations.setReceiptIssued(p.id, true)
-                  toast.success("تم تسجيل تسليم الوصل", { description: "المبالغ لم تتغيّر." })
-                }}
+                disabled={setReceipt.isPending}
+                onClick={() =>
+                  setReceipt.mutate(
+                    { paymentId: p.id, receiptIssued: true },
+                    {
+                      onSuccess: () => toast.success("تم تسجيل تسليم الوصل", { description: "المبالغ لم تتغيّر." }),
+                      onError: (error) => toast.error(errorMessage(error)),
+                    }
+                  )
+                }
               >
                 <ReceiptText />
                 تسليم الوصل
@@ -121,17 +130,15 @@ export function RecordPaymentDialog({
   summary,
   fee,
   studentName,
-  recordedByUserId,
-  today,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   summary: ObligationSummary
   fee?: GroupFee
   studentName: string
-  recordedByUserId: ID
-  today: ISODate
 }) {
+  const today = todayInTunis()
+  const record = useRecordPaymentMutation()
   const periods = fee ? feePeriods(fee) : 1
   const paidPeriods = new Set(summary.payments.map((p) => p.periodNumber).filter(Boolean))
   const firstOpenPeriod = Array.from({ length: periods }, (_, i) => i + 1).find((n) => !paidPeriods.has(n)) ?? 1
@@ -147,7 +154,7 @@ export function RecordPaymentDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => !record.isPending && onOpenChange(next)}>
       <DialogContent className="sm:max-w-md">
         <form
           noValidate
@@ -155,8 +162,8 @@ export function RecordPaymentDialog({
           onSubmit={(e) => {
             e.preventDefault()
             setSubmitted(true)
-            if (errors.amount || errors.paidAt) return
-            const error = operations.recordPayment(
+            if (errors.amount || errors.paidAt || record.isPending) return
+            record.mutate(
               {
                 obligationId: summary.obligation.id,
                 amount: Number(amount),
@@ -165,12 +172,13 @@ export function RecordPaymentDialog({
                 periodNumber: periods > 1 ? Number(period) : undefined,
                 note,
               },
-              recordedByUserId,
-              today
+              {
+                onSuccess: () => {
+                  onOpenChange(false)
+                  toast.success(`تم تسجيل دفعة ${formatMoney(Number(amount))}`, { description: studentName })
+                },
+              }
             )
-            if (error) return toast.error(error)
-            onOpenChange(false)
-            toast.success(`تم تسجيل دفعة ${formatMoney(Number(amount))}`, { description: studentName })
           }}
         >
           <DialogHeader>
@@ -231,11 +239,12 @@ export function RecordPaymentDialog({
             <Textarea id="pay-note" rows={2} maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
 
+          {record.isError && <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{errorMessage(record.error)}</p>}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" disabled={record.isPending} onClick={() => onOpenChange(false)}>
               {labels.common.cancel}
             </Button>
-            <Button type="submit" className="min-w-24">
+            <Button type="submit" className="min-w-24" disabled={record.isPending}>
               <Plus />
               تسجيل الدفعة
             </Button>
@@ -252,7 +261,7 @@ export function useRecordPayment() {
   return {
     open: (summary: ObligationSummary, fee: GroupFee | undefined, studentName: string) =>
       setTarget((p) => ({ summary, fee, studentName, key: (p?.key ?? 0) + 1, open: true })),
-    render: (recordedByUserId: ID, today: ISODate) =>
+    render: () =>
       target ? (
         <RecordPaymentDialog
           key={target.key}
@@ -261,8 +270,6 @@ export function useRecordPayment() {
           summary={target.summary}
           fee={target.fee}
           studentName={target.studentName}
-          recordedByUserId={recordedByUserId}
-          today={today}
         />
       ) : null,
   }

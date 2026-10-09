@@ -15,7 +15,8 @@ import {
 import { useFormState } from "@/hooks/use-form-state"
 import { ageOn, type Lookups } from "@/lib/domain"
 import { labels } from "@/lib/i18n"
-import { MOCK_TODAY, newMockId } from "@/lib/mock/reference-date"
+import type { PhotoChange, StudentInput } from "@/lib/api/hooks/people"
+import { todayInTunis } from "@/lib/dates"
 import {
   isValidCin,
   normalizePhone,
@@ -27,6 +28,8 @@ import type { Gender, Student, StudentStatus } from "@/types/domain"
 
 interface StudentFormValues {
   photoUrl?: string
+  /** undefined = unchanged, null = removed, File = new photo */
+  photoFile: PhotoChange
   firstName: string
   lastName: string
   gender: Gender | ""
@@ -43,6 +46,7 @@ interface StudentFormValues {
 function toValues(student?: Partial<Student>): StudentFormValues {
   return {
     photoUrl: student?.photoUrl,
+    photoFile: undefined,
     firstName: student?.firstName ?? "",
     lastName: student?.lastName ?? "",
     gender: student?.gender ?? "",
@@ -51,14 +55,14 @@ function toValues(student?: Partial<Student>): StudentFormValues {
     phone: student?.phone ?? "",
     guardianPhone: student?.guardianPhone ?? "",
     address: student?.address ?? "",
-    registrationDate: student?.registrationDate ?? MOCK_TODAY,
+    registrationDate: student?.registrationDate ?? todayInTunis(),
     groupClassId: student?.groupClassId ?? "",
     status: student?.status ?? "ACTIVE",
   }
 }
 
 function ageFrom(dateOfBirth: string) {
-  return dateOfBirth ? ageOn(dateOfBirth, MOCK_TODAY) : null
+  return dateOfBirth ? ageOn(dateOfBirth, todayInTunis()) : null
 }
 
 function validate(v: StudentFormValues) {
@@ -102,7 +106,8 @@ export function StudentFormSheet({
   description?: string
   submitLabel?: string
   lookups: Lookups
-  onSave: (student: Student) => void
+  /** Saves through the API; a rejection is shown in the form */
+  onSave: (input: StudentInput) => Promise<void>
 }) {
   const form = useFormState(`student-${student?.id ?? "new"}`, toValues(student ?? prefill), validate)
   const { values, setField } = form
@@ -110,20 +115,21 @@ export function StudentFormSheet({
   const isMinor = age !== null && age < 18
 
   const submit = form.handleSubmit((v) => {
-    onSave({
-      id: student?.id ?? newMockId("s"),
-      firstName: v.firstName.trim(),
-      lastName: v.lastName.trim(),
-      gender: v.gender as Gender,
-      dateOfBirth: v.dateOfBirth,
-      cin: v.cin.trim() || undefined,
-      phone: normalizePhone(v.phone) || undefined,
-      guardianPhone: normalizePhone(v.guardianPhone) || undefined,
-      address: v.address.trim(),
-      photoUrl: v.photoUrl,
+    return onSave({
+      person: {
+        firstName: v.firstName.trim(),
+        lastName: v.lastName.trim(),
+        gender: v.gender as Gender,
+        dateOfBirth: v.dateOfBirth,
+        address: v.address.trim(),
+        phone: normalizePhone(v.phone) || null,
+      },
+      cin: v.cin.trim() || null,
+      guardianPhone: normalizePhone(v.guardianPhone) || null,
       registrationDate: v.registrationDate,
       groupClassId: v.groupClassId,
       status: v.status,
+      photo: v.photoFile,
     })
   })
 
@@ -135,6 +141,8 @@ export function StudentFormSheet({
       description={description ?? "الحقول المعلَّمة بـ * إلزامية."}
       onSubmit={submit}
       submitLabel={submitLabel ?? (student ? "حفظ التعديلات" : "إضافة الطالب")}
+      pending={form.pending}
+      error={form.serverError}
     >
       <FormSection title="الهوية" description="المعلومات الشخصية كما تظهر في وثائق الطالب.">
         <PhotoInput
@@ -142,6 +150,7 @@ export function StudentFormSheet({
           name={`${values.firstName} ${values.lastName}`.trim()}
           value={values.photoUrl}
           onChange={(url) => setField("photoUrl", url)}
+          onFile={(file) => setField("photoFile", file)}
         />
         <FormField label="الاسم" required {...form.field("firstName")}>
           <Input {...form.inputProps("firstName")} autoComplete="given-name" />
@@ -152,7 +161,7 @@ export function StudentFormSheet({
         <FormField label="تاريخ الولادة" required {...form.field("dateOfBirth")}
           description={age !== null && age >= 0 ? `العمر: ${age} سنة` : undefined}
         >
-          <Input type="date" max={MOCK_TODAY} {...form.inputProps("dateOfBirth")} />
+          <Input type="date" max={todayInTunis()} {...form.inputProps("dateOfBirth")} />
         </FormField>
         <FormField label="الجنس" required {...form.field("gender")}>
           <Select

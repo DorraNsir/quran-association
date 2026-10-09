@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/select"
 import { useFormState } from "@/hooks/use-form-state"
 import { labels } from "@/lib/i18n"
-import { MOCK_TODAY, newMockId } from "@/lib/mock/reference-date"
 import { requiredText } from "@/lib/validation"
 import type { Group, GroupStatus } from "@/types/domain"
 
@@ -37,7 +36,8 @@ export function GroupFormSheet({
   group?: Group
   /** Names of the other groups, to prevent duplicates */
   otherNames: string[]
-  onSave: (group: Group) => void
+  /** Saves through the API; a rejection is shown in the form */
+  onSave: (values: { name: string; audience: string; status: Group["status"] }) => Promise<void>
 }) {
   const form = useFormState<GroupFormValues>(
     `group-${group?.id ?? "new"}`,
@@ -50,13 +50,7 @@ export function GroupFormSheet({
   )
 
   const submit = form.handleSubmit((v) =>
-    onSave({
-      id: group?.id ?? newMockId("g"),
-      createdAt: group?.createdAt ?? MOCK_TODAY,
-      name: v.name.trim(),
-      audience: v.audience.trim(),
-      status: v.status,
-    })
+    onSave({ name: v.name.trim(), audience: v.audience.trim(), status: v.status })
   )
 
   return (
@@ -70,6 +64,8 @@ export function GroupFormSheet({
           : "بعد الإنشاء، أضف حلقات المجموعة (فرع، مدرس مشرف، طلبة، مواعيد) من صفحتها."
       }
       onSubmit={submit}
+      pending={form.pending}
+      error={form.serverError}
       submitLabel={group ? "حفظ التعديلات" : "إنشاء المجموعة"}
     >
       <FormSection title="المعلومات العامة">

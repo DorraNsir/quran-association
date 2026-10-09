@@ -117,6 +117,7 @@ export const labels = {
     TEACHERS: "المعلمون",
     STUDENTS: "الطلاب",
     SPECIFIC_GROUP_CLASSES: "فصول محددة",
+    SPECIFIC_BRANCHES: "فروع محددة",
   } satisfies Record<AnnouncementAudienceType, string>,
   registrationSource: {
     PUBLIC_WEBSITE: "الموقع الإلكتروني",
