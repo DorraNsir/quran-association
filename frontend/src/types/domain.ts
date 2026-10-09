@@ -129,7 +129,7 @@ export interface Group {
 export type GroupClassStatus = RecordStatus
 
 /**
- * One actual class of a Group ("حلقة" in the UI): its own branch, room,
+ * One actual class of a Group ("قسم" in the UI): its own branch, room,
  * supervisor (exactly one), assistants (zero or more), weekly schedule,
  * sessions and attendance. Students point to it (Student.groupClassId).
  *

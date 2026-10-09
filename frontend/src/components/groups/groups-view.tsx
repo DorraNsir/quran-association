@@ -104,7 +104,7 @@ export function GroupsView({ lookups, students }: { lookups: Lookups; students: 
               <span className="text-xs text-muted-foreground"> · {countLabels.students(counts.get(v.groupClass.id) ?? 0)}</span>
             </li>
           ))}
-          {classViews(g).length === 0 && <li className="text-muted-foreground">لا توجد حلقات بعد</li>}
+          {classViews(g).length === 0 && <li className="text-muted-foreground">لا توجد أقسام بعد</li>}
         </ul>
       ),
     },
@@ -122,7 +122,7 @@ export function GroupsView({ lookups, students }: { lookups: Lookups; students: 
     <>
       <PageHeader
         title="المجموعات"
-        description="المجموعات البيداغوجية وحلقاتها: لكل حلقة فرعها وقاعتها ومدرسها المشرف وطلبتها ومواعيدها."
+        description="المجموعات البيداغوجية وأقسامها: لكل قسم فرعه وقاعته ومدرسه المشرف وطلبته ومواعيده."
         actions={
           <Button onClick={() => run("create")}>
             <Plus />
@@ -217,7 +217,7 @@ function GroupCard({
       </div>
 
       <ul className="mt-auto divide-y border-t">
-        {classes.length === 0 && <li className="px-4 py-3 text-xs text-muted-foreground">لا توجد حلقات بعد</li>}
+        {classes.length === 0 && <li className="px-4 py-3 text-xs text-muted-foreground">لا توجد أقسام بعد</li>}
         {classes.map((v) => (
           <li key={v.groupClass.id} className={cn("space-y-1.5 px-4 py-3", v.groupClass.status !== "ACTIVE" && "opacity-60")}>
             <div className="flex items-center justify-between gap-2 text-sm">

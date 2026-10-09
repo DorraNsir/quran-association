@@ -68,7 +68,7 @@ function BranchDetailsBody({ id, lookups }: { id: string; lookups: Lookups }) {
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="القاعات النشطة" value={`${stats.activeRooms}/${stats.rooms}`} icon={DoorOpen} />
-        <StatCard label="الحلقات النشطة" value={stats.activeClasses} icon={Users} />
+        <StatCard label="الأقسام النشطة" value={stats.activeClasses} icon={Users} />
         <StatCard label="الحصص أسبوعيًا" value={stats.weeklySessions} icon={CalendarClock} />
         <StatCard label="ساعات الاستعمال" value={formatDuration(stats.weeklyMinutes)} icon={Clock} hint="أسبوعيًا، كل القاعات" />
       </div>
@@ -77,9 +77,9 @@ function BranchDetailsBody({ id, lookups }: { id: string; lookups: Lookups }) {
         <div className="lg:col-span-3">
           <BranchRooms branch={branch} lookups={lookups} />
         </div>
-        <SectionCard title="الحلقات في هذا الفرع" icon={BookOpen} className="h-fit lg:col-span-2">
+        <SectionCard title="الأقسام في هذا الفرع" icon={BookOpen} className="h-fit lg:col-span-2">
           {branchClasses.length === 0 ? (
-            <EmptyState icon={Users} title="لا توجد حلقات" className="py-6" />
+            <EmptyState icon={Users} title="لا توجد أقسام" className="py-6" />
           ) : (
             <ul className="divide-y">
               {branchClasses.map((v) => (

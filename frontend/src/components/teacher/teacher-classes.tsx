@@ -218,7 +218,7 @@ export function TeacherClassDetails({
         </div>
 
         <div className="space-y-6">
-          <SectionCard title="الحلقة" icon={BookOpen}>
+          <SectionCard title="القسم" icon={BookOpen}>
             <InfoList
               className="sm:grid-cols-1"
               items={[

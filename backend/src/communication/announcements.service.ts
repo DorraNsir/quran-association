@@ -100,7 +100,7 @@ const targetInvalid = (message: string) =>
 const classAccessDenied = () =>
   new ForbiddenException({
     code: 'ANNOUNCEMENT_CLASS_ACCESS_DENIED',
-    message: 'لا يمكنك توجيه إعلان إلا لحلقاتك الحالية',
+    message: 'لا يمكنك توجيه إعلان إلا لأقسامك الحالية',
   });
 const dateRangeInvalid = () =>
   badRequest('INVALID_DATE_RANGE', 'تاريخ الانتهاء يجب ألا يسبق تاريخ النشر');
@@ -616,12 +616,12 @@ export class AnnouncementsService {
   ): Targets {
     if (audience === AnnouncementAudience.SPECIFIC_GROUP_CLASSES) {
       if (!groupClassIds.length || branchIds.length)
-        throw targetInvalid('اختر حلقة واحدة على الأقل (groupClassIds فقط)');
+        throw targetInvalid('اختر قسمًا واحدًا على الأقل (groupClassIds فقط)');
     } else if (audience === AnnouncementAudience.SPECIFIC_BRANCHES) {
       if (!branchIds.length || groupClassIds.length)
         throw targetInvalid('اختر فرعًا واحدًا على الأقل (branchIds فقط)');
     } else if (groupClassIds.length || branchIds.length) {
-      throw targetInvalid('هذا الجمهور لا يحدَّد له فرع أو حلقة');
+      throw targetInvalid('هذا الجمهور لا يحدَّد له فرع أو قسم');
     }
     return { audience, groupClassIds, branchIds };
   }
@@ -636,7 +636,7 @@ export class AnnouncementsService {
         },
       });
       if (n !== t.groupClassIds.length)
-        throw targetInvalid('حلقة غير موجودة أو غير نشطة');
+        throw targetInvalid('قسم غير موجود أو غير نشط');
     }
     if (t.branchIds.length) {
       const n = await tx.branch.count({

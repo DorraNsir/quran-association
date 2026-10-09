@@ -64,7 +64,7 @@ export function AttentionList({ lookups, students }: { lookups: Lookups; student
       alerts.push({
         id: `branch-${branch.id}`,
         title: `${branch.name} مغلق مؤقتًا`,
-        detail: `${countLabels.classes(affected.length)} مرتبطة بهذا الفرع.`,
+        detail: `عدد الأقسام المرتبطة بهذا الفرع: ${affected.length}.`,
         href: "/admin/groups",
       })
     }

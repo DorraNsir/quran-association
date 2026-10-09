@@ -467,11 +467,11 @@ export class RegistrationService {
     });
     if (!groupClass) throw classNotFound();
     if (groupClass.status !== RecordStatus.ACTIVE)
-      throw conflict('GROUP_CLASS_INACTIVE', 'الحلقة غير نشطة: اختر حلقة نشطة');
+      throw conflict('GROUP_CLASS_INACTIVE', 'القسم غير نشط: اختر قسمًا نشطًا');
     if (groupClass.group.status !== RecordStatus.ACTIVE)
-      throw conflict('GROUP_INACTIVE', 'مجموعة هذه الحلقة غير نشطة');
+      throw conflict('GROUP_INACTIVE', 'مجموعة هذا القسم غير نشطة');
     if (groupClass.branch.status !== ActivationStatus.ACTIVE)
-      throw conflict('BRANCH_INACTIVE', 'فرع هذه الحلقة غير نشط');
+      throw conflict('BRANCH_INACTIVE', 'فرع هذا القسم غير نشط');
   }
 
   /**

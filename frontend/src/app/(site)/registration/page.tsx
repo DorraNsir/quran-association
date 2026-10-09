@@ -5,7 +5,7 @@ import { PageHero } from "@/components/website/blocks"
 
 export const metadata: Metadata = {
   title: "طلب التسجيل",
-  description: "قدّم طلب التسجيل في حلقات الفرع المحلي عمر بن الخطاب.",
+  description: "قدّم طلب التسجيل في أقسام الفرع المحلي عمر بن الخطاب.",
 }
 
 /**
@@ -17,7 +17,7 @@ export default async function RegistrationPage(props: PageProps<"/registration">
   const { interest } = await props.searchParams
   return (
     <>
-      <PageHero eyebrow="التسجيل" title="طلب التسجيل" intro="املأ الاستمارة وسيتواصل معك فريق الجمعية لاستكمال التسجيل واختيار الحلقة المناسبة." />
+      <PageHero eyebrow="التسجيل" title="طلب التسجيل" intro="املأ الاستمارة وسيتواصل معك فريق الجمعية لاستكمال التسجيل واختيار القسم المناسب." />
       <div className="px-4 py-10 sm:py-14">
         <PublicRegistrationForm interestId={typeof interest === "string" ? interest : undefined} />
       </div>

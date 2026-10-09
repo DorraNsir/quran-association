@@ -13,7 +13,7 @@ export function EnrollmentHistory({ studentId }: { studentId: string }) {
   const enrollments = useStudentEnrollments(studentId)
   const rows = [...(enrollments.data ?? [])].sort((a, b) => b.startDate.localeCompare(a.startDate))
   return (
-    <SectionCard title="سجل الحلقات" icon={History}>
+    <SectionCard title="سجل الأقسام" icon={History}>
       <QueryState query={enrollments} empty={rows.length === 0} emptyTitle="لا يوجد سجل بعد">
         <ul className="divide-y">
           {rows.map((e) => (

@@ -82,7 +82,7 @@ function validate(v: StudentFormValues) {
     guardianPhone: phoneError(v.guardianPhone, { required: isMinor }),
     address: requiredText(v.address, "العنوان مطلوب"),
     registrationDate: requiredText(v.registrationDate, "تاريخ التسجيل مطلوب"),
-    groupClassId: v.groupClassId ? undefined : "اختر المجموعة ثم الحلقة التي يدرس فيها الطالب",
+    groupClassId: v.groupClassId ? undefined : "اختر المجموعة ثم القسم الذي يدرس فيه الطالب",
   }
 }
 
@@ -226,9 +226,9 @@ export function StudentFormSheet({
 
       <FormSection
         title="التسجيل"
-        description="يدرس الطالب في حلقة واحدة: تحدد المجموعة والفرع والمدرس المشرف والمواعيد."
+        description="يدرس الطالب في قسم واحد: تحدد المجموعة والفرع والمدرس المشرف والمواعيد."
       >
-        <FormField label="المجموعة والحلقة" required className="sm:col-span-2" {...form.field("groupClassId")}>
+        <FormField label="المجموعة والقسم" required className="sm:col-span-2" {...form.field("groupClassId")}>
           <ClassPicker
             id={form.field("groupClassId").id}
             value={values.groupClassId}

@@ -60,16 +60,16 @@ export function ChangeGroupDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>تغيير المجموعة أو الحلقة</DialogTitle>
+          <DialogTitle>تغيير المجموعة أو القسم</DialogTitle>
           <DialogDescription>
-            يدرس {fullName(student)} في حلقة واحدة. يمكن نقله إلى مجموعة أخرى، أو إلى حلقة أخرى من نفس المجموعة.
+            يدرس {fullName(student)} في قسم واحد. يمكن نقله إلى مجموعة أخرى، أو إلى قسم آخر من نفس المجموعة.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           {current && (
             <div className="space-y-1 rounded-lg border bg-muted/40 p-3 text-sm">
-              <p className="text-xs text-muted-foreground">الحلقة الحالية</p>
+              <p className="text-xs text-muted-foreground">القسم الحالي</p>
               <p className="font-medium">
                 {current.group?.name} · {current.branch?.name}
               </p>
@@ -87,7 +87,7 @@ export function ChangeGroupDialog({
           )}
 
           <div className="space-y-1.5">
-            <Label htmlFor="change-class-target">الحلقة الجديدة</Label>
+            <Label htmlFor="change-class-target">القسم الجديد</Label>
             <ClassPicker
               id="change-class-target"
               value={targetId}

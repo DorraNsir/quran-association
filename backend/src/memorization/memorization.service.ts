@@ -185,8 +185,7 @@ export class MemorizationService {
       }),
       this.year(ref.academicYearId),
     ]);
-    if (!groupClass)
-      throw notFound('GROUP_CLASS_NOT_FOUND', 'الحلقة غير موجودة');
+    if (!groupClass) throw notFound('GROUP_CLASS_NOT_FOUND', 'القسم غير موجود');
     const range = semesterRange(year, ref.semester);
     if (actor.kind === 'teacher')
       await this.access.assertClassAccess(actor.userId, groupClassId, range);
@@ -290,7 +289,7 @@ export class MemorizationService {
     if (!enrolled) {
       throw conflict(
         'MEMORIZATION_STUDENT_NOT_ENROLLED',
-        'لم يكن الطالب مسجّلًا في أي حلقة خلال هذا السداسي',
+        'لم يكن الطالب مسجّلًا في أي قسم خلال هذا السداسي',
       );
     }
   }

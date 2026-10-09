@@ -93,7 +93,7 @@ export function ConflictAlert({
                           </span>
                         </p>
                       )}
-                      {c.type === "CLASS" && <p>حصة أخرى لنفس الحلقة · {when}</p>}
+                      {c.type === "CLASS" && <p>حصة أخرى لنفس القسم · {when}</p>}
                     </li>
                   )
                 })}

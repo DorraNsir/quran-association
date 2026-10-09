@@ -123,7 +123,7 @@ export const countLabels = {
   rooms: (n: number) =>
     pluralize(n, { one: "قاعة واحدة", two: "قاعتان", few: "قاعات", many: "قاعة" }),
   classes: (n: number) =>
-    pluralize(n, { one: "حلقة واحدة", two: "حلقتان", few: "حلقات", many: "حلقة" }),
+    pluralize(n, { one: "قسم واحد", two: "قسمان", few: "أقسام", many: "قسمًا" }),
   sessions: (n: number) =>
     pluralize(n, { one: "حصة واحدة", two: "حصتان", few: "حصص", many: "حصة" }),
 }

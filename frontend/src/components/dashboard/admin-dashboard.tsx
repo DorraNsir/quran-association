@@ -55,7 +55,7 @@ export function AdminDashboard() {
             <StatCard label="المعلمون النشطون" value={s.teachers.active} icon={UsersRound} href="/admin/teachers"
               hint={`${s.teachers.total - s.teachers.active} غير نشط`} />
             <StatCard label="المجموعات النشطة" value={s.groups.active} icon={Users} href="/admin/groups"
-              hint={`${countLabels.classes(s.groups.runningClasses)} نشطة · ${s.groups.total - s.groups.active} متوقفة أو مؤرشفة`} />
+              hint={`الأقسام النشطة: ${s.groups.runningClasses} · ${s.groups.total - s.groups.active} متوقفة أو مؤرشفة`} />
             <StatCard label="الفروع" value={s.branches.total} icon={Building2} href="/admin/branches"
               hint={`${s.branches.active} نشطة · ${countLabels.rooms(s.branches.activeRooms)} متاحة`} />
           </section>

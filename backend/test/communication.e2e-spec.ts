@@ -1063,7 +1063,7 @@ describe('Resources, announcements & notifications (e2e)', () => {
 
     it('publication is atomic: an invalid target publishes nothing and notifies nobody', async () => {
       const draftId = await adminAnnouncement({
-        title: 'إلى حلقة ستُغلق',
+        title: 'إلى قسم سيُغلق',
         audience: 'SPECIFIC_GROUP_CLASSES',
         groupClassIds: [id.C4],
         mode: 'DRAFT',

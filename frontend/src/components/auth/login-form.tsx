@@ -151,7 +151,7 @@ export function LoginForm() {
           </CardContent>
         </Card>
         <p className="mt-5 text-center text-xs text-muted-foreground">
-          الحسابات تُنشأ من طرف إدارة الجمعية. للتسجيل في الحلقات استعمل{" "}
+          الحسابات تُنشأ من طرف إدارة الجمعية. للتسجيل في الأقسام استعمل{" "}
           <Link href="/registration" className="text-primary underline-offset-4 hover:underline">
             طلب التسجيل
           </Link>

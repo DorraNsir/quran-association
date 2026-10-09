@@ -38,7 +38,7 @@ export function GroupProfileActions({ group, lookups, students }: { group: Group
     <>
       <Button onClick={() => run("add-class", group)}>
         <Plus />
-        إضافة حلقة
+        إضافة قسم
       </Button>
       <Button variant="outline" onClick={() => run("edit", group)}>
         <Pencil />
@@ -67,12 +67,12 @@ export function GroupClassList({ group, lookups, students }: { group: Group; loo
         <Card className="p-0">
           <EmptyState
             icon={DoorOpen}
-            title="لا توجد حلقات لهذه المجموعة بعد"
-            description="أضف حلقة لتحديد الفرع والمدرس المشرف والطلبة والمواعيد."
+            title="لا توجد أقسام لهذه المجموعة بعد"
+            description="أضف قسمًا لتحديد الفرع والمدرس المشرف والطلبة والمواعيد."
             action={
               <Button size="sm" onClick={() => run("add-class", group)}>
                 <Plus />
-                إضافة حلقة
+                إضافة قسم
               </Button>
             }
           />
@@ -93,7 +93,7 @@ export function GroupClassList({ group, lookups, students }: { group: Group; loo
                       {v.room?.name} · {countLabels.students(counts.get(v.groupClass.id) ?? 0)}
                     </p>
                   </div>
-                  <ActionsMenu label={`إجراءات حلقة ${v.branch?.name ?? ""}`} actions={classActions(group, v.groupClass, runClass)} />
+                  <ActionsMenu label={`إجراءات قسم ${v.branch?.name ?? ""}`} actions={classActions(group, v.groupClass, runClass)} />
                 </div>
                 <div className="space-y-2 p-4">
                   {v.supervisor && (
@@ -149,7 +149,7 @@ export function GroupStudentsTable({ students, lookups, groupId }: { students: S
         </Link>
       ),
     },
-    { id: "class", header: "الحلقة (الفرع — المدرس المشرف)", cell: (s) => <span className="text-sm">{classLabel(s.groupClassId)}</span> },
+    { id: "class", header: "القسم (الفرع — المدرس المشرف)", cell: (s) => <span className="text-sm">{classLabel(s.groupClassId)}</span> },
     {
       id: "contact",
       header: "هاتف التواصل",
@@ -173,8 +173,8 @@ export function GroupStudentsTable({ students, lookups, groupId }: { students: S
   return (
     <div className="space-y-3">
       {classes.length > 1 && (
-        <div role="tablist" aria-label="تصفية حسب الحلقة" className="flex flex-wrap gap-1">
-          {[{ id: "all", label: `كل الحلقات (${classes.length})` }, ...classes.map((c) => ({ id: c.id, label: classLabel(c.id) }))].map((t) => (
+        <div role="tablist" aria-label="تصفية حسب القسم" className="flex flex-wrap gap-1">
+          {[{ id: "all", label: `كل الأقسام (${classes.length})` }, ...classes.map((c) => ({ id: c.id, label: classLabel(c.id) }))].map((t) => (
             <button key={t.id} type="button" role="tab" aria-selected={classId === t.id} onClick={() => setClassId(t.id)}
               className={cn("rounded-full border px-3 py-1 text-sm transition-colors", classId === t.id ? "border-primary bg-primary text-primary-foreground" : "bg-card hover:bg-muted")}>
               {t.label}
@@ -188,7 +188,7 @@ export function GroupStudentsTable({ students, lookups, groupId }: { students: S
         columns={columns}
         rows={rows}
         getRowId={(s) => s.id}
-        emptyState={<EmptyState icon={Users} title="لا يوجد طلبة" description="أضف طلبة من خلال تعديل الحلقة أو من صفحة الطلبة." />}
+        emptyState={<EmptyState icon={Users} title="لا يوجد طلبة" description="أضف طلبة من خلال تعديل القسم أو من صفحة الطلبة." />}
         renderMobileCard={(s) => (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-3">

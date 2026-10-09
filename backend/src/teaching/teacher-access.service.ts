@@ -23,7 +23,7 @@ export interface DateRange {
 const denied = () =>
   new ForbiddenException({
     code: 'TEACHER_CLASS_ACCESS_DENIED',
-    message: 'لست مكلّفًا بهذه الحلقة',
+    message: 'لست مكلّفًا بهذا القسم',
   });
 
 /**

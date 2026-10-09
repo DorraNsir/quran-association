@@ -120,10 +120,10 @@ function GroupDetailsBody({ id, lookups, students }: { id: string; lookups: Look
             content: (
               <div className="space-y-6">
                 <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-                  <StatCard label="الحلقات" value={classes.length} icon={DoorOpen}
+                  <StatCard label="الأقسام" value={classes.length} icon={DoorOpen}
                     hint={running.length < classes.length ? `${running.length} نشطة` : undefined} />
                   <StatCard label="الطلبة النشطون" value={activeMembers.length} icon={Users}
-                    hint={classes.length > 1 ? "في كل الحلقات" : undefined} />
+                    hint={classes.length > 1 ? "في كل الأقسام" : undefined} />
                   <StatCard label="المعلمون" value={teacherCount} icon={UsersRound} />
                   <StatCard label="الحصص أسبوعيًا" value={weeklySlots.length} icon={CalendarClock} />
                 </div>
@@ -133,7 +133,7 @@ function GroupDetailsBody({ id, lookups, students }: { id: string; lookups: Look
                 <section aria-labelledby="classes-heading" className="space-y-3">
                   <h2 id="classes-heading" className="flex items-center gap-2 text-sm font-semibold">
                     <DoorOpen className="size-4 text-primary" aria-hidden />
-                    حلقات المجموعة
+                    أقسام المجموعة
                   </h2>
                   <GroupClassList group={group} lookups={lookups} students={students} />
                 </section>
@@ -182,7 +182,7 @@ function GroupDetailsBody({ id, lookups, students }: { id: string; lookups: Look
             content: (
               <div className="space-y-6">
                 {classes.map((v) => (
-                  <SectionCard key={v.groupClass.id} title={`حلقة ${v.branch?.name ?? ""} · ${v.room?.name ?? ""}`} icon={DoorOpen}>
+                  <SectionCard key={v.groupClass.id} title={`قسم ${v.branch?.name ?? ""} · ${v.room?.name ?? ""}`} icon={DoorOpen}>
                     <div className="grid gap-3 sm:grid-cols-2">
                       {v.supervisor && <TeacherCard teacher={v.supervisor} role="SUPERVISOR" />}
                       {v.assistants.map((t) => (
@@ -190,7 +190,7 @@ function GroupDetailsBody({ id, lookups, students }: { id: string; lookups: Look
                       ))}
                       {v.assistants.length === 0 && (
                         <div className="flex items-center justify-center rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-                          لا يوجد معلم مساعد في هذه الحلقة.
+                          لا يوجد معلم مساعد في هذا القسم.
                         </div>
                       )}
                     </div>
@@ -205,7 +205,7 @@ function GroupDetailsBody({ id, lookups, students }: { id: string; lookups: Look
             icon: <CalendarClock aria-hidden />,
             content: (
               <SectionCard
-                title="البرنامج الأسبوعي لكل الحلقات"
+                title="البرنامج الأسبوعي لكل الأقسام"
                 icon={CalendarClock}
                 action={
                   <Button asChild variant="ghost" size="sm" className="text-primary">
@@ -243,7 +243,7 @@ function GroupDetailsBody({ id, lookups, students }: { id: string; lookups: Look
             label: "الموارد",
             icon: <FolderOpen aria-hidden />,
             later: true,
-            content: <ComingSoon icon={FolderOpen} title="موارد المجموعة" description="ملفات وتسجيلات صوتية يشاركها المدرسون مع طلبة الحلقات." />,
+            content: <ComingSoon icon={FolderOpen} title="موارد المجموعة" description="ملفات وتسجيلات صوتية يشاركها المدرسون مع طلبة الأقسام." />,
           },
         ]}
       />

@@ -152,7 +152,7 @@ export function StudentsView({
     <>
       <PageHeader
         title="الطلبة"
-        description="جميع المنخرطين في حلقات الجمعية، أطفالًا وكهولًا، مع مجموعاتهم وأرقام التواصل."
+        description="جميع المنخرطين في أقسام الجمعية، أطفالًا وكهولًا، مع مجموعاتهم وأرقام التواصل."
         actions={
           <Button onClick={() => run("create")}>
             <Plus />

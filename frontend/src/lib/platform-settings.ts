@@ -11,7 +11,7 @@ export const DATE_FORMATS: { value: DateFormat; label: string }[] = [
 
 /** Only the views the calendar already has. */
 export const CALENDAR_VIEWS: { value: CalendarDefaultView; label: string; description: string }[] = [
-  { value: "week", label: "الأسبوع", description: "البرنامج الأسبوعي لكل الحلقات" },
+  { value: "week", label: "الأسبوع", description: "البرنامج الأسبوعي لكل الأقسام" },
   { value: "rooms", label: "القاعات", description: "يوم واحد موزّعًا على قاعات الفرع" },
 ]
 

@@ -188,7 +188,7 @@ export function SessionDetails({
                   icon: BookOpen,
                 },
                 {
-                  label: "الحلقة",
+                  label: "القسم",
                   value: `${row.branch?.name ?? ""} · ${row.room?.name ?? ""}`,
                   icon: Users,
                 },
@@ -226,7 +226,7 @@ export function SessionDetails({
           <DialogHeader>
             <DialogTitle>إلغاء حصة {formatDate(session.date)}؟</DialogTitle>
             <DialogDescription>
-              يُلغى هذا التاريخ فقط لحلقة {row.branch?.name} من {group?.name}. البرنامج الأسبوعي وبقية الحصص والحلقات الأخرى لا تتغيّر.
+              يُلغى هذا التاريخ فقط لقسم {row.branch?.name} من {group?.name}. البرنامج الأسبوعي وبقية الحصص والأقسام الأخرى لا تتغيّر.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">

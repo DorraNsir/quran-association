@@ -123,7 +123,7 @@ export function ClassFormSheet({
     (v) => ({
       branchId: v.branchId ? undefined : "اختر الفرع",
       roomId: v.roomId ? undefined : "اختر القاعة",
-      supervisorId: v.supervisorId ? undefined : "لكل حلقة مدرس مشرف واحد",
+      supervisorId: v.supervisorId ? undefined : "لكل قسم مدرس مشرف واحد",
       slots:
         v.slots.some((row) => draftError(row)) || [...slotChecks(v).values()].some((c) => c.conflicts.length > 0)
           ? "راجع مواعيد الحصص: توجد أوقات غير صحيحة أو تعارضات"
@@ -157,10 +157,10 @@ export function ClassFormSheet({
     <FormSheet
       open={open}
       onOpenChange={onOpenChange}
-      title={groupClass ? `تعديل حلقة ${indexes.branchesById.get(groupClass.branchId)?.name ?? ""}` : `حلقة جديدة — ${group.name}`}
-      description={`${group.name}: لكل حلقة فرعها وقاعتها ومدرسها المشرف وطلبتها ومواعيدها.`}
+      title={groupClass ? `تعديل قسم ${indexes.branchesById.get(groupClass.branchId)?.name ?? ""}` : `قسم جديد — ${group.name}`}
+      description={`${group.name}: لكل قسم فرعه وقاعته ومدرسه المشرف وطلبته ومواعيده.`}
       onSubmit={submit}
-      submitLabel={groupClass ? "حفظ التعديلات" : "إنشاء الحلقة"}
+      submitLabel={groupClass ? "حفظ التعديلات" : "إنشاء القسم"}
       pending={form.pending}
       error={form.serverError}
     >
@@ -183,7 +183,7 @@ export function ClassFormSheet({
               .map((b) => ({ value: b.id, label: b.name }))}
           />
         </FormField>
-        <FormField label="القاعة" required description={values.branchId ? "كل حصص الحلقة في هذه القاعة." : "اختر الفرع أولًا"} {...form.field("roomId")}>
+        <FormField label="القاعة" required description={values.branchId ? "كل حصص القسم في هذه القاعة." : "اختر الفرع أولًا"} {...form.field("roomId")}>
           <SimpleSelect
             id={form.field("roomId").id}
             value={values.roomId}
@@ -208,7 +208,7 @@ export function ClassFormSheet({
         </FormField>
       </FormSection>
 
-      <FormSection title="فريق التدريس" description="مدرس مشرف واحد لهذه الحلقة، ومعلم مساعد أو أكثر إن وُجد.">
+      <FormSection title="فريق التدريس" description="مدرس مشرف واحد لهذا القسم، ومعلم مساعد أو أكثر إن وُجد.">
         <FormField label="المدرس المشرف" required {...form.field("supervisorId")}>
           <SimpleSelect
             id={form.field("supervisorId").id}
@@ -238,8 +238,8 @@ export function ClassFormSheet({
         </FormField>
       </FormSection>
 
-      <FormSection title="الطلبة" description="يدرس كل طالب في حلقة واحدة.">
-        <FormField label="طلبة الحلقة" optional className="sm:col-span-2" {...form.field("studentIds")}>
+      <FormSection title="الطلبة" description="يدرس كل طالب في قسم واحد.">
+        <FormField label="طلبة القسم" optional className="sm:col-span-2" {...form.field("studentIds")}>
           <MultiSelect
             id={form.field("studentIds").id}
             placeholder="لم يُضَف أي طالب"
@@ -255,7 +255,7 @@ export function ClassFormSheet({
                 return {
                   value: s.id,
                   label: fullName(s),
-                  section: isMember ? "طلبة الحلقة حاليًا" : "طلبة في حلقات أخرى",
+                  section: isMember ? "طلبة القسم حاليًا" : "طلبة في أقسام أخرى",
                   description: isMember ? undefined : `حاليًا في ${current?.group?.name ?? "—"} · ${current?.branch?.name ?? ""}`,
                   locked: isMember,
                 }
@@ -266,9 +266,9 @@ export function ClassFormSheet({
           <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <p>
             {moving > 0 && (
-              <strong className="font-medium text-foreground">سيُنقل {countLabels.students(moving)} من حلقاتهم الحالية. </strong>
+              <strong className="font-medium text-foreground">سيُنقل {countLabels.students(moving)} من أقسامهم الحالية. </strong>
             )}
-            لإخراج طالب من هذه الحلقة استعمل «تغيير المجموعة أو الحلقة» من صفحة الطلبة، حتى لا يبقى بدون حلقة.
+            لإخراج طالب من هذا القسم استعمل «تغيير المجموعة أو القسم» من صفحة الطلبة، حتى لا يبقى بدون قسم.
           </p>
         </div>
       </FormSection>
@@ -277,8 +277,8 @@ export function ClassFormSheet({
         title="المواعيد الأسبوعية"
         description={
           isRunning
-            ? "يُتحقَّق مباشرة من توفّر قاعة الحلقة ومن عدم ارتباط معلميها بحلقة أخرى في نفس الوقت."
-            : "الحلقة أو المجموعة غير نشطة: لا تحجز حصصها القاعات ولا المعلمين، لذلك لا يُتحقَّق من التعارضات."
+            ? "يُتحقَّق مباشرة من توفّر قاعة القسم ومن عدم ارتباط معلميه بقسم آخر في نفس الوقت."
+            : "القسم أو المجموعة غير نشطين: لا تحجز حصصهما القاعات ولا المعلمين، لذلك لا يُتحقَّق من التعارضات."
         }
       >
         {form.field("slots").error && (

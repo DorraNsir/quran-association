@@ -66,7 +66,7 @@ export function TeacherHomeScreen() {
 export function TeacherClassesScreen() {
   return (
     <>
-      <PageHeader title="مجموعاتي" description="الحلقات التي تشرف عليها أو تساعد فيها، في كل فرع." />
+      <PageHeader title="مجموعاتي" description="الأقسام التي تشرف عليها أو تساعد فيها، في كل فرع." />
       <WithTeacherWorkspace>
         {({ teacher, lookups, students }) => <TeacherClasses teacherId={teacher.id} lookups={lookups} students={students} today={todayInTunis()} />}
       </WithTeacherWorkspace>

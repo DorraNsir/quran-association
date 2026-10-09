@@ -112,7 +112,7 @@ export function PublicRegistrationForm({ interestId }: { interestId?: string }) 
     <div className="mx-auto w-full max-w-xl space-y-4">
       {interest && !sent && (
         <p className="rounded-2xl bg-brand-soft px-4 py-3 text-sm text-brand-soft-foreground">
-          طلب تسجيل في: <span className="font-semibold">{interest.title}</span> — تحدّد الإدارة الحلقة المناسبة عند قبول الطلب.
+          طلب تسجيل في: <span className="font-semibold">{interest.title}</span> — تحدّد الإدارة القسم المناسب عند قبول الطلب.
         </p>
       )}
       <Card className="rounded-3xl p-5 sm:p-7">
@@ -506,7 +506,7 @@ function RequestDetails({ requestId, lookups }: { requestId: ID; lookups: Lookup
           onOpenChange={(open) => setAdmission((p) => ({ ...p, open }))}
           lookups={lookups}
           title={`قبول ${name} وإنشاء ملف الطالب`}
-          description="المعلومات المعروفة من الطلب معبّأة مسبقًا. أكمل البيانات واختر الحلقة (الفصل) التي سيدرس فيها."
+          description="المعلومات المعروفة من الطلب معبّأة مسبقًا. أكمل البيانات واختر القسم (الفصل) الذي سيدرس فيه."
           submitLabel="قبول وإنشاء الملف"
           prefill={{
             firstName: request.firstName,

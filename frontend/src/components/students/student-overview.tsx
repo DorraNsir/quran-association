@@ -97,7 +97,7 @@ export function StudentOverview({ student, lookups }: { student: Student; lookup
       </div>
 
       <SectionCard
-        title="المجموعة والحلقة"
+        title="المجموعة والقسم"
         icon={BookOpen}
         className="order-first h-fit lg:order-none"
         action={

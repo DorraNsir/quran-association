@@ -120,7 +120,7 @@ const targetInvalid = (message: string) =>
 const classAccessDenied = () =>
   new ForbiddenException({
     code: 'RESOURCE_CLASS_ACCESS_DENIED',
-    message: 'لا يمكنك النشر إلا لحلقاتك الحالية',
+    message: 'لا يمكنك النشر إلا لأقسامك الحالية',
   });
 
 type Targets = {
@@ -380,7 +380,7 @@ export class ResourcesService {
       if (!groupIds.length || groupClassIds.length)
         throw targetInvalid('اختر مجموعة واحدة على الأقل (groupIds فقط)');
     } else if (!groupClassIds.length || groupIds.length) {
-      throw targetInvalid('اختر حلقة واحدة على الأقل (groupClassIds فقط)');
+      throw targetInvalid('اختر قسمًا واحدًا على الأقل (groupClassIds فقط)');
     }
     return { visibility, groupIds, groupClassIds };
   }
@@ -448,7 +448,7 @@ export class ResourcesService {
         },
       });
       if (n !== t.groupClassIds.length)
-        throw targetInvalid('حلقة غير موجودة أو غير نشطة');
+        throw targetInvalid('قسم غير موجود أو غير نشط');
     }
   }
 

@@ -76,7 +76,7 @@ function toDto(c: Row): GroupClassDto {
 }
 
 export const classNotFound = () =>
-  notFound('GROUP_CLASS_NOT_FOUND', 'الحلقة غير موجودة');
+  notFound('GROUP_CLASS_NOT_FOUND', 'القسم غير موجود');
 
 /**
  * GroupClass = the operational class. Rules (service + database):
@@ -178,7 +178,7 @@ export class GroupClassesService {
         ) {
           throw conflict(
             'GROUP_INACTIVE',
-            'لا يمكن فتح حلقة نشطة في مجموعة غير مفعّلة',
+            'لا يمكن فتح قسم نشط في مجموعة غير مفعّلة',
           );
         }
         await this.assertPlace(tx, dto.branchId, dto.roomId, status);
@@ -302,7 +302,7 @@ export class GroupClassesService {
         if (group.status !== RecordStatus.ACTIVE)
           throw conflict(
             'GROUP_INACTIVE',
-            'لا يمكن تفعيل حلقة في مجموعة غير مفعّلة',
+            'لا يمكن تفعيل قسم في مجموعة غير مفعّلة',
           );
         await this.assertPlace(tx, current.branchId, current.roomId, status);
         await this.assertTeachersAssignable(tx, [current.supervisorId]);
@@ -386,7 +386,7 @@ export class GroupClassesService {
     if (assistants.includes(supervisorId)) {
       throw badRequest(
         'SUPERVISOR_IS_ASSISTANT',
-        'المعلم المشرف لا يمكن أن يكون مساعدًا في الحلقة نفسها',
+        'المعلم المشرف لا يمكن أن يكون مساعدًا في القسم نفسه',
       );
     }
   }
@@ -402,7 +402,7 @@ export class GroupClassesService {
     if (found.length !== ids.length)
       throw notFound('TEACHER_NOT_FOUND', 'معلم غير موجود');
     if (found.some((t) => t.status !== ActivationStatus.ACTIVE)) {
-      throw conflict('TEACHER_INACTIVE', 'لا يمكن إسناد حلقة إلى معلم غير نشط');
+      throw conflict('TEACHER_INACTIVE', 'لا يمكن إسناد قسم إلى معلم غير نشط');
     }
   }
 
@@ -420,7 +420,7 @@ export class GroupClassesService {
       if (violatesConstraint(error, 'group_class_supervisor_not_assistant')) {
         throw badRequest(
           'SUPERVISOR_IS_ASSISTANT',
-          'المعلم المشرف لا يمكن أن يكون مساعدًا في الحلقة نفسها',
+          'المعلم المشرف لا يمكن أن يكون مساعدًا في القسم نفسه',
         );
       }
       throw error;

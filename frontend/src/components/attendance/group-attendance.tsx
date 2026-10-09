@@ -78,7 +78,7 @@ export function GroupAttendance({
         <div className="flex flex-wrap items-center gap-2">
           <PeriodFilter value={period} onChange={setPeriod} />
           {classes.length > 1 && (
-            <FilterSelect label="الحلقة" allLabel={`كل الحلقات (${classes.length})`} value={classId} onValueChange={setClassId}
+            <FilterSelect label="القسم" allLabel={`كل الأقسام (${classes.length})`} value={classId} onValueChange={setClassId}
               options={classes.map((c) => ({ value: c.id, label: classTag(c.id) }))} />
           )}
         </div>

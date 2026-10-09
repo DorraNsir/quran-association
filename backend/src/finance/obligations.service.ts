@@ -119,7 +119,7 @@ export class ObligationsService {
         if (!enrolled.ok) {
           throw conflict(
             'STUDENT_NOT_IN_GROUP',
-            'الطالب لم يكن مسجّلًا في حلقة من هذه المجموعة خلال هذه السنة الدراسية',
+            'الطالب لم يكن مسجّلًا في قسم من هذه المجموعة خلال هذه السنة الدراسية',
           );
         }
         const created = await tx.paymentObligation.create({

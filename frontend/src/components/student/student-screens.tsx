@@ -61,7 +61,7 @@ export function StudentGroupScreen() {
           <>
             <PageHeader title={view.group?.name ?? "مجموعتي"} description={view.group?.audience} />
             <div className="grid gap-4 lg:grid-cols-2">
-              <SectionCard title="الحلقة" icon={BookOpen}>
+              <SectionCard title="القسم" icon={BookOpen}>
                 <InfoList
                   items={[
                     { label: "المجموعة", value: view.group?.name, icon: BookOpen },
@@ -102,7 +102,7 @@ export function StudentGroupScreen() {
 export function StudentScheduleScreen() {
   return (
     <>
-      <PageHeader title="جدولي" description="مواعيد حلقتك الأسبوعية وحصصك القادمة." />
+      <PageHeader title="جدولي" description="مواعيد قسمك الأسبوعية وحصصك القادمة." />
       <WithStudentWorkspace>
         {({ student, lookups }) => {
           const view = getStudentGroupClass(student, lookups)

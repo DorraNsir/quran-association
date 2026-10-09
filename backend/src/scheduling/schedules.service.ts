@@ -45,7 +45,7 @@ const toDto = (
 });
 
 export const classNotFound = () =>
-  notFound('GROUP_CLASS_NOT_FOUND', 'الحلقة غير موجودة');
+  notFound('GROUP_CLASS_NOT_FOUND', 'القسم غير موجود');
 const scheduleNotFound = () =>
   notFound('SCHEDULE_NOT_FOUND', 'الموعد الأسبوعي غير موجود');
 
@@ -123,7 +123,7 @@ export class SchedulesService {
       if (!current.supervisorActive) {
         throw conflict(
           'SUPERVISOR_INACTIVE',
-          'المعلم المشرف على الحلقة غير نشط: عيّن مشرفًا بديلًا قبل إضافة مواعيد',
+          'المعلم المشرف على القسم غير نشط: عيّن مشرفًا بديلًا قبل إضافة مواعيد',
         );
       }
       this.conflicts.throwIfAny(

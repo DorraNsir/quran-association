@@ -93,7 +93,7 @@ export function ClassPicker({
         <div role="radiogroup" aria-label={`${labels.groupClass.plural} — ${groupsById.get(groupId)?.name ?? ""}`} className="grid gap-2">
           {classes.length > 1 && (
             <p className="text-xs text-muted-foreground">
-              لهذه المجموعة {countLabels.classes(classes.length)} — اختر حلقة الطالب:
+              لهذه المجموعة {countLabels.classes(classes.length)} — اختر قسم الطالب:
             </p>
           )}
           {classes.map((groupClass) => {
@@ -117,7 +117,7 @@ export function ClassPicker({
               >
                 <span className="flex items-center justify-between gap-2 font-medium">
                   {view.branch?.name}
-                  {disabled && <span className="text-xs font-normal text-muted-foreground">الحلقة الحالية</span>}
+                  {disabled && <span className="text-xs font-normal text-muted-foreground">القسم الحالي</span>}
                 </span>
                 <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1">

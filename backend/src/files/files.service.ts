@@ -298,7 +298,7 @@ export class FilesService {
     ) {
       throw new ForbiddenException({
         code: 'FILE_CLASS_MISMATCH',
-        message: 'هذا الملف مرفوع لحلقة أخرى',
+        message: 'هذا الملف مرفوع لقسم آخر',
       });
     }
     return file;

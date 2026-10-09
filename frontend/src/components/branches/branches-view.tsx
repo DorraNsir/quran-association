@@ -148,7 +148,7 @@ function BranchCard({
       <dl className="grid grid-cols-3 border-y text-center">
         {[
           { icon: DoorOpen, label: "قاعات نشطة", value: `${stats.activeRooms}/${stats.rooms}` },
-          { icon: Users, label: "حلقات نشطة", value: stats.activeClasses },
+          { icon: Users, label: "أقسام نشطة", value: stats.activeClasses },
           { icon: CalendarClock, label: "ساعات أسبوعيًا", value: stats.weeklyMinutes ? formatDuration(stats.weeklyMinutes) : "0" },
         ].map(({ icon: Icon, label, value }) => (
           <div key={label} className="flex flex-col-reverse gap-0.5 border-s px-2 py-3 first:border-s-0">

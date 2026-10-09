@@ -407,7 +407,7 @@ export class StudentsService {
       if (open && effective < fromDbDate(open.startDate)) {
         throw conflict(
           'EFFECTIVE_DATE_BEFORE_CURRENT',
-          'تاريخ النقل يسبق بداية الحلقة الحالية للطالب',
+          'تاريخ النقل يسبق بداية القسم الحالي للطالب',
         );
       }
 
@@ -505,7 +505,7 @@ export class StudentsService {
         if (!student.groupClassId)
           throw conflict(
             'GROUP_CLASS_REQUIRED',
-            'يجب إسناد الطالب إلى حلقة نشطة قبل تفعيله',
+            'يجب إسناد الطالب إلى قسم نشط قبل تفعيله',
           );
         await this.assertClassOpen(tx, student.groupClassId);
       }
@@ -568,7 +568,7 @@ export class StudentsService {
     });
     if (!groupClass) throw classNotFound();
     if (groupClass.status !== RecordStatus.ACTIVE) {
-      throw conflict('GROUP_CLASS_INACTIVE', 'الحلقة غير نشطة: اختر حلقة نشطة');
+      throw conflict('GROUP_CLASS_INACTIVE', 'القسم غير نشط: اختر قسمًا نشطًا');
     }
   }
 

@@ -45,7 +45,7 @@ const ICON_OPTIONS = Object.entries(WEBSITE_ICONS).map(([value, { label }]) => (
 const GALLERY_CATEGORIES: Record<GalleryCategory, string> = {
   ACTIVITIES: "أنشطة",
   CEREMONIES: "حفلات",
-  SESSIONS: "حلقات",
+  SESSIONS: "أقسام",
   SUMMER: "البرنامج الصيفي",
   LIFE: "حياة الجمعية",
 }
@@ -129,7 +129,7 @@ function sectionConfigs(today: string): SectionConfig[] {
     },
     {
       api: "events", slug: "events", icon: CalendarDays, card: "الفعاليات",
-      title: "الفعاليات", description: "أنشطة الجمعية العامة (منفصلة عن حصص الحلقات). تظهر فقط إذا كانت عامة ومنشورة.",
+      title: "الفعاليات", description: "أنشطة الجمعية العامة (منفصلة عن حصص الأقسام). تظهر فقط إذا كانت عامة ومنشورة.",
       addLabel: "إضافة فعالية", emptyLabel: "لا توجد فعاليات بعد", publishKey: "isPublished", ordered: false,
       defaults: { isPublished: true, isPublic: true, isCancelled: false, startDate: today },
       fields: [

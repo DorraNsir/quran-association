@@ -80,7 +80,7 @@ export function useGroupDialogs({ lookups, students }: { lookups: Lookups; stude
     )
     if (blocked) {
       toast.error(`لا يمكن تفعيل ${group.name} بمواعيدها الحالية`, {
-        description: `حلقة ${branchesById.get(blocked.branchId)?.name ?? ""} تتعارض مع حلقات أخرى. عدّل مواعيدها أولًا.`,
+        description: `قسم ${branchesById.get(blocked.branchId)?.name ?? ""} يتعارض مع أقسام أخرى. عدّل مواعيده أولًا.`,
       })
       return openDialog({ kind: "class-form", group: activated, groupClass: blocked })
     }
@@ -99,12 +99,12 @@ export function useGroupDialogs({ lookups, students }: { lookups: Lookups; stude
     }
     const activated: GroupClass = { ...groupClass, status: "ACTIVE" }
     if (hasConflicts(activated, group)) {
-      toast.error("لا يمكن تفعيل الحلقة بمواعيدها الحالية", {
-        description: "بعض حصصها تتعارض مع حلقات أخرى. عدّل المواعيد أولًا.",
+      toast.error("لا يمكن تفعيل القسم بمواعيده الحالية", {
+        description: "بعض حصصه تتعارض مع أقسام أخرى. عدّل المواعيد أولًا.",
       })
       return openDialog({ kind: "class-form", group, groupClass: activated })
     }
-    void attempt(() => setClassStatus.mutateAsync({ id: groupClass.id, status: "ACTIVE" }), "تم تفعيل الحلقة")
+    void attempt(() => setClassStatus.mutateAsync({ id: groupClass.id, status: "ACTIVE" }), "تم تفعيل القسم")
   }
 
   function renderDialog(d: DialogState) {
@@ -119,7 +119,7 @@ export function useGroupDialogs({ lookups, students }: { lookups: Lookups; stude
             otherNames={lookups.groups.filter((g) => g.id !== d.group?.id).map((g) => g.name.trim())}
             onSave={async (values) => {
               await saveGroup.mutateAsync({ id: d.group?.id, ...values })
-              toast.success(d.group ? `تم حفظ تعديلات ${values.name}` : `تم إنشاء ${values.name} — أضف حلقاتها من صفحتها`)
+              toast.success(d.group ? `تم حفظ تعديلات ${values.name}` : `تم إنشاء ${values.name} — أضف أقسامها من صفحتها`)
               close(false)
             }}
           />
@@ -142,7 +142,7 @@ export function useGroupDialogs({ lookups, students }: { lookups: Lookups; stude
                 throw error
               }
               toast.success(
-                `${d.groupClass ? "تم حفظ حلقة" : "تم إنشاء حلقة"} ${branchesById.get(input.groupClass.branchId)?.name ?? ""} — ${d.group.name}`
+                `${d.groupClass ? "تم حفظ قسم" : "تم إنشاء قسم"} ${branchesById.get(input.groupClass.branchId)?.name ?? ""} — ${d.group.name}`
               )
               close(false)
             }}
@@ -176,16 +176,16 @@ export function useGroupDialogs({ lookups, students }: { lookups: Lookups; stude
             open={d.open}
             onOpenChange={close}
             destructive={d.to === "ARCHIVED"}
-            title={`${d.to === "ARCHIVED" ? "أرشفة" : "إيقاف"} حلقة ${branchesById.get(d.groupClass.branchId)?.name ?? ""}؟`}
+            title={`${d.to === "ARCHIVED" ? "أرشفة" : "إيقاف"} قسم ${branchesById.get(d.groupClass.branchId)?.name ?? ""}؟`}
             description={
               active > 0
-                ? `تضم الحلقة ${countLabels.students(active)} نشطين. يُنصح بنقلهم إلى حلقة أخرى قبل ذلك. بقية حلقات ${d.group.name} لا تتأثر.`
-                : `لا تضم الحلقة طلبة نشطين. بقية حلقات ${d.group.name} لا تتأثر.`
+                ? `يضم القسم ${countLabels.students(active)} نشطين. يُنصح بنقلهم إلى قسم آخر قبل ذلك. بقية أقسام ${d.group.name} لا تتأثر.`
+                : `لا يضم القسم طلبة نشطين. بقية أقسام ${d.group.name} لا تتأثر.`
             }
             confirmLabel={d.to === "ARCHIVED" ? "أرشفة" : "إيقاف مؤقت"}
             onConfirm={async () => {
               await setClassStatus.mutateAsync({ id: d.groupClass.id, status: d.to })
-              toast.success(d.to === "ARCHIVED" ? "تمت أرشفة الحلقة" : "تم إيقاف الحلقة مؤقتًا")
+              toast.success(d.to === "ARCHIVED" ? "تمت أرشفة القسم" : "تم إيقاف القسم مؤقتًا")
               close(false)
             }}
           />
@@ -209,7 +209,7 @@ export function groupActions(
   const actions: RowAction[] = []
   if (includeView) actions.push({ label: "عرض المجموعة", icon: Eye, href: `/admin/groups/${group.id}` })
   if (includeEdit) actions.push({ label: "تعديل المجموعة", icon: Pencil, onSelect: () => run("edit", group) })
-  if (includeAddClass) actions.push({ label: "إضافة حلقة", icon: Plus, onSelect: () => run("add-class", group) })
+  if (includeAddClass) actions.push({ label: "إضافة قسم", icon: Plus, onSelect: () => run("add-class", group) })
   actions.push(
     group.status === "ACTIVE"
       ? { label: "إيقاف مؤقت", icon: PauseCircle, separated: true, onSelect: () => run("deactivate", group) }
@@ -227,13 +227,13 @@ export function classActions(
   runClass: (action: ClassAction, group: Group, groupClass: GroupClass) => void
 ): RowAction[] {
   const actions: RowAction[] = [
-    { label: "تعديل الحلقة", icon: Pencil, onSelect: () => runClass("edit-class", group, groupClass) },
+    { label: "تعديل القسم", icon: Pencil, onSelect: () => runClass("edit-class", group, groupClass) },
     groupClass.status === "ACTIVE"
-      ? { label: "إيقاف الحلقة", icon: PauseCircle, separated: true, onSelect: () => runClass("deactivate-class", group, groupClass) }
+      ? { label: "إيقاف القسم", icon: PauseCircle, separated: true, onSelect: () => runClass("deactivate-class", group, groupClass) }
       : { label: "إعادة التفعيل", icon: PlayCircle, separated: true, onSelect: () => runClass("activate-class", group, groupClass) },
   ]
   if (groupClass.status !== "ARCHIVED") {
-    actions.push({ label: "أرشفة الحلقة", icon: Archive, destructive: true, onSelect: () => runClass("archive-class", group, groupClass) })
+    actions.push({ label: "أرشفة القسم", icon: Archive, destructive: true, onSelect: () => runClass("archive-class", group, groupClass) })
   }
   return actions
 }

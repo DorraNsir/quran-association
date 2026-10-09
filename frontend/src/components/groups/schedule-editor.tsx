@@ -122,7 +122,7 @@ export function ScheduleEditor({
                   lookups={lookups}
                   freeRooms={result.freeRooms}
                   onPickRoom={onPickRoom}
-                  pickRoomHint="تغيير قاعة الحلقة (يشمل كل حصصها) إلى:"
+                  pickRoomHint="تغيير قاعة القسم (يشمل كل حصصه) إلى:"
                 />
               )}
               {result && result.conflicts.length === 0 && (

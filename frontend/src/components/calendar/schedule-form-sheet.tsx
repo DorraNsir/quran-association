@@ -62,7 +62,7 @@ export function ScheduleFormSheet({
       end: schedule?.end ?? preset?.end ?? "11:00",
     },
     (v) => ({
-      groupClassId: v.groupClassId ? undefined : "اختر المجموعة ثم الحلقة",
+      groupClassId: v.groupClassId ? undefined : "اختر المجموعة ثم القسم",
       end: isValidTimeRange(v.start, v.end) ? undefined : "يجب أن تكون ساعة النهاية بعد ساعة البداية",
     })
   )
@@ -91,15 +91,15 @@ export function ScheduleFormSheet({
       open={open}
       onOpenChange={onOpenChange}
       title={schedule ? "تعديل الحصة الأسبوعية" : "برمجة حصة أسبوعية"}
-      description="تتكرر الحصة كل أسبوع في نفس اليوم والتوقيت، في قاعة الحلقة ومع معلميها."
+      description="تتكرر الحصة كل أسبوع في نفس اليوم والتوقيت، في قاعة القسم ومع معلميه."
       onSubmit={submit}
       submitLabel={schedule ? "حفظ التعديلات" : "برمجة الحصة"}
       submitDisabled={conflicts.length > 0}
       pending={form.pending}
       error={form.serverError}
     >
-      <FormSection title="الحلقة">
-        <FormField label="المجموعة والحلقة" required className="sm:col-span-2" {...form.field("groupClassId")}>
+      <FormSection title="القسم">
+        <FormField label="المجموعة والقسم" required className="sm:col-span-2" {...form.field("groupClassId")}>
           {schedule && view ? (
             <p className="flex h-9 items-center gap-2 rounded-lg border bg-muted/40 px-2.5 text-sm">
               <BookOpen className="size-4 text-primary" aria-hidden />
@@ -123,7 +123,7 @@ export function ScheduleFormSheet({
           <div className="space-y-2 rounded-lg border bg-muted/30 p-3 sm:col-span-2">
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <DoorOpen className="size-3.5" aria-hidden />
-              {view.branch?.name} · {view.room?.name} — من بيانات الحلقة
+              {view.branch?.name} · {view.room?.name} — من بيانات القسم
             </p>
             {view.supervisor && (
               <div className="flex items-center justify-between gap-2">
@@ -142,7 +142,7 @@ export function ScheduleFormSheet({
         {roomHint && (
           <p className="flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning sm:col-span-2">
             <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-            اخترت خانة في {roomHint.name}، لكن هذه الحلقة تدرس في {view?.room?.name}. القاعة تتبع الحلقة.
+            اخترت خانة في {roomHint.name}، لكن هذا القسم يدرس في {view?.room?.name}. القاعة تتبع القسم.
           </p>
         )}
       </FormSection>
@@ -175,7 +175,7 @@ export function ScheduleFormSheet({
               conflicts={conflicts}
               lookups={lookups}
               freeRooms={alternatives}
-              pickRoomHint="قاعات متاحة في نفس الفرع (تُغيَّر قاعة الحلقة من صفحة المجموعة):"
+              pickRoomHint="قاعات متاحة في نفس الفرع (تُغيَّر قاعة القسم من صفحة المجموعة):"
             />
           ) : (
             complete && (

@@ -51,7 +51,7 @@ export function GroupMemorization({
         <SemesterSelect value={semester} onChange={setSemester} />
       </div>
       {classes.length === 0 ? (
-        <EmptyState icon={DoorOpen} title="لا توجد حلقات لهذه المجموعة بعد" />
+        <EmptyState icon={DoorOpen} title="لا توجد أقسام لهذه المجموعة بعد" />
       ) : (
         classes.map((view) => (
           <ClassMemorization
@@ -101,7 +101,7 @@ function ClassMemorization({
       }
     >
       {students.length === 0 ? (
-        <p className="text-sm text-muted-foreground">لا يوجد طلبة نشطون في هذه الحلقة.</p>
+        <p className="text-sm text-muted-foreground">لا يوجد طلبة نشطون في هذا القسم.</p>
       ) : (
         <ul className="divide-y">
           {students.map((student) => {

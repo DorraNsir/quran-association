@@ -137,7 +137,7 @@ export class AttendanceService {
       if (outside.length) {
         throw badRequest(
           'ATTENDANCE_STUDENT_NOT_IN_SESSION',
-          'بعض الطلبة لا ينتمون إلى حلقة هذه الحصة في تاريخها',
+          'بعض الطلبة لا ينتمون إلى قسم هذه الحصة في تاريخها',
         );
       }
 

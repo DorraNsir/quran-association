@@ -140,7 +140,7 @@ export function MemorizationOverview({
           }}
           options={lookups.groups.filter((g) => g.status === "ACTIVE").map((g) => ({ value: g.id, label: g.name }))} />
         {groupId !== ALL && classesOf(groupId, lookups.groupClasses).length > 1 && (
-          <FilterSelect label="الحلقة" allLabel="كل الحلقات" value={classId} onValueChange={setClassId}
+          <FilterSelect label="القسم" allLabel="كل الأقسام" value={classId} onValueChange={setClassId}
             options={classesOf(groupId, lookups.groupClasses).map((c) => ({ value: c.id, label: classLabel(describeClass(c, indexes)) }))} />
         )}
         <FilterSelect label="المدرس المشرف" allLabel="كل المشرفين" value={supervisorId} onValueChange={setSupervisorId}

@@ -39,10 +39,10 @@ export function GroupsOverview({ lookups, students }: { lookups: Lookups; studen
   const max = Math.max(1, ...rows.map((r) => r.count))
 
   return (
-    <SectionCard title="نظرة على الحلقات النشطة" icon={BookOpen} className="lg:col-span-2" action={<ViewAll href="/admin/groups" />}>
+    <SectionCard title="نظرة على الأقسام النشطة" icon={BookOpen} className="lg:col-span-2" action={<ViewAll href="/admin/groups" />}>
       <div className="-mx-6 overflow-x-auto">
         <table className="w-full text-sm">
-          <caption className="sr-only">الحلقات النشطة وعدد طلبتها</caption>
+          <caption className="sr-only">الأقسام النشطة وعدد طلبتها</caption>
           <thead>
             <tr className="border-b text-xs text-muted-foreground">
               <th scope="col" className="px-6 pb-2 text-start font-medium">المجموعة</th>

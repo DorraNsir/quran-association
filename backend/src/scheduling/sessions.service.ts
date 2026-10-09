@@ -165,7 +165,7 @@ const sessionNotFound = () => notFound('SESSION_NOT_FOUND', 'الحصة غير �
 const supervisorInactive = () =>
   conflict(
     'SUPERVISOR_INACTIVE',
-    'المعلم المشرف على الحلقة غير نشط: عيّن مشرفًا بديلًا قبل برمجة حصص جديدة',
+    'المعلم المشرف على القسم غير نشط: عيّن مشرفًا بديلًا قبل برمجة حصص جديدة',
   );
 const MAX_CALENDAR_DAYS = 62;
 const MAX_GENERATION_DAYS = 366;
@@ -281,7 +281,7 @@ export class SessionsService {
       const team = await this.conflicts.sessionTeamOf(tx, dto.groupClassId);
       if (!team) throw classNotFound();
       if (!team.classActive)
-        throw conflict('GROUP_CLASS_INACTIVE', 'الحلقة غير نشطة');
+        throw conflict('GROUP_CLASS_INACTIVE', 'القسم غير نشط');
       if (!team.supervisorActive) throw supervisorInactive();
       const status = dto.status ?? SessionStatus.SCHEDULED;
       if (status === SessionStatus.COMPLETED)

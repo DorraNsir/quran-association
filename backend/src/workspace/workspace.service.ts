@@ -375,7 +375,7 @@ export class WorkspaceService {
   private notMyStudent() {
     return badRequest(
       'TEACHER_NOTE_STUDENT_NOT_ASSIGNED',
-      'هذا الطالب ليس في إحدى حلقاتك الحالية',
+      'هذا الطالب ليس في أحد أقسامك الحالية',
     );
   }
 

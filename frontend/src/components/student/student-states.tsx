@@ -15,7 +15,7 @@ export function StudentNotFound() {
 export function NoGroupClass() {
   return (
     <Card className="p-0">
-      <EmptyState icon={DoorOpen} title="لم يتم إسنادك إلى مجموعة حالياً" description="ستظهر هنا مجموعتك ومعلموك عند إسنادك إلى حلقة." />
+      <EmptyState icon={DoorOpen} title="لم يتم إسنادك إلى مجموعة حالياً" description="ستظهر هنا مجموعتك ومعلموك عند إسنادك إلى قسم." />
     </Card>
   )
 }

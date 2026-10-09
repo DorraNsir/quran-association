@@ -271,7 +271,7 @@ export async function GroupsPage() {
   const groups = await getUpcomingGroups()
   return (
     <>
-      <PageHero eyebrow="المجموعات" title="مجموعات ستفتح قريباً" intro="حلقات وبرامج جديدة تستعدّ الجمعية لإطلاقها — سجّل اهتمامك وسنتواصل معك." />
+      <PageHero eyebrow="المجموعات" title="مجموعات ستفتح قريباً" intro="أقسام وبرامج جديدة تستعدّ الجمعية لإطلاقها — سجّل اهتمامك وسنتواصل معك." />
       <Section title="المجموعات المعلنة">
         {groups.length === 0 ? <PublicEmpty message="لا توجد مجموعات جديدة معلنة حالياً" /> : (
           <CardGrid count={groups.length}>
@@ -407,7 +407,7 @@ export async function GalleryPage() {
   const images = await getGallery()
   return (
     <>
-      <PageHero eyebrow="صور" title="معرض الصور" intro="لقطات من الحلقات والأنشطة وحفلات التكريم." />
+      <PageHero eyebrow="صور" title="معرض الصور" intro="لقطات من الأقسام والأنشطة وحفلات التكريم." />
       <Section title="من حياة الجمعية">
         {images.length === 0 ? <PublicEmpty message="لا توجد صور منشورة حالياً" /> : <GalleryGrid images={images} />}
       </Section>

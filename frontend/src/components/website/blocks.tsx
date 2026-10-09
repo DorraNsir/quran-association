@@ -419,8 +419,8 @@ export function JoinBand({ enabled }: { enabled: boolean }) {
           <div aria-hidden className="absolute -end-20 -top-20 size-64 rounded-full bg-primary/40 blur-2xl" />
           <div aria-hidden className="absolute -bottom-24 -start-16 size-64 rounded-full bg-[#d8b45a]/20 blur-2xl" />
           <div className="relative mx-auto max-w-2xl space-y-5">
-            <h2 className="font-display text-3xl leading-tight font-bold sm:text-4xl">انضمّ إلى حلقات القرآن الكريم</h2>
-            <p className="leading-relaxed text-white/75">قدّم طلب التسجيل في دقائق، وسيتواصل معك فريق الجمعية لاختيار الحلقة المناسبة.</p>
+            <h2 className="font-display text-3xl leading-tight font-bold sm:text-4xl">انضمّ إلى أقسام القرآن الكريم</h2>
+            <p className="leading-relaxed text-white/75">قدّم طلب التسجيل في دقائق، وسيتواصل معك فريق الجمعية لاختيار القسم المناسب.</p>
             <Button asChild size="lg" className="h-12 rounded-full px-8 text-base">
               <Link href="/registration">سجل الآن</Link>
             </Button>

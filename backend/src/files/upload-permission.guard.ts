@@ -58,7 +58,7 @@ export class UploadPermissionGuard implements CanActivate {
     ) {
       throw new BadRequestException({
         code: 'FILE_CLASS_INVALID',
-        message: 'معرّف الحلقة غير صالح',
+        message: 'معرّف القسم غير صالح',
       });
     }
     const isAdmin = user.roles.includes(Role.ADMIN);
@@ -76,7 +76,7 @@ export class UploadPermissionGuard implements CanActivate {
       )
         throw new BadRequestException({
           code: 'FILE_CLASS_INVALID',
-          message: 'الحلقة غير موجودة',
+          message: 'القسم غير موجود',
         });
       return true;
     }
@@ -84,14 +84,14 @@ export class UploadPermissionGuard implements CanActivate {
     if (!groupClassId) {
       throw new BadRequestException({
         code: 'FILE_CLASS_REQUIRED',
-        message: 'حدّد الحلقة التي يُرفع لها المورد (groupClassId)',
+        message: 'حدّد القسم الذي يُرفع له المورد (groupClassId)',
       });
     }
     const scope = await this.teacherAccess.currentScope(user.userId);
     if (!scope.classIds.includes(groupClassId)) {
       throw new ForbiddenException({
         code: 'FILE_CLASS_ACCESS_DENIED',
-        message: 'لا يمكنك رفع ملف إلا لحلقاتك الحالية',
+        message: 'لا يمكنك رفع ملف إلا لأقسامك الحالية',
       });
     }
     return true;
