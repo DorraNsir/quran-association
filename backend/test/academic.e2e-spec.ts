@@ -416,6 +416,35 @@ describe('Academic structure APIs (e2e)', () => {
         ).body.status,
       ).toBe('ARCHIVED');
     });
+
+    it('the audience is optional: omitted or empty → null; null/"" on update clears it', async () => {
+      const none = await post('groups', { name: tag('بلا فئة 1') }).expect(201);
+      expect(none.body.audience).toBeNull();
+      const blank = await post('groups', {
+        name: tag('بلا فئة 2'),
+        audience: '   ',
+      }).expect(201);
+      expect(blank.body.audience).toBeNull();
+      const set = await patch(`groups/${blank.body.id}`, {
+        audience: 'أطفال',
+      }).expect(200);
+      expect(set.body.audience).toBe('أطفال');
+      // Updating another field keeps it; an empty value clears it
+      expect(
+        (
+          await patch(`groups/${blank.body.id}`, {
+            name: tag('بلا فئة 3'),
+          }).expect(200)
+        ).body.audience,
+      ).toBe('أطفال');
+      expect(
+        (await patch(`groups/${blank.body.id}`, { audience: '' }).expect(200))
+          .body.audience,
+      ).toBeNull();
+      await post('groups', { name: tag('بلا فئة 4'), audience: 42 }).expect(
+        400,
+      );
+    });
   });
 
   // ───────────────────────── teachers ─────────────────────────

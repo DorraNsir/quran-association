@@ -9,7 +9,9 @@ const affected = [keys.groups, keys.groupClasses, keys.schedules, keys.students,
 
 export function useSaveGroup() {
   return useApiMutation(
-    async ({ id, name, audience, status }: { id?: string; name: string; audience: string; status: GroupStatus }) => {
+    async ({ id, name, audience: text, status }: { id?: string; name: string; audience: string; status: GroupStatus }) => {
+      // Optional field: an empty audience is sent as null (no value / cleared)
+      const audience = text.trim() || null
       const saved = id
         ? await api<{ id: string; status: string }>(`/admin/groups/${id}`, { method: "PATCH", body: { name, audience } })
         : await api<{ id: string; status: string }>("/admin/groups", { method: "POST", body: { name, audience } })

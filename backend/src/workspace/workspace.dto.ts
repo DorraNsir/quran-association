@@ -47,7 +47,8 @@ export class WsRoomDto {
 export class WsGroupDto {
   @ApiProperty() id!: string;
   @ApiProperty() name!: string;
-  @ApiProperty() audience!: string;
+  @ApiPropertyOptional({ type: String, nullable: true }) audience!:
+    string | null;
   @ApiProperty({ enum: RecordStatus, enumName: 'RecordStatus' })
   status!: RecordStatus;
   @ApiProperty({ format: 'date' }) createdAt!: string;

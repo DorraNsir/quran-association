@@ -114,7 +114,7 @@ export class GroupsService {
   async create(dto: CreateGroupDto): Promise<GroupDetailDto> {
     try {
       const { id } = await this.prisma.group.create({
-        data: { name: dto.name, audience: dto.audience },
+        data: { name: dto.name, audience: dto.audience ?? null },
         select: { id: true },
       });
       return this.get(id);

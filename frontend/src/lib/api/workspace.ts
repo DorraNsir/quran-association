@@ -36,7 +36,7 @@ interface WsStudent {
 interface WsBundle {
   branches: { id: string; name: string; address: string; phone: string | null; status: ActivationStatus }[]
   rooms: { id: string; branchId: string; name: string; status: ActivationStatus }[]
-  groups: { id: string; name: string; audience: string; status: RecordStatus; createdAt: ISODate }[]
+  groups: { id: string; name: string; audience: string | null; status: RecordStatus; createdAt: ISODate }[]
   groupClasses: { id: string; groupId: string; branchId: string; roomId: string; supervisorId: string; assistantIds: string[]; status: RecordStatus }[]
   teachers: WsTeacher[]
   schedules: { id: string; groupClassId: string; dayOfWeek: Weekday; startTime: string; endTime: string }[]
@@ -82,7 +82,7 @@ function toLookups(b: WsBundle): Lookups {
   return {
     branches: b.branches.map((x): Branch => ({ ...x, phone: x.phone ?? undefined })),
     rooms: b.rooms as Room[],
-    groups: b.groups as Group[],
+    groups: b.groups.map((g): Group => ({ ...g, audience: g.audience ?? "" })),
     groupClasses: b.groupClasses as GroupClass[],
     teachers: b.teachers.map(toTeacher),
     schedules: b.schedules.map((x): WeeklySchedule => ({ id: x.id, groupClassId: x.groupClassId, day: x.dayOfWeek, start: x.startTime, end: x.endTime })),

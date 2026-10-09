@@ -52,7 +52,7 @@ export interface RoomDto {
 export interface GroupDto {
   id: string
   name: string
-  audience: string
+  audience: string | null
   status: RecordStatus
   createdAt: string
   classesCount: number
@@ -155,7 +155,7 @@ export const toRoom = (r: RoomDto): Room => ({ id: r.id, branchId: r.branch.id, 
 export const toGroup = (g: GroupDto): Group => ({
   id: g.id,
   name: g.name,
-  audience: g.audience,
+  audience: g.audience ?? "",
   status: g.status,
   createdAt: g.createdAt.slice(0, 10),
 })
