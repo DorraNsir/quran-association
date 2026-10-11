@@ -906,6 +906,7 @@ describe('Public website & CMS (e2e)', () => {
           'about',
           'address',
           'email',
+          'heroTheme',
           'history',
           'logoUrl',
           'mapUrl',
@@ -935,7 +936,7 @@ describe('Public website & CMS (e2e)', () => {
       expect(home.services.length).toBe(6);
       expect(home.programs.length).toBeLessThanOrEqual(3);
       expect(home.news.length).toBeLessThanOrEqual(3);
-      expect(home.gallery.length).toBeLessThanOrEqual(5);
+      expect(home.gallery.length).toBeLessThanOrEqual(6);
       expect(ids(home.news)).not.toContain(id.newsFuture);
       expect(ids(home.heroSlides)).not.toContain(id.slideA);
       expect(ids(home.upcomingEvents)).not.toContain(id.evInternal);

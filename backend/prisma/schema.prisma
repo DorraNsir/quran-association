@@ -1021,7 +1021,7 @@ model PlatformSettings {
 /// How the association is presented publicly. Identity (name, logo, phone,
 /// email, address) lives in AssociationSettings — not duplicated here.
 model SiteSettings {
-  id                  Int      @id @default(1) @db.SmallInt
+  id                  Int       @id @default(1) @db.SmallInt
   shortDescription    String
   about               String
   history             String?
@@ -1034,10 +1034,22 @@ model SiteSettings {
   facebookUrl         String?
   instagramUrl        String?
   youtubeUrl          String?
-  registrationEnabled Boolean  @default(true)
-  updatedAt           DateTime @updatedAt @db.Timestamptz(3)
+  registrationEnabled Boolean   @default(true)
+  /// Animated background of the public home hero (one, chosen by an admin)
+  heroTheme           HeroTheme @default(combo)
+  updatedAt           DateTime  @updatedAt @db.Timestamptz(3)
 
   @@map("site_settings")
+}
+
+/// Animated backgrounds of the public home hero (HeroBackground variants)
+enum HeroTheme {
+  geometric
+  aurora
+  lights
+  stars
+  letters
+  combo
 }
 
 model HeroSlide {

@@ -1,11 +1,9 @@
 import type { Metadata } from "next"
-import { Amiri } from "next/font/google"
 
 import { SiteFooter, SiteHeader } from "@/components/website/site-chrome"
 import { getSiteSettings } from "@/lib/api/public-site"
 import { todayInTunis } from "@/lib/dates"
-
-const amiri = Amiri({ variable: "--font-amiri", subsets: ["arabic", "latin"], weight: ["400", "700"] })
+import { amiri } from "@/lib/site-font"
 
 export const metadata: Metadata = {
   title: { default: "الفرع المحلي عمر بن الخطاب بدار شعبان الفهري", template: "%s · عمر بن الخطاب" },

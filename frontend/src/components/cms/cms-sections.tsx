@@ -24,6 +24,7 @@ import Link from "next/link"
 import { useState } from "react"
 import { toast } from "sonner"
 
+import { DEFAULT_HERO_THEME, HERO_THEMES } from "@/components/website/hero-background"
 import { WEBSITE_ICONS } from "@/components/website/icons"
 import { FormField, FormSection } from "@/components/shared/form"
 import { Breadcrumbs, PageHeader } from "@/components/shared/page-header"
@@ -40,6 +41,7 @@ import { formatDate } from "@/lib/format"
 import type { AchievementCategory, GalleryCategory } from "@/types/domain"
 
 import { CmsManager, useCmsItems, type CmsConfig, type CmsField } from "./cms-manager"
+import { HeroThemeSettings } from "./hero-theme-settings"
 
 const ICON_OPTIONS = Object.entries(WEBSITE_ICONS).map(([value, { label }]) => ({ value, label }))
 const GALLERY_CATEGORIES: Record<GalleryCategory, string> = {
@@ -69,22 +71,6 @@ type SectionConfig = CmsConfig & { slug: string; icon: typeof Home; card: string
 function sectionConfigs(today: string): SectionConfig[] {
   const year = Number(today.slice(0, 4))
   return [
-    {
-      api: "hero-slides", slug: "home", icon: Home, card: "الصفحة الرئيسية (الواجهة)",
-      title: "واجهة الصفحة الرئيسية", description: "صور وعبارات الواجهة. تظهر الشرائح المفعّلة فقط، بالترتيب المحدّد.",
-      addLabel: "إضافة شريحة", emptyLabel: "لا توجد شرائح بعد",
-      publishKey: "isActive", ordered: true, defaults: { isActive: true, ctaHref: "/registration", ctaLabel: "سجل الآن" },
-      fields: [
-        { key: "imageUrl", label: "الصورة", type: "image", required: true },
-        { key: "title", label: "العنوان", type: "text", wide: true },
-        { key: "subtitle", label: "النص", type: "textarea" },
-        { key: "ctaLabel", label: "نص الزر", type: "text" },
-        { key: "ctaHref", label: "رابط الزر", type: "url", description: "مثال: /registration" },
-        { key: "isActive", label: "مفعّلة", type: "checkbox" },
-      ],
-      summary: (s) => ({ title: str(s.title) ?? "شريحة دون عنوان", subtitle: str(s.subtitle), image: str(s.imageUrl) }),
-      publicHref: () => "/",
-    },
     {
       api: "services", slug: "offerings", icon: Sparkles, card: "ماذا نقدم",
       title: "ماذا نقدم لطلابنا؟", description: "الخدمات التي تقدّمها الجمعية لطلبتها، كما تظهر في الصفحة الرئيسية.",
@@ -259,6 +245,8 @@ function sectionConfigs(today: string): SectionConfig[] {
 
 /** /admin/website/[section] */
 export function CmsSection({ slug }: { slug: string }) {
+  // The home hero is one animated theme (site settings), no longer a list of slides
+  if (slug === "home") return <HeroThemeSettings />
   const config = sectionConfigs(todayInTunis()).find((c) => c.slug === slug)
   if (!config) return null
   return <CmsManager config={config} />
@@ -275,6 +263,23 @@ function SectionCard({ config }: { config: SectionConfig }) {
         <div>
           <p className="font-medium">{config.card}</p>
           <p className="text-xs text-muted-foreground">{data ? `${visible} ظاهر في الموقع من ${data.length}` : "…"}</p>
+        </div>
+      </Card>
+    </Link>
+  )
+}
+
+/** Entry card of the home hero theme (shows the theme in use). */
+function HeroThemeCard() {
+  const { data } = useAdminSettings()
+  const theme = HERO_THEMES.find((t) => t.value === (data?.website?.heroTheme ?? DEFAULT_HERO_THEME))
+  return (
+    <Link href="/admin/website/home" className="block h-full rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+      <Card className="h-full flex-row items-center gap-4 p-4 transition-colors hover:border-primary/40">
+        <span className="flex size-11 items-center justify-center rounded-lg bg-brand-soft text-brand-soft-foreground"><Home className="size-5" aria-hidden /></span>
+        <div>
+          <p className="font-medium">مظهر الصفحة الرئيسية</p>
+          <p className="text-xs text-muted-foreground">{data ? `المظهر الحالي: ${theme?.name ?? "—"}` : "…"}</p>
         </div>
       </Card>
     </Link>
@@ -306,6 +311,9 @@ export function CmsDashboard() {
               </div>
             </Card>
           </Link>
+        </li>
+        <li>
+          <HeroThemeCard />
         </li>
         {sections.map((c) => (
           <li key={c.slug}>

@@ -92,7 +92,12 @@ export class PublicSiteController {
   }
 
   @Get('hero-slides')
-  @ApiOperation({ summary: 'Active hero slides, in display order' })
+  @ApiOperation({
+    summary: 'Active hero slides, in display order',
+    description:
+      'Deprecated: the public hero now shows the animated theme of site-settings (heroTheme); kept for compatibility, slides are no longer displayed.',
+    deprecated: true,
+  })
   @ApiOkResponse({ type: PublicHeroSlideDto, isArray: true })
   heroSlides(): Promise<PublicHeroSlideDto[]> {
     return this.site.heroSlides();

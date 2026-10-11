@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Clock, MapPin, Trophy, X } from "lucide-react"
+import { ArrowLeft, CalendarDays, Clock, MapPin, Trophy, X } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 
@@ -15,7 +15,6 @@ import type {
   AdministrationMember,
   Branch,
   GalleryImage,
-  HeroSlide,
   ISODate,
   NewsArticle,
   PublicEvent,
@@ -25,7 +24,10 @@ import type {
   ServiceOffering,
 } from "@/types/domain"
 
+import { amiri } from "@/lib/site-font"
+
 import { CmsImage } from "./cms-image"
+import HeroBackground, { type HeroVariant } from "./hero-background"
 import { WebsiteIcon } from "./icons"
 
 /* ---------------- Layout ---------------- */
@@ -117,54 +119,36 @@ export function PublicEmpty({ message }: { message: string }) {
 
 /* ---------------- Hero ---------------- */
 
-/** Admin-managed hero: one slide, or a small carousel with manual controls (no autoplay). */
-export function HeroCarousel({ slides, fallbackTitle, fallbackSubtitle }: { slides: HeroSlide[]; fallbackTitle: string; fallbackSubtitle: string }) {
-  const [index, setIndex] = useState(0)
-  const current = slides[Math.min(index, slides.length - 1)]
-  const go = (step: number) => setIndex((i) => (i + step + slides.length) % slides.length)
-
+/**
+ * Home hero: the association's headline over ONE animated background — the
+ * theme an admin chose (site settings). No slides, no rotation. The
+ * background is decorative (aria-hidden, no pointer events) and sits behind
+ * the content; the height is fixed so nothing shifts when it starts.
+ */
+export function HomeHero({ theme, title, subtitle }: { theme: HeroVariant; title: string; subtitle: string }) {
   return (
-    <section aria-roledescription="carousel" aria-label="الواجهة" className="relative isolate overflow-hidden bg-[#1f2421]">
+    <section aria-label="الواجهة" className="relative isolate overflow-hidden bg-[#0d1210]">
       <div className="relative h-[34rem] sm:h-[38rem]">
-        {slides.map((slide, i) => (
-          <div key={slide.id} aria-hidden={i !== index} className={cn("absolute inset-0 transition-opacity duration-700", i === index ? "opacity-100" : "opacity-0")}>
-            <CmsImage src={slide.imageUrl} alt={slide.titleAr ?? ""} sizes="100vw" priority={i === 0} />
-          </div>
-        ))}
-        <div aria-hidden className="absolute inset-0 bg-linear-to-t from-black/85 via-black/55 to-black/20 sm:bg-linear-to-l sm:from-black/70 sm:via-black/40 sm:to-transparent ltr:sm:bg-linear-to-r" />
-        <Container className="relative flex h-full flex-col justify-end pb-16 sm:justify-center sm:pb-0">
-          <div className="max-w-xl space-y-5 text-white" aria-live="polite">
+        <HeroBackground variant={theme} lettersFont={amiri.style.fontFamily} />
+        {/* Phones: the text sits low and full-width — a soft shade keeps it readable over every theme */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/60 via-black/20 to-transparent sm:hidden" />
+        <Container className="relative z-10 flex h-full flex-col justify-end pb-16 sm:justify-center sm:pb-0">
+          <div className="max-w-xl space-y-5 text-white">
             <p className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm backdrop-blur">
               الفرع المحلي عمر بن الخطاب · بدار شعبان الفهري
             </p>
-            <h1 className="font-display text-4xl leading-tight font-bold sm:text-6xl">{current?.titleAr ?? fallbackTitle}</h1>
-            <p className="text-lg leading-relaxed text-white/85">{current?.subtitleAr ?? fallbackSubtitle}</p>
+            <h1 className="font-display text-4xl leading-tight font-bold sm:text-6xl">{title}</h1>
+            <p className="text-lg leading-relaxed text-white/85">{subtitle}</p>
             <div className="flex flex-wrap gap-3 pt-1">
               <Button asChild size="lg" className="h-12 rounded-full px-7 text-base">
-                <Link href={current?.ctaHref || "/registration"}>{current?.ctaLabelAr || "سجل الآن"}</Link>
+                <Link href="/registration">سجل الآن</Link>
               </Button>
-              {current?.ctaHref !== "/programs" && (
-                <Button asChild size="lg" variant="outline" className="h-12 rounded-full border-white/40 bg-white/10 px-7 text-base text-white hover:bg-white/20 hover:text-white">
-                  <Link href="/programs">اكتشف برامجنا</Link>
-                </Button>
-              )}
+              <Button asChild size="lg" variant="outline" className="h-12 rounded-full border-white/40 bg-white/10 px-7 text-base text-white hover:bg-white/20 hover:text-white">
+                <Link href="/programs">اكتشف برامجنا</Link>
+              </Button>
             </div>
           </div>
         </Container>
-        {slides.length > 1 && (
-          <div className="absolute inset-x-0 bottom-5 flex items-center justify-center gap-3">
-            <button type="button" onClick={() => go(-1)} aria-label="الشريحة السابقة" className="flex size-10 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur hover:bg-white/25">
-              <ChevronRight className="size-5 ltr:rotate-180" />
-            </button>
-            {slides.map((s, i) => (
-              <button key={s.id} type="button" onClick={() => setIndex(i)} aria-label={`الشريحة ${i + 1}`} aria-current={i === index}
-                className={cn("h-2 rounded-full transition-all", i === index ? "w-6 bg-white" : "w-2 bg-white/50")} />
-            ))}
-            <button type="button" onClick={() => go(1)} aria-label="الشريحة التالية" className="flex size-10 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur hover:bg-white/25">
-              <ChevronLeft className="size-5 ltr:rotate-180" />
-            </button>
-          </div>
-        )}
       </div>
     </section>
   )

@@ -32,7 +32,7 @@ import {
   GalleryGrid,
   GraduateCard,
   GroupListingCard,
-  HeroCarousel,
+  HomeHero,
   JoinBand,
   MemberCard,
   NewsCard,
@@ -44,6 +44,7 @@ import {
   StatsBand,
 } from "./blocks"
 import { CmsImage } from "./cms-image"
+import { DEFAULT_HERO_THEME } from "./hero-background"
 
 /*
  * Public pages — server components reading the public API at request time
@@ -64,7 +65,6 @@ export async function HomePage() {
   const today = todayInTunis()
   const home = await getHome()
   const settings = home.settings
-  const slides = home.slides
   const offerings = home.offerings.slice(0, 6)
   const programs = home.programs.slice(0, 3)
   const upcomingGroups = home.groups.slice(0, 3)
@@ -72,13 +72,20 @@ export async function HomePage() {
   const featured = home.featured
   const graduates = home.graduates.slice(0, 4)
   const news = home.news.slice(0, 3)
-  const gallery = home.gallery.slice(0, 5)
+  const gallery = home.gallery.slice(0, 6)
   const stats = statsOf(home.statistics)
-  const aboutImage = home.gallery[0]?.imageUrl ?? slides[0]?.imageUrl
+  const aboutImage = home.gallery[0]?.imageUrl
+  const image = await getGallery()
+  console.log("image", image)
+  console.log("gallery", gallery)
 
   return (
     <>
-      <HeroCarousel slides={slides} fallbackTitle="بيئة تربوية لحفظ كتاب الله وتعلّمه" fallbackSubtitle={settings?.shortDescription ?? ""} />
+      <HomeHero
+        theme={settings?.heroTheme ?? DEFAULT_HERO_THEME}
+        title="بيئة تربوية لحفظ كتاب الله وتعلّمه"
+        subtitle={settings?.shortDescription ?? ""}
+      />
 
       <section aria-labelledby="about-title" className="py-14 sm:py-20">
         <Container className="grid items-center gap-10 lg:grid-cols-2">

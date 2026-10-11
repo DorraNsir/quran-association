@@ -752,6 +752,56 @@ describe('Settings & file storage (e2e)', () => {
       });
     });
 
+    it('hero theme: one of six, stored in PostgreSQL, public without a token, admin-only', async () => {
+      const before = (await admin.get('settings')).body.website.heroTheme;
+      expect([
+        'geometric',
+        'aurora',
+        'lights',
+        'stars',
+        'letters',
+        'combo',
+      ]).toContain(before);
+      // Strict values (the slideshow is gone: no other value is accepted)
+      for (const heroTheme of ['carousel', 'COMBO', '', 3, null])
+        await admin.patch('settings', { website: { heroTheme } }).expect(400);
+      for (const who of ['sup', 's1'])
+        await http()
+          .patch('/api/admin/settings')
+          .set(as(token[who]))
+          .send({ website: { heroTheme: 'stars' } })
+          .expect(403);
+      await http()
+        .patch('/api/admin/settings')
+        .send({ website: { heroTheme: 'stars' } })
+        .expect(401);
+      expect((await admin.get('settings')).body.website.heroTheme).toBe(before);
+
+      for (const heroTheme of ['stars', 'letters']) {
+        const res = await admin
+          .patch('settings', { website: { heroTheme } })
+          .expect(200);
+        expect(res.body.website.heroTheme).toBe(heroTheme);
+        const row = await prisma.siteSettings.findUniqueOrThrow({
+          where: { id: 1 },
+          select: { heroTheme: true },
+        });
+        expect(row.heroTheme).toBe(heroTheme);
+        // The public site reads it without authentication (settings + home)
+        expect(
+          (await http().get('/api/public/site-settings').expect(200)).body
+            .heroTheme,
+        ).toBe(heroTheme);
+        expect(
+          (await http().get('/api/public/home').expect(200)).body.settings
+            .heroTheme,
+        ).toBe(heroTheme);
+      }
+      await admin
+        .patch('settings', { website: { heroTheme: before } })
+        .expect(200);
+    });
+
     it('the logo is an uploaded image, public once approved, replaced safely', async () => {
       const logo = await uploadOk(
         'admin',

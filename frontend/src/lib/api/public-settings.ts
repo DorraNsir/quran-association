@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { api } from "./client"
 import { apiUrl } from "./config"
+import type { HeroVariant } from "@/components/website/hero-background"
 
 /** GET /api/public/site-settings — public identity + website presentation. */
 export interface PublicSiteSettings {
@@ -22,6 +23,8 @@ export interface PublicSiteSettings {
   mapUrl: string | null
   social: { facebook: string | null; instagram: string | null; youtube: string | null }
   registrationEnabled: boolean
+  /** Animated background of the home hero (the API validates it; "combo" by default) */
+  heroTheme: HeroVariant
 }
 
 export const FALLBACK_ASSOCIATION_NAME = "الفرع المحلي عمر بن الخطاب بدار شعبان الفهري"

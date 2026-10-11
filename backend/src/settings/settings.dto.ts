@@ -20,7 +20,11 @@ import {
   OptionalPhone,
   OptionalText,
 } from '../common/contact-fields.js';
-import { CalendarView, DateFormat } from '../generated/prisma/enums.js';
+import {
+  CalendarView,
+  DateFormat,
+  HeroTheme,
+} from '../generated/prisma/enums.js';
 
 const Text = (maxLength: number) =>
   applyDecorators(
@@ -97,6 +101,15 @@ export class WebsiteSettingsPatchDto {
   @IsOptional()
   @IsBoolean()
   registrationEnabled?: boolean;
+  @ApiPropertyOptional({
+    enum: HeroTheme,
+    enumName: 'HeroTheme',
+    description: 'Animated background of the public home hero',
+  })
+  // Sent → must be one of the six (null is refused: the column is required)
+  @ValidateIf((_, value) => value !== undefined)
+  @IsEnum(HeroTheme)
+  heroTheme?: HeroTheme;
 }
 
 /** Partial update: only the sent sections and fields change. */
@@ -169,6 +182,8 @@ class WebsiteSettingsDto {
   @ApiPropertyOptional({ type: String, nullable: true })
   youtubeUrl!: string | null;
   @ApiProperty() registrationEnabled!: boolean;
+  @ApiProperty({ enum: HeroTheme, enumName: 'HeroTheme' })
+  heroTheme!: HeroTheme;
   @ApiProperty() updatedAt!: Date;
 }
 

@@ -33,6 +33,7 @@ import {
   AchievementCategory,
   ConsentGiver,
   GalleryCategory,
+  HeroTheme,
   PublicGroupStatus,
 } from '../generated/prisma/enums.js';
 import { IsTimeOfDay } from '../scheduling/time.js';
@@ -742,6 +743,12 @@ export class PublicSiteSettingsDto {
   @ApiProperty({ type: SocialLinksDto }) social!: SocialLinksDto;
   @ApiProperty({ description: 'The public registration form is open' })
   registrationEnabled!: boolean;
+  @ApiProperty({
+    enum: HeroTheme,
+    enumName: 'HeroTheme',
+    description: 'Animated background of the home hero',
+  })
+  heroTheme!: HeroTheme;
 }
 
 export class PublicBranchDto {
@@ -763,7 +770,13 @@ export class PublicStatisticsDto {
 export class PublicHomeDto {
   @ApiPropertyOptional({ type: PublicSiteSettingsDto, nullable: true })
   settings!: PublicSiteSettingsDto | null;
-  @ApiProperty({ type: PublicHeroSlideDto, isArray: true, description: '≤ 10' })
+  @ApiProperty({
+    type: PublicHeroSlideDto,
+    isArray: true,
+    description:
+      '≤ 10. Deprecated: the hero shows settings.heroTheme; kept for compatibility',
+    deprecated: true,
+  })
   heroSlides!: PublicHeroSlideDto[];
   @ApiProperty({ type: PublicServiceDto, isArray: true, description: '≤ 6' })
   services!: PublicServiceDto[];

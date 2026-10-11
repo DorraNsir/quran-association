@@ -70,7 +70,7 @@ const HOME = {
   achievements: 4,
   graduates: 4,
   news: 3,
-  gallery: 5,
+  gallery: 6,
 };
 
 const byOrder = [
@@ -666,6 +666,7 @@ export class PublicSiteService {
           instagramUrl: true,
           youtubeUrl: true,
           registrationEnabled: true,
+          heroTheme: true,
         },
       }),
     ]);

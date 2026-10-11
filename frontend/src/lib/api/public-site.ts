@@ -7,7 +7,6 @@ import type {
   AdministrationMember,
   GalleryCategory,
   GalleryImage,
-  HeroSlide,
   NewsArticle,
   PublicEvent,
   PublicGroupListing,
@@ -74,6 +73,7 @@ const STAMP = { createdAt: "", updatedAt: "" }
 
 /* ------------------------------ DTOs ------------------------------ */
 
+/** Still returned by /public/home for compatibility; the hero no longer uses slides. */
 interface HeroSlideDto { id: string; imageUrl: string | null; title: string | null; subtitle: string | null; ctaLabel: string | null; ctaHref: string | null; displayOrder: number }
 interface ServiceDto { id: string; title: string; description: string | null; icon: string | null; displayOrder: number }
 interface ProgramDto { id: string; title: string; description: string; imageUrl: string | null; icon: string | null; displayOrder: number }
@@ -99,10 +99,6 @@ export interface PublicStatistics { students: number; teachers: number; branches
 
 /* ------------------------------ adapters ------------------------------ */
 
-const toSlide = (s: HeroSlideDto): HeroSlide => ({
-  ...STAMP, id: s.id, imageUrl: media(s.imageUrl) ?? "", titleAr: opt(s.title), subtitleAr: opt(s.subtitle),
-  ctaLabelAr: opt(s.ctaLabel), ctaHref: opt(s.ctaHref), displayOrder: s.displayOrder, isActive: true,
-})
 const toOffering = (s: ServiceDto): ServiceOffering => ({
   ...STAMP, id: s.id, titleAr: s.title, descriptionAr: opt(s.description), icon: opt(s.icon), displayOrder: s.displayOrder, isPublished: true,
 })
@@ -163,7 +159,6 @@ export async function getHome() {
   }>("/public/home")
   return {
     settings: home.settings,
-    slides: home.heroSlides.filter((s) => s.imageUrl).map(toSlide),
     offerings: home.services.map(toOffering),
     programs: home.programs.map(toProgram),
     groups: home.upcomingGroups.map(toGroup),

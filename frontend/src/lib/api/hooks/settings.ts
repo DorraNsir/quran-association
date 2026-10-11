@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { api, uploadFile } from "../client"
 import type { StoredFileInfo } from "./people"
+import type { HeroVariant } from "@/components/website/hero-background"
 
 /** GET /api/admin/settings (sections may be null before the first save/seed). */
 export interface AdminSettingsDto {
@@ -36,6 +37,8 @@ export interface AdminSettingsDto {
     instagramUrl: string | null
     youtubeUrl: string | null
     registrationEnabled: boolean
+    /** Animated background of the public home hero */
+    heroTheme: HeroVariant
     updatedAt: string
   } | null
   currentAcademicYear: { id: string; label: string; startDate: string; endDate: string } | null
