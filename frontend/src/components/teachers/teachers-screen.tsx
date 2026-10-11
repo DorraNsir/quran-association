@@ -9,7 +9,7 @@ export function TeachersScreen() {
   const { lookups, results } = useLookups()
   // Accounts linked to teachers (roles come from the API, never inferred)
   const dtos = useTeacherDtos()
-  const adminTeacherIds = (dtos.data ?? []).filter((t) => t.account?.roles.includes("ADMIN")).map((t) => t.id)
+  const adminTeacherIds = (dtos.data ?? []).filter((t) => (t.account ? t.account.roles.includes("ADMIN") : false)).map((t) => t.id)
   return (
     <QueryState query={[...results, dtos]}>
       {lookups && <TeachersView lookups={lookups} adminTeacherIds={adminTeacherIds} />}

@@ -78,7 +78,8 @@ function TeacherProfileBody({
   const assisting = assignments.length - supervising
   const weeklySlots = teacherWeeklySlots(teacher.id, lookups)
   const minutes = weeklyMinutes(weeklySlots.map((e) => e.slot))
-  const isAdmin = Boolean(account?.roles.includes("ADMIN"))
+  // Explicit null check: the React Compiler memoizes `x?.a.b()` as if `x` were never null
+  const isAdmin = account ? account.roles.includes("ADMIN") : false
 
   return (
     <>

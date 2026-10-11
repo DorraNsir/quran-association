@@ -58,17 +58,18 @@ export function AccountCard({
 }) {
   const [dialog, setDialog] = useState<{ kind: "create" | "reset"; key: number } | null>(null)
   const [confirm, setConfirm] = useState<"activate" | "deactivate" | "admin" | null>(null)
-  const isAdmin = Boolean(account?.roles.includes("ADMIN"))
-  const toggle = useApiMutation(
-    (kind: "activate" | "deactivate" | "admin") =>
-      kind === "admin"
-        ? api(`/admin/accounts/${account!.id}/roles`, {
-            method: "PUT",
-            body: { roles: isAdmin ? account!.roles.filter((r) => r !== "ADMIN") : [...account!.roles, "ADMIN"] },
-          })
-        : api(`/admin/accounts/${account!.id}/${kind}`, { method: "POST" }),
-    accountKeys
-  )
+  // Explicit null check: the React Compiler memoizes `x?.a.b()` as if `x` were never null
+  const isAdmin = account ? account.roles.includes("ADMIN") : false
+  const toggle = useApiMutation((kind: "activate" | "deactivate" | "admin") => {
+    // Checked first (never `account!`): the React Compiler would read account.id while preparing this handler
+    if (!account) return Promise.reject(new Error("لا يوجد حساب"))
+    return kind === "admin"
+      ? api(`/admin/accounts/${account.id}/roles`, {
+          method: "PUT",
+          body: { roles: isAdmin ? account.roles.filter((r) => r !== "ADMIN") : [...account.roles, "ADMIN"] },
+        })
+      : api(`/admin/accounts/${account.id}/${kind}`, { method: "POST" })
+  }, accountKeys)
 
   return (
     <SectionCard title="حساب الدخول" icon={KeyRound}>
@@ -163,13 +164,12 @@ function PasswordDialog({
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState(temporaryPassword)
   const [submitted, setSubmitted] = useState(false)
-  const save = useApiMutation(
-    () =>
-      kind === "create"
-        ? api("/admin/accounts", { method: "POST", body: { username, temporaryPassword: password, roles: [role], personId } })
-        : api(`/admin/accounts/${account!.id}/reset-password`, { method: "POST", body: { temporaryPassword: password } }),
-    accountKeys
-  )
+  const save = useApiMutation(() => {
+    if (kind === "create")
+      return api("/admin/accounts", { method: "POST", body: { username, temporaryPassword: password, roles: [role], personId } })
+    if (!account) return Promise.reject(new Error("لا يوجد حساب"))
+    return api(`/admin/accounts/${account.id}/reset-password`, { method: "POST", body: { temporaryPassword: password } })
+  }, accountKeys)
   const errors = { username: kind === "create" ? usernameError(username) : undefined, password: passwordPolicyError(password) }
 
   return (

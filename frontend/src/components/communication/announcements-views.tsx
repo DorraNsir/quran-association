@@ -362,8 +362,8 @@ export function AdminAnnouncements({ lookups }: { lookups: Lookups }) {
         <Pager page={page} totalPages={list.data?.meta.totalPages ?? 1} onPage={setPage} />
       </QueryState>
 
-      <AnnouncementEditor key={editor.key} open={editor.open} onOpenChange={(open) => setEditor((p) => ({ ...p, open }))} announcement={editor.announcement} lookups={lookups} />
-      <ScheduleDialog key={scheduling.key} announcement={scheduling.announcement} onDone={() => setScheduling((p) => ({ ...p, announcement: null }))} />
+      <AnnouncementEditor key={`editor-${editor.key}`} open={editor.open} onOpenChange={(open) => setEditor((p) => ({ ...p, open }))} announcement={editor.announcement} lookups={lookups} />
+      <ScheduleDialog key={`schedule-${scheduling.key}`} announcement={scheduling.announcement} onDone={() => setScheduling((p) => ({ ...p, announcement: null }))} />
       <ActionConfirm pending={pending} onDone={() => setPending(null)} />
     </>
   )
@@ -496,8 +496,8 @@ export function AnnouncementDetails({ announcementId, workspace, lookups }: { an
 
       {isAdmin && lookups && (
         <>
-          <AnnouncementEditor key={editing.key} open={editing.open} onOpenChange={(open) => setEditing((p) => ({ ...p, open }))} announcement={announcement} lookups={lookups} />
-          <ScheduleDialog key={scheduling.key} announcement={scheduling.announcement} onDone={() => setScheduling((p) => ({ ...p, announcement: null }))} />
+          <AnnouncementEditor key={`editor-${editing.key}`} open={editing.open} onOpenChange={(open) => setEditing((p) => ({ ...p, open }))} announcement={announcement} lookups={lookups} />
+          <ScheduleDialog key={`schedule-${scheduling.key}`} announcement={scheduling.announcement} onDone={() => setScheduling((p) => ({ ...p, announcement: null }))} />
           <ActionConfirm pending={pending} onDone={() => setPending(null)} afterDelete={() => router.push(back)} />
         </>
       )}
