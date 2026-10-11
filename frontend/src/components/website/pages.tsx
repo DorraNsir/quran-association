@@ -76,8 +76,7 @@ export async function HomePage() {
   const stats = statsOf(home.statistics)
   const aboutImage = home.gallery[0]?.imageUrl
   const image = await getGallery()
-  console.log("image", image)
-  console.log("gallery", gallery)
+
 
   return (
     <>
@@ -121,26 +120,22 @@ export async function HomePage() {
         </Section>
       )}
 
-      <Section id="groups" tone="soft" eyebrow="التسجيل" title="مجموعات ستفتح قريباً" link={{ href: "/groups", label: "كل المجموعات" }}>
-        {upcomingGroups.length === 0 ? (
-          <PublicEmpty message="لا توجد مجموعات جديدة معلنة حالياً" />
-        ) : (
+      {/* Homepage only: an optional content section is shown only when the API returned items (dedicated pages keep their empty states) */}
+      {upcomingGroups.length > 0 && (
+        <Section id="groups" tone="soft" eyebrow="التسجيل" title="مجموعات ستفتح قريباً" link={{ href: "/groups", label: "كل المجموعات" }}>
           <CardGrid count={upcomingGroups.length}>
             {upcomingGroups.map((g) => <GroupListingCard key={g.id} listing={g} branch={g.branchName ? { name: g.branchName } : undefined} />)}
           </CardGrid>
-        )}
-      </Section>
+        </Section>
+      )}
 
-      <Section id="events" eyebrow="أجندة الجمعية" title="الفعاليات القادمة" link={{ href: "/events", label: "عرض جميع الفعاليات" }}>
-        {events.length === 0 ? (
-          <PublicEmpty message="لا توجد فعاليات قادمة حالياً" />
-        ) : (
+      {events.length > 0 && (
+        <Section id="events" eyebrow="أجندة الجمعية" title="الفعاليات القادمة" link={{ href: "/events", label: "عرض جميع الفعاليات" }}>
           <CardGrid count={events.length}>
             {events.map((e) => <EventCard key={e.id} event={e} today={today} />)}
           </CardGrid>
-        )}
-      </Section>
-      
+        </Section>
+      )}
 
       <StatsBand stats={stats} />
 
@@ -160,15 +155,13 @@ export async function HomePage() {
         </Section>
       )}
 
-      <Section id="news" tone="soft" eyebrow="من الجمعية" title="آخر الأخبار" link={{ href: "/news", label: "عرض جميع الأخبار" }}>
-        {news.length === 0 ? (
-          <PublicEmpty message="لا توجد أخبار منشورة حالياً" />
-        ) : (
+      {news.length > 0 && (
+        <Section id="news" tone="soft" eyebrow="من الجمعية" title="آخر الأخبار" link={{ href: "/news", label: "عرض جميع الأخبار" }}>
           <CardGrid count={news.length}>
             {news.map((n) => <NewsCard key={n.id} article={n} />)}
           </CardGrid>
-        )}
-      </Section>
+        </Section>
+      )}
 
       {gallery.length > 0 && (
         <Section id="gallery" eyebrow="صور" title="من حياة الجمعية" link={{ href: "/gallery", label: "معرض الصور" }}>
@@ -257,7 +250,7 @@ export async function ProgramsPage() {
     <>
       <PageHero eyebrow="برامجنا" title="ما نقدّمه في الجمعية" intro="برامج متنوّعة تناسب كل الأعمار والمستويات، من الحفظ الأول إلى الإتقان." />
       <Section title="برامجنا">
-        {programs.length === 0 ? <PublicEmpty message="لا توجد برامج منشورة حالياً" /> : (
+        {programs.length === 0 ? <PublicEmpty message="لا توجد برامج متاحة حالياً" /> : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {programs.map((p) => <ProgramCard key={p.id} program={p} />)}
           </div>
@@ -298,7 +291,7 @@ export async function EventsPage() {
     <>
       <PageHero eyebrow="الفعاليات" title="أجندة الجمعية" intro="مسابقات، حفلات تكريم وأمسيات قرآنية مفتوحة للعائلات." />
       <Section title="الفعاليات القادمة">
-        {upcoming.length === 0 ? <PublicEmpty message="لا توجد فعاليات قادمة حالياً" /> : (
+        {upcoming.length === 0 ? <PublicEmpty message={past.length === 0 ? "لا توجد فعاليات حالياً" : "لا توجد فعاليات قادمة حالياً"} /> : (
           <CardGrid count={upcoming.length}>
             {upcoming.map((e) => <EventCard key={e.id} event={e} today={today} />)}
           </CardGrid>
@@ -323,7 +316,7 @@ export async function AchievementsPage() {
     <>
       <PageHero eyebrow="مسيرة وعطاء" title="إنجازات الجمعية" intro="محطات نعتزّ بها في خدمة كتاب الله ومجتمعنا." />
       <Section title="محطات الجمعية">
-        {items.length === 0 ? <PublicEmpty message="لا توجد إنجازات منشورة حالياً" /> : (
+        {items.length === 0 ? <PublicEmpty message="لا توجد إنجازات حالياً" /> : (
           <ol className="space-y-12">
             {years.map((year) => (
               <li key={year} className="grid gap-6 md:grid-cols-[8rem_1fr]">
@@ -348,7 +341,7 @@ export async function NewsPage() {
     <>
       <PageHero eyebrow="الأخبار" title="أخبار الجمعية" />
       <Section title="آخر الأخبار">
-        {news.length === 0 ? <PublicEmpty message="لا توجد أخبار منشورة حالياً" /> : (
+        {news.length === 0 ? <PublicEmpty message="لا توجد أخبار حالياً" /> : (
           <CardGrid count={news.length}>
             {news.map((n) => <NewsCard key={n.id} article={n} />)}
           </CardGrid>
@@ -401,7 +394,7 @@ export async function GraduatesPage() {
     <>
       <PageHero eyebrow="بارك الله فيهم" title="الخاتمون" intro="نعتزّ بطلبتنا الذين أتمّوا حفظ كتاب الله، ونسأل الله أن يجعله حجّة لهم." />
       <Section title="خاتمو كتاب الله">
-        {graduates.length === 0 ? <PublicEmpty message="لا توجد أسماء منشورة حالياً" /> : (
+        {graduates.length === 0 ? <PublicEmpty message="لا يوجد خاتمون لعرضهم حالياً" /> : (
           <div className="grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-3 lg:grid-cols-4">
             {graduates.map((g) => <GraduateCard key={g.id} graduate={g} />)}
           </div>
@@ -417,7 +410,7 @@ export async function GalleryPage() {
     <>
       <PageHero eyebrow="صور" title="معرض الصور" intro="لقطات من الأقسام والأنشطة وحفلات التكريم." />
       <Section title="من حياة الجمعية">
-        {images.length === 0 ? <PublicEmpty message="لا توجد صور منشورة حالياً" /> : <GalleryGrid images={images} />}
+        {images.length === 0 ? <PublicEmpty message="لا توجد صور حالياً" /> : <GalleryGrid images={images} />}
       </Section>
     </>
   )
