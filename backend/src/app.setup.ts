@@ -19,6 +19,14 @@ export function configureApp(app: INestApplication) {
   const config =
     app.get<ConfigService<EnvironmentVariables, true>>(ConfigService);
 
+  // Behind a reverse proxy (e.g. Railway): trust its X-Forwarded-For so req.ip is the visitor
+  const proxies = config.get('TRUST_PROXY', { infer: true });
+  if (proxies > 0)
+    (
+      app.getHttpAdapter().getInstance() as {
+        set: (key: string, value: unknown) => void;
+      }
+    ).set('trust proxy', proxies);
   app.setGlobalPrefix(API_PREFIX);
   app.useGlobalPipes(
     new ValidationPipe({

@@ -100,6 +100,16 @@ export class EnvironmentVariables {
   REGISTRATION_RATE_LIMIT_WINDOW_SECONDS: number = 900;
 
   /**
+   * Reverse proxies in front of the API (Express "trust proxy" hops). 0 = none
+   * (local). Behind one proxy (Railway, Render…) set 1 so req.ip is the
+   * visitor's address — the registration rate limit is per IP.
+   */
+  @IsInt()
+  @Min(0)
+  @Max(5)
+  TRUST_PROXY: number = 0;
+
+  /**
    * How often (seconds) due SCHEDULED announcements are published; 0 turns
    * the in-process scheduler off (E2E tests drive it explicitly).
    */
