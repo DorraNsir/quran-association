@@ -547,7 +547,7 @@ export class PublicMemberDto extends PickType(MemberDto, [
 
 export class NewsInputDto {
   @Text(200) title!: string;
-  @Text(500) excerpt!: string;
+  @Text(1000) excerpt!: string;
   @Text(20000, 'Plain text, paragraphs separated by blank lines')
   content!: string;
   @Media() coverImageUrl?: string | null;
