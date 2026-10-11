@@ -165,7 +165,7 @@ export class PublicSiteController {
   @Get('graduates')
   @ApiOperation({
     summary:
-      'Published graduates with a recorded consent: name, year, message, photo only',
+      'Published graduates: name, year, message, photo only',
   })
   @ApiOkResponse({ type: PublicGraduateDto, isArray: true })
   graduates(): Promise<PublicGraduateDto[]> {

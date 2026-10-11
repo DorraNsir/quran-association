@@ -561,6 +561,23 @@ describe('Settings & file storage (e2e)', () => {
         .patch(`cms/hero-slides/${id.slide}`, { isActive: true })
         .expect(200);
 
+      // Graduate photo: public as soon as the graduate is (published on creation)
+      const photo = await uploadOk('admin', { purpose: 'CMS_IMAGE' }, PNG());
+      const graduate = await admin
+        .post('cms/graduates', {
+          fullName: tag('خاتم'),
+          completionYear: 2026,
+          photoFileId: photo,
+        })
+        .expect(201);
+      expect(graduate.body.isPublished).toBe(true);
+      await publicFile(photo).expect(200);
+      await admin
+        .patch(`cms/graduates/${graduate.body.id}`, { isPublished: false })
+        .expect(200);
+      await publicFile(photo).expect(404);
+      await prisma.quranGraduate.delete({ where: { id: graduate.body.id } });
+
       // News cover: draft and future-dated are not public
       const cover = await uploadOk('admin', { purpose: 'CMS_IMAGE' }, PNG());
       const news = await admin

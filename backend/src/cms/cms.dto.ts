@@ -448,11 +448,27 @@ export class GraduateInputDto {
   @Text(150) fullName!: string;
   @Media() photoUrl?: string | null;
   @MediaFile() photoFileId?: string | null;
-  @Year() completionYear?: number | null;
-  @IsDateOnly({ optional: true }) completionDate?: string | null;
+  @ApiProperty({
+    type: Number,
+    minimum: 1900,
+    maximum: 2100,
+    example: 2026,
+    description:
+      'سنة الختم (required; an update may omit it but never clear it)',
+  })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1900)
+  @Max(2100)
+  completionYear!: number;
+  @IsDateOnly({
+    optional: true,
+    description: 'Historical full date (no longer entered by the admin form)',
+  })
+  completionDate?: string | null;
   @OptionalText(500) shortMessage?: string | null;
   @OptionalUuid(
-    'Optional link to the student record (internal only, never public; a minor student needs a GUARDIAN consent)',
+    'Optional link to the student record (internal only, never public)',
   )
   studentId?: string | null;
   @ApiPropertyOptional({
@@ -460,14 +476,14 @@ export class GraduateInputDto {
     enumName: 'ConsentGiver',
     nullable: true,
     description:
-      'Records who consented to the public listing of the name/photo (the server stores when and by whom). null withdraws it — and unpublishes.',
+      'Historical/optional: who consented to the public listing (the server stores when and by whom). Not required to publish.',
   })
   @IsOptional()
   @ValidateIf((_, v) => v !== null)
   @IsEnum(ConsentGiver)
   consentGivenBy?: ConsentGiver | null;
   @Flag(
-    'Explicit publication decision (default false); requires a recorded consent',
+    'Publication (default true: a new graduate is published); an edit that omits it keeps the current state',
   )
   isPublished?: boolean;
 }

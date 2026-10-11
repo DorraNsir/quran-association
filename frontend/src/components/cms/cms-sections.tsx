@@ -59,7 +59,6 @@ const ACHIEVEMENT_CATEGORIES: Record<AchievementCategory, string> = {
   ASSOCIATION: "الجمعية",
   MILESTONE: "محطة",
 }
-const CONSENT_GIVERS = { GRADUATE: "الخاتم نفسه (راشد)", GUARDIAN: "وليّ الأمر" }
 const options = (record: Record<string, string>) => Object.entries(record).map(([value, label]) => ({ value, label }))
 const str = (v: unknown) => (typeof v === "string" && v ? v : undefined)
 
@@ -183,22 +182,30 @@ function sectionConfigs(today: string): SectionConfig[] {
     {
       api: "graduates", slug: "graduates", icon: Award, card: "الخاتمون",
       title: "الخاتمون",
-      description: "لا يظهر أي طالب تلقائيًا: تُضاف الأسماء هنا، ولا يُنشر الاسم أو الصورة إلا بعد تسجيل الموافقة (موافقة الولي للقاصر).",
-      addLabel: "إضافة خاتم", emptyLabel: "لا توجد أسماء بعد", publishKey: "isPublished", ordered: true, defaults: { isPublished: false, completionYear: year },
+      description: "لا يظهر أي طالب تلقائيًا: تُضاف الأسماء هنا وتُنشر فور إضافتها، ويمكن إلغاء نشرها أو إعادته من القائمة.",
+      addLabel: "إضافة خاتم", createSubmitLabel: "إضافة خاتم", showAgainLabel: "إعادة النشر",
+      emptyLabel: "لا توجد أسماء بعد", publishKey: "isPublished", ordered: true,
+      // New graduates are published by the API; edits never send the publication state
+      defaults: { completionYear: year },
       fields: [
         { key: "fullName", label: "الاسم الكامل", type: "text", required: true, wide: true },
-        { key: "completionYear", label: "سنة الختم", type: "number" },
-        { key: "completionDate", label: "تاريخ الختم", type: "date" },
+        { key: "completionYear", label: "سنة الختم", type: "number", required: true, description: "مثال: 2026" },
         { key: "shortMessage", label: "كلمة قصيرة", type: "textarea" },
         { key: "photoUrl", label: "الصورة", type: "image" },
-        { key: "consentGivenBy", label: "الموافقة على النشر", type: "select", options: options(CONSENT_GIVERS), description: "مطلوبة قبل النشر" },
-        { key: "isPublished", label: "منشور", type: "checkbox" },
       ],
+      validate: (v) => {
+        const raw = v.completionYear
+        if (raw === undefined || raw === null || String(raw).trim() === "") return {}
+        const value = Number(raw)
+        return {
+          completionYear:
+            Number.isInteger(value) && value >= 1900 && value <= year ? undefined : `سنة الختم: سنة صحيحة بين 1900 و${year}`,
+        }
+      },
       summary: (g) => ({
         title: String(g.fullName),
         subtitle: g.completionYear ? `ختم القرآن · ${g.completionYear}` : undefined,
         image: str(g.photoUrl),
-        badges: g.consentGivenBy ? [] : ["دون موافقة مسجّلة"],
       }),
       publicHref: () => "/graduates",
     },

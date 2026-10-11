@@ -56,6 +56,10 @@ export interface CmsConfig {
   title: string
   description: string
   addLabel: string
+  /** The create form's submit button (default «إضافة») */
+  createSubmitLabel?: string
+  /** The list action that makes a hidden item visible again (default «نشر» / «تفعيل») */
+  showAgainLabel?: string
   emptyLabel: string
   fields: CmsField[]
   defaults: Record<string, unknown>
@@ -136,7 +140,9 @@ export function CmsManager({ config }: { config: CmsConfig }) {
             {items.map((item, index) => {
               const { title, subtitle, image, badges } = config.summary(item)
               const visible = Boolean(item[config.publishKey])
-              const toggleLabel = visible ? (config.publishKey === "isActive" ? "إلغاء التفعيل" : "إلغاء النشر") : config.publishKey === "isActive" ? "تفعيل" : "نشر"
+              const toggleLabel = visible
+                ? config.publishKey === "isActive" ? "إلغاء التفعيل" : "إلغاء النشر"
+                : (config.showAgainLabel ?? (config.publishKey === "isActive" ? "تفعيل" : "نشر"))
               const toggle = () => setFlag(item, config.publishKey, !visible, visible ? "لم يعد ظاهرًا في الموقع" : "أصبح ظاهرًا في الموقع")
               const actions: RowAction[] = [
                 { label: "تعديل", icon: Pencil, onSelect: () => openEditor(item) },
@@ -360,7 +366,7 @@ function CmsItemForm({
       onOpenChange={(next) => !pending && onOpenChange(next)}
       title={item ? `تعديل — ${config.title}` : config.addLabel}
       description="المحتوى بالعربية."
-      submitLabel={item ? "حفظ التعديلات" : "إضافة"}
+      submitLabel={item ? "حفظ التعديلات" : (config.createSubmitLabel ?? "إضافة")}
       pending={pending}
       error={serverError ?? undefined}
       onSubmit={(e) => {

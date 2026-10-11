@@ -308,8 +308,9 @@ export function GraduateCard({ graduate }: { graduate: QuranGraduate }) {
       </div>
       <div className="space-y-1">
         <h3 className="font-display text-lg font-bold">{graduate.fullName}</h3>
-        {(graduate.completionYear || graduate.completionDate) && (
-          <p className="text-sm text-primary">ختم القرآن الكريم · {graduate.completionDate ? formatDate(graduate.completionDate) : graduate.completionYear}</p>
+        {/* The graduation year only (a historical full date is not shown) */}
+        {graduate.completionYear && (
+          <p className="text-sm text-primary">ختم القرآن الكريم · {graduate.completionYear}</p>
         )}
         {graduate.shortMessage && <p className="text-sm leading-relaxed text-muted-foreground">{graduate.shortMessage}</p>}
       </div>

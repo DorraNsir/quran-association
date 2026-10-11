@@ -332,8 +332,7 @@ export class FilesService {
             OR EXISTS (SELECT 1 FROM news_articles x WHERE x."coverImageFileId" = f.id
                          AND x."isPublished" AND x."publishedAt" <= ${today}::date)
             OR EXISTS (SELECT 1 FROM gallery_images x WHERE x."imageFileId" = f.id AND x."isPublished")
-            OR EXISTS (SELECT 1 FROM quran_graduates x WHERE x."photoFileId" = f.id
-                         AND x."isPublished" AND x."consentRecordedAt" IS NOT NULL)
+            OR EXISTS (SELECT 1 FROM quran_graduates x WHERE x."photoFileId" = f.id AND x."isPublished")
             OR EXISTS (SELECT 1 FROM administration_members x WHERE x."photoFileId" = f.id AND x."isPublished")
           )
       ) AS ok`;

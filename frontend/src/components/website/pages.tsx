@@ -140,6 +140,7 @@ export async function HomePage() {
           </CardGrid>
         )}
       </Section>
+      
 
       <StatsBand stats={stats} />
 

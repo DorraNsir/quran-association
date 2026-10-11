@@ -224,7 +224,7 @@ export class PublicSiteService {
     } satisfies Prisma.PublicGroupListingWhereInput,
     events: { isPublished: true, isPublic: true },
     achievements: { isPublished: true },
-    graduates: { isPublished: true, consentRecordedAt: { not: null } },
+    graduates: { isPublished: true },
     members: { isPublished: true },
     gallery: { isPublished: true },
   };

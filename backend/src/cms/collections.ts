@@ -1,10 +1,8 @@
 import type { Type } from '@nestjs/common';
 
-import { ageOn } from '../academic/students/students.service.js';
-import { fromDbDate, fromDbDateOrNull } from '../common/dates.js';
+import { fromDbDate } from '../common/dates.js';
 import { badRequest } from '../common/errors.js';
 import type { Prisma } from '../generated/prisma/client.js';
-import { ConsentGiver } from '../generated/prisma/enums.js';
 import {
   AchievementDto,
   AchievementInputDto,
@@ -339,41 +337,30 @@ export const COLLECTIONS: CollectionConfig[] = [
     outputDto: GraduateDto,
     prepare: async (ctx) => {
       const { tx, data, dto, current } = ctx;
-      // Consent: recorded by the server (who/when); withdrawing it unpublishes
+      // The graduation year is required: an update may omit it, never clear it
+      if ('completionYear' in dto && dto.completionYear == null)
+        throw badRequest('CMS_GRADUATE_YEAR_REQUIRED', 'سنة الختم مطلوبة');
+      // Publication no longer depends on a consent recorded here (the
+      // association obtains it outside the platform). A consent an API client
+      // still sends is stored with who/when, as before; nothing is fabricated.
       if ('consentGivenBy' in dto) {
         if (dto.consentGivenBy === null) {
           data.consentRecordedAt = null;
           data.consentRecordedByUserId = null;
-          if (!('isPublished' in dto)) data.isPublished = false;
         } else if (dto.consentGivenBy !== current?.consentGivenBy) {
           data.consentRecordedAt = new Date();
           data.consentRecordedByUserId = ctx.userId;
         }
       }
-      const consent = merged(ctx, 'consentGivenBy') as ConsentGiver | null;
-      const published = Boolean(merged(ctx, 'isPublished'));
       const studentId = merged(ctx, 'studentId') as string | null | undefined;
-      let minor = false;
-      if (studentId) {
-        const student = await tx.student.findUnique({
+      if (
+        studentId &&
+        !(await tx.student.findUnique({
           where: { id: studentId },
-          select: { person: { select: { dateOfBirth: true } } },
-        });
-        if (!student) throw referenceInvalid('الطالب المرتبط غير موجود');
-        const dob = fromDbDateOrNull(student.person.dateOfBirth);
-        minor = dob !== null && ageOn(dob, ctx.today) < 18;
-      }
-      if (!published) return;
-      if (!consent)
-        throw badRequest(
-          'CMS_GRADUATE_CONSENT_REQUIRED',
-          'لا يُنشر اسم الخاتم أو صورته إلا بعد تسجيل الموافقة (consentGivenBy)',
-        );
-      if (minor && consent !== ConsentGiver.GUARDIAN)
-        throw badRequest(
-          'CMS_GUARDIAN_CONSENT_REQUIRED',
-          'الخاتم قاصر: يلزم تسجيل موافقة الولي (GUARDIAN) قبل النشر',
-        );
+          select: { id: true },
+        }))
+      )
+        throw referenceInvalid('الطالب المرتبط غير موجود');
     },
   },
   {

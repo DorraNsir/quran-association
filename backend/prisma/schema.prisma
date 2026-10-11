@@ -1213,13 +1213,15 @@ model QuranGraduate {
   /// Bundled website asset (/website/…) — or photoFileId
   photoUrl                String?
   photoFileId             String?       @db.Uuid
+  /// سنة الختم — the graduation information the platform uses
   completionYear          Int?          @db.SmallInt
+  /// Historical full date (no longer entered; kept as stored)
   completionDate          DateTime?     @db.Date
   shortMessage            String?
   displayOrder            Int           @default(0)
-  /// Explicit admin decision, and only with a recorded consent (CHECK)
-  isPublished             Boolean       @default(false)
-  /// Who agreed to publication of the name/photo: the graduate, or the guardian of a minor
+  /// New graduates are published; an admin unpublishes / republishes from the list
+  isPublished             Boolean       @default(true)
+  /// Historical: consent recorded before publication rules were simplified (no longer required)
   consentGivenBy          ConsentGiver?
   consentRecordedAt       DateTime?     @db.Timestamptz(3)
   consentRecordedByUserId String?       @db.Uuid

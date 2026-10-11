@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -655,7 +657,20 @@ describe('Public website & CMS (e2e)', () => {
   /* ================================================================ */
 
   describe('graduates', () => {
-    it('stays unpublished until an explicit decision with a recorded consent', async () => {
+    it('a new graduate is published at once: year required, no date, no consent', async () => {
+      // The year is the only graduation information required
+      for (const completionYear of [
+        undefined,
+        null,
+        '',
+        'ألفين',
+        2026.5,
+        1800,
+        2200,
+      ])
+        await cms('graduates')
+          .create({ fullName: tag('x'), completionYear })
+          .expect(400);
       const created = await cms('graduates')
         .create({
           fullName: tag('أحمد'),
@@ -663,39 +678,16 @@ describe('Public website & CMS (e2e)', () => {
           shortMessage: 'الحمد لله',
         })
         .expect(201);
+      // Published by default; nothing about consent is invented
       expect(created.body).toMatchObject({
-        isPublished: false,
+        completionYear: 2025,
+        completionDate: null,
+        isPublished: true,
         consentGivenBy: null,
         consentRecordedAt: null,
+        consentRecordedBy: null,
       });
       id.grad = created.body.id;
-      expect(
-        (
-          await cms('graduates')
-            .update(id.grad, { isPublished: true })
-            .expect(400)
-        ).body.code,
-      ).toBe('CMS_GRADUATE_CONSENT_REQUIRED');
-      expect(
-        (
-          await cms('graduates')
-            .create({ fullName: tag('x'), isPublished: true })
-            .expect(400)
-        ).body.code,
-      ).toBe('CMS_GRADUATE_CONSENT_REQUIRED');
-      // The server records who and when; the client cannot
-      await cms('graduates')
-        .update(id.grad, { consentRecordedAt: new Date().toISOString() })
-        .expect(400);
-      const res = await cms('graduates')
-        .update(id.grad, { consentGivenBy: 'GRADUATE', isPublished: true })
-        .expect(200);
-      expect(res.body).toMatchObject({
-        isPublished: true,
-        consentGivenBy: 'GRADUATE',
-        consentRecordedBy: { username: `e2e-${RUN}-admin` },
-      });
-      expect(res.body.consentRecordedAt).toBeTruthy();
       const publicRows = (await pub('graduates')).body;
       expect(ids(publicRows)).toContain(id.grad);
       expect(Object.keys(publicRows[0]).sort()).toEqual(
@@ -709,26 +701,69 @@ describe('Public website & CMS (e2e)', () => {
           'shortMessage',
         ].sort(),
       );
-      // Withdrawing the consent unpublishes at once
-      const withdrawn = await cms('graduates')
-        .update(id.grad, { consentGivenBy: null })
-        .expect(200);
-      expect(withdrawn.body).toMatchObject({
-        isPublished: false,
-        consentRecordedAt: null,
-      });
-      expect(ids((await pub('graduates')).body)).not.toContain(id.grad);
-      // The database refuses a published graduate without consent
-      await expect(
-        prisma.quranGraduate.update({
-          where: { id: id.grad },
-          data: { isPublished: true },
-        }),
-      ).rejects.toThrow(/quran_graduates_published_consent_check/);
+      // The year can change but never be cleared
+      expect(
+        (
+          await cms('graduates')
+            .update(id.grad, { completionYear: null })
+            .expect(400)
+        ).body.code,
+      ).toBe('CMS_GRADUATE_YEAR_REQUIRED');
+      expect(
+        (
+          await cms('graduates')
+            .update(id.grad, { completionYear: 2026 })
+            .expect(200)
+        ).body.completionYear,
+      ).toBe(2026);
     });
 
-    it('a linked minor student needs the guardian’s consent; the link is never public', async () => {
-      const minor = await prisma.person.create({
+    it('unpublish hides it publicly (record kept); edits keep the state; republish restores it', async () => {
+      const off = await cms('graduates')
+        .update(id.grad, { isPublished: false })
+        .expect(200);
+      expect(off.body.isPublished).toBe(false);
+      expect(ids((await pub('graduates')).body)).not.toContain(id.grad);
+      // Still in the admin list and in PostgreSQL
+      expect(
+        ids((await cms('graduates').list({ search: tag('أحمد') })).body.data),
+      ).toContain(id.grad);
+      expect(await prisma.quranGraduate.count({ where: { id: id.grad } })).toBe(
+        1,
+      );
+      // Editing the name/photo of an unpublished graduate does not republish it
+      const edited = await cms('graduates')
+        .update(id.grad, {
+          fullName: tag('أحمد بن علي'),
+          shortMessage: 'جزاكم الله خيرا',
+          photoUrl: IMG,
+        })
+        .expect(200);
+      expect(edited.body).toMatchObject({
+        fullName: tag('أحمد بن علي'),
+        isPublished: false,
+      });
+      expect(ids((await pub('graduates')).body)).not.toContain(id.grad);
+      // Republish
+      await cms('graduates').update(id.grad, { isPublished: true }).expect(200);
+      expect(ids((await pub('graduates')).body)).toContain(id.grad);
+      // ...and editing a published one keeps it published
+      expect(
+        (
+          await cms('graduates')
+            .update(id.grad, { shortMessage: null })
+            .expect(200)
+        ).body.isPublished,
+      ).toBe(true);
+      // The database accepts publication without a recorded consent now
+      await prisma.quranGraduate.update({
+        where: { id: id.grad },
+        data: { isPublished: true },
+      });
+    });
+
+    it('historical data stays: a legacy date and consent are kept; links stay private', async () => {
+      const student = await prisma.person.create({
         data: {
           firstName: 'قاصر',
           lastName: tag('طالب'),
@@ -739,29 +774,92 @@ describe('Public website & CMS (e2e)', () => {
         },
         select: { student: { select: { id: true } } },
       });
+      // A record from before: full date + a consent recorded through the API
       const g = await make('graduates', {
         fullName: tag('سارة'),
-        studentId: minor.student!.id,
-        consentGivenBy: 'GRADUATE',
+        completionYear: 2024,
+        completionDate: '2024-06-15',
+        studentId: student.student!.id,
+        consentGivenBy: 'GUARDIAN',
       });
-      expect(
-        (await cms('graduates').update(g, { isPublished: true }).expect(400))
-          .body.code,
-      ).toBe('CMS_GUARDIAN_CONSENT_REQUIRED');
+      const row = (await cms('graduates').get(g).expect(200)).body;
+      expect(row).toMatchObject({
+        completionDate: '2024-06-15',
+        consentGivenBy: 'GUARDIAN',
+        consentRecordedBy: { username: `e2e-${RUN}-admin` },
+        isPublished: true,
+      });
+      // An edit from the simplified form (no date, no consent sent) keeps them
+      const edited = (
+        await cms('graduates')
+          .update(g, { fullName: tag('سارة محمد'), completionYear: 2024 })
+          .expect(200)
+      ).body;
+      expect(edited).toMatchObject({
+        completionDate: '2024-06-15',
+        consentGivenBy: 'GUARDIAN',
+      });
+      expect(edited.consentRecordedAt).toBe(row.consentRecordedAt);
+      // The server alone records who/when
       await cms('graduates')
-        .update(g, { consentGivenBy: 'GUARDIAN', isPublished: true })
-        .expect(200);
-      expect(ids((await pub('graduates')).body)).toContain(g);
+        .update(g, { consentRecordedAt: new Date().toISOString() })
+        .expect(400);
       expect(JSON.stringify((await pub('graduates')).body)).not.toContain(
-        minor.student!.id,
+        student.student!.id,
       );
       expect(
         (
           await cms('graduates')
-            .create({ fullName: tag('x'), studentId: randomUUID() })
+            .create({
+              fullName: tag('x'),
+              completionYear: 2025,
+              studentId: randomUUID(),
+            })
             .expect(400)
         ).body.code,
       ).toBe('CMS_REFERENCE_INVALID');
+    });
+
+    it('migration: a date-only graduate gets that year; publication without consent is allowed (rolled back)', async () => {
+      const sql = readFileSync(
+        join(
+          import.meta.dirname,
+          '../prisma/migrations/20261011150000_graduates_simplified_publication/migration.sql',
+        ),
+        'utf8',
+      );
+      const ROLLBACK = new Error('rollback');
+      await expect(
+        prisma.$transaction(async (tx) => {
+          const legacy = await tx.quranGraduate.create({
+            data: {
+              fullName: tag('قديم'),
+              completionDate: new Date('2019-03-10T00:00:00Z'),
+              isPublished: false,
+            },
+            select: { id: true },
+          });
+          // Re-create the old rule so the migration can drop it again
+          await tx.$executeRawUnsafe(
+            `ALTER TABLE "quran_graduates" ADD CONSTRAINT "quran_graduates_published_consent_check" CHECK (NOT "isPublished" OR "consentRecordedAt" IS NOT NULL) NOT VALID`,
+          );
+          for (const statement of sql
+            .replace(/--.*$/gm, '')
+            .split(';')
+            .map((x) => x.trim())
+            .filter(Boolean))
+            await tx.$executeRawUnsafe(statement);
+          const after = await tx.quranGraduate.findUniqueOrThrow({
+            where: { id: legacy.id },
+            select: { completionYear: true, completionDate: true },
+          });
+          expect(after.completionYear).toBe(2019);
+          expect(after.completionDate?.toISOString().slice(0, 10)).toBe(
+            '2019-03-10',
+          );
+          throw ROLLBACK;
+        }),
+      ).rejects.toBe(ROLLBACK);
     });
   });
 
