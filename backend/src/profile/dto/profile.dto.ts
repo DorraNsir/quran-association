@@ -7,7 +7,6 @@ import {
 } from '../../common/contact-fields.js';
 import {
   ActivationStatus,
-  Gender,
   RecordStatus,
   Role,
 } from '../../generated/prisma/enums.js';
@@ -29,8 +28,6 @@ export class ProfilePersonDto {
   firstName!: string;
   @ApiProperty({ description: 'Official identity — admin-managed' })
   lastName!: string;
-  @ApiPropertyOptional({ enum: Gender, enumName: 'Gender', nullable: true })
-  gender!: Gender | null;
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
   dateOfBirth!: string | null;
   @ApiPropertyOptional({

@@ -93,7 +93,6 @@ describe('Workspaces (e2e)', () => {
         person: {
           firstName: key,
           lastName: tag('طالب'),
-          gender: 'MALE',
           dateOfBirth: '2014-05-01',
           address: 'نابل',
           phone: '22123456',

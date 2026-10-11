@@ -43,7 +43,6 @@ const select = {
       id: true,
       firstName: true,
       lastName: true,
-      gender: true,
       dateOfBirth: true,
       phone: true,
       email: true,
@@ -300,7 +299,6 @@ export class StudentsService {
       data: {
         firstName: p.firstName,
         lastName: p.lastName,
-        gender: p.gender,
         dateOfBirth: toDbDate(p.dateOfBirth),
         address: p.address,
         phone: p.phone ?? null,
@@ -353,7 +351,6 @@ export class StudentsService {
             data: {
               firstName: p.firstName,
               lastName: p.lastName,
-              gender: p.gender,
               dateOfBirth: p.dateOfBirth ? toDbDate(p.dateOfBirth) : undefined,
               phone: p.phone,
               email: p.email,

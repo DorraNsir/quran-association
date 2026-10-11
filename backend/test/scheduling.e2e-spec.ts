@@ -93,7 +93,6 @@ describe('Weekly scheduling & sessions (e2e)', () => {
         person: {
           firstName: key,
           lastName: tag('معلم'),
-          gender: 'MALE',
           phone: '22345678',
         },
         joinedAt: '2024-09-01',

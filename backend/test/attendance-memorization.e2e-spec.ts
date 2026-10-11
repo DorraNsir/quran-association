@@ -98,7 +98,6 @@ describe('Attendance & memorization (e2e)', () => {
           person: {
             firstName: key,
             lastName: tag('طالب'),
-            gender: 'MALE',
             dateOfBirth: '2014-05-01',
             address: 'نابل',
           },

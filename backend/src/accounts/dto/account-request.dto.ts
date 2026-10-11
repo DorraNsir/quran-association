@@ -27,7 +27,7 @@ import {
   USERNAME_PATTERN,
   USERNAME_RULE_MESSAGE,
 } from '../../common/username.js';
-import { Gender, Role } from '../../generated/prisma/enums.js';
+import { Role } from '../../generated/prisma/enums.js';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -77,11 +77,6 @@ export class NewPersonDto {
   @MinLength(1)
   @MaxLength(80)
   lastName!: string;
-
-  @ApiPropertyOptional({ enum: Gender, enumName: 'Gender' })
-  @IsOptional()
-  @IsEnum(Gender)
-  gender?: Gender;
 
   @OptionalPhone() phone?: string | null;
   @OptionalEmail() email?: string | null;
@@ -137,11 +132,6 @@ export class UpdatePersonDto {
   @MinLength(1)
   @MaxLength(80)
   lastName?: string;
-
-  @ApiPropertyOptional({ enum: Gender, enumName: 'Gender' })
-  @IsOptional()
-  @IsEnum(Gender)
-  gender?: Gender;
 
   @OptionalPhone() phone?: string | null;
   @OptionalEmail() email?: string | null;

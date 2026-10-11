@@ -17,7 +17,6 @@ import { paginationMeta } from '../common/pagination.js';
 import { platformDayBounds, platformToday } from '../common/platform-clock.js';
 import {
   ActivationStatus,
-  type Gender,
   type Prisma,
   RecordStatus,
   RegistrationRequestSource,
@@ -44,7 +43,6 @@ const select = {
   id: true,
   firstName: true,
   lastName: true,
-  gender: true,
   birthDate: true,
   age: true,
   phone: true,
@@ -248,7 +246,6 @@ export class RegistrationService {
         data: {
           firstName: dto.firstName,
           lastName: dto.lastName,
-          gender: dto.gender,
           birthDate:
             dto.birthDate === undefined
               ? undefined
@@ -383,7 +380,6 @@ export class RegistrationService {
     return {
       firstName: dto.firstName,
       lastName: dto.lastName,
-      gender: dto.gender ?? null,
       birthDate: dto.birthDate ? toDbDate(dto.birthDate) : null,
       age: dto.age ?? null,
       phone: dto.phone,
@@ -485,7 +481,6 @@ export class RegistrationService {
     request: {
       firstName: string;
       lastName: string;
-      gender: Gender | null;
       birthDate: Date | null;
       address: string | null;
       phone: string;
@@ -496,20 +491,19 @@ export class RegistrationService {
     const person = {
       firstName: o.firstName ?? request.firstName,
       lastName: o.lastName ?? request.lastName,
-      gender: o.gender ?? request.gender,
       dateOfBirth: o.dateOfBirth ?? fromDbDateOrNull(request.birthDate),
       address: o.address ?? request.address,
       phone: o.phone !== undefined ? o.phone : request.phone,
       email: o.email ?? null,
     };
-    const missing = (['gender', 'dateOfBirth', 'address'] as const).filter(
+    const missing = (['dateOfBirth', 'address'] as const).filter(
       (field) => !person[field],
     );
     if (missing.length) {
       throw new BadRequestException({
         code: 'ACCEPTANCE_DATA_MISSING',
         message:
-          'بيانات ناقصة لإنشاء ملف الطالب (الجنس، تاريخ الميلاد، العنوان): أكملها في person',
+          'بيانات ناقصة لإنشاء ملف الطالب (تاريخ الميلاد، العنوان): أكملها في person',
         fields: missing,
       });
     }
@@ -553,7 +547,6 @@ export class RegistrationService {
     }
     return {
       ...person,
-      gender: person.gender!,
       dateOfBirth: person.dateOfBirth!,
       address: person.address!,
     };

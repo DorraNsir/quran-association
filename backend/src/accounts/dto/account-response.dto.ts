@@ -1,14 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 import { PaginationMetaDto } from '../../common/pagination.js';
-import { Gender, Role } from '../../generated/prisma/enums.js';
+import { Role } from '../../generated/prisma/enums.js';
 
 export class AccountPersonDto {
   @ApiProperty() id!: string;
   @ApiProperty() firstName!: string;
   @ApiProperty() lastName!: string;
-  @ApiPropertyOptional({ enum: Gender, enumName: 'Gender', nullable: true })
-  gender!: Gender | null;
   @ApiPropertyOptional({ type: String, nullable: true }) photoUrl!:
     string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) phone!: string | null;

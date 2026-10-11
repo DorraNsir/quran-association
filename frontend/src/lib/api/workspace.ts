@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query"
 
 import type { Lookups } from "@/lib/domain"
-import type { Branch, Gender, Group, GroupClass, ISODate, RecordStatus, Room, Student, Teacher, Weekday, WeeklySchedule } from "@/types/domain"
+import type { Branch, Group, GroupClass, ISODate, RecordStatus, Room, Student, Teacher, Weekday, WeeklySchedule } from "@/types/domain"
 
 import { api } from "./client"
 
@@ -15,7 +15,6 @@ interface WsTeacher {
   id: string
   firstName: string
   lastName: string
-  gender: Gender | null
   photoUrl: string | null
   status: ActivationStatus
   joinedAt: ISODate
@@ -24,7 +23,6 @@ interface WsStudent {
   id: string
   firstName: string
   lastName: string
-  gender: Gender | null
   dateOfBirth: ISODate | null
   phone: string | null
   guardianPhone: string | null
@@ -55,7 +53,6 @@ const toTeacher = (t: WsTeacher): Teacher => ({
   id: t.id,
   firstName: t.firstName,
   lastName: t.lastName,
-  gender: t.gender ?? "MALE",
   phone: "",
   photoUrl: t.photoUrl ?? undefined,
   status: t.status,
@@ -66,7 +63,6 @@ const toStudent = (s: WsStudent & { address?: string | null; cin?: string | null
   id: s.id,
   firstName: s.firstName,
   lastName: s.lastName,
-  gender: s.gender ?? "MALE",
   dateOfBirth: s.dateOfBirth ?? "",
   phone: s.phone ?? undefined,
   guardianPhone: s.guardianPhone ?? undefined,

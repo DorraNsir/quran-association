@@ -110,7 +110,6 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
           person: {
             firstName: key,
             lastName: tag('طالب'),
-            gender: 'MALE',
             dateOfBirth: '2012-05-01',
             address: 'نابل',
           },
@@ -437,12 +436,11 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
 
     it('creates ADMIN-source requests with the same rules', async () => {
       const res = await admin
-        .post('registration-requests', form('إداري', { gender: 'FEMALE' }))
+        .post('registration-requests', form('إداري'))
         .expect(201);
       expect(res.body).toMatchObject({
         source: 'ADMIN',
         status: 'PENDING',
-        gender: 'FEMALE',
         birthDate: '1990-04-12',
         createdBy: { username: `e2e-${RUN}-admin` },
         reviewedBy: null,
@@ -556,7 +554,6 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
         .expect(200);
       const rid = await pending('مقبول', {
         phone: '50 123 456',
-        gender: 'MALE',
         address: 'دار شعبان',
         guardianPhone: '98111222',
       });
@@ -581,7 +578,6 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
       });
       expect(studentRow.person).toMatchObject({
         firstName: 'مقبول',
-        gender: 'MALE',
         address: 'دار شعبان',
         phone: '50123456',
         user: null,
@@ -631,7 +627,6 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
         .expect(409);
 
       const rid = await pending('متزامن', {
-        gender: 'FEMALE',
         address: 'نابل',
       });
       const results = await Promise.all(
@@ -652,7 +647,7 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
     });
 
     it('requires an active class, group and branch', async () => {
-      const rid = await pending('صنف', { gender: 'MALE', address: 'نابل' });
+      const rid = await pending('صنف', { address: 'نابل' });
       const code = async (groupClassId: string) =>
         (
           await admin.post(`registration-requests/${rid}/accept`, {
@@ -695,11 +690,8 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
         .post(`registration-requests/${rid}/accept`, { groupClassId: id.C1 })
         .expect(400);
       expect(missing.body.code).toBe('ACCEPTANCE_DATA_MISSING');
-      expect(missing.body.fields.sort()).toEqual([
-        'address',
-        'dateOfBirth',
-        'gender',
-      ]);
+      // Gender is no longer collected: only the birth date and address are needed
+      expect(missing.body.fields.sort()).toEqual(['address', 'dateOfBirth']);
       // A minor birth date without guardian phone → the student contact rule applies
       expect(
         (
@@ -707,7 +699,6 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
             .post(`registration-requests/${rid}/accept`, {
               groupClassId: id.C1,
               person: {
-                gender: 'MALE',
                 dateOfBirth: '2016-03-03',
                 address: 'نابل',
               },
@@ -721,7 +712,6 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
           registrationDate: addDays(TODAY, -3),
           person: {
             firstName: 'عمر المصحَّح',
-            gender: 'MALE',
             dateOfBirth: '1996-03-03',
             address: 'نابل',
           },
@@ -748,7 +738,6 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
       // Same full name as an existing student
       const rid = await pending('S1', {
         lastName: tag('طالب'),
-        gender: 'MALE',
         address: 'نابل',
         phone: '29999999',
       });
@@ -794,7 +783,6 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
         data: {
           firstName: 'وليّ',
           lastName: tag('أسرة'),
-          gender: 'MALE',
           dateOfBirth: new Date('1980-01-01'),
           address: 'نابل',
           phone: '27777777',
@@ -802,7 +790,6 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
       });
       const r2 = await pending('ربط', {
         phone: '27777777',
-        gender: 'MALE',
         address: 'نابل',
       });
       const dup2 = await admin
@@ -1031,7 +1018,6 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
             person: {
               firstName: 'N2',
               lastName: tag('طالب'),
-              gender: 'MALE',
               dateOfBirth: '2012-05-01',
               address: 'نابل',
             },

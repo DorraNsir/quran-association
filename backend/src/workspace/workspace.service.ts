@@ -34,7 +34,6 @@ import type {
 const personSelect = {
   firstName: true,
   lastName: true,
-  gender: true,
   photoUrl: true,
 } as const;
 
@@ -96,7 +95,6 @@ const toTeacher = (t: TeacherRow): WsTeacherDto => ({
   id: t.id,
   firstName: t.person.firstName,
   lastName: t.person.lastName,
-  gender: t.person.gender,
   photoUrl: t.person.photoUrl,
   status: t.status,
   joinedAt: fromDbDate(t.joinedAt),
@@ -106,7 +104,6 @@ const toStudent = (s: StudentRow): WsStudentDto => ({
   id: s.id,
   firstName: s.person.firstName,
   lastName: s.person.lastName,
-  gender: s.person.gender,
   dateOfBirth: fromDbDateOrNull(s.person.dateOfBirth),
   phone: s.person.phone,
   guardianPhone: s.guardianPhone,

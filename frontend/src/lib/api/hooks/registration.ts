@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { tunisDateOf } from "@/lib/dates"
 import type { RegistrationFields } from "@/lib/registration"
-import type { Gender, RegistrationRequest } from "@/types/domain"
+import type { RegistrationRequest } from "@/types/domain"
 
 import { api, keys } from "../academic"
 import type { Page } from "../client"
@@ -17,7 +17,6 @@ export interface RegistrationRequestDto {
   id: string
   firstName: string
   lastName: string
-  gender: Gender | null
   birthDate: string | null
   age: number | null
   phone: string
@@ -149,7 +148,7 @@ export function useAddRegistrationRequest() {
 export interface AcceptInput {
   groupClassId: string
   registrationDate: string
-  person?: { firstName: string; lastName: string; gender: Gender; dateOfBirth: string; address: string; phone: string | null }
+  person?: { firstName: string; lastName: string; dateOfBirth: string; address: string; phone: string | null }
   personId?: string
   guardianPhone: string | null
   cin: string | null

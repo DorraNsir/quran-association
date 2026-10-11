@@ -76,7 +76,6 @@ describe("API → screen adapters", () => {
       id: "r1",
       firstName: "س",
       lastName: "ع",
-      gender: null,
       birthDate: null,
       age: 9,
       phone: "22123456",

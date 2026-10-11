@@ -28,7 +28,6 @@ export class ProfileService {
             id: true,
             firstName: true,
             lastName: true,
-            gender: true,
             dateOfBirth: true,
             photoUrl: true,
             phone: true,

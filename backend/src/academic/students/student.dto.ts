@@ -15,7 +15,7 @@ import {
 
 import { OptionalEmail, OptionalPhone } from '../../common/contact-fields.js';
 import { PaginationMetaDto } from '../../common/pagination.js';
-import { Gender, RecordStatus } from '../../generated/prisma/enums.js';
+import { RecordStatus } from '../../generated/prisma/enums.js';
 import { AccountSummaryDto, ClassRefDto } from '../teachers/teacher.dto.js';
 import {
   IsDateOnly,
@@ -39,7 +39,7 @@ const OptionalCin = () =>
     Matches(/^\d{8}$/, { message: 'رقم بطاقة التعريف يتكوّن من 8 أرقام' }),
   );
 
-/** New Person for a student (frontend rules: gender, birth date, address required). */
+/** New Person for a student (frontend rules: birth date and address required). */
 export class StudentPersonDto {
   @ApiProperty()
   @Transform(trim)
@@ -53,9 +53,6 @@ export class StudentPersonDto {
   @MinLength(1)
   @MaxLength(80)
   lastName!: string;
-  @ApiProperty({ enum: Gender, enumName: 'Gender' })
-  @IsEnum(Gender)
-  gender!: Gender;
   @IsDateOnly() dateOfBirth!: string;
   @ApiProperty()
   @Transform(trim)
@@ -160,8 +157,6 @@ export class StudentPersonViewDto {
   @ApiProperty() id!: string;
   @ApiProperty() firstName!: string;
   @ApiProperty() lastName!: string;
-  @ApiPropertyOptional({ enum: Gender, enumName: 'Gender', nullable: true })
-  gender!: Gender | null;
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
   dateOfBirth!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) phone!: string | null;

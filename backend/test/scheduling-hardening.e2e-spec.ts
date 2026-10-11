@@ -118,7 +118,6 @@ describe('Scheduling hardening (e2e)', () => {
           person: {
             firstName: t,
             lastName: tag('معلم'),
-            gender: 'MALE',
             phone: '22345678',
           },
           joinedAt: '2024-09-01',

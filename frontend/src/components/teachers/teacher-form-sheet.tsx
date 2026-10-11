@@ -18,7 +18,7 @@ import { labels } from "@/lib/i18n"
 import type { PhotoChange, TeacherInput } from "@/lib/api/hooks/people"
 import { todayInTunis } from "@/lib/dates"
 import { normalizePhone, PHONE_HINT, phoneError, requiredText } from "@/lib/validation"
-import type { Gender, Teacher, TeacherStatus } from "@/types/domain"
+import type { Teacher, TeacherStatus } from "@/types/domain"
 
 interface TeacherFormValues {
   photoUrl?: string
@@ -26,7 +26,6 @@ interface TeacherFormValues {
   photoFile: PhotoChange
   firstName: string
   lastName: string
-  gender: Gender | ""
   qualification: string
   phone: string
   email: string
@@ -40,7 +39,6 @@ function toValues(t?: Teacher): TeacherFormValues {
     photoFile: undefined,
     firstName: t?.firstName ?? "",
     lastName: t?.lastName ?? "",
-    gender: t?.gender ?? "",
     qualification: t?.qualification ?? "",
     phone: t?.phone ?? "",
     email: t?.email ?? "",
@@ -53,7 +51,6 @@ function validate(v: TeacherFormValues) {
   return {
     firstName: requiredText(v.firstName, "الاسم مطلوب"),
     lastName: requiredText(v.lastName, "اللقب مطلوب"),
-    gender: v.gender ? undefined : "اختر الجنس",
     phone: phoneError(v.phone, { required: true }),
     email:
       v.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email) ? "بريد إلكتروني غير صالح" : undefined,
@@ -84,7 +81,6 @@ export function TeacherFormSheet({
       person: {
         firstName: v.firstName.trim(),
         lastName: v.lastName.trim(),
-        gender: v.gender as Gender,
         phone: normalizePhone(v.phone),
         email: v.email.trim() || null,
       },
@@ -119,27 +115,6 @@ export function TeacherFormSheet({
         </FormField>
         <FormField label="اللقب" required {...form.field("lastName")}>
           <Input {...form.inputProps("lastName")} autoComplete="family-name" />
-        </FormField>
-        <FormField label="الجنس" required {...form.field("gender")}>
-          <Select
-            value={values.gender}
-            onValueChange={(v) => {
-              setField("gender", v as Gender)
-              form.touch("gender")
-            }}
-          >
-            <SelectTrigger
-              id={form.field("gender").id}
-              className="w-full"
-              aria-invalid={form.field("gender").error ? true : undefined}
-            >
-              <SelectValue placeholder="اختر" />
-            </SelectTrigger>
-            <SelectContent position="popper">
-              <SelectItem value="MALE">{labels.gender.MALE}</SelectItem>
-              <SelectItem value="FEMALE">{labels.gender.FEMALE}</SelectItem>
-            </SelectContent>
-          </Select>
         </FormField>
         <FormField
           label="المؤهل"

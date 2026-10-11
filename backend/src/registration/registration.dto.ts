@@ -25,7 +25,6 @@ import { IsDateOnly } from '../common/dates.js';
 import { PaginationMetaDto } from '../common/pagination.js';
 import { SearchQueryDto, trim } from '../academic/shared.dto.js';
 import {
-  Gender,
   RegistrationRequestSource,
   RegistrationRequestStatus,
 } from '../generated/prisma/enums.js';
@@ -47,11 +46,6 @@ const Name = () =>
 export class RegistrationFieldsDto {
   @Name() firstName!: string;
   @Name() lastName!: string;
-
-  @ApiPropertyOptional({ enum: Gender, enumName: 'Gender' })
-  @IsOptional()
-  @IsEnum(Gender)
-  gender?: Gender | null;
 
   @IsDateOnly({
     optional: true,
@@ -134,10 +128,6 @@ export class AcceptPersonDto {
   @MinLength(1)
   @MaxLength(80)
   lastName?: string;
-  @ApiPropertyOptional({ enum: Gender, enumName: 'Gender' })
-  @IsOptional()
-  @IsEnum(Gender)
-  gender?: Gender;
   @IsDateOnly({ optional: true }) dateOfBirth?: string;
   @ApiPropertyOptional({ maxLength: 200 })
   @IsOptional()
@@ -176,7 +166,7 @@ export class AcceptRegistrationRequestDto {
   @ApiPropertyOptional({
     type: AcceptPersonDto,
     description:
-      'New person only: corrections/additions to the request data (gender, birth date and address are required for a student)',
+      'New person only: corrections/additions to the request data (birth date and address are required for a student)',
   })
   @IsOptional()
   @ValidateNested()
@@ -258,8 +248,6 @@ export class RegistrationRequestDto {
   @ApiProperty() id!: string;
   @ApiProperty() firstName!: string;
   @ApiProperty() lastName!: string;
-  @ApiPropertyOptional({ enum: Gender, enumName: 'Gender', nullable: true })
-  gender!: Gender | null;
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
   birthDate!: string | null;
   @ApiPropertyOptional({ type: Number, nullable: true }) age!: number | null;

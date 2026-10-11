@@ -52,7 +52,6 @@ const accountSelect = {
       id: true,
       firstName: true,
       lastName: true,
-      gender: true,
       photoUrl: true,
       phone: true,
       email: true,
@@ -213,13 +212,11 @@ export class AccountsService {
             })
           ).id;
         }
-        const { firstName, lastName, gender, phone, email, address } =
-          dto.person!;
+        const { firstName, lastName, phone, email, address } = dto.person!;
         const person = await tx.person.create({
           data: {
             firstName,
             lastName,
-            gender,
             phone,
             email,
             address,
@@ -257,11 +254,10 @@ export class AccountsService {
         }
         if (dto.person) {
           // Explicit canonical fields only (photo: file-storage module later)
-          const { firstName, lastName, gender, phone, email, address } =
-            dto.person;
+          const { firstName, lastName, phone, email, address } = dto.person;
           await tx.person.update({
             where: { id: user.personId },
-            data: { firstName, lastName, gender, phone, email, address },
+            data: { firstName, lastName, phone, email, address },
           });
         }
       });

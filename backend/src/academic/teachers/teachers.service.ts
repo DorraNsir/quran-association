@@ -42,7 +42,6 @@ const select = {
       id: true,
       firstName: true,
       lastName: true,
-      gender: true,
       phone: true,
       email: true,
       address: true,
@@ -185,13 +184,11 @@ export class TeachersService {
             })
           ).id;
         }
-        const { firstName, lastName, gender, phone, email, address } =
-          dto.person!;
+        const { firstName, lastName, phone, email, address } = dto.person!;
         const person = await tx.person.create({
           data: {
             firstName,
             lastName,
-            gender,
             phone,
             email,
             address,
@@ -227,11 +224,10 @@ export class TeachersService {
         },
       });
       if (dto.person) {
-        const { firstName, lastName, gender, phone, email, address } =
-          dto.person;
+        const { firstName, lastName, phone, email, address } = dto.person;
         await tx.person.update({
           where: { id: teacher.personId },
-          data: { firstName, lastName, gender, phone, email, address },
+          data: { firstName, lastName, phone, email, address },
         });
       }
     });

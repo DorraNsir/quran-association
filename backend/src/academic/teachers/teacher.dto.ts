@@ -15,7 +15,6 @@ import { OptionalEmail, OptionalText } from '../../common/contact-fields.js';
 import { PaginationMetaDto } from '../../common/pagination.js';
 import {
   ActivationStatus,
-  Gender,
   RecordStatus,
   Role,
 } from '../../generated/prisma/enums.js';
@@ -26,7 +25,7 @@ import {
   trim,
 } from '../shared.dto.js';
 
-/** New Person for a teacher (frontend rules: gender and phone required). */
+/** New Person for a teacher (frontend rules: phone required). */
 export class TeacherPersonDto {
   @ApiProperty()
   @Transform(trim)
@@ -40,9 +39,6 @@ export class TeacherPersonDto {
   @MinLength(1)
   @MaxLength(80)
   lastName!: string;
-  @ApiProperty({ enum: Gender, enumName: 'Gender' })
-  @IsEnum(Gender)
-  gender!: Gender;
   @ApiProperty({ example: '22345678' })
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.replace(/[\s.-]/g, '') : value,
@@ -101,8 +97,6 @@ export class TeacherPersonViewDto {
   @ApiProperty() id!: string;
   @ApiProperty() firstName!: string;
   @ApiProperty() lastName!: string;
-  @ApiPropertyOptional({ enum: Gender, enumName: 'Gender', nullable: true })
-  gender!: Gender | null;
   @ApiPropertyOptional({ type: String, nullable: true }) phone!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) email!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) address!:

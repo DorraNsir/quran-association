@@ -9,7 +9,6 @@ import {
   Phone,
   ShieldCheck,
   UserRound,
-  Users,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -20,7 +19,6 @@ import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { ageOn, fullName, indexLookups, type Lookups, roomsLabel, schedulesOf, studentClass } from "@/lib/domain"
 import { formatDate, formatElapsed } from "@/lib/format"
-import { labels } from "@/lib/i18n"
 import { todayInTunis } from "@/lib/dates"
 import type { Student } from "@/types/domain"
 
@@ -42,7 +40,6 @@ export function StudentOverview({ student, lookups }: { student: Student; lookup
                 value: `${formatDate(student.dateOfBirth)} (${age} سنة)`,
                 icon: CalendarDays,
               },
-              { label: "الجنس", value: labels.gender[student.gender], icon: Users },
               {
                 label: "رقم بطاقة التعريف",
                 value: student.cin && <span dir="ltr" className="tabular-nums">{student.cin}</span>,
