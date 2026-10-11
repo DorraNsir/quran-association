@@ -549,10 +549,19 @@ describe('Public website & CMS (e2e)', () => {
         'events',
         ev('ملغاة', { startDate: addDays(TODAY, 5), isCancelled: true }),
       );
-      id.evInternal = await make(
+      // One visibility switch only: the former «internal» flag is refused
+      await cms('events')
+        .create(ev('داخلية', { startDate: addDays(TODAY, 3), isPublic: false }))
+        .expect(400);
+      id.evHidden = await make(
         'events',
-        ev('داخلية', { startDate: addDays(TODAY, 3), isPublic: false }),
+        ev('مخفية', { startDate: addDays(TODAY, 3) }),
       );
+      const unpublished = await cms('events')
+        .update(id.evHidden, { isPublished: false })
+        .expect(200);
+      expect(unpublished.body.isPublished).toBe(false);
+      expect(Object.keys(unpublished.body)).not.toContain('isPublic');
       id.evDraft = await make(
         'events',
         ev('مسودة', { startDate: addDays(TODAY, 4), isPublished: false }),
@@ -573,7 +582,7 @@ describe('Public website & CMS (e2e)', () => {
       const past = (await pub('events', { period: 'PAST', search: RUN })).body;
       expect(ids(past.data)).toEqual([id.evPast]);
       expect(past.data[0].status).toBe('COMPLETED');
-      expect((await pub(`events/${id.evInternal}`).expect(404)).body.code).toBe(
+      expect((await pub(`events/${id.evHidden}`).expect(404)).body.code).toBe(
         'CMS_CONTENT_NOT_FOUND',
       );
       await pub(`events/${id.evDraft}`).expect(404);
@@ -655,6 +664,46 @@ describe('Public website & CMS (e2e)', () => {
   });
 
   /* ================================================================ */
+
+  describe('events: one visibility switch', () => {
+    it('migration: an event hidden only as «internal» stays hidden (unpublished); others untouched (rolled back)', async () => {
+      const sql = readFileSync(
+        join(
+          import.meta.dirname,
+          '../prisma/migrations/20261011180000_events_single_visibility/migration.sql',
+        ),
+        'utf8',
+      ).replace(/--.*$/gm, '');
+      const ROLLBACK = new Error('rollback');
+      await expect(
+        prisma.$transaction(async (tx) => {
+          const base = {
+            description: 'وصف',
+            startDate: new Date(`${addDays(TODAY, 2)}T00:00:00Z`),
+          };
+          const internal = await tx.publicEvent.create({
+            data: { ...base, title: tag('داخلية'), isPublic: false },
+            select: { id: true },
+          });
+          const visible = await tx.publicEvent.create({
+            data: { ...base, title: tag('عامة') },
+            select: { id: true },
+          });
+          await tx.$executeRawUnsafe(sql);
+          const rows = await tx.publicEvent.findMany({
+            where: { id: { in: [internal.id, visible.id] } },
+            select: { id: true, isPublished: true, isPublic: true },
+          });
+          expect(rows.find((r) => r.id === internal.id)).toMatchObject({
+            isPublished: false,
+            isPublic: false,
+          });
+          expect(rows.find((r) => r.id === visible.id)?.isPublished).toBe(true);
+          throw ROLLBACK;
+        }),
+      ).rejects.toBe(ROLLBACK);
+    });
+  });
 
   describe('graduates', () => {
     it('a new graduate is published at once: year required, no date, no consent', async () => {
@@ -1037,7 +1086,7 @@ describe('Public website & CMS (e2e)', () => {
       expect(home.gallery.length).toBeLessThanOrEqual(6);
       expect(ids(home.news)).not.toContain(id.newsFuture);
       expect(ids(home.heroSlides)).not.toContain(id.slideA);
-      expect(ids(home.upcomingEvents)).not.toContain(id.evInternal);
+      expect(ids(home.upcomingEvents)).not.toContain(id.evHidden);
       expect(
         home.featuredAchievements.every(
           (a: { isFeatured: boolean }) => a.isFeatured,

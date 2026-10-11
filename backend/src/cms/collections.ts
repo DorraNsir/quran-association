@@ -267,6 +267,8 @@ export const COLLECTIONS: CollectionConfig[] = [
     inputDto: EventInputDto,
     updateDto: EventUpdateDto,
     outputDto: EventDto,
+    // Legacy column (no longer used: isPublished alone decides visibility)
+    hidden: ['isPublic'],
     prepare: (ctx) => {
       const start = day(merged(ctx, 'startDate'));
       const end = day(merged(ctx, 'endDate'));

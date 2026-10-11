@@ -326,8 +326,7 @@ export class FilesService {
             OR EXISTS (SELECT 1 FROM public_programs x WHERE x."imageFileId" = f.id AND x."isPublished")
             OR EXISTS (SELECT 1 FROM public_group_listings x WHERE x."imageFileId" = f.id
                          AND x."isPublished" AND x."publicStatus" <> 'CLOSED')
-            OR EXISTS (SELECT 1 FROM public_events x WHERE x."imageFileId" = f.id
-                         AND x."isPublished" AND x."isPublic")
+            OR EXISTS (SELECT 1 FROM public_events x WHERE x."imageFileId" = f.id AND x."isPublished")
             OR EXISTS (SELECT 1 FROM achievements x WHERE x."imageFileId" = f.id AND x."isPublished")
             OR EXISTS (SELECT 1 FROM news_articles x WHERE x."coverImageFileId" = f.id
                          AND x."isPublished" AND x."publishedAt" <= ${today}::date)

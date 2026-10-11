@@ -39,7 +39,7 @@ export function publicEventStatus(event: PublicEvent, today: ISODate): PublicEve
 }
 
 /** Both flags are required: an event can be published internally yet not public. */
-export const isEventPublic = (event: PublicEvent) => event.isPublic && event.isPublished
+export const isEventPublic = (event: PublicEvent) => event.isPublished
 
 export const getUpcomingPublicEvents = (events: PublicEvent[], today: ISODate) =>
   events

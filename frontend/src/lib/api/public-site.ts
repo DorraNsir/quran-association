@@ -114,7 +114,7 @@ const toGroup = (g: GroupListingDto): PublicGroupCard => ({
 })
 const toEvent = (e: EventDto): PublicEvent => ({
   ...STAMP, id: e.id, titleAr: e.title, descriptionAr: e.description, startDate: e.startDate, endDate: opt(e.endDate),
-  time: opt(e.time), location: opt(e.location), imageUrl: media(e.imageUrl), isPublic: true, isPublished: true,
+  time: opt(e.time), location: opt(e.location), imageUrl: media(e.imageUrl), isPublished: true,
   isCancelled: e.status === "CANCELLED",
 })
 const toAchievement = (a: AchievementDto): Achievement => ({

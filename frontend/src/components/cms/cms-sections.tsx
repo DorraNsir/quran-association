@@ -114,9 +114,9 @@ function sectionConfigs(today: string): SectionConfig[] {
     },
     {
       api: "events", slug: "events", icon: CalendarDays, card: "الفعاليات",
-      title: "الفعاليات", description: "أنشطة الجمعية العامة (منفصلة عن حصص الأقسام). تظهر فقط إذا كانت عامة ومنشورة.",
+      title: "الفعاليات", description: "أنشطة الجمعية العامة (منفصلة عن حصص الأقسام). تظهر في الموقع ما دامت منشورة.",
       addLabel: "إضافة فعالية", emptyLabel: "لا توجد فعاليات بعد", publishKey: "isPublished", ordered: false,
-      defaults: { isPublished: true, isPublic: true, isCancelled: false, startDate: today },
+      defaults: { isPublished: true, isCancelled: false, startDate: today },
       fields: [
         title("title"),
         { key: "description", label: "الوصف", type: "textarea", required: true },
@@ -125,12 +125,10 @@ function sectionConfigs(today: string): SectionConfig[] {
         { key: "time", label: "الساعة", type: "time" },
         { key: "location", label: "المكان", type: "text" },
         { key: "imageUrl", label: "الصورة", type: "image" },
-        { key: "isPublic", label: "فعالية عامة", type: "checkbox", description: "غير العامة لا تظهر في الموقع" },
         { key: "isPublished", label: "منشورة", type: "checkbox" },
       ],
       validate: (v) => ({ endDate: v.endDate && v.startDate && String(v.endDate) < String(v.startDate) ? "تاريخ النهاية قبل البداية" : undefined }),
       extraFlags: [
-        { key: "isPublic", on: "جعلها عامة", off: "جعلها داخلية (غير عامة)", icon: Unlock },
         { key: "isCancelled", on: "إلغاء الفعالية", off: "إعادة الفعالية", icon: CalendarX2 },
       ],
       summary: (e) => ({
@@ -138,7 +136,6 @@ function sectionConfigs(today: string): SectionConfig[] {
         subtitle: [formatDate(String(e.startDate)), str(e.time), str(e.location)].filter(Boolean).join(" · "),
         image: str(e.imageUrl),
         badges: [
-          ...(e.isPublic ? [] : ["داخلية"]),
           ...(typeof e.status === "string" ? [{ UPCOMING: "قادمة", COMPLETED: "انتهت", CANCELLED: "ملغاة" }[e.status] ?? e.status] : []),
         ],
       }),

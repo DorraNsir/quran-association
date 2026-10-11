@@ -34,7 +34,7 @@ const emptyHome = {
   settings, offerings: [], programs: [], groups: [], events: [], featured: [], graduates: [], news: [], gallery: [],
   statistics: { students: 120, teachers: 12, branches: 2, graduates: 30 },
 }
-const event = { ...STAMP, id: "e1", titleAr: "مسابقة القرآن الكريم", descriptionAr: "مسابقة سنوية", startDate: "2026-11-20", isPublic: true, isPublished: true, isCancelled: false }
+const event = { ...STAMP, id: "e1", titleAr: "مسابقة القرآن الكريم", descriptionAr: "مسابقة سنوية", startDate: "2026-11-20", isPublished: true, isCancelled: false }
 const article = { ...STAMP, id: "n1", titleAr: "اختتام الدورة الصيفية", excerptAr: "ملخص الخبر", contentAr: "نص", publishedAt: "2026-10-01", isPublished: true }
 
 const OPTIONAL_TITLES = ["برامج لكل الأعمار", "مجموعات ستفتح قريباً", "الفعاليات القادمة", "إنجازات الجمعية", "من خاتمي الجمعية", "آخر الأخبار", "من حياة الجمعية"]

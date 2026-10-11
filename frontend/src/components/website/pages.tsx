@@ -75,7 +75,6 @@ export async function HomePage() {
   const gallery = home.gallery.slice(0, 6)
   const stats = statsOf(home.statistics)
   const aboutImage = home.gallery[0]?.imageUrl
-  const image = await getGallery()
 
 
   return (

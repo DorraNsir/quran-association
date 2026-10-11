@@ -222,7 +222,7 @@ export class PublicSiteService {
       isPublished: true,
       publicStatus: { not: PublicGroupStatus.CLOSED },
     } satisfies Prisma.PublicGroupListingWhereInput,
-    events: { isPublished: true, isPublic: true },
+    events: { isPublished: true },
     achievements: { isPublished: true },
     graduates: { isPublished: true },
     members: { isPublished: true },

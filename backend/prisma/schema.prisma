@@ -1151,6 +1151,7 @@ model PublicEvent {
   /// Bundled website asset (/website/…) — or imageFileId
   imageUrl    String?
   imageFileId String?   @db.Uuid
+  /// Legacy: no longer used (isPublished alone decides visibility); kept to avoid data loss
   isPublic    Boolean   @default(true)
   isPublished Boolean   @default(true)
   isCancelled Boolean   @default(false)

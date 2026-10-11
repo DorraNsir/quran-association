@@ -592,7 +592,6 @@ export interface PublicEvent extends CmsTimestamps {
   time?: string
   location?: string
   imageUrl?: string
-  isPublic: boolean
   isPublished: boolean
   isCancelled: boolean
 }

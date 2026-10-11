@@ -341,9 +341,8 @@ export class EventInputDto {
   @OptionalText(200) location?: string | null;
   @Media() imageUrl?: string | null;
   @MediaFile() imageFileId?: string | null;
-  @Flag('Public event (default true); internal events never reach the site')
-  isPublic?: boolean;
-  @Flag('Published (default true)') isPublished?: boolean;
+  @Flag('Published (default true): the only visibility switch of an event')
+  isPublished?: boolean;
   @Flag('Cancelled (still shown, as cancelled)') isCancelled?: boolean;
 }
 export class EventUpdateDto extends PartialType(EventInputDto) {}
@@ -362,7 +361,6 @@ export class EventDto extends Stamped {
   @ApiPropertyOptional({ type: String, nullable: true })
   imageUrl!: string | null;
   @MediaFileOut() imageFileId!: string | null;
-  @ApiProperty() isPublic!: boolean;
   @ApiProperty() isPublished!: boolean;
   @ApiProperty() isCancelled!: boolean;
   @ApiProperty({
