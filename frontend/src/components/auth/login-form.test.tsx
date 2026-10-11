@@ -15,6 +15,12 @@ let search = new URLSearchParams()
 // Bundled logo imports have no dimensions under Vitest
 // eslint-disable-next-line @next/next/no-img-element
 vi.mock("next/image", () => ({ default: ({ alt }: { alt: string }) => <img alt={alt} /> }))
+vi.mock("@/lib/site-font", () => ({ amiri: { variable: "font-amiri", style: { fontFamily: "Amiri" } } }))
+// The animated background has its own tests
+vi.mock("@/components/website/hero-background", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/website/hero-background")>()),
+  default: ({ variant }: { variant: string }) => <div data-hero-theme={variant} aria-hidden />,
+}))
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn() }),
   useSearchParams: () => search,
@@ -68,6 +74,18 @@ describe("login page", () => {
     expect(screen.getByText("أدخل اسم المستخدم")).toBeTruthy()
     expect(screen.getByText("أدخل كلمة المرور")).toBeTruthy()
     expect(fetch.mock.calls.some(([u]) => String(u).endsWith("/auth/login"))).toBe(false)
+  })
+
+  it("right-to-left fields over the website's animated background (decorative, behind the form)", async () => {
+    api(json(200, authResponse("x")))
+    const { container } = renderLogin()
+    const user = await screen.findByLabelText(/اسم المستخدم/)
+    // No left-to-right override: the fields follow the page direction (caret starts on the right)
+    expect(user.getAttribute("dir")).toBeNull()
+    expect(screen.getByLabelText(/^كلمة المرور/).getAttribute("dir")).toBeNull()
+    const background = container.querySelector("[data-hero-theme]")
+    expect(background?.getAttribute("aria-hidden")).not.toBeNull()
+    expect(screen.getByRole("heading", { name: "تسجيل الدخول" })).toBeTruthy()
   })
 
   it("shows the invalid-credentials message and clears the password", async () => {

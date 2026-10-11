@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertCircle, Eye, EyeOff, Info, Loader2, LogIn } from "lucide-react"
+import { AlertCircle, Eye, EyeOff, Info, Loader2, Lock, LogIn, UserRound } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -11,10 +11,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import HeroBackground, { DEFAULT_HERO_THEME } from "@/components/website/hero-background"
 import { errorMessage } from "@/lib/api/errors"
 import { FALLBACK_ASSOCIATION_NAME, usePublicSiteSettings } from "@/lib/api/public-settings"
 import { useAuth } from "@/lib/auth/auth-provider"
 import { destinationAfterLogin } from "@/lib/auth/redirects"
+import { amiri } from "@/lib/site-font"
 
 import { FullPageLoader } from "./workspace-gate"
 
@@ -81,16 +83,23 @@ export function LoginForm() {
       : null
 
   return (
-    <div className="flex min-h-svh items-center justify-center bg-muted/40 px-4 py-10">
-      <div className="w-full max-w-md">
-        <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <AssociationLogo className="h-20 w-auto" />
-          <div>
-            <h1 className="text-xl font-semibold">تسجيل الدخول</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{settings?.name ?? FALLBACK_ASSOCIATION_NAME}</p>
+    <div className={`${amiri.variable} relative isolate flex min-h-svh items-center justify-center overflow-hidden bg-[#0d1210] px-4 py-10`}>
+      {/* The website's animated theme (chosen by the administration) — decorative, behind everything */}
+      <HeroBackground variant={settings?.heroTheme ?? DEFAULT_HERO_THEME} lettersFont={amiri.style.fontFamily} textShade={false} />
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(13,18,16,0.15)_0%,rgba(13,18,16,0.75)_70%)]" />
+
+      <div className="relative z-10 w-full max-w-md">
+        <div className="mb-6 flex flex-col items-center gap-4 text-center text-white">
+          <span className="rounded-2xl bg-white/95 p-3 shadow-lg ring-1 ring-white/20">
+            <AssociationLogo className="h-16 w-auto" />
+          </span>
+          <div className="space-y-1">
+            <h1 className="font-display text-3xl font-bold">تسجيل الدخول</h1>
+            <p className="text-sm text-white/75">{settings?.name ?? FALLBACK_ASSOCIATION_NAME}</p>
+            <p className="font-display text-base text-[#e8cf98]">«خيركم من تعلّم القرآن وعلّمه»</p>
           </div>
         </div>
-        <Card>
+        <Card className="border-white/10 bg-white/95 shadow-2xl backdrop-blur-sm">
           <CardContent className="pt-6">
             <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
               {notice && (
@@ -105,27 +114,33 @@ export function LoginForm() {
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
+              {/* Right-to-left fields (caret starts on the right, like the rest of the page); Latin usernames still type normally */}
               <FormField id="login-username" label="اسم المستخدم" required error={shown("username")}>
-                <Input
-                  id="login-username"
-                  name="username"
-                  autoComplete="username"
-                  dir="ltr"
-                  autoFocus
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  aria-invalid={shown("username") ? true : undefined}
-                />
+                <div className="relative">
+                  <UserRound aria-hidden className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="login-username"
+                    name="username"
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    autoFocus
+                    className="h-11 ps-9"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    aria-invalid={shown("username") ? true : undefined}
+                  />
+                </div>
               </FormField>
               <FormField id="login-password" label="كلمة المرور" required error={shown("password")}>
                 <div className="relative">
+                  <Lock aria-hidden className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="login-password"
                     name="password"
                     type={showPassword ? "text" : "password"}
                     autoComplete="current-password"
-                    dir="ltr"
-                    className="pe-10"
+                    className="h-11 ps-9 pe-10"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     aria-invalid={shown("password") ? true : undefined}
@@ -134,7 +149,7 @@ export function LoginForm() {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="absolute end-0.5 top-1/2 size-8 -translate-y-1/2"
+                    className="absolute end-1 top-1/2 size-8 -translate-y-1/2"
                     onClick={() => setShowPassword((v) => !v)}
                     aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
                     aria-pressed={showPassword}
@@ -143,20 +158,20 @@ export function LoginForm() {
                   </Button>
                 </div>
               </FormField>
-              <Button type="submit" size="lg" disabled={pending} className="mt-1">
+              <Button type="submit" size="lg" disabled={pending} className="mt-1 h-11 text-base">
                 {pending ? <Loader2 className="animate-spin" aria-hidden /> : <LogIn aria-hidden />}
                 تسجيل الدخول
               </Button>
             </form>
           </CardContent>
         </Card>
-        <p className="mt-5 text-center text-xs text-muted-foreground">
+        <p className="mt-5 text-center text-xs leading-relaxed text-white/70">
           الحسابات تُنشأ من طرف إدارة الجمعية. للتسجيل في الأقسام استعمل{" "}
-          <Link href="/registration" className="text-primary underline-offset-4 hover:underline">
+          <Link href="/registration" className="font-medium text-[#e8cf98] underline-offset-4 hover:underline">
             طلب التسجيل
           </Link>
           {" · "}
-          <Link href="/" className="text-primary underline-offset-4 hover:underline">
+          <Link href="/" className="font-medium text-[#e8cf98] underline-offset-4 hover:underline">
             العودة إلى الموقع
           </Link>
         </p>
