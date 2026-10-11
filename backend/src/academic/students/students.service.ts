@@ -11,6 +11,7 @@ import {
 import { PageSizeService } from '../../common/page-size.service.js';
 import { paginationMeta } from '../../common/pagination.js';
 import { type Prisma, RecordStatus } from '../../generated/prisma/client.js';
+import { billStudents } from '../../finance/auto-billing.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { classNotFound } from '../group-classes/group-classes.service.js';
 import {
@@ -248,6 +249,8 @@ export class StudentsService {
         recordedByUserId: actorUserId ?? null,
       },
     });
+    // Charged automatically with its group's current fee (if any)
+    await billStudents(tx, { studentId }, actorUserId);
     return studentId;
   }
 
@@ -435,6 +438,8 @@ export class StudentsService {
         });
       }
       await tx.student.update({ where: { id }, data: { groupClassId } });
+      // Charged automatically with the new group's current fee (the previous group's stays as history)
+      await billStudents(tx, { studentId: id }, actorUserId);
     });
     return this.get(id);
   }
@@ -536,6 +541,9 @@ export class StudentsService {
         where: { id },
         data: { status: latest?.status ?? status },
       });
+      // A reactivated student is charged automatically if not already
+      if ((latest?.status ?? status) === RecordStatus.ACTIVE)
+        await billStudents(tx, { studentId: id }, actorUserId);
     });
     return this.get(id);
   }

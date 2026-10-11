@@ -3,9 +3,11 @@
 import type { GroupClass, GroupClassStatus, GroupStatus, WeeklySchedule } from "@/types/domain"
 
 import { api, keys, useApiMutation } from "../academic"
+import { financeKey } from "@/lib/api/finance"
 
 /** Classes carry group/branch/room/team; students and weekly slots depend on them. */
-const affected = [keys.groups, keys.groupClasses, keys.schedules, keys.students, keys.teachers, keys.branches, keys.rooms] as const
+// Students joining a class are charged their group's fee automatically (payments screens)
+const affected = [keys.groups, keys.groupClasses, keys.schedules, keys.students, keys.teachers, keys.branches, keys.rooms, financeKey] as const
 
 export function useSaveGroup() {
   return useApiMutation(

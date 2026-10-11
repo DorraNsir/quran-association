@@ -10,6 +10,7 @@ import { api, keys } from "../academic"
 import type { Page } from "../client"
 import { uploadFile } from "../client"
 import type { PhotoChange, StoredFileInfo } from "./people"
+import { financeKey } from "@/lib/api/finance"
 
 /** RegistrationRequestDto (API). */
 export interface RegistrationRequestDto {
@@ -190,6 +191,8 @@ export function useAcceptRegistration(id: string) {
         queryClient.invalidateQueries({ queryKey: registrationKey }),
         queryClient.invalidateQueries({ queryKey: keys.students }),
         queryClient.invalidateQueries({ queryKey: keys.groupClasses }),
+        // The accepted student is charged their group's fee automatically
+        queryClient.invalidateQueries({ queryKey: financeKey }),
       ])
     },
   })

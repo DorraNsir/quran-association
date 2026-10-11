@@ -6,8 +6,10 @@ import type { Gender, RecordStatus } from "@/types/domain"
 
 import { api, keys, useApiMutation, type EnrollmentDto } from "../academic"
 import { uploadFile } from "../client"
+import { financeKey } from "@/lib/api/finance"
 
-const affected = [keys.teachers, keys.students, keys.groupClasses, keys.groups] as const
+// A new, moved or reactivated student is charged their group's fee automatically (payments screens)
+const affected = [keys.teachers, keys.students, keys.groupClasses, keys.groups, financeKey] as const
 
 /** undefined = photo unchanged, null = removed, File = replaced (uploaded as PROFILE_PHOTO). */
 export type PhotoChange = File | null | undefined

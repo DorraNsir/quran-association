@@ -22,6 +22,7 @@ import type {
   SetGroupFeeDto,
 } from './finance.dto.js';
 import { CURRENCY, money, toDecimal } from './money.js';
+import { billStudents } from './auto-billing.js';
 
 const userRef = { select: { id: true, username: true } } as const;
 
@@ -183,6 +184,8 @@ export class GroupFeesService {
           },
           select: { id: true },
         });
+        // The group's current students are charged automatically (those already charged are kept)
+        await billStudents(tx, { groupFeeId: created.id }, adminUserId);
         return created.id;
       });
       return this.get(id);

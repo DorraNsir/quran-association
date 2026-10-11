@@ -44,8 +44,6 @@ import {
   money,
   toObligationRow,
   toPayment,
-  useApplicableFee,
-  useCreateObligation,
   useDeactivateGroupFee,
   useFinanceSummary,
   useGroupFees,
@@ -71,36 +69,14 @@ export function feeDescription(fee: GroupFee) {
 /**
  * One student's obligations per academic year (expected / paid / remaining
  * + every payment with its receipt), as computed by the API. Admin can
- * create the current year's obligation from the class fee, record payments
- * and mark receipts delivered; the student only consults their own data.
+ * record payments and mark receipts delivered (the group's fee is charged
+ * automatically when the student joins it); the student only consults
+ * their own data.
  */
-export function StudentPayments({ studentId, mode, groupClassId }: { studentId?: ID; mode: "admin" | "student"; groupClassId?: ID }) {
+export function StudentPayments({ studentId, mode }: { studentId?: ID; mode: "admin" | "student"; groupClassId?: ID }) {
   const recorder = useRecordPayment()
   const { rows, queries } = useStudentFinance(mode, studentId)
-  const applicable = useApplicableFee(mode === "admin" ? groupClassId : undefined)
-  const createObligation = useCreateObligation()
   if (!rows) return <QueryState query={queries}>{null}</QueryState>
-  const fee = applicable.data?.fee
-  // The class's fee for the current year exists but no obligation was created for it yet
-  const missing = mode === "admin" && studentId && fee && fee.isActive && !rows.some((r) => r.fee.id === fee.id)
-  const createButton = missing ? (
-    <Button
-      size="sm"
-      disabled={createObligation.isPending}
-      onClick={() =>
-        createObligation.mutate(
-          { studentId, groupFeeId: fee.id },
-          {
-            onSuccess: () => toast.success("أُنشئ التزام الطالب", { description: `${fee.label} · ${formatMoney(Number(fee.totalAmount))}` }),
-            onError: (error) => toast.error(errorMessage(error)),
-          }
-        )
-      }
-    >
-      <Plus />
-      إنشاء التزام «{fee.label}»
-    </Button>
-  ) : null
 
   if (rows.length === 0) {
     return (
@@ -108,8 +84,7 @@ export function StudentPayments({ studentId, mode, groupClassId }: { studentId?:
         <EmptyState
           icon={Wallet}
           title="لا يوجد معلوم مسجّل"
-          description={missing ? "معلوم المجموعة محدَّد لهذه السنة: أنشئ التزام الطالب لتسجيل دفعاته." : "لم يُحدَّد بعد معلوم للمجموعة التي يدرس فيها الطالب."}
-          action={createButton ?? undefined}
+          description="لم يُحدَّد بعد معلوم للمجموعة التي يدرس فيها الطالب. عند تحديده يُضاف إلى الطالب تلقائيًا."
         />
       </Card>
     )
@@ -117,7 +92,6 @@ export function StudentPayments({ studentId, mode, groupClassId }: { studentId?:
 
   return (
     <div className="space-y-4">
-      {createButton && <div className="flex justify-end">{createButton}</div>}
       {rows.map(({ summary, fee: rowFee, dto }) => (
         <SectionCard key={summary.obligation.id} title={rowFee.label} icon={Wallet} action={<PaymentStatusBadge status={summary.status} />}>
           <div className="space-y-4">
@@ -289,7 +263,13 @@ export function PaymentsOverview({ lookups }: { lookups: Lookups }) {
               columns={columns}
               rows={rows}
               getRowId={(r) => r.summary.obligation.id}
-              emptyState={<EmptyState icon={hasFilters ? SearchX : Users} title={hasFilters ? "لا توجد نتائج مطابقة" : "لا توجد معاليم لهذه السنة"} />}
+              emptyState={
+                <EmptyState
+                  icon={hasFilters ? SearchX : Users}
+                  title={hasFilters ? "لا توجد نتائج مطابقة" : "لا توجد معاليم لهذه السنة"}
+                  description={hasFilters ? undefined : "يظهر هنا تلقائيًا كل طالب نشط في مجموعة حُدِّد لها معلوم لهذه السنة."}
+                />
+              }
               renderMobileCard={(r) => (
                 <div className="space-y-2.5">
                   <div className="flex items-start justify-between gap-2">
@@ -394,7 +374,7 @@ export function GroupFees({ group, today }: { group: Group; today: ISODate }) {
                       disabled={deactivate.isPending}
                       onClick={() =>
                         deactivate.mutate(fee.id, {
-                          onSuccess: () => toast.success("أُوقف المعلوم", { description: "الالتزامات المسجّلة تبقى كما هي." }),
+                          onSuccess: () => toast.success("أُوقف المعلوم", { description: "المبالغ المسجّلة للطلبة تبقى كما هي، ولا يُضاف المعلوم إلى الطلبة الجدد." }),
                           onError: (error) => toast.error(errorMessage(error)),
                         })
                       }
@@ -473,7 +453,7 @@ function GroupFeeDialog({
                 onSuccess: () => {
                   onOpenChange(false)
                   toast.success(fee ? "تم تعديل المعلوم" : "تمت إضافة المعلوم", {
-                    description: "الالتزامات المسجّلة سابقًا تحتفظ بمبالغها. تُنشأ التزامات الطلبة من ملف كل طالب.",
+                    description: "يُضاف المعلوم تلقائيًا إلى طلبة المجموعة الحاليين والجدد؛ المبالغ المسجّلة سابقًا لا تتغيّر.",
                   })
                 },
               }
@@ -512,7 +492,7 @@ function GroupFeeDialog({
           <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
             المجموع المطلوب من كل طالب: <span className="font-semibold tabular-nums">{formatMoney(preview)}</span>
           </p>
-          {fee && <p className="text-xs text-muted-foreground">يُحفظ التعديل كإصدار جديد للمعلوم؛ الالتزامات المسجّلة سابقًا للطلبة لا تتغيّر.</p>}
+          {fee && <p className="text-xs text-muted-foreground">يُحفظ التعديل كإصدار جديد للمعلوم؛ المبالغ المسجّلة سابقًا للطلبة لا تتغيّر.</p>}
           {save.isError && <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{errorMessage(save.error)}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={save.isPending} onClick={() => onOpenChange(false)}>{labels.common.cancel}</Button>
