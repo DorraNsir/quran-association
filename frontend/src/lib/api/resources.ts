@@ -75,6 +75,8 @@ export interface ResourceFilters {
   type?: ResourceType
   visibility?: ResourceVisibilityType
   groupClassId?: string
+  /** Aimed at this group or one of its classes */
+  groupId?: string
   /** Teacher management list: only what I published */
   mine?: boolean
 }

@@ -151,7 +151,10 @@ export class ResourceListQueryDto extends SearchQueryDto {
   @IsOptional()
   @IsUUID()
   groupClassId?: string;
-  @ApiPropertyOptional({ format: 'uuid', description: 'Targets this group' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Targets this group or one of its classes',
+  })
   @IsOptional()
   @IsUUID()
   groupId?: string;

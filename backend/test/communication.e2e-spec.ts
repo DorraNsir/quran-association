@@ -662,9 +662,19 @@ describe('Resources, announcements & notifications (e2e)', () => {
           (r: { id: string }) => r.id,
         ),
       ).toContain(id.resG1);
-      expect(
-        (await admin().get('resources', { groupId: id.G1 })).body.data[0].id,
-      ).toBe(id.resG1);
+      // A group's resources: aimed at the group itself or at one of its classes
+      const ofGroup = async (groupId: string) =>
+        (
+          await admin().get('resources', { groupId, pageSize: 100 }).expect(200)
+        ).body.data.map((r: { id: string }) => r.id) as string[];
+      const g1 = await ofGroup(id.G1);
+      for (const r of [id.resG1, id.resAdminC1, id.resSup, id.resAsst])
+        expect(g1).toContain(r);
+      // An all-students resource is not a group's own
+      expect(g1).not.toContain(id.resAll);
+      const g2 = await ofGroup(id.G2);
+      for (const r of [id.resG1, id.resAdminC1, id.resSup, id.resAsst])
+        expect(g2).not.toContain(r);
       const page = (await admin().get('resources', { pageSize: 1, page: 2 }))
         .body;
       expect(page.data).toHaveLength(1);

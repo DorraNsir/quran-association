@@ -20,7 +20,6 @@ import { GroupMemorization } from "@/components/memorization/group-memorization"
 import { GroupFees } from "@/components/payments/payments-views"
 import { GroupClassList, GroupProfileActions, GroupStudentsTable } from "@/components/groups/group-details-client"
 import { StatusBadge, TeacherRoleBadge } from "@/components/shared/badges"
-import { ComingSoon } from "@/components/shared/empty-state"
 import { PhoneLink, SectionCard } from "@/components/shared/info-list"
 import { Breadcrumbs } from "@/components/shared/page-header"
 import { MetaItem, ProfileHeader } from "@/components/shared/profile"
@@ -38,6 +37,7 @@ import { NotFoundState } from "@/components/shared/not-found-state"
 import { WithLookupsAndStudents } from "@/components/shared/with-admin-data"
 import { todayInTunis } from "@/lib/dates"
 import type { Lookups } from "@/lib/domain"
+import { GroupResources } from "@/components/communication/resources-views"
 
 function TeacherCard({ teacher, role }: { teacher: Teacher; role: TeachingRole }) {
   return (
@@ -233,8 +233,7 @@ function GroupDetailsBody({ id, lookups, students }: { id: string; lookups: Look
             value: "resources",
             label: "الموارد",
             icon: <FolderOpen aria-hidden />,
-            later: true,
-            content: <ComingSoon icon={FolderOpen} title="موارد المجموعة" description="ملفات وتسجيلات صوتية يشاركها المدرسون مع طلبة الأقسام." />,
+            content: <GroupResources groupId={group.id} lookups={lookups} />,
           },
         ]}
       />

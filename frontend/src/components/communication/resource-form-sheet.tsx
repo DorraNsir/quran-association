@@ -40,6 +40,7 @@ export function ResourceFormSheet({
   resource,
   lookups,
   publishableClasses,
+  preset,
   pending,
   progress,
   error,
@@ -52,6 +53,8 @@ export function ResourceFormSheet({
   lookups: Lookups
   /** Teacher mode: the teacher's own classes */
   publishableClasses: GroupClass[]
+  /** Admin, new resource: start aimed at these groups (e.g. from a group's page) */
+  preset?: { groupIds: ID[] }
   pending?: boolean
   /** Upload progress in %, while a file is being sent */
   progress?: number | null
@@ -63,13 +66,15 @@ export function ResourceFormSheet({
   const [type, setType] = useState<ResourceType>(resource?.type ?? "PDF")
   const [url, setUrl] = useState(resource?.externalUrl ?? "")
   const [file, setFile] = useState<File | null>(null)
-  const [visibility, setVisibility] = useState<ResourceVisibilityType>(mode === "teacher" ? "GROUP_CLASS" : resource?.visibility ?? "ALL_STUDENTS")
+  const [visibility, setVisibility] = useState<ResourceVisibilityType>(
+    mode === "teacher" ? "GROUP_CLASS" : (resource?.visibility ?? (preset ? "GROUP" : "ALL_STUDENTS"))
+  )
   const classOptions = (mode === "teacher" ? publishableClasses : lookups.groupClasses.filter((c) => c.status !== "ARCHIVED")).map((c) => ({
     value: c.id,
     label: groupClassLabel(c, lookups),
   }))
   const allowedClassIds = new Set(classOptions.map((o) => o.value))
-  const [groupIds, setGroupIds] = useState<ID[]>(resource?.groupIds ?? [])
+  const [groupIds, setGroupIds] = useState<ID[]>(resource?.groupIds ?? preset?.groupIds ?? [])
   // A teacher can only keep targets among their own classes
   const [classIds, setClassIds] = useState<ID[]>((resource?.groupClassIds ?? []).filter((id) => allowedClassIds.has(id)))
   const [submitted, setSubmitted] = useState(false)

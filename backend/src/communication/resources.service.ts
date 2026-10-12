@@ -315,7 +315,19 @@ export class ResourcesService {
             ? { targets: { some: { groupClassId: query.groupClassId } } }
             : {}),
         },
-        query.groupId ? { targets: { some: { groupId: query.groupId } } } : {},
+        // A group's resources: aimed at the group itself or at one of its classes
+        query.groupId
+          ? {
+              targets: {
+                some: {
+                  OR: [
+                    { groupId: query.groupId },
+                    { groupClass: { groupId: query.groupId } },
+                  ],
+                },
+              },
+            }
+          : {},
         query.search
           ? {
               OR: [

@@ -212,6 +212,108 @@ export function StaffResources({ workspace, lookups }: { workspace: "admin" | "t
   )
 }
 
+/**
+ * A group's resources (admin, group page): those aimed at the group itself or
+ * at one of its classes — from the API, with the same cards and actions as the
+ * resources page. A new resource starts aimed at this group.
+ */
+export function GroupResources({ groupId, lookups }: { groupId: ID; lookups: Lookups }) {
+  const today = todayInTunis()
+  const pageSize = usePlatformSettings().defaultPageSize
+  const [query, setQuery] = useState("")
+  const [type, setType] = useState(ALL)
+  const [page, setPage] = useState(1)
+  const [editor, setEditor] = useState<{ resource?: ResourceView; key: number; open: boolean }>({ key: 0, open: false })
+  const [deleting, setDeleting] = useState<ResourceView | null>(null)
+  const list = useResources(
+    "admin",
+    { groupId, search: query.trim() || undefined, type: type === ALL ? undefined : (type as ResourceType) },
+    page,
+    pageSize
+  )
+  const rows = (list.data?.data ?? []).map(toResourceView)
+  const hasFilters = Boolean(query) || type !== ALL
+  const reset = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v)
+    setPage(1)
+  }
+  const openEditor = (resource?: ResourceView) => setEditor((p) => ({ resource, key: p.key + 1, open: true }))
+  const addButton = (
+    <Button size="sm" onClick={() => openEditor()}>
+      <Plus />
+      إضافة مورد
+    </Button>
+  )
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">الملفات والتسجيلات والروابط الموجّهة إلى هذه المجموعة أو إلى أحد أقسامها.</p>
+        <div className="flex gap-2">
+          <Button asChild size="sm" variant="outline">
+            <Link href="/admin/resources">كل الموارد</Link>
+          </Button>
+          {addButton}
+        </div>
+      </div>
+      <FilterBar
+        hasActiveFilters={hasFilters}
+        onReset={() => {
+          setQuery("")
+          setType(ALL)
+          setPage(1)
+        }}
+        resultLabel={list.data ? `${list.data.meta.total} مورد` : ""}
+        search={<SearchInput value={query} onChange={reset(setQuery)} label="البحث في موارد المجموعة" placeholder="ابحث في الموارد…" />}
+      >
+        <FilterSelect label="النوع" allLabel="كل الأنواع" value={type} onValueChange={reset(setType)}
+          options={RESOURCE_TYPES.map((t) => ({ value: t, label: labels.resourceType[t] }))} />
+      </FilterBar>
+      <QueryState query={list}>
+        {rows.length === 0 ? (
+          <Card className="p-0">
+            {hasFilters ? (
+              <EmptyState icon={SearchX} title="لا توجد موارد مطابقة" />
+            ) : (
+              <EmptyState icon={FolderOpen} title="لا توجد موارد لهذه المجموعة بعد" description="الموارد الموجّهة لكل الطلبة تظهر في صفحة الموارد." action={addButton} />
+            )}
+          </Card>
+        ) : (
+          <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {rows.map((resource) => {
+              const actions: RowAction[] = [
+                { label: "عرض", icon: Eye, href: `/admin/resources/${resource.id}` },
+                ...(resource.canManage
+                  ? [
+                      { label: "تعديل", icon: Pencil, onSelect: () => openEditor(resource) },
+                      { label: "حذف", icon: Trash2, destructive: true, separated: true, onSelect: () => setDeleting(resource) },
+                    ]
+                  : []),
+              ]
+              return (
+                <li key={resource.id}>
+                  <ResourceCard
+                    resource={resource}
+                    href={`/admin/resources/${resource.id}`}
+                    today={today}
+                    showTargets
+                    actions={<ActionsMenu label={`إجراءات: ${resource.title}`} actions={actions} />}
+                  />
+                </li>
+              )
+            })}
+          </ul>
+        )}
+        <Pager page={page} totalPages={list.data?.meta.totalPages ?? 1} onPage={setPage} />
+      </QueryState>
+
+      <ResourceEditor key={`editor-${editor.key}`} open={editor.open} onOpenChange={(open) => setEditor((p) => ({ ...p, open }))}
+        mode="admin" resource={editor.resource} lookups={lookups} preset={{ groupIds: [groupId] }} />
+      <DeleteResourceDialog scope="admin" resource={deleting} onDone={() => setDeleting(null)} />
+    </div>
+  )
+}
+
 /** The form wired to the API: upload (with progress) → save → recipients notified by the API. */
 function ResourceEditor({
   open,
@@ -219,12 +321,14 @@ function ResourceEditor({
   mode,
   resource,
   lookups,
+  preset,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   mode: "admin" | "teacher"
   resource?: ResourceView
   lookups: Lookups
+  preset?: { groupIds: ID[] }
 }) {
   const save = useSaveResource(mode, resource?.id)
   const [progress, setProgress] = useState<number | null>(null)
@@ -236,6 +340,7 @@ function ResourceEditor({
       resource={resource}
       lookups={lookups}
       publishableClasses={mode === "teacher" ? publishableOf(lookups) : []}
+      preset={resource ? undefined : preset}
       pending={save.isPending}
       progress={progress}
       error={save.isError ? errorMessage(save.error) : null}
