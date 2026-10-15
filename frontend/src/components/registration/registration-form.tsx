@@ -47,6 +47,9 @@ export function useRegistrationForm(today: ISODate) {
         : !values.birthDate ? "أدخل تاريخ الميلاد" : values.birthDate >= today ? "تاريخ ميلاد غير منطقي" : undefined,
     phone: phoneError(values.phone, { required: true }),
     guardianPhone: phoneError(values.guardianPhone, { required: isMinor }),
+    // Required only when the applicant answered «نعم»
+    previousExperience:
+      values.studied === "yes" && !values.previousExperience.trim() ? "اذكر التجربة السابقة في دراسة القرآن" : undefined,
   }
   const valid = Object.values(errors).every((e) => !e)
   const err = (key: keyof typeof errors) => (submitted ? errors[key] : undefined)
@@ -111,8 +114,11 @@ export function useRegistrationForm(today: ISODate) {
         <ChoiceGroup label="دراسة القرآن سابقًا" value={values.studied} onChange={(v) => set("studied", v)} className="grid-cols-2"
           choices={[{ value: "yes", label: "نعم" }, { value: "no", label: "لا" }]} />
         {values.studied === "yes" && (
-          <Input aria-label="التجربة السابقة" placeholder="مثال: حفظ جزء عمّ، دراسة في الكتّاب…" value={values.previousExperience}
-            onChange={(e) => set("previousExperience", e.target.value)} maxLength={200} />
+          <FormField id={`${idPrefix}-experience`} label="التجربة السابقة" required error={err("previousExperience")}>
+            <Input id={`${idPrefix}-experience`} placeholder="مثال: حفظ جزء عمّ,سورة البقرة …" value={values.previousExperience}
+              onChange={(e) => set("previousExperience", e.target.value)} maxLength={200}
+              aria-invalid={err("previousExperience") ? true : undefined} />
+          </FormField>
         )}
       </div>
       <FormField id={`${idPrefix}-notes`} label="معلومات إضافية" optional className="sm:col-span-2">

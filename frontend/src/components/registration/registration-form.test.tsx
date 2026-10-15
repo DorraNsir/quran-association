@@ -46,4 +46,35 @@ describe("registration form — «الجنس»", () => {
     expect(fields).toMatchObject({ firstName: "سارة", gender: "FEMALE" })
     expect(toRequestBody(fields)).toMatchObject({ gender: "FEMALE" })
   })
+
+  describe("previous experience", () => {
+    function fillValid() {
+      fillRequired()
+      fireEvent.click(screen.getByRole("radio", { name: "ذكر" }))
+    }
+
+    it("is required when «نعم» is chosen", () => {
+      const onCollect = vi.fn()
+      render(<Harness onCollect={onCollect} />)
+      fillValid()
+      fireEvent.click(screen.getByRole("radio", { name: "نعم" }))
+      fireEvent.click(screen.getByRole("button", { name: "إرسال" }))
+      expect(onCollect).toHaveBeenLastCalledWith(undefined)
+      expect(screen.getByText("اذكر التجربة السابقة في دراسة القرآن")).toBeTruthy()
+
+      fireEvent.change(screen.getByLabelText(/التجربة السابقة/), { target: { value: "  حفظ جزء عمّ " } })
+      fireEvent.click(screen.getByRole("button", { name: "إرسال" }))
+      expect(onCollect.mock.lastCall?.[0]).toMatchObject({ hasStudiedQuranBefore: true, previousExperience: "حفظ جزء عمّ" })
+    })
+
+    it("is not asked when «لا» is chosen (the default)", () => {
+      const onCollect = vi.fn()
+      render(<Harness onCollect={onCollect} />)
+      fillValid()
+      expect(screen.queryByLabelText(/التجربة السابقة/)).toBeNull()
+      fireEvent.click(screen.getByRole("button", { name: "إرسال" }))
+      expect(onCollect.mock.lastCall?.[0]).toMatchObject({ hasStudiedQuranBefore: false })
+      expect(onCollect.mock.lastCall?.[0]).not.toHaveProperty("previousExperience", expect.anything())
+    })
+  })
 })
