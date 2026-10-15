@@ -74,7 +74,8 @@ export function ScheduleDetailsSheet({
                 label: "التوقيت",
                 value: (
                   <>
-                    <span dir="ltr" className="tabular-nums">{formatTimeRange(schedule.start, schedule.end)}</span>
+                  
+                    <span dir="ltr" className="tabular-nums">{formatTimeRange(schedule.end ,schedule.start)}</span>
                     <span className="ms-2 text-xs font-normal text-muted-foreground">
                       ({formatDuration(toMinutes(schedule.end) - toMinutes(schedule.start))})
                     </span>
