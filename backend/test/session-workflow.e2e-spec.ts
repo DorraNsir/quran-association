@@ -333,12 +333,42 @@ describe('Weekly schedule → sessions → attendance workflow (e2e)', () => {
     const other = [id.R1, id.R2, id.R3].find(
       (r) => !slots.some((s) => s.room.id === r),
     );
+    const upcomingBefore = await prisma.session.findMany({
+      where: {
+        weeklyScheduleId: slotOfPast,
+        status: 'SCHEDULED',
+        date: { gte: new Date(`${TODAY}T00:00:00Z`) },
+      },
+      select: { date: true },
+      orderBy: { date: 'asc' },
+    });
     // Move the slot to a later time and (if free) another room
     await patch(`group-classes/${id.cls}/schedules/${slotOfPast}`, {
       startTime: '20:00',
       endTime: '21:00',
       ...(other ? { roomId: other } : {}),
     }).expect(200);
+    // Its never-held lessons moved with it at once — even with no current
+    // academic year in this database (same dates, new time, new room)
+    const upcomingAfter = await prisma.session.findMany({
+      where: {
+        weeklyScheduleId: slotOfPast,
+        status: 'SCHEDULED',
+        date: { gte: new Date(`${TODAY}T00:00:00Z`) },
+      },
+      select: { date: true, startTime: true, roomId: true },
+      orderBy: { date: 'asc' },
+    });
+    expect(upcomingAfter.map((r) => r.date)).toEqual(
+      upcomingBefore.map((r) => r.date),
+    );
+    expect(
+      upcomingAfter.every(
+        (r) =>
+          r.startTime.toISOString().slice(11, 16) === '20:00' &&
+          (!other || r.roomId === other),
+      ),
+    ).toBe(true);
     await generate();
     const kept = (await get(`sessions/${id.past}`).expect(200)).body;
     expect(kept.status).toBe('COMPLETED');

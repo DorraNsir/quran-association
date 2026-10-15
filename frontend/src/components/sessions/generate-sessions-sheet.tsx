@@ -121,10 +121,10 @@ export function GenerateSessionsSheet({
         if (!next) setResult(null)
         onOpenChange(next)
       }}
-      title="توليد الحصص"
-      description="تُنشأ الحصص المؤرخة من المواعيد الأسبوعية للأقسام النشطة، كلٌّ في قاعة موعدها ومع معلمي القسم."
+      title="إكمال الحصص الناقصة"
+      description="تُنشأ الحصص تلقائيًا عند برمجة موعد أسبوعي أو تفعيل قسم أو اعتماد سنة دراسية جديدة. استعمل هذا لإنشاء حصص فترة أخرى، أو لإكمال الحصص التي لم تُنشأ بسبب تعارض بعد حلّه."
       onSubmit={submit}
-      submitLabel="توليد الحصص"
+      submitLabel="إكمال الحصص"
       pending={form.pending}
       error={form.serverError}
     >
@@ -153,7 +153,7 @@ export function GenerateSessionsSheet({
         <div className="flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground sm:col-span-2">
           <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <p>
-            يمكن إعادة التوليد بأمان: الحصة الموجودة لنفس الموعد والتاريخ (منجزة أو ملغاة أو معدّلة) لا تُكرَّر ولا تُغيَّر.
+            لا يُضاف إلا ما ينقص: الحصة الموجودة لنفس الموعد والتاريخ (منجزة أو ملغاة أو معدّلة) لا تُكرَّر ولا تُغيَّر.
             {year && ` السنة الدراسية الحالية: ${formatShortDate(year.startDate)} — ${formatShortDate(year.endDate)}.`}
           </p>
         </div>
@@ -184,7 +184,7 @@ export function GenerateSessionsSheet({
             )}
             {result.skippedInactiveSupervisorClassIds.length > 0 && (
               <p className="mt-2">
-                أقسام لم تُولَّد حصصها لأن مدرسها المشرف غير نشط (عيّن مشرفًا نشطًا أولًا):{" "}
+                أقسام لم تُنشأ حصصها لأن مدرسها المشرف غير نشط (عيّن مشرفًا نشطًا أولًا):{" "}
                 {result.skippedInactiveSupervisorClassIds
                   .map((id) => {
                     const c = indexes.classesById.get(id)
@@ -216,7 +216,7 @@ export function GenerateSessionsButton({
     <>
       <Button type="button" variant={variant} onClick={() => setOpen(true)}>
         <CalendarPlus />
-        توليد الحصص
+        إكمال الحصص الناقصة
       </Button>
       {open && <GenerateSessionsSheet open={open} onOpenChange={setOpen} lookups={lookups} today={today} />}
     </>

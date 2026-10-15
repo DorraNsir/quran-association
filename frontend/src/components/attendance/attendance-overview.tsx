@@ -209,9 +209,9 @@ export function AttendanceOverview({ lookups }: { lookups: Lookups }) {
       {noneGenerated && (
         <Alert className="mb-4">
           <Info aria-hidden />
-          <AlertTitle>لم تُولَّد أي حصص بعد</AlertTitle>
+          <AlertTitle>لا توجد حصص بعد</AlertTitle>
           <AlertDescription>
-            <p>يُسجَّل الحضور في الحصص الفعلية المؤرخة، وهي تُنشأ من المواعيد الأسبوعية عبر «توليد الحصص». لذلك تبقى الإحصائيات صفرًا إلى حين توليدها.</p>
+            <p>يُسجَّل الحضور في الحصص الفعلية المؤرخة، وهي تُنشأ تلقائيًا من المواعيد الأسبوعية للأقسام النشطة خلال السنة الدراسية الحالية. لذلك تبقى الإحصائيات صفرًا إلى حين برمجة المواعيد.</p>
             <div className="mt-2">
               <GenerateSessionsButton lookups={lookups} today={today} variant="outline" />
             </div>
@@ -247,7 +247,7 @@ export function AttendanceOverview({ lookups }: { lookups: Lookups }) {
           emptyState={
             <EmptyState
               icon={SearchX}
-              title={noneGenerated ? "لم تُولَّد أي حصص بعد" : period.preset === "today" ? "لا توجد حصص اليوم" : "لا توجد حصص في هذه الفترة"}
+              title={noneGenerated ? "لا توجد حصص بعد" : period.preset === "today" ? "لا توجد حصص اليوم" : "لا توجد حصص في هذه الفترة"}
               description={noneGenerated ? undefined : "تعرض المتابعة الحصص التي حلّ موعدها؛ غيّر الفترة لرؤية حصص أخرى."}
             />
           }

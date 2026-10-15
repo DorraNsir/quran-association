@@ -13,7 +13,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 import { expectedOnDate } from './roster.sql.js';
 import { ScheduleConflictService } from './schedule-conflicts.service.js';
-import { classNotFound } from './schedules.service.js';
+import { classNotFound } from './scheduling-errors.js';
 import type {
   AttentionFlag,
   CreateSessionDto,
@@ -29,6 +29,7 @@ import type {
   UpdateSessionDto,
 } from './session.dto.js';
 import {
+  addDays,
   daysBetween,
   eachDate,
   fromDbTime,
@@ -550,172 +551,200 @@ export class SessionsService {
    */
   async generate(dto: GenerateSessionsDto): Promise<GenerateSessionsResultDto> {
     assertRange(dto.from, dto.to, MAX_GENERATION_DAYS);
-    return this.prisma.$transaction(
-      async (tx) => {
-        await this.conflicts.lockScheduling(tx);
-        if (
-          dto.groupClassId &&
-          !(await tx.groupClass.findUnique({
-            where: { id: dto.groupClassId },
-            select: { id: true },
-          }))
-        ) {
-          throw classNotFound();
-        }
-        const classes = await tx.groupClass.findMany({
-          where: {
-            status: 'ACTIVE',
-            group: { status: 'ACTIVE' },
-            ...(dto.groupClassId ? { id: dto.groupClassId } : {}),
-          },
+    return this.prisma.$transaction((tx) => this.generateInTx(tx, dto), {
+      timeout: 30_000,
+    });
+  }
+
+  /**
+   * Automatic generation (no admin step): the sessions of running classes
+   * from today (or the year's start) to the end of the CURRENT academic year,
+   * inside the caller's transaction — same rules as generate(). Called when a
+   * weekly slot is created or moved, a class or group is activated, and when
+   * an academic year becomes current. No current year (or it is over): nothing.
+   */
+  async generateForCurrentYear(
+    tx: Tx,
+    scope: { groupClassId?: string; groupId?: string } = {},
+  ): Promise<GenerateSessionsResultDto | null> {
+    const year = await tx.academicYear.findFirst({
+      where: { isCurrent: true },
+      select: { startDate: true, endDate: true },
+    });
+    if (!year) return null;
+    const today = await platformToday(tx);
+    const [start, end] = [fromDbDate(year.startDate), fromDbDate(year.endDate)];
+    if (end < today) return null;
+    const from = start > today ? start : today;
+    const last = addDays(from, MAX_GENERATION_DAYS - 1);
+    return this.generateInTx(tx, {
+      from,
+      to: end < last ? end : last,
+      ...scope,
+    });
+  }
+
+  /** generate() inside an existing transaction (takes the scheduling lock, re-entrant). */
+  async generateInTx(
+    tx: Tx,
+    dto: GenerateSessionsDto & { groupId?: string },
+  ): Promise<GenerateSessionsResultDto> {
+    await this.conflicts.lockScheduling(tx);
+    if (
+      dto.groupClassId &&
+      !(await tx.groupClass.findUnique({
+        where: { id: dto.groupClassId },
+        select: { id: true },
+      }))
+    ) {
+      throw classNotFound();
+    }
+    const classes = await tx.groupClass.findMany({
+      where: {
+        status: 'ACTIVE',
+        group: { status: 'ACTIVE' },
+        ...(dto.groupClassId ? { id: dto.groupClassId } : {}),
+        ...(dto.groupId ? { groupId: dto.groupId } : {}),
+      },
+      select: {
+        id: true,
+        supervisor: { select: { id: true, status: true } },
+        assistants: {
+          select: { teacher: { select: { id: true, status: true } } },
+        },
+        schedules: {
           select: {
             id: true,
-            supervisor: { select: { id: true, status: true } },
-            assistants: {
-              select: { teacher: { select: { id: true, status: true } } },
-            },
-            schedules: {
-              select: {
-                id: true,
-                dayOfWeek: true,
-                startTime: true,
-                endTime: true,
-                roomId: true,
-              },
-            },
+            dayOfWeek: true,
+            startTime: true,
+            endTime: true,
+            roomId: true,
           },
-        });
-        const skippedInactiveSupervisorClassIds = classes
-          .filter(
-            (c) => c.supervisor.status !== 'ACTIVE' && c.schedules.length > 0,
-          )
-          .map((c) => c.id);
-        const plannable = classes.filter(
-          (c) => c.supervisor.status === 'ACTIVE',
-        );
-        const team = new Map(
-          plannable.map((c) => [
-            c.id,
-            {
-              supervisorId: c.supervisor.id,
-              assistantIds: c.assistants
-                .map((a) => a.teacher)
-                .filter((t) => t.status === 'ACTIVE')
-                .map((t) => t.id),
-            },
-          ]),
-        );
-        const existing = await this.sessionsInRange(tx, dto.from, dto.to);
-
-        type Planned = Prisma.SessionCreateManyInput & { teamOf: string };
-        const planned: Planned[] = [];
-        const skippedConflicts: SkippedSessionDto[] = [];
-        let skippedExisting = 0;
-        for (const date of eachDate(dto.from, dto.to)) {
-          const weekday = weekdayOf(date);
-          const sameDay = existing.filter((s) => s.date === date);
-          for (const c of plannable) {
-            const t = team.get(c.id)!;
-            const teachers = [t.supervisorId, ...t.assistantIds];
-            for (const ws of c.schedules.filter(
-              (s) => s.dayOfWeek === weekday,
-            )) {
-              const slot = {
-                start: fromDbTime(ws.startTime),
-                end: fromDbTime(ws.endTime),
-              };
-              if (
-                sameDay.some(
-                  (s) =>
-                    s.weeklyScheduleId === ws.id ||
-                    (s.groupClassId === c.id && overlaps(s, slot)),
-                )
-              ) {
-                skippedExisting++;
-                continue;
-              }
-              const blocking = sameDay.find(
-                (s) =>
-                  s.status !== SessionStatus.CANCELLED &&
-                  s.groupClassId !== c.id &&
-                  overlaps(s, slot) &&
-                  (s.roomId === ws.roomId ||
-                    s.teachers.some((x) => teachers.includes(x))),
-              );
-              if (blocking) {
-                skippedConflicts.push({
-                  groupClassId: c.id,
-                  weeklyScheduleId: ws.id,
-                  date,
-                  startTime: slot.start,
-                  endTime: slot.end,
-                  reason: blocking.roomId === ws.roomId ? 'ROOM' : 'TEACHER',
-                  conflictingSessionId: blocking.id,
-                });
-                continue;
-              }
-              planned.push({
-                groupClassId: c.id,
-                weeklyScheduleId: ws.id,
-                // Each occurrence takes the room of ITS weekly slot
-                roomId: ws.roomId,
-                date: toDbDate(date),
-                startTime: ws.startTime,
-                endTime: ws.endTime,
-                status: SessionStatus.SCHEDULED,
-                teamOf: c.id,
-              });
-              const added = {
-                id: 'planned',
-                date,
-                ...slot,
-                status: SessionStatus.SCHEDULED,
-                groupClassId: c.id,
-                weeklyScheduleId: ws.id,
-                roomId: ws.roomId,
-                teachers,
-              };
-              existing.push(added);
-              sameDay.push(added);
-            }
-          }
-        }
-        // skipDuplicates: the unique (weeklyScheduleId, date) index is the final idempotency guard
-        const created = planned.length
-          ? await tx.session.createManyAndReturn({
-              data: planned.map(({ teamOf: _teamOf, ...row }) => row),
-              skipDuplicates: true,
-              select: { id: true, groupClassId: true },
-            })
-          : [];
-        await tx.sessionTeacher.createMany({
-          data: created.flatMap((s) => {
-            const t = team.get(s.groupClassId)!;
-            return [
-              {
-                sessionId: s.id,
-                teacherId: t.supervisorId,
-                role: 'SUPERVISOR' as const,
-              },
-              ...t.assistantIds.map((teacherId) => ({
-                sessionId: s.id,
-                teacherId,
-                role: 'ASSISTANT' as const,
-              })),
-            ];
-          }),
-        });
-        return {
-          from: dto.from,
-          to: dto.to,
-          created: created.length,
-          skippedExisting: skippedExisting + (planned.length - created.length),
-          skippedConflicts,
-          skippedInactiveSupervisorClassIds,
-        };
+        },
       },
-      { timeout: 30_000 },
+    });
+    const skippedInactiveSupervisorClassIds = classes
+      .filter((c) => c.supervisor.status !== 'ACTIVE' && c.schedules.length > 0)
+      .map((c) => c.id);
+    const plannable = classes.filter((c) => c.supervisor.status === 'ACTIVE');
+    const team = new Map(
+      plannable.map((c) => [
+        c.id,
+        {
+          supervisorId: c.supervisor.id,
+          assistantIds: c.assistants
+            .map((a) => a.teacher)
+            .filter((t) => t.status === 'ACTIVE')
+            .map((t) => t.id),
+        },
+      ]),
     );
+    const existing = await this.sessionsInRange(tx, dto.from, dto.to);
+
+    type Planned = Prisma.SessionCreateManyInput & { teamOf: string };
+    const planned: Planned[] = [];
+    const skippedConflicts: SkippedSessionDto[] = [];
+    let skippedExisting = 0;
+    for (const date of eachDate(dto.from, dto.to)) {
+      const weekday = weekdayOf(date);
+      const sameDay = existing.filter((s) => s.date === date);
+      for (const c of plannable) {
+        const t = team.get(c.id)!;
+        const teachers = [t.supervisorId, ...t.assistantIds];
+        for (const ws of c.schedules.filter((s) => s.dayOfWeek === weekday)) {
+          const slot = {
+            start: fromDbTime(ws.startTime),
+            end: fromDbTime(ws.endTime),
+          };
+          if (
+            sameDay.some(
+              (s) =>
+                s.weeklyScheduleId === ws.id ||
+                (s.groupClassId === c.id && overlaps(s, slot)),
+            )
+          ) {
+            skippedExisting++;
+            continue;
+          }
+          const blocking = sameDay.find(
+            (s) =>
+              s.status !== SessionStatus.CANCELLED &&
+              s.groupClassId !== c.id &&
+              overlaps(s, slot) &&
+              (s.roomId === ws.roomId ||
+                s.teachers.some((x) => teachers.includes(x))),
+          );
+          if (blocking) {
+            skippedConflicts.push({
+              groupClassId: c.id,
+              weeklyScheduleId: ws.id,
+              date,
+              startTime: slot.start,
+              endTime: slot.end,
+              reason: blocking.roomId === ws.roomId ? 'ROOM' : 'TEACHER',
+              conflictingSessionId: blocking.id,
+            });
+            continue;
+          }
+          planned.push({
+            groupClassId: c.id,
+            weeklyScheduleId: ws.id,
+            // Each occurrence takes the room of ITS weekly slot
+            roomId: ws.roomId,
+            date: toDbDate(date),
+            startTime: ws.startTime,
+            endTime: ws.endTime,
+            status: SessionStatus.SCHEDULED,
+            teamOf: c.id,
+          });
+          const added = {
+            id: 'planned',
+            date,
+            ...slot,
+            status: SessionStatus.SCHEDULED,
+            groupClassId: c.id,
+            weeklyScheduleId: ws.id,
+            roomId: ws.roomId,
+            teachers,
+          };
+          existing.push(added);
+          sameDay.push(added);
+        }
+      }
+    }
+    // skipDuplicates: the unique (weeklyScheduleId, date) index is the final idempotency guard
+    const created = planned.length
+      ? await tx.session.createManyAndReturn({
+          data: planned.map(({ teamOf: _teamOf, ...row }) => row),
+          skipDuplicates: true,
+          select: { id: true, groupClassId: true },
+        })
+      : [];
+    await tx.sessionTeacher.createMany({
+      data: created.flatMap((s) => {
+        const t = team.get(s.groupClassId)!;
+        return [
+          {
+            sessionId: s.id,
+            teacherId: t.supervisorId,
+            role: 'SUPERVISOR' as const,
+          },
+          ...t.assistantIds.map((teacherId) => ({
+            sessionId: s.id,
+            teacherId,
+            role: 'ASSISTANT' as const,
+          })),
+        ];
+      }),
+    });
+    return {
+      from: dto.from,
+      to: dto.to,
+      created: created.length,
+      skippedExisting: skippedExisting + (planned.length - created.length),
+      skippedConflicts,
+      skippedInactiveSupervisorClassIds,
+    };
   }
 
   // ───────────────────────── helpers ─────────────────────────

@@ -134,6 +134,8 @@ describe('Academic structure APIs (e2e)', () => {
     });
     await prisma.student.deleteMany({ where: { personId: { in: persons } } });
     const classes = { group: { name: { endsWith: RUN } } };
+    // Weekly slots now generate their sessions automatically
+    await prisma.session.deleteMany({ where: { groupClass: classes } });
     await prisma.groupClassAssistant.deleteMany({
       where: { groupClass: classes },
     });

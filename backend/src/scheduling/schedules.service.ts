@@ -6,7 +6,7 @@ import {
   SessionStatus,
   Weekday,
 } from '../generated/prisma/client.js';
-import { toDbDate } from '../common/dates.js';
+import { fromDbDate, toDbDate } from '../common/dates.js';
 import { platformToday } from '../common/platform-clock.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -14,13 +14,14 @@ import {
   toScheduleClass,
 } from './class-calendar.select.js';
 import { ScheduleConflictService } from './schedule-conflicts.service.js';
+import { SessionsService } from './sessions.service.js';
 import type {
   CreateWeeklyScheduleDto,
   UpdateWeeklyScheduleDto,
   WeeklyScheduleDto,
   WeeklyScheduleQueryDto,
 } from './schedule.dto.js';
-import { fromDbTime, toDbTime } from './time.js';
+import { addDays, fromDbTime, toDbTime } from './time.js';
 
 const select = {
   id: true,
@@ -52,8 +53,11 @@ const toDto = (
   groupClass: toScheduleClass(s.groupClass),
 });
 
-export const classNotFound = () =>
-  notFound('GROUP_CLASS_NOT_FOUND', 'القسم غير موجود');
+export { classNotFound } from './scheduling-errors.js';
+import { classNotFound } from './scheduling-errors.js';
+/** Writes that also (re)generate a year of sessions */
+const LONG_TX = { timeout: 30_000 };
+
 const scheduleNotFound = () =>
   notFound('SCHEDULE_NOT_FOUND', 'الموعد الأسبوعي غير موجود');
 
@@ -77,6 +81,7 @@ export class SchedulesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly conflicts: ScheduleConflictService,
+    private readonly sessions: SessionsService,
   ) {}
 
   async listForClass(groupClassId: string): Promise<WeeklyScheduleDto[]> {
@@ -171,8 +176,10 @@ export class SchedulesService {
         },
         select: { id: true },
       });
+      // Its dated sessions exist at once, until the end of the current academic year
+      await this.sessions.generateForCurrentYear(tx, { groupClassId });
       return created.id;
-    });
+    }, LONG_TX);
     return this.get(id);
   }
 
@@ -228,6 +235,30 @@ export class SchedulesService {
           { checkWeekly: false, roomOverrides: rooms },
         );
       }
+      const moved =
+        slot.dayOfWeek !== existing.dayOfWeek ||
+        slot.start !== fromDbTime(existing.startTime) ||
+        slot.end !== fromDbTime(existing.endTime);
+      // Its upcoming lessons that never took place (still scheduled, no
+      // attendance) are planned again at the new day/time below — history
+      // (past, attended, completed or cancelled lessons) is never touched
+      let replannedUntil: string | null = null;
+      if (moved) {
+        const neverHeld = {
+          weeklyScheduleId: scheduleId,
+          status: SessionStatus.SCHEDULED,
+          date: { gte: toDbDate(today) },
+          studentAttendance: { none: {} },
+          teacherAttendance: { none: {} },
+        } satisfies Prisma.SessionWhereInput;
+        const last = await tx.session.findFirst({
+          where: neverHeld,
+          orderBy: { date: 'desc' },
+          select: { date: true },
+        });
+        replannedUntil = last ? fromDbDate(last.date) : null;
+        await tx.session.deleteMany({ where: neverHeld });
+      }
       await tx.weeklySchedule.update({
         where: { id: scheduleId },
         data: {
@@ -237,8 +268,26 @@ export class SchedulesService {
           roomId: slot.roomId,
         },
       });
-      if (roomChanged) await this.conflicts.syncSlotRooms(tx, rooms, today);
-    });
+      if (moved) {
+        // The same period as the removed lessons (even without a current
+        // year), then the rest of the current academic year
+        if (replannedUntil)
+          for (
+            let from = today;
+            from <= replannedUntil;
+            from = addDays(from, 366)
+          ) {
+            const to = addDays(from, 365);
+            await this.sessions.generateInTx(tx, {
+              from,
+              to: to < replannedUntil ? to : replannedUntil,
+              groupClassId,
+            });
+          }
+        await this.sessions.generateForCurrentYear(tx, { groupClassId });
+      } else if (roomChanged)
+        await this.conflicts.syncSlotRooms(tx, rooms, today);
+    }, LONG_TX);
     return this.get(scheduleId);
   }
 

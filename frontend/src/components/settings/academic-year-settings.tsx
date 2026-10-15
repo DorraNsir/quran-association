@@ -54,7 +54,8 @@ const draftOf = (year: AcademicYear): AcademicYearDraft => ({
 })
 
 /** Settings that change which year is current refresh every view that defaults to it. */
-const yearKeys = [keys.academicYears, ["platform-preferences"], ["admin-settings"]]
+// A new current year also creates that year's sessions (all screens listing sessions refresh)
+const yearKeys = [keys.academicYears, ["platform-preferences"], ["admin-settings"], keys.sessions]
 
 function AcademicYearSheet({ open, onOpenChange, year, academicYears }: {
   open: boolean
@@ -229,7 +230,7 @@ function AcademicYearsPanel({ academicYears, onEdit }: { academicYears: Academic
         open={confirming !== null}
         onOpenChange={(open) => !open && setConfirming(null)}
         title={`اعتماد ${confirming?.label ?? ""} سنةً دراسية حالية؟`}
-        description="ستُفتح شاشات متابعة الحفظ والمدفوعات وفلاتر الفترات على هذه السنة افتراضيًا، وتُسجَّل معاليم الطلبة المقبولين فيها. لا تُحذف ولا تُعدَّل أي بيانات مسجّلة في السنوات الأخرى."
+        description="ستُفتح شاشات متابعة الحفظ والمدفوعات وفلاتر الفترات على هذه السنة افتراضيًا، وتُسجَّل معاليم الطلبة المقبولين فيها، وتُنشأ حصص الأقسام النشطة حتى نهايتها. لا تُحذف ولا تُعدَّل أي بيانات مسجّلة في السنوات الأخرى."
         confirmLabel="اعتماد"
         onConfirm={async () => {
           if (!confirming) return

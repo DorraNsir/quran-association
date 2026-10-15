@@ -202,11 +202,11 @@ export function SessionsView({
       {noneGenerated && (
         <Alert className="mb-4">
           <Info aria-hidden />
-          <AlertTitle>{isTeacher ? "لا توجد حصص مؤرخة لك بعد" : "لم تُولَّد أي حصص بعد"}</AlertTitle>
+          <AlertTitle>{isTeacher ? "لا توجد حصص مؤرخة لك بعد" : "لا توجد حصص بعد"}</AlertTitle>
           <AlertDescription>
             {isTeacher
               ? "تُنشئ الإدارة الحصص المؤرخة انطلاقًا من البرنامج الأسبوعي، وتظهر هنا بعد ذلك."
-              : "المواعيد الأسبوعية هي البرنامج المتكرر فقط؛ الحصص الفعلية (التي يُسجَّل فيها الحضور) تُنشأ من هذا البرنامج عبر «توليد الحصص» للفترة المطلوبة."}
+              : "تُنشأ الحصص الفعلية (التي يُسجَّل فيها الحضور) تلقائيًا من المواعيد الأسبوعية للأقسام النشطة، حتى نهاية السنة الدراسية الحالية. تأكّد من اعتماد سنة دراسية حالية ومن برمجة مواعيد الأقسام."}
           </AlertDescription>
         </Alert>
       )}
@@ -279,7 +279,7 @@ export function SessionsView({
             icon={CalendarSearch}
             title={
               noneGenerated
-                ? "لم تُولَّد أي حصص بعد"
+                ? "لا توجد حصص بعد"
                 : tab === "today"
                   ? "لا توجد حصص اليوم"
                   : tab === "pending"

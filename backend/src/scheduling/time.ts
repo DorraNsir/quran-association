@@ -44,6 +44,13 @@ const WEEKDAYS: Weekday[] = [
 export const weekdayOf = (date: string) =>
   WEEKDAYS[new Date(`${date}T00:00:00.000Z`).getUTCDay()];
 
+/** The calendar date `days` after `date` (UTC, date-only). */
+export function addDays(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 /** Every calendar date from `from` to `to` inclusive. */
 export function eachDate(from: string, to: string): string[] {
   const dates: string[] = [];

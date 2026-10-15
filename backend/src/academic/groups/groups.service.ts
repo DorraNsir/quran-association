@@ -7,6 +7,7 @@ import { type Prisma, RecordStatus } from '../../generated/prisma/client.js';
 import { platformToday } from '../../common/platform-clock.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { ScheduleConflictService } from '../../scheduling/schedule-conflicts.service.js';
+import { SessionsService } from '../../scheduling/sessions.service.js';
 import { roomsOfSlots } from '../teacher-assignments.js';
 import type {
   CreateGroupDto,
@@ -38,6 +39,7 @@ export class GroupsService {
     private readonly prisma: PrismaService,
     private readonly pageSizes: PageSizeService,
     private readonly conflicts: ScheduleConflictService,
+    private readonly sessions: SessionsService,
   ) {}
 
   async list(query: GroupListQueryDto): Promise<GroupListDto> {
@@ -150,40 +152,45 @@ export class GroupsService {
    */
   async setStatus(id: string, status: RecordStatus): Promise<GroupDetailDto> {
     const group = await this.get(id);
-    await this.prisma.$transaction(async (tx) => {
-      await this.conflicts.lockScheduling(tx);
-      // Updated first so classes of THIS group also see each other as running
-      // (a conflict rolls the whole transaction back)
-      await tx.group.update({ where: { id }, data: { status } });
-      if (
-        status === RecordStatus.ACTIVE &&
-        group.status !== RecordStatus.ACTIVE
-      ) {
-        const today = await platformToday(tx);
-        const classes = await tx.groupClass.findMany({
-          where: { groupId: id, status: RecordStatus.ACTIVE },
-          select: {
-            id: true,
-            supervisorId: true,
-            assistants: { select: { teacherId: true } },
-          },
-        });
-        for (const c of classes) {
-          await this.conflicts.assertClassOccupancyFree(
-            tx,
-            {
-              groupClassId: c.id,
-              teacherIds: [
-                c.supervisorId,
-                ...c.assistants.map((a) => a.teacherId),
-              ],
+    await this.prisma.$transaction(
+      async (tx) => {
+        await this.conflicts.lockScheduling(tx);
+        // Updated first so classes of THIS group also see each other as running
+        // (a conflict rolls the whole transaction back)
+        await tx.group.update({ where: { id }, data: { status } });
+        if (
+          status === RecordStatus.ACTIVE &&
+          group.status !== RecordStatus.ACTIVE
+        ) {
+          const today = await platformToday(tx);
+          const classes = await tx.groupClass.findMany({
+            where: { groupId: id, status: RecordStatus.ACTIVE },
+            select: {
+              id: true,
+              supervisorId: true,
+              assistants: { select: { teacherId: true } },
             },
-            today,
-            { checkWeekly: true },
-          );
+          });
+          for (const c of classes) {
+            await this.conflicts.assertClassOccupancyFree(
+              tx,
+              {
+                groupClassId: c.id,
+                teacherIds: [
+                  c.supervisorId,
+                  ...c.assistants.map((a) => a.teacherId),
+                ],
+              },
+              today,
+              { checkWeekly: true },
+            );
+          }
+          // (Re)activated: the sessions of its active classes until the end of the current academic year
+          await this.sessions.generateForCurrentYear(tx, { groupId: id });
         }
-      }
-    });
+      },
+      { timeout: 30_000 },
+    );
     return this.get(id);
   }
 

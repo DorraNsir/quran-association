@@ -7,7 +7,8 @@ import { financeKey } from "@/lib/api/finance"
 
 /** Classes carry group/branch/room/team; students and weekly slots depend on them. */
 // Students joining a class are charged their group's fee automatically (payments screens)
-const affected = [keys.groups, keys.groupClasses, keys.schedules, keys.students, keys.teachers, keys.branches, keys.rooms, financeKey] as const
+// New weekly slots and (re)activations create sessions automatically (session lists refresh)
+const affected = [keys.groups, keys.groupClasses, keys.schedules, keys.students, keys.teachers, keys.branches, keys.rooms, financeKey, keys.sessions] as const
 
 export function useSaveGroup() {
   return useApiMutation(

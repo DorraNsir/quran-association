@@ -16,6 +16,7 @@ import {
 import { platformToday } from '../../common/platform-clock.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { ScheduleConflictService } from '../../scheduling/schedule-conflicts.service.js';
+import { SessionsService } from '../../scheduling/sessions.service.js';
 import { branchNotFound } from '../branches/branches.service.js';
 import { groupNotFound } from '../groups/groups.service.js';
 import {
@@ -98,6 +99,7 @@ export class GroupClassesService {
     private readonly prisma: PrismaService,
     private readonly pageSizes: PageSizeService,
     private readonly conflicts: ScheduleConflictService,
+    private readonly sessions: SessionsService,
   ) {}
 
   async list(query: GroupClassListQueryDto): Promise<GroupClassListDto> {
@@ -302,51 +304,60 @@ export class GroupClassesService {
     id: string,
     status: RecordStatus,
   ): Promise<GroupClassDetailDto> {
-    await this.prisma.$transaction(async (tx) => {
-      const current = await this.lock(tx, id);
-      if (
-        status === RecordStatus.ACTIVE &&
-        current.status !== RecordStatus.ACTIVE
-      ) {
-        const group = await tx.group.findUniqueOrThrow({
-          where: { id: current.groupId },
-          select: { status: true },
-        });
-        if (group.status !== RecordStatus.ACTIVE)
-          throw conflict(
-            'GROUP_INACTIVE',
-            'لا يمكن تفعيل قسم في مجموعة غير مفعّلة',
+    await this.prisma.$transaction(
+      async (tx) => {
+        const current = await this.lock(tx, id);
+        if (
+          status === RecordStatus.ACTIVE &&
+          current.status !== RecordStatus.ACTIVE
+        ) {
+          const group = await tx.group.findUniqueOrThrow({
+            where: { id: current.groupId },
+            select: { status: true },
+          });
+          if (group.status !== RecordStatus.ACTIVE)
+            throw conflict(
+              'GROUP_INACTIVE',
+              'لا يمكن تفعيل قسم في مجموعة غير مفعّلة',
+            );
+          await this.assertBranch(tx, current.branchId, status);
+          const inactiveRoom = await tx.weeklySchedule.findFirst({
+            where: {
+              groupClassId: id,
+              room: { status: { not: ActivationStatus.ACTIVE } },
+            },
+            select: { id: true },
+          });
+          if (inactiveRoom)
+            throw conflict(
+              'ROOM_INACTIVE',
+              'إحدى قاعات المواعيد الأسبوعية غير مفعّلة: غيّر قاعة الموعد أولًا',
+            );
+          await this.assertTeachersAssignable(tx, [current.supervisorId]);
+          // Its weekly slots start occupying their rooms and the teachers again
+          await this.conflicts.assertClassOccupancyFree(
+            tx,
+            {
+              groupClassId: id,
+              teacherIds: [
+                current.supervisorId,
+                ...current.assistants.map((a) => a.teacherId),
+              ],
+            },
+            await platformToday(tx),
+            { checkWeekly: true },
           );
-        await this.assertBranch(tx, current.branchId, status);
-        const inactiveRoom = await tx.weeklySchedule.findFirst({
-          where: {
-            groupClassId: id,
-            room: { status: { not: ActivationStatus.ACTIVE } },
-          },
-          select: { id: true },
-        });
-        if (inactiveRoom)
-          throw conflict(
-            'ROOM_INACTIVE',
-            'إحدى قاعات المواعيد الأسبوعية غير مفعّلة: غيّر قاعة الموعد أولًا',
-          );
-        await this.assertTeachersAssignable(tx, [current.supervisorId]);
-        // Its weekly slots start occupying their rooms and the teachers again
-        await this.conflicts.assertClassOccupancyFree(
-          tx,
-          {
-            groupClassId: id,
-            teacherIds: [
-              current.supervisorId,
-              ...current.assistants.map((a) => a.teacherId),
-            ],
-          },
-          await platformToday(tx),
-          { checkWeekly: true },
-        );
-      }
-      await tx.groupClass.update({ where: { id }, data: { status } });
-    });
+        }
+        await tx.groupClass.update({ where: { id }, data: { status } });
+        // (Re)activated: its sessions until the end of the current academic year
+        if (
+          status === RecordStatus.ACTIVE &&
+          current.status !== RecordStatus.ACTIVE
+        )
+          await this.sessions.generateForCurrentYear(tx, { groupClassId: id });
+      },
+      { timeout: 30_000 },
+    );
     return this.get(id);
   }
 

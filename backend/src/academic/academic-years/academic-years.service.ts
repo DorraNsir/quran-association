@@ -15,6 +15,7 @@ import type {
   CreateAcademicYearDto,
   UpdateAcademicYearDto,
 } from './academic-year.dto.js';
+import { SessionsService } from '../../scheduling/sessions.service.js';
 
 const DAY_MS = 86_400_000;
 
@@ -48,7 +49,10 @@ const yearNotFound = () =>
  */
 @Injectable()
 export class AcademicYearsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sessions: SessionsService,
+  ) {}
 
   async list(): Promise<AcademicYearDto[]> {
     return (
@@ -109,23 +113,29 @@ export class AcademicYearsService {
   /** Atomic switch: clear the old flag and set the new one in ONE transaction. */
   async setCurrent(id: string): Promise<AcademicYearDto> {
     try {
-      const year = await this.prisma.$transaction(async (tx) => {
-        // Serialize concurrent switches (the partial unique index stays the hard guarantee)
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('academic_years.current'))`;
-        const target = await tx.academicYear.findUnique({
-          where: { id },
-          select: { id: true },
-        });
-        if (!target) throw yearNotFound();
-        await tx.academicYear.updateMany({
-          where: { isCurrent: true, id: { not: id } },
-          data: { isCurrent: false },
-        });
-        return tx.academicYear.update({
-          where: { id },
-          data: { isCurrent: true },
-        });
-      });
+      const year = await this.prisma.$transaction(
+        async (tx) => {
+          // Serialize concurrent switches (the partial unique index stays the hard guarantee)
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('academic_years.current'))`;
+          const target = await tx.academicYear.findUnique({
+            where: { id },
+            select: { id: true },
+          });
+          if (!target) throw yearNotFound();
+          await tx.academicYear.updateMany({
+            where: { isCurrent: true, id: { not: id } },
+            data: { isCurrent: false },
+          });
+          const current = await tx.academicYear.update({
+            where: { id },
+            data: { isCurrent: true },
+          });
+          // The new current year's sessions, for every running class
+          await this.sessions.generateForCurrentYear(tx);
+          return current;
+        },
+        { timeout: 60_000 },
+      );
       return toDto(year);
     } catch (error) {
       // A concurrent switch won the race on the single-current index
