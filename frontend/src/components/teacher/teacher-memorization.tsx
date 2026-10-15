@@ -1,6 +1,6 @@
 "use client"
 
-import { BookMarked, DoorOpen, ListChecks } from "lucide-react"
+import { BookMarked, DoorOpen } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 
@@ -22,7 +22,8 @@ import { useAcademicYears } from "@/lib/store/settings"
 
 /**
  * The teacher's memorization follow-up: their classes only, one list per
- * class, built for fast sequential updates ("save and next"). Same store
+ * class. «تحديث» on any student also allows fast sequential updates ("save
+ * and next" through the class list). Same store
  * and same rule as the admin: one value per student, year and semester.
  */
 export function TeacherMemorization({
@@ -81,20 +82,11 @@ export function TeacherMemorization({
             .sort((a, b) => fullName(a).localeCompare(fullName(b), "ar"))
           const shown = onlyMissing ? roster.filter((s) => !recordOf(s)) : roster
           const missing = roster.filter((s) => !recordOf(s)).length
-          const start = roster.find((s) => !recordOf(s)) ?? roster[0]
           return (
             <SectionCard
               key={assignment.groupClass.id}
               title={`${assignment.group?.name ?? ""} — ${assignment.branch?.name ?? ""}`}
               icon={DoorOpen}
-              action={
-                start && (
-                  <Button size="sm" variant="outline" onClick={() => memorization.open(start, academicYearId, semester, roster)}>
-                    <ListChecks />
-                    تحديث متتالي
-                  </Button>
-                )
-              }
             >
               <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <TeacherRoleBadge role={assignment.role} />
