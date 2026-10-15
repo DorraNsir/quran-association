@@ -134,6 +134,7 @@ describe('Room per weekly slot (e2e)', () => {
           person: {
             firstName: t,
             lastName: tag('معلم'),
+            gender: 'MALE',
             phone: '22345678',
           },
           joinedAt: '2024-09-01',
@@ -291,6 +292,7 @@ describe('Room per weekly slot (e2e)', () => {
         person: {
           firstName: 'يوسف',
           lastName: tag('طالب'),
+          gender: 'MALE',
           dateOfBirth: '2015-01-01',
           address: 'نابل',
         },

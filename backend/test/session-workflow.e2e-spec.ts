@@ -127,6 +127,7 @@ describe('Weekly schedule → sessions → attendance workflow (e2e)', () => {
         person: {
           firstName: 'T',
           lastName: tag('معلم'),
+          gender: 'MALE',
           phone: '22345678',
         },
         joinedAt: '2024-09-01',
@@ -265,6 +266,7 @@ describe('Weekly schedule → sessions → attendance workflow (e2e)', () => {
         person: {
           firstName: 'يوسف',
           lastName: tag('طالب'),
+          gender: 'MALE',
           dateOfBirth: '2015-01-01',
           address: 'نابل',
         },
@@ -316,8 +318,9 @@ describe('Weekly schedule → sessions → attendance workflow (e2e)', () => {
         absent: 1,
       }),
     ]);
-    const history = (await get(`students/${id.student}/attendance`).expect(200))
-      .body;
+    const history = (
+      await get(`students/${id.student}/attendance`).expect(200)
+    ).body;
     expect(history.data).toEqual([
       expect.objectContaining({ sessionId: past.id, status: 'ABSENT' }),
     ]);
@@ -341,8 +344,9 @@ describe('Weekly schedule → sessions → attendance workflow (e2e)', () => {
     const kept = (await get(`sessions/${id.past}`).expect(200)).body;
     expect(kept.status).toBe('COMPLETED');
     expect(kept.startTime).not.toBe('20:00');
-    const history = (await get(`students/${id.student}/attendance`).expect(200))
-      .body;
+    const history = (
+      await get(`students/${id.student}/attendance`).expect(200)
+    ).body;
     expect(history.data).toEqual([
       expect.objectContaining({ sessionId: id.past, status: 'ABSENT' }),
     ]);

@@ -1,7 +1,7 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
-import { BookOpen, CalendarDays, CheckCircle2, ClipboardList, Eye, Globe, Loader2, Phone, Plus, SearchX, ShieldCheck, UserCheck, UserPlus, UserX } from "lucide-react"
+import { BookOpen, CalendarDays, CheckCircle2, ClipboardList, Eye, Globe, Loader2, Phone, Plus, SearchX, ShieldCheck, UserCheck, UserPlus, UserRound, UserX } from "lucide-react"
 import Link from "next/link"
 import { useDeferredValue, useState } from "react"
 import { toast } from "sonner"
@@ -462,6 +462,7 @@ function RequestDetails({ requestId, lookups }: { requestId: ID; lookups: Lookup
         </div>
         <InfoList
           items={[
+            { label: "الجنس", value: request.gender ? labels.gender[request.gender] : "غير محدد", icon: UserRound },
             { label: "الهاتف", value: <PhoneLink phone={request.phone} />, icon: Phone },
             ...(request.guardianPhone ? [{ label: "هاتف الولي", value: <PhoneLink phone={request.guardianPhone} />, icon: Phone }] : []),
             { label: request.birthDate ? "تاريخ الميلاد" : "العمر", value: request.birthDate ? `${formatDate(request.birthDate)} (${age} سنة)` : age !== undefined ? `${age} سنة` : undefined, icon: CalendarDays },
@@ -511,6 +512,7 @@ function RequestDetails({ requestId, lookups }: { requestId: ID; lookups: Lookup
           prefill={{
             firstName: request.firstName,
             lastName: request.lastName,
+            gender: request.gender,
             dateOfBirth: request.birthDate,
             ...(isMinor ? { guardianPhone: request.guardianPhone ?? request.phone } : { phone: request.phone, guardianPhone: request.guardianPhone }),
             registrationDate: today,

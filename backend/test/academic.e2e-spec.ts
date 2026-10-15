@@ -63,6 +63,7 @@ describe('Academic structure APIs (e2e)', () => {
     person: {
       firstName: first,
       lastName: tag('معلم'),
+      gender: 'MALE',
       phone: '22 345 678',
     },
     joinedAt: '2024-09-01',
@@ -76,6 +77,7 @@ describe('Academic structure APIs (e2e)', () => {
     person: {
       firstName: first,
       lastName: tag('طالب'),
+      gender: 'FEMALE',
       dateOfBirth: '2015-03-10',
       address: 'دار شعبان الفهري',
     },
@@ -495,21 +497,9 @@ describe('Academic structure APIs (e2e)', () => {
       await post(
         'teachers',
         teacherBody('x', {
-          person: { firstName: 'x', lastName: 'y' },
+          person: { firstName: 'x', lastName: 'y', gender: 'MALE' },
         }),
       ).expect(400); // phone required
-      // Gender is no longer part of a person: sending it is refused
-      await post(
-        'teachers',
-        teacherBody('x', {
-          person: {
-            firstName: 'x',
-            lastName: 'y',
-            phone: '22345678',
-            gender: 'MALE',
-          },
-        }),
-      ).expect(400);
       await patch(`teachers/${id.t1}`, { person: { phone: null } }).expect(400);
     });
 

@@ -6,6 +6,7 @@ import type { Lookups } from "@/lib/domain"
 import type {
   AcademicYear,
   Branch,
+  Gender,
   Group,
   GroupClass,
   RecordStatus,
@@ -79,6 +80,7 @@ export interface PersonView {
   id: string
   firstName: string
   lastName: string
+  gender: Gender | null
   dateOfBirth?: string | null
   phone: string | null
   email: string | null
@@ -171,6 +173,7 @@ export const toTeacher = (t: TeacherDto): Teacher => ({
   userId: t.account?.id,
   firstName: t.person.firstName,
   lastName: t.person.lastName,
+  gender: t.person.gender ?? undefined,
   phone: t.person.phone ?? "",
   email: t.person.email ?? undefined,
   photoUrl: t.person.photoUrl ?? undefined,
@@ -182,6 +185,7 @@ export const toStudent = (s: StudentDto): Student => ({
   id: s.id,
   firstName: s.person.firstName,
   lastName: s.person.lastName,
+  gender: s.person.gender ?? undefined,
   dateOfBirth: s.person.dateOfBirth ?? "",
   phone: s.person.phone ?? undefined,
   guardianPhone: s.guardianPhone ?? undefined,

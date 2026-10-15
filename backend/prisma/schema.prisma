@@ -29,6 +29,11 @@ enum Role {
   STUDENT
 }
 
+enum Gender {
+  MALE
+  FEMALE
+}
+
 /// Students, groups and classes can be archived (kept for history).
 enum RecordStatus {
   ACTIVE
@@ -197,6 +202,7 @@ model Person {
   id          String    @id @default(uuid(7)) @db.Uuid
   firstName   String
   lastName    String
+  gender      Gender?
   dateOfBirth DateTime? @db.Date
   phone       String?
   email       String?
@@ -703,6 +709,7 @@ model RegistrationRequest {
   id                     String                    @id @default(uuid(7)) @db.Uuid
   firstName              String
   lastName               String
+  gender                 Gender?
   birthDate              DateTime?                 @db.Date
   /// When the applicant gave an age instead of a birth date (one of the two is required)
   age                    Int?                      @db.SmallInt

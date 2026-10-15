@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query"
 
-import type { RecordStatus } from "@/types/domain"
+import type { Gender, RecordStatus } from "@/types/domain"
 
 import { api, keys, useApiMutation, type EnrollmentDto } from "../academic"
 import { uploadFile } from "../client"
@@ -35,7 +35,7 @@ async function applyPhoto(owner: "teachers" | "students", id: string, photo: Pho
 }
 
 export interface TeacherInput {
-  person: { firstName: string; lastName: string; phone: string; email: string | null }
+  person: { firstName: string; lastName: string; gender: Gender; phone: string; email: string | null }
   joinedAt: string
   qualification: string | null
   status: "ACTIVE" | "INACTIVE"
@@ -66,6 +66,7 @@ export interface StudentInput {
   person: {
     firstName: string
     lastName: string
+    gender: Gender
     dateOfBirth: string
     address: string
     phone: string | null

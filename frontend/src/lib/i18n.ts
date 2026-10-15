@@ -7,6 +7,7 @@ import type {
   AttendanceStatus,
   Semester,
   ConflictType,
+  Gender,
   RecordStatus,
   ResourceType,
   ResourceVisibilityType,
@@ -49,6 +50,10 @@ export const labels = {
     SUPERVISOR: "المعلم المشرف",
     ASSISTANT: "المعلم المساعد",
   } satisfies Record<TeachingRole, string>,
+  gender: {
+    MALE: "ذكر",
+    FEMALE: "أنثى",
+  } satisfies Record<Gender, string>,
   weekday: {
     MON: "الاثنين",
     TUE: "الثلاثاء",

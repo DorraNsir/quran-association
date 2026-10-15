@@ -95,6 +95,7 @@ describe('Resources, announcements & notifications (e2e)', () => {
       data: {
         firstName: key,
         lastName: tag('حساب'),
+        gender: 'MALE',
         dateOfBirth: new Date('2000-01-01'),
         address: 'نابل',
         phone: '22345678',
@@ -236,6 +237,7 @@ describe('Resources, announcements & notifications (e2e)', () => {
         person: {
           firstName: 'بلا حساب',
           lastName: tag('طالب'),
+          gender: 'FEMALE',
           dateOfBirth: '2000-02-02',
           address: 'نابل',
           phone: '22345678',

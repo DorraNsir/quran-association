@@ -13,6 +13,7 @@ export type RegistrationFields = Pick<
   RegistrationRequest,
   | "firstName"
   | "lastName"
+  | "gender"
   | "birthDate"
   | "age"
   | "phone"

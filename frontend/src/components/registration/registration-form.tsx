@@ -7,9 +7,10 @@ import { FormField } from "@/components/shared/form"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { ageOn } from "@/lib/domain"
+import { labels } from "@/lib/i18n"
 import type { RegistrationFields } from "@/lib/registration"
 import { normalizePhone, PHONE_HINT, phoneError } from "@/lib/validation"
-import type { ISODate } from "@/types/domain"
+import type { Gender, ISODate } from "@/types/domain"
 
 /**
  * Applicant fields shared by the public form and the admin "add request"
@@ -19,6 +20,7 @@ export function useRegistrationForm(today: ISODate) {
   const [values, setValues] = useState({
     firstName: "",
     lastName: "",
+    gender: "" as "" | Gender,
     ageMode: "age" as "age" | "birthDate",
     age: "",
     birthDate: "",
@@ -38,6 +40,7 @@ export function useRegistrationForm(today: ISODate) {
   const errors = {
     firstName: !values.firstName.trim() ? "الاسم مطلوب" : undefined,
     lastName: !values.lastName.trim() ? "اللقب مطلوب" : undefined,
+    gender: values.gender ? undefined : "اختر الجنس",
     age:
       values.ageMode === "age"
         ? !(Number.isInteger(age) && age >= 3 && age <= 99) ? "أدخل عمرًا صحيحًا (بين 3 و99)" : undefined
@@ -55,6 +58,7 @@ export function useRegistrationForm(today: ISODate) {
     return {
       firstName: values.firstName.trim(),
       lastName: values.lastName.trim(),
+      gender: values.gender || undefined,
       age: values.ageMode === "age" ? age : undefined,
       birthDate: values.ageMode === "birthDate" ? values.birthDate : undefined,
       phone: normalizePhone(values.phone),
@@ -72,6 +76,10 @@ export function useRegistrationForm(today: ISODate) {
       </FormField>
       <FormField id={`${idPrefix}-last`} label="اللقب" required error={err("lastName")}>
         <Input id={`${idPrefix}-last`} value={values.lastName} onChange={(e) => set("lastName", e.target.value)} autoComplete="family-name" />
+      </FormField>
+      <FormField id={`${idPrefix}-gender`} label="الجنس" required error={err("gender")} className="sm:col-span-2">
+        <ChoiceGroup label="الجنس" value={values.gender} onChange={(v) => set("gender", v)} className="grid-cols-2"
+          choices={[{ value: "MALE", label: labels.gender.MALE }, { value: "FEMALE", label: labels.gender.FEMALE }]} />
       </FormField>
       <div className="space-y-2 sm:col-span-2">
         <ChoiceGroup label="العمر أو تاريخ الميلاد" value={values.ageMode} onChange={(v) => set("ageMode", v)}

@@ -22,6 +22,7 @@ export type GroupStatus = RecordStatus
 export type BranchStatus = Extract<RecordStatus, "ACTIVE" | "INACTIVE">
 export type RoomStatus = Extract<RecordStatus, "ACTIVE" | "INACTIVE">
 
+export type Gender = "MALE" | "FEMALE"
 
 /** Responsibility of a teacher inside one group */
 export type TeachingRole = "SUPERVISOR" | "ASSISTANT"
@@ -73,6 +74,8 @@ export interface Teacher {
   userId?: ID
   firstName: string
   lastName: string
+  /** Not known for people created while gender was not collected */
+  gender?: Gender
   phone: string
   email?: string
   photoUrl?: string
@@ -149,6 +152,8 @@ export interface Student {
   id: ID
   firstName: string
   lastName: string
+  /** Not known for people created while gender was not collected */
+  gender?: Gender
   dateOfBirth: ISODate
   phone?: string
   guardianPhone?: string
@@ -370,6 +375,8 @@ export interface RegistrationRequest {
   id: ID
   firstName: string
   lastName: string
+  /** Not given by requests submitted while gender was not collected */
+  gender?: Gender
   birthDate?: ISODate
   /** When the applicant gave an age instead of a birth date */
   age?: number

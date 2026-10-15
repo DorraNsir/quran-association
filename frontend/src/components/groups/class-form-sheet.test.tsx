@@ -24,7 +24,7 @@ const lookups: Lookups = {
   ],
   groups: [group],
   groupClasses: [groupClass],
-  teachers: [{ id: "t1", firstName: "أحمد", lastName: "بن علي", phone: "", status: "ACTIVE", joinedAt: "2026-09-01" }],
+  teachers: [{ id: "t1", firstName: "أحمد", lastName: "بن علي", gender: "MALE", phone: "", status: "ACTIVE", joinedAt: "2026-09-01" }],
   // Monday in room 1, Wednesday in room 2: the rooms of ONE class differ per slot
   schedules: [
     { id: "s1", groupClassId: "c1", day: "MON", start: "09:00", end: "11:00", roomId: "r1" },

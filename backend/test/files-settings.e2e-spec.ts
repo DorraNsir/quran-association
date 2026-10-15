@@ -117,6 +117,7 @@ describe('Settings & file storage (e2e)', () => {
       data: {
         firstName: key,
         lastName: tag('حساب'),
+        gender: 'MALE',
         dateOfBirth: new Date('2000-01-01'),
         address: 'نابل',
         phone: '22345678',

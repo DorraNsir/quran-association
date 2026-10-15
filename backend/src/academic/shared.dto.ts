@@ -15,7 +15,11 @@ import {
 } from '../common/contact-fields.js';
 import { IsDateOnly } from '../common/dates.js';
 import { PaginationQueryDto } from '../common/pagination.js';
-import { ActivationStatus, RecordStatus } from '../generated/prisma/enums.js';
+import {
+  ActivationStatus,
+  Gender,
+  RecordStatus,
+} from '../generated/prisma/enums.js';
 
 export const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -59,6 +63,10 @@ export class PersonPatchDto {
   @MinLength(1)
   @MaxLength(80)
   lastName?: string;
+  @ApiPropertyOptional({ enum: Gender, enumName: 'Gender' })
+  @IsOptional()
+  @IsEnum(Gender)
+  gender?: Gender;
   @OptionalPhone() phone?: string | null;
   @OptionalEmail() email?: string | null;
   @OptionalText(200) address?: string | null;

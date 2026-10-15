@@ -178,6 +178,7 @@ function TeacherProfileBody({
               className="sm:grid-cols-1"
               items={[
                 { label: "الاسم واللقب", value: name },
+                { label: "الجنس", value: teacher.gender ? labels.gender[teacher.gender] : "غير محدد" },
                 { label: "المؤهل", value: teacher.qualification },
                 { label: "تاريخ الالتحاق", value: formatDate(teacher.joinedAt) },
               ]}

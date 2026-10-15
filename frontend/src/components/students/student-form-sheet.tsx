@@ -24,7 +24,7 @@ import {
   phoneError,
   requiredText,
 } from "@/lib/validation"
-import type { Student, StudentStatus } from "@/types/domain"
+import type { Gender, Student, StudentStatus } from "@/types/domain"
 
 interface StudentFormValues {
   photoUrl?: string
@@ -32,6 +32,7 @@ interface StudentFormValues {
   photoFile: PhotoChange
   firstName: string
   lastName: string
+  gender: Gender | ""
   dateOfBirth: string
   cin: string
   phone: string
@@ -48,6 +49,7 @@ function toValues(student?: Partial<Student>): StudentFormValues {
     photoFile: undefined,
     firstName: student?.firstName ?? "",
     lastName: student?.lastName ?? "",
+    gender: student?.gender ?? "",
     dateOfBirth: student?.dateOfBirth ?? "",
     cin: student?.cin ?? "",
     phone: student?.phone ?? "",
@@ -69,6 +71,7 @@ function validate(v: StudentFormValues) {
   return {
     firstName: requiredText(v.firstName, "الاسم مطلوب"),
     lastName: requiredText(v.lastName, "اللقب مطلوب"),
+    gender: v.gender ? undefined : "اختر الجنس",
     dateOfBirth: !v.dateOfBirth
       ? "تاريخ الولادة مطلوب"
       : age === null || age < 3 || age > 100
@@ -116,6 +119,7 @@ export function StudentFormSheet({
       person: {
         firstName: v.firstName.trim(),
         lastName: v.lastName.trim(),
+        gender: v.gender as Gender,
         dateOfBirth: v.dateOfBirth,
         address: v.address.trim(),
         phone: normalizePhone(v.phone) || null,
@@ -158,6 +162,27 @@ export function StudentFormSheet({
           description={age !== null && age >= 0 ? `العمر: ${age} سنة` : undefined}
         >
           <Input type="date" max={todayInTunis()} {...form.inputProps("dateOfBirth")} />
+        </FormField>
+        <FormField label="الجنس" required {...form.field("gender")}>
+          <Select
+            value={values.gender}
+            onValueChange={(v) => {
+              setField("gender", v as Gender)
+              form.touch("gender")
+            }}
+          >
+            <SelectTrigger
+              id={form.field("gender").id}
+              className="w-full"
+              aria-invalid={form.field("gender").error ? true : undefined}
+            >
+              <SelectValue placeholder="اختر" />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              <SelectItem value="MALE">{labels.gender.MALE}</SelectItem>
+              <SelectItem value="FEMALE">{labels.gender.FEMALE}</SelectItem>
+            </SelectContent>
+          </Select>
         </FormField>
         <FormField
           label="رقم بطاقة التعريف"

@@ -12,6 +12,7 @@ import { IsDateOnly } from '../common/dates.js';
 import { PaginationMetaDto, PaginationQueryDto } from '../common/pagination.js';
 import {
   ActivationStatus,
+  Gender,
   RecordStatus,
   Weekday,
 } from '../generated/prisma/enums.js';
@@ -67,6 +68,8 @@ export class WsTeacherDto {
   @ApiProperty() id!: string;
   @ApiProperty() firstName!: string;
   @ApiProperty() lastName!: string;
+  @ApiPropertyOptional({ enum: Gender, enumName: 'Gender', nullable: true })
+  gender!: Gender | null;
   @ApiPropertyOptional({ type: String, nullable: true }) photoUrl!:
     string | null;
   @ApiProperty({ enum: ActivationStatus, enumName: 'ActivationStatus' })
@@ -87,6 +90,8 @@ export class WsStudentDto {
   @ApiProperty() id!: string;
   @ApiProperty() firstName!: string;
   @ApiProperty() lastName!: string;
+  @ApiPropertyOptional({ enum: Gender, enumName: 'Gender', nullable: true })
+  gender!: Gender | null;
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
   dateOfBirth!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) phone!: string | null;
