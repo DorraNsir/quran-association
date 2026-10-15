@@ -318,9 +318,8 @@ describe('Weekly schedule → sessions → attendance workflow (e2e)', () => {
         absent: 1,
       }),
     ]);
-    const history = (
-      await get(`students/${id.student}/attendance`).expect(200)
-    ).body;
+    const history = (await get(`students/${id.student}/attendance`).expect(200))
+      .body;
     expect(history.data).toEqual([
       expect.objectContaining({ sessionId: past.id, status: 'ABSENT' }),
     ]);
@@ -344,9 +343,8 @@ describe('Weekly schedule → sessions → attendance workflow (e2e)', () => {
     const kept = (await get(`sessions/${id.past}`).expect(200)).body;
     expect(kept.status).toBe('COMPLETED');
     expect(kept.startTime).not.toBe('20:00');
-    const history = (
-      await get(`students/${id.student}/attendance`).expect(200)
-    ).body;
+    const history = (await get(`students/${id.student}/attendance`).expect(200))
+      .body;
     expect(history.data).toEqual([
       expect.objectContaining({ sessionId: id.past, status: 'ABSENT' }),
     ]);
@@ -357,5 +355,73 @@ describe('Weekly schedule → sessions → attendance workflow (e2e)', () => {
       _count: true,
     });
     expect(rows.every((r) => r._count === 1)).toBe(true);
+  });
+
+  it('deleting a weekly slot cancels its upcoming lessons; past ones and attendance stay', async () => {
+    const slotOfPast = (await get(`sessions/${id.past}`).expect(200)).body
+      .weeklyScheduleId as string;
+    const ofSlot = await prisma.session.findMany({
+      where: { weeklyScheduleId: slotOfPast },
+      select: { id: true, date: true, status: true },
+    });
+    const day = (d: Date) => d.toISOString().slice(0, 10);
+    const upcoming = ofSlot.filter(
+      (s) => day(s.date) >= TODAY && s.status === 'SCHEDULED',
+    );
+    const pastScheduled = ofSlot.filter(
+      (s) => day(s.date) < TODAY && s.status === 'SCHEDULED',
+    );
+    expect(upcoming.length).toBeGreaterThan(0);
+
+    await http()
+      .delete(`/api/admin/group-classes/${id.cls}/schedules/${slotOfPast}`)
+      .set(as())
+      .expect(204);
+    await get(`group-classes/${id.cls}/schedules`)
+      .expect(200)
+      .then((r) =>
+        expect(r.body.map((s: { id: string }) => s.id)).not.toContain(
+          slotOfPast,
+        ),
+      );
+
+    const after = new Map(
+      (
+        await prisma.session.findMany({
+          where: { id: { in: ofSlot.map((s) => s.id) } },
+          select: {
+            id: true,
+            status: true,
+            cancellationReason: true,
+            weeklyScheduleId: true,
+          },
+        })
+      ).map((s) => [s.id, s]),
+    );
+    // Nothing deleted; every lesson is detached from the removed slot
+    expect(after.size).toBe(ofSlot.length);
+    expect([...after.values()].every((s) => s.weeklyScheduleId === null)).toBe(
+      true,
+    );
+    // Upcoming lessons without attendance: cancelled, with the reason
+    for (const s of upcoming)
+      expect(after.get(s.id)).toMatchObject({
+        status: 'CANCELLED',
+        cancellationReason: 'حُذف الموعد الأسبوعي من البرنامج',
+      });
+    // History untouched: the completed lesson and its attendance, past scheduled ones
+    expect(after.get(id.past)?.status).toBe('COMPLETED');
+    for (const s of pastScheduled)
+      expect(after.get(s.id)?.status).toBe('SCHEDULED');
+    expect(
+      (await get(`students/${id.student}/attendance`).expect(200)).body.data,
+    ).toEqual([
+      expect.objectContaining({ sessionId: id.past, status: 'ABSENT' }),
+    ]);
+    // The upcoming list of the pages no longer shows them
+    const stillUpcoming = (
+      await list({ from: TODAY, status: 'SCHEDULED' })
+    ).data.filter((s) => upcoming.some((u) => u.id === s.id));
+    expect(stillUpcoming).toEqual([]);
   });
 });

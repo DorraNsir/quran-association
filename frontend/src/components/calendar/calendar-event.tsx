@@ -88,9 +88,9 @@ export function CalendarEvent({
           {cancelled && <span className="text-[0.65rem] font-medium text-destructive">ملغاة</span>}
           <span className="truncate tabular-nums text-muted-foreground">
             {/* Narrow lanes show only the start time; the tooltip has the full range */}
-            <span dir="ltr">
-              {schedule.end}
-              <span className="hidden @[5.5rem]:inline"> – {schedule.start} </span>
+            <span >
+              {schedule.start}
+              <span className="hidden @[5.5rem]:inline"> – {schedule.end} </span>
             </span>
           </span>
           {minutes >= 60 && (

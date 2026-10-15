@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 
 import { badRequest, conflict, notFound } from '../common/errors.js';
-import { type Prisma, Weekday } from '../generated/prisma/client.js';
+import {
+  type Prisma,
+  SessionStatus,
+  Weekday,
+} from '../generated/prisma/client.js';
+import { toDbDate } from '../common/dates.js';
 import { platformToday } from '../common/platform-clock.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -237,14 +242,34 @@ export class SchedulesService {
     return this.get(scheduleId);
   }
 
-  /** Sessions generated from the slot are kept (their history matters); they just lose the link. */
+  /**
+   * Removes a weekly slot. Its UPCOMING lessons (today onward, still
+   * scheduled, no attendance recorded) are cancelled with it, so no orphan
+   * lesson stays in the session lists; past lessons, attended ones and their
+   * attendance are kept as history (they just lose the link to the slot).
+   */
   async remove(groupClassId: string, scheduleId: string): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await this.conflicts.lockScheduling(tx);
-      const { count } = await tx.weeklySchedule.deleteMany({
+      const slot = await tx.weeklySchedule.findFirst({
         where: { id: scheduleId, groupClassId },
+        select: { id: true },
       });
-      if (count === 0) throw scheduleNotFound();
+      if (!slot) throw scheduleNotFound();
+      const today = await platformToday(tx);
+      await tx.session.updateMany({
+        where: {
+          weeklyScheduleId: scheduleId,
+          status: SessionStatus.SCHEDULED,
+          date: { gte: toDbDate(today) },
+          studentAttendance: { none: {} },
+        },
+        data: {
+          status: SessionStatus.CANCELLED,
+          cancellationReason: 'حُذف الموعد الأسبوعي من البرنامج',
+        },
+      });
+      await tx.weeklySchedule.delete({ where: { id: scheduleId } });
     });
   }
 

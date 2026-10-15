@@ -8,6 +8,8 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { ALL, FilterBar, FilterSelect } from "@/components/shared/filters"
 import { PageHeader } from "@/components/shared/page-header"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import {
   countActiveStudentsByClass,
   fullName,
@@ -70,6 +72,8 @@ export function CalendarView({
     preset?: SchedulePreset
   } | null>(null)
   const [removing, setRemoving] = useState<{ entry: CalendarEntry; open: boolean } | null>(null)
+  const [cancelling, setCancelling] = useState<{ entry: CalendarEntry; open: boolean } | null>(null)
+  const [cancelReason, setCancelReason] = useState("")
 
   const live: Lookups = { ...lookups, schedules }
   const indexes = indexLookups(live)
@@ -149,6 +153,12 @@ export function CalendarView({
         : api(`/admin/group-classes/${saved.groupClassId}/schedules`, { method: "POST", body })
     },
     [keys.schedules, keys.sessions, keys.rooms]
+  )
+  /** Cancels one dated session only (PATCH status → CANCELLED); the weekly slot is untouched */
+  const cancelSessionMutation = useApiMutation(
+    ({ id, reason }: { id: ID; reason?: string }) =>
+      api(`/admin/sessions/${id}/status`, { method: "PATCH", body: { status: "CANCELLED", cancellationReason: reason } }),
+    [keys.sessions]
   )
   const removeMutation = useApiMutation(
     (schedule: WeeklySchedule) => api(`/admin/group-classes/${schedule.groupClassId}/schedules/${schedule.id}`, { method: "DELETE" }),
@@ -332,6 +342,10 @@ export function CalendarView({
           setFormState((prev) => ({ key: (prev?.key ?? 0) + 1, open: true, schedule: entry.schedule }))
         }
         onRemove={(entry) => setRemoving({ entry, open: true })}
+        onCancelSession={(entry) => {
+          setCancelReason("")
+          setCancelling({ entry, open: true })
+        }}
       />
 
       {formState && (
@@ -352,17 +366,42 @@ export function CalendarView({
           open={removing.open}
           onOpenChange={(open) => !open && setRemoving((r) => (r ? { ...r, open: false } : r))}
           destructive
-          title="إلغاء هذه الحصة الأسبوعية؟"
-          description={`ستُحذف حصة ${removing.entry.group.name} كل ${labels.weekday[removing.entry.schedule.day]} (${formatTimeRange(removing.entry.schedule.start, removing.entry.schedule.end)}) من البرنامج الأسبوعي، وتصبح ${removing.entry.room?.name ?? "القاعة"} متاحة في هذا الوقت.`}
-          confirmLabel="إلغاء الحصة"
+          title="حذف هذا الموعد الأسبوعي؟"
+          description={`سيُحذف موعد ${removing.entry.group.name} كل ${labels.weekday[removing.entry.schedule.day]} (${formatTimeRange(removing.entry.schedule.start, removing.entry.schedule.end)}) من البرنامج الأسبوعي، وتصبح ${removing.entry.room?.name ?? "القاعة"} متاحة في هذا الوقت. تُلغى حصصه القادمة التي لم يُسجَّل حضورها، وتبقى الحصص السابقة وسجلات الحضور كما هي.`}
+          confirmLabel="حذف الموعد الأسبوعي"
           onConfirm={async () => {
             const { schedule, group } = removing.entry
             await removeMutation.mutateAsync(schedule)
             setRemoving((r) => (r ? { ...r, open: false } : r))
             setDetails(null)
-            toast.success(`تم إلغاء حصة ${group.name} — ${labels.weekday[schedule.day]}`)
+            toast.success(`تم حذف موعد ${group.name} — ${labels.weekday[schedule.day]}`, {
+              description: "أُلغيت حصصه القادمة غير المسجّلة.",
+            })
           }}
         />
+      )}
+
+      {cancelling?.entry.occurrence && (
+        <ConfirmDialog
+          open={cancelling.open}
+          onOpenChange={(open) => !open && setCancelling((c) => (c ? { ...c, open: false } : c))}
+          destructive
+          title="إلغاء حصة هذا اليوم؟"
+          description={`تُلغى حصة ${cancelling.entry.group.name} يوم ${formatDate(cancelling.entry.occurrence.date)} (${formatTimeRange(cancelling.entry.occurrence.start, cancelling.entry.occurrence.end)}) فقط: تبقى ظاهرة كـ«ملغاة» ولا يُنتظر تسجيل حضورها، ويبقى الموعد الأسبوعي كما هو. يمكن استعادتها من صفحة الحصة.`}
+          confirmLabel="إلغاء الحصة"
+          onConfirm={async () => {
+            const { occurrence, group } = cancelling.entry
+            await cancelSessionMutation.mutateAsync({ id: occurrence!.id, reason: cancelReason.trim() || undefined })
+            setCancelling((c) => (c ? { ...c, open: false } : c))
+            setDetails(null)
+            toast.success(`أُلغيت حصة ${group.name} — ${formatDate(occurrence!.date)}`)
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="cancel-session-reason">سبب الإلغاء (اختياري)</Label>
+            <Textarea id="cancel-session-reason" rows={2} maxLength={300} value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+          </div>
+        </ConfirmDialog>
       )}
     </>
   )

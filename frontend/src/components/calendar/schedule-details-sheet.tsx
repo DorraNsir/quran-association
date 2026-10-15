@@ -1,6 +1,6 @@
 "use client"
 
-import { BookOpen, CalendarDays, ClipboardCheck, Clock, DoorOpen, MapPin, Pencil, Trash2, Users } from "lucide-react"
+import { BookOpen, CalendarDays, CalendarX2, ClipboardCheck, Clock, DoorOpen, MapPin, Pencil, Trash2, Users } from "lucide-react"
 import Link from "next/link"
 
 import { SessionStatusBadge } from "@/components/attendance/attendance-badges"
@@ -32,6 +32,7 @@ export function ScheduleDetailsSheet({
   onOpenChange,
   onEdit,
   onRemove,
+  onCancelSession,
 }: {
   entry: CalendarEntry | null
   /** The occurrence date shown in the calendar (the session itself recurs weekly) */
@@ -39,7 +40,10 @@ export function ScheduleDetailsSheet({
   open: boolean
   onOpenChange: (open: boolean) => void
   onEdit: (entry: CalendarEntry) => void
+  /** Deletes the weekly slot (every week) */
   onRemove: (entry: CalendarEntry) => void
+  /** Cancels only the dated session shown (the weekly slot stays) */
+  onCancelSession: (entry: CalendarEntry) => void
 }) {
   const dir = useDirection()
   if (!entry) return null
@@ -75,7 +79,7 @@ export function ScheduleDetailsSheet({
                 value: (
                   <>
                   
-                    <span dir="ltr" className="tabular-nums">{formatTimeRange(schedule.end ,schedule.start)}</span>
+                    <span  className="tabular-nums">{formatTimeRange(schedule.start ,schedule.end)}</span>
                     <span className="ms-2 text-xs font-normal text-muted-foreground">
                       ({formatDuration(toMinutes(schedule.end) - toMinutes(schedule.start))})
                     </span>
@@ -142,9 +146,17 @@ export function ScheduleDetailsSheet({
             <Pencil />
             تعديل الحصة
           </Button>
-          <Button variant="destructive" className="ms-auto" onClick={() => onRemove(entry)}>
+          {/* This date only: the session is cancelled (kept, shown as «ملغاة»), the weekly slot stays */}
+          {entry.occurrence?.status === "SCHEDULED" &&  (
+            <Button variant="outline" className="ms-auto text-destructive hover:text-destructive" onClick={() => onCancelSession(entry)}>
+              <CalendarX2 />
+              إلغاء الحصة
+            </Button>
+          )}
+          {/* Every week: the slot leaves the weekly programme */}
+          <Button variant="destructive" className={entry.occurrence?.status === "SCHEDULED" ? undefined : "ms-auto"} onClick={() => onRemove(entry)}>
             <Trash2 />
-            إلغاء الحصة
+            حذف الموعد الأسبوعي
           </Button>
         </SheetFooter>
       </SheetContent>
