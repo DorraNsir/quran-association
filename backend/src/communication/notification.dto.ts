@@ -22,11 +22,11 @@ export class NotificationDto {
   @ApiProperty({ example: 'إعلان جديد' }) title!: string;
   @ApiProperty() message!: string;
   @ApiProperty({
-    enum: ['RESOURCE', 'ANNOUNCEMENT'],
+    enum: ['RESOURCE', 'ANNOUNCEMENT', 'SESSION'],
     description:
       'The frontend picks the route of its current workspace; opening it is authorized again (a notification grants no access)',
   })
-  entityType!: 'RESOURCE' | 'ANNOUNCEMENT';
+  entityType!: 'RESOURCE' | 'ANNOUNCEMENT' | 'SESSION';
   @ApiProperty() entityId!: string;
   @ApiProperty() createdAt!: Date;
   @ApiPropertyOptional({ type: Date, nullable: true }) readAt!: Date | null;

@@ -312,6 +312,7 @@ export class SchedulesService {
           status: SessionStatus.SCHEDULED,
           date: { gte: toDbDate(today) },
           studentAttendance: { none: {} },
+          teacherAttendance: { none: {} },
         },
         data: {
           status: SessionStatus.CANCELLED,

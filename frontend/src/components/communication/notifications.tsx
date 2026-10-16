@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, CheckCheck, FolderOpen, Megaphone } from "lucide-react"
+import { Bell, CheckCheck, ClipboardCheck, FolderOpen, Megaphone } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
@@ -24,7 +24,7 @@ import {
   useUnreadCount,
 } from "@/lib/api/notifications"
 import { useAuth } from "@/lib/auth/auth-provider"
-import { notificationHref } from "@/lib/communication"
+import { notificationHref, notificationSection } from "@/lib/communication"
 import { todayInTunis } from "@/lib/dates"
 import { formatRelativeDay } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -51,7 +51,7 @@ function NotificationItem({
   onOpen: () => void
   onMarkRead?: () => void
 }) {
-  const Icon = notification.entityType === "RESOURCE" ? FolderOpen : Megaphone
+  const Icon = notification.entityType === "RESOURCE" ? FolderOpen : notification.entityType === "SESSION" ? ClipboardCheck : Megaphone
   return (
     <div className={cn("flex items-start gap-1 rounded-lg transition-colors hover:bg-muted", !notification.isRead && "bg-brand-soft/30")}>
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 p-2.5 text-start outline-none focus-visible:ring-3 focus-visible:ring-ring/50 rounded-lg">
@@ -88,7 +88,7 @@ function useOpenNotification(workspace: Workspace, after?: () => void) {
     after?.()
     const href = notificationHref(n, workspace)
     if (!href || !n.entityId) return
-    const section = n.entityType === "RESOURCE" ? "resources" : "announcements"
+    const section = notificationSection(n)
     try {
       await queryClient.fetchQuery({
         queryKey: [section, workspace, "detail", n.entityId],

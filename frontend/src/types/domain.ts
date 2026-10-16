@@ -345,8 +345,8 @@ export interface AnnouncementTarget {
   groupClassId: ID
 }
 
-export type NotificationType = "RESOURCE_PUBLISHED" | "ANNOUNCEMENT_PUBLISHED" // later: SESSION_CHANGED, SESSION_CANCELLED…
-export type NotificationEntityType = "RESOURCE" | "ANNOUNCEMENT"
+export type NotificationType = "RESOURCE_PUBLISHED" | "ANNOUNCEMENT_PUBLISHED" | "ATTENDANCE_MODIFIED"
+export type NotificationEntityType = "RESOURCE" | "ANNOUNCEMENT" | "SESSION"
 
 /** An in-app alert for ONE user (named to avoid the DOM's global `Notification`). */
 export interface UserNotification {

@@ -30,13 +30,41 @@ import { cn } from "@/lib/utils"
 import type { AttendanceStatus } from "@/types/domain"
 
 import { AttendanceStateLabel } from "./attendance-badges"
+import { AttendanceStatistics } from "./attendance-statistics"
 import { useCurrentAcademicYear, usePlatformSettings } from "@/lib/store/settings"
 
 type View = "sessions" | "students"
 type StudentLine = StudentSummaryLine
+type Tab = "recording" | "statistics"
+
+/**
+ * The «الحضور» module: «تسجيل الحضور» (monitoring which sessions still need
+ * attendance, who is absent) and «إحصائيات الحضور» (monthly / yearly rates
+ * per student and per teacher).
+ */
+export function AttendanceOverview({ lookups }: { lookups: Lookups }) {
+  const [tab, setTab] = useState<Tab>("recording")
+  return (
+    <>
+      <PageHeader
+        title="متابعة الحضور"
+        description="نظرة إدارية على تسجيل الحضور في كل المجموعات: الحصص التي تنتظر التسجيل، الغيابات، ونسب الحضور الشهرية والسنوية للطلبة والمعلمين."
+      />
+      <div role="tablist" aria-label="الحضور" className="mb-6 flex gap-1 border-b">
+        {([["recording", "تسجيل الحضور"], ["statistics", "إحصائيات الحضور"]] as const).map(([value, label]) => (
+          <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}
+            className={cn("-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors", tab === value ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "recording" ? <AttendanceRecording lookups={lookups} /> : <AttendanceStatistics lookups={lookups} />}
+    </>
+  )
+}
 
 /** Association-wide monitoring: which sessions still need attendance, who is absent, totals over a period. */
-export function AttendanceOverview({ lookups }: { lookups: Lookups }) {
+function AttendanceRecording({ lookups }: { lookups: Lookups }) {
   const today = todayInTunis()
   const pageSize = usePlatformSettings().defaultPageSize
   const [view, setView] = useState<View>("sessions")
@@ -184,11 +212,6 @@ export function AttendanceOverview({ lookups }: { lookups: Lookups }) {
 
   return (
     <>
-      <PageHeader
-        title="متابعة الحضور"
-        description="نظرة إدارية على تسجيل الحضور في كل المجموعات: الحصص التي تنتظر التسجيل، الغيابات، ومجموع حضور كل طالب على أي فترة."
-      />
-
       <FilterBar
         hasActiveFilters={hasActiveFilters}
         onReset={resetFilters}

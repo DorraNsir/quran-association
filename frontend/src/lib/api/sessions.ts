@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { sessionProgress, type AttendanceSummary } from "@/lib/attendance"
-import type { AttendanceStatus, ISODate, RecordStatus, Session, SessionStatus } from "@/types/domain"
+import type { AttendanceStatus, ISODate, RecordStatus, Session, SessionStatus, TeachingRole } from "@/types/domain"
 
 import { api, keys, useApiMutation } from "./academic"
 import type { Page, Query } from "./client"
@@ -59,6 +59,46 @@ export interface SessionRosterDto {
     status: AttendanceStatus | null
     note: string | null
   }[]
+  /** The session's team SNAPSHOT (who taught it), supervisor first */
+  teacherExpectedCount: number
+  teacherRecordedCount: number
+  teachers: {
+    teacherId: string
+    firstName: string
+    lastName: string
+    photoUrl: string | null
+    /** null: recorded earlier but no longer in the snapshot */
+    role: TeachingRole | null
+    recorded: boolean
+    /** null = لم يسجل بعد */
+    status: AttendanceStatus | null
+    note: string | null
+  }[]
+}
+
+/** GET /api/{admin|teacher}/sessions/:id/attendance/history — append-only audit, newest first. */
+export interface AttendanceChangeDto {
+  id: string
+  subject: "STUDENT" | "TEACHER"
+  subjectId: string
+  subjectName: string
+  kind: "CREATED" | "MODIFIED"
+  previousStatus: AttendanceStatus | null
+  newStatus: AttendanceStatus
+  previousNote: string | null
+  newNote: string | null
+  actorName: string
+  createdAt: string
+}
+
+/**
+ * What a save sends: only what the user changed, each with the value the
+ * page was showing (`expectedStatus`) so the API refuses — instead of
+ * silently overwriting — a record someone else changed meanwhile.
+ */
+export interface SaveAttendanceBody {
+  records?: { studentId: string; status: AttendanceStatus; note?: string | null; expectedStatus: AttendanceStatus | null }[]
+  teachers?: { teacherId: string; status: AttendanceStatus; note?: string | null; expectedStatus: AttendanceStatus | null }[]
 }
 
 /* ------------------------------ row model ------------------------------ */
@@ -186,13 +226,23 @@ export function useSessionRoster(scope: Exclude<SessionScope, "student">, id: st
   })
 }
 
-/** Bulk save (all-or-nothing). Completion is decided by the API (every expected student recorded). */
+/**
+ * One save for students and teachers (all-or-nothing). Completion is decided
+ * by the API (every expected student recorded); omitted rows are untouched.
+ */
 export function useSaveAttendance(scope: Exclude<SessionScope, "student">, id: string) {
   return useApiMutation(
-    (records: { studentId: string; status: AttendanceStatus; note?: string | null }[]) =>
-      api<SessionRosterDto>(`${base(scope)}/${id}/attendance`, { method: "PUT", body: { records } }),
-    [keys.sessions, rosterKey(id), ["attendance"]]
+    (body: SaveAttendanceBody) => api<SessionRosterDto>(`${base(scope)}/${id}/attendance`, { method: "PUT", body }),
+    [keys.sessions, rosterKey(id), ["attendance"], ["notifications"]]
   )
+}
+
+export function useAttendanceHistory(scope: Exclude<SessionScope, "student">, id: string, enabled = true) {
+  return useQuery({
+    queryKey: [...rosterKey(id), scope, "history"],
+    queryFn: ({ signal }) => api<AttendanceChangeDto[]>(`${base(scope)}/${id}/attendance/history`, { signal }),
+    enabled,
+  })
 }
 
 /** Admin: cancel, reopen, or mark completed without attendance (ADMIN_OVERRIDE). */

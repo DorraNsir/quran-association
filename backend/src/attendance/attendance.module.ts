@@ -7,6 +7,7 @@ import {
   AdminAttendanceController,
   StudentAttendanceController,
   TeacherAttendanceController,
+  TeacherOwnAttendanceController,
   TeacherStudentAttendanceController,
 } from './attendance.controller.js';
 import { StudentSpaceModule } from '../student-space/student-space.module.js';
@@ -17,6 +18,7 @@ import { AttendanceService } from './attendance.service.js';
   controllers: [
     AdminAttendanceController,
     TeacherAttendanceController,
+    TeacherOwnAttendanceController,
     TeacherStudentAttendanceController,
     StudentAttendanceController,
   ],

@@ -271,6 +271,13 @@ export function buildNotifications(
 /** Where a notification opens, inside the workspace the user is currently in. */
 export function notificationHref(notification: UserNotification, workspace: Workspace) {
   if (!notification.entityId) return undefined
-  const section = notification.entityType === "RESOURCE" ? "resources" : "announcements"
-  return `/${workspace}/${section}/${notification.entityId}`
+  // Attendance changes open the session's attendance page (with its history)
+  if (notification.entityType === "SESSION")
+    return workspace === "student" ? undefined : `/${workspace}/sessions/${notification.entityId}/attendance`
+  return `/${workspace}/${notificationSection(notification)}/${notification.entityId}`
+}
+
+/** The API section a notification's entity lives in. */
+export function notificationSection(notification: Pick<UserNotification, "entityType">) {
+  return notification.entityType === "RESOURCE" ? "resources" : notification.entityType === "SESSION" ? "sessions" : "announcements"
 }

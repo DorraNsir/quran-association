@@ -22,6 +22,7 @@ const select = {
   message: true,
   resourceId: true,
   announcementId: true,
+  sessionId: true,
   readAt: true,
   createdAt: true,
 } satisfies Prisma.NotificationSelect;
@@ -34,8 +35,12 @@ function toDto(n: Row): NotificationDto {
     type: n.type,
     title: n.title,
     message: n.message,
-    entityType: n.resourceId ? 'RESOURCE' : 'ANNOUNCEMENT',
-    entityId: (n.resourceId ?? n.announcementId)!,
+    entityType: n.resourceId
+      ? 'RESOURCE'
+      : n.sessionId
+        ? 'SESSION'
+        : 'ANNOUNCEMENT',
+    entityId: (n.resourceId ?? n.sessionId ?? n.announcementId)!,
     createdAt: n.createdAt,
     readAt: n.readAt,
     isRead: n.readAt !== null,

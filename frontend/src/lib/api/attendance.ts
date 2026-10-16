@@ -3,7 +3,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query"
 
 import type { AttendanceSummary } from "@/lib/attendance"
-import type { AttendanceStatus, ISODate, SessionStatus } from "@/types/domain"
+import type { AttendanceStatus, ISODate, SessionStatus, TeachingRole } from "@/types/domain"
 
 import { api } from "./client"
 import type { Page, Query } from "./client"
@@ -13,8 +13,27 @@ export interface PeriodFilter {
   to?: ISODate
 }
 
+/**
+ * The API's totals (one rule for students and teachers, computed server-side):
+ * attended = حاضر + متأخر; eligible = attended + غائب (غياب مبرر shown apart);
+ * rate null when eligible = 0.
+ */
+export interface AttendanceTotals extends AttendanceSummary {
+  attended: number
+  eligible: number
+}
+
+/** Summary filters: a period (or an academic year) and the sessions' class / group / branch / teacher. */
+export interface SummaryFilters extends PeriodFilter {
+  academicYearId?: string
+  groupId?: string
+  groupClassId?: string
+  branchId?: string
+  teacherId?: string
+}
+
 /** GET /api/admin/attendance/students-summary — counts per student (one grouped query). */
-export interface StudentSummaryLine extends AttendanceSummary {
+export interface StudentSummaryLine extends AttendanceTotals {
   studentId: string
   firstName: string
   lastName: string
@@ -39,7 +58,28 @@ const clean = (q: object): Query =>
 
 export const attendanceKey = ["attendance"] as const
 
-export function useStudentsAttendanceSummary(filters: PeriodFilter & { groupId?: string; groupClassId?: string; branchId?: string }, enabled = true) {
+/** GET /api/admin/attendance/teachers-summary — each teacher's own attendance in the sessions they taught. */
+export interface TeacherSummaryLine extends AttendanceTotals {
+  teacherId: string
+  firstName: string
+  lastName: string
+  photoUrl: string | null
+}
+
+/** A teacher's own record in one session (with their role in its team snapshot). */
+export interface TeacherAttendanceRecordDto extends StudentAttendanceRecordDto {
+  role: TeachingRole | null
+}
+
+export function useTeachersAttendanceSummary(filters: SummaryFilters, enabled = true) {
+  return useQuery({
+    queryKey: [...attendanceKey, "teachers-summary", clean(filters)],
+    queryFn: ({ signal }) => api<TeacherSummaryLine[]>("/admin/attendance/teachers-summary", { query: clean(filters), signal }),
+    enabled,
+  })
+}
+
+export function useStudentsAttendanceSummary(filters: SummaryFilters, enabled = true) {
   return useQuery({
     queryKey: [...attendanceKey, "students-summary", clean(filters)],
     queryFn: ({ signal }) => api<StudentSummaryLine[]>("/admin/attendance/students-summary", { query: clean(filters), signal }),
@@ -66,10 +106,48 @@ export function useStudentAttendanceRecords(
   })
 }
 
-export function useStudentAttendanceSummary(scope: "admin" | "teacher" | "student", studentId: string | undefined, period: PeriodFilter) {
+export function useStudentAttendanceSummary(
+  scope: "admin" | "teacher" | "student",
+  studentId: string | undefined,
+  period: PeriodFilter & { academicYearId?: string },
+  enabled = true
+) {
   return useQuery({
     queryKey: [...attendanceKey, "student", scope, studentId, "summary", clean({ ...period })],
-    queryFn: ({ signal }) => api<AttendanceSummary>(`${studentBase(scope, studentId)}/summary`, { query: clean({ ...period }), signal }),
+    queryFn: ({ signal }) => api<AttendanceTotals>(`${studentBase(scope, studentId)}/summary`, { query: clean({ ...period }), signal }),
+    enabled,
+  })
+}
+
+/** A teacher's own attendance: the admin endpoint, or the teacher's own (scope "teacher", no id). */
+const teacherBase = (scope: "admin" | "teacher", teacherId?: string) =>
+  scope === "teacher" ? "/teacher/attendance" : `/admin/teachers/${teacherId}/attendance`
+
+export function useTeacherAttendanceRecords(
+  scope: "admin" | "teacher",
+  teacherId: string | undefined,
+  period: PeriodFilter,
+  page: number,
+  pageSize: number
+) {
+  return useQuery({
+    queryKey: [...attendanceKey, "teacher-own", scope, teacherId, "records", clean({ ...period }), page, pageSize],
+    queryFn: ({ signal }) =>
+      api<Page<TeacherAttendanceRecordDto>>(teacherBase(scope, teacherId), { query: clean({ ...period, page, pageSize }), signal }),
+    placeholderData: (previous) => previous,
+  })
+}
+
+export function useTeacherAttendanceSummary(
+  scope: "admin" | "teacher",
+  teacherId: string | undefined,
+  period: PeriodFilter & { academicYearId?: string },
+  enabled = true
+) {
+  return useQuery({
+    queryKey: [...attendanceKey, "teacher-own", scope, teacherId, "summary", clean({ ...period })],
+    queryFn: ({ signal }) => api<AttendanceTotals>(`${teacherBase(scope, teacherId)}/summary`, { query: clean({ ...period }), signal }),
+    enabled,
   })
 }
 

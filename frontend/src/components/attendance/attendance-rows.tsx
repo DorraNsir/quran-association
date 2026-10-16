@@ -15,7 +15,7 @@ import type { AttendanceStatus, Student, Teacher, TeachingRole } from "@/types/d
 import { StatusPicker } from "./status-picker"
 
 /**
- * One student: name + four status buttons in a single tap. Unmarked rows
+ * One student (or teacher, with a role badge): name + four status buttons in a single tap. Unmarked rows
  * are visibly different so nobody believes the list is done when it isn't.
  * The note is secondary — hidden behind a small button unless filled.
  */
@@ -25,10 +25,13 @@ export function StudentAttendanceRow({
   disabled,
   onStatus,
   onNote,
+  badge,
 }: {
   student: Pick<Student, "id" | "firstName" | "lastName" | "photoUrl">
   entry?: AttendanceEntry
   disabled?: boolean
+  /** Shown next to the name (e.g. the teacher's role in the session) */
+  badge?: React.ReactNode
   onStatus: (status: AttendanceStatus) => void
   onNote: (note: string) => void
 }) {
@@ -47,11 +50,14 @@ export function StudentAttendanceRow({
         <div className="flex min-w-0 items-center gap-3 lg:w-64 lg:shrink-0">
           <UserAvatar name={name} photoUrl={student.photoUrl} />
           <div className="min-w-0 flex-1">
-            <p className="truncate font-medium">{name}</p>
+            <p className="flex min-w-0 items-center gap-2">
+              <span className="truncate font-medium">{name}</span>
+              {badge}
+            </p>
             {unmarked ? (
               <p className="flex items-center gap-1 text-xs text-warning">
                 <CircleDashed className="size-3" aria-hidden />
-                لم يُسجَّل بعد
+                لم يسجل بعد
               </p>
             ) : (
               entry.note && !noteOpen && <p className="truncate text-xs text-muted-foreground">{entry.note}</p>

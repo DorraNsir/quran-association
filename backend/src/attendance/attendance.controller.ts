@@ -22,7 +22,12 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { StudentAccessService } from '../student-space/student-access.service.js';
 import { StudentApi } from '../student-space/student-api.decorator.js';
 import { TeacherApi } from '../teaching/teacher-api.decorator.js';
+import { TeacherAccessService } from '../teaching/teacher-access.service.js';
 import {
+  AttendanceChangeDto,
+  TeacherAttendanceListDto,
+  TeachersSummaryQueryDto,
+  TeacherSummaryLineDto,
   AttendanceSummaryDto,
   SaveAttendanceDto,
   SessionAttendanceDto,
@@ -35,14 +40,18 @@ import {
 import { AttendanceService } from './attendance.service.js';
 
 const SAVE_DOC = {
-  summary: 'Save attendance (bulk, all-or-nothing)',
+  summary: 'Save attendance of students and/or teachers (bulk, all-or-nothing)',
   description:
-    'Creates/updates the listed students only. The session becomes COMPLETED (source ATTENDANCE) when every expected student is recorded; partial saves and empty rosters never complete it; corrections never reopen it.',
+    'Creates/updates the listed students (`records`) and teachers of the session team (`teachers`) only — nothing else is touched or marked absent. Each real change is audited; when an ASSISTANT changes saved statuses, the session supervisor gets ONE notification. `expectedStatus` refuses stale overwrites (409 ATTENDANCE_CHANGED). The session becomes COMPLETED (source ATTENDANCE) when every expected student is recorded; partial saves and empty rosters never complete it; corrections never reopen it.',
 };
 const SAVE_ERRORS_400 =
-  'ATTENDANCE_DUPLICATE_STUDENT, ATTENDANCE_STUDENT_NOT_IN_SESSION, invalid status / note';
+  'ATTENDANCE_EMPTY, ATTENDANCE_DUPLICATE_STUDENT, ATTENDANCE_DUPLICATE_TEACHER, ATTENDANCE_STUDENT_NOT_IN_SESSION, ATTENDANCE_TEACHER_NOT_IN_SESSION, invalid status / note';
 const SAVE_ERRORS_409 =
-  'ATTENDANCE_SESSION_CANCELLED, ATTENDANCE_SESSION_FUTURE';
+  'ATTENDANCE_SESSION_CANCELLED, ATTENDANCE_SESSION_FUTURE, ATTENDANCE_CHANGED';
+const HISTORY_DOC = {
+  summary:
+    '«سجل التعديلات»: every first recording and real change of student/teacher attendance, newest first',
+};
 
 @ApiTags('admin / attendance')
 @AdminApi()
@@ -81,6 +90,61 @@ export class AdminAttendanceController {
       kind: 'admin',
       userId: user.userId,
     });
+  }
+
+  @Get('sessions/:sessionId/attendance/history')
+  @ApiOperation(HISTORY_DOC)
+  @ApiOkResponse({ type: [AttendanceChangeDto] })
+  @ApiNotFoundResponse({ description: 'SESSION_NOT_FOUND' })
+  history(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+  ): Promise<AttendanceChangeDto[]> {
+    return this.attendance.history(sessionId, {
+      kind: 'admin',
+      userId: user.userId,
+    });
+  }
+
+  @Get('attendance/teachers-summary')
+  @ApiOperation({
+    summary:
+      'Counts per teacher (their own attendance) over non-cancelled sessions (same filters as students-summary)',
+  })
+  @ApiOkResponse({ type: [TeacherSummaryLineDto] })
+  @ApiNotFoundResponse({ description: 'ACADEMIC_YEAR_NOT_FOUND' })
+  teachersSummary(
+    @Query() query: TeachersSummaryQueryDto,
+  ): Promise<TeacherSummaryLineDto[]> {
+    return this.attendance.teachersSummary(query);
+  }
+
+  @Get('teachers/:teacherId/attendance')
+  @ApiOperation({ summary: 'A teacher’s own attendance records (paginated)' })
+  @ApiOkResponse({ type: TeacherAttendanceListDto })
+  @ApiNotFoundResponse({
+    description: 'TEACHER_NOT_FOUND, ACADEMIC_YEAR_NOT_FOUND',
+  })
+  teacherRecords(
+    @Param('teacherId', ParseUUIDPipe) teacherId: string,
+    @Query() query: StudentAttendanceQueryDto,
+  ): Promise<TeacherAttendanceListDto> {
+    return this.attendance.teacherRecords(teacherId, query);
+  }
+
+  @Get('teachers/:teacherId/attendance/summary')
+  @ApiOperation({
+    summary: 'A teacher’s own totals + rate (same rule as students)',
+  })
+  @ApiOkResponse({ type: AttendanceSummaryDto })
+  @ApiNotFoundResponse({
+    description: 'TEACHER_NOT_FOUND, ACADEMIC_YEAR_NOT_FOUND',
+  })
+  teacherSummary(
+    @Param('teacherId', ParseUUIDPipe) teacherId: string,
+    @Query() query: SummaryQueryDto,
+  ): Promise<AttendanceSummaryDto> {
+    return this.attendance.teacherSummary(teacherId, query);
   }
 
   @Get('attendance/students-summary')
@@ -168,6 +232,56 @@ export class TeacherAttendanceController {
       kind: 'teacher',
       userId: user.userId,
     });
+  }
+
+  @Get('history')
+  @ApiOperation(HISTORY_DOC)
+  @ApiOkResponse({ type: [AttendanceChangeDto] })
+  @ApiNotFoundResponse({ description: 'SESSION_NOT_FOUND' })
+  history(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+  ): Promise<AttendanceChangeDto[]> {
+    return this.attendance.history(sessionId, {
+      kind: 'teacher',
+      userId: user.userId,
+    });
+  }
+}
+
+@ApiTags('teacher / attendance')
+@TeacherApi()
+@Controller('teacher/attendance')
+export class TeacherOwnAttendanceController {
+  constructor(
+    private readonly attendance: AttendanceService,
+    private readonly access: TeacherAccessService,
+  ) {}
+
+  @Get()
+  @ApiOperation({ summary: 'MY attendance as a teacher (paginated)' })
+  @ApiOkResponse({ type: TeacherAttendanceListDto })
+  async records(
+    @CurrentUser() user: AuthPrincipal,
+    @Query() query: StudentAttendanceQueryDto,
+  ): Promise<TeacherAttendanceListDto> {
+    return this.attendance.teacherRecords(
+      await this.access.teacherIdOf(user.userId),
+      query,
+    );
+  }
+
+  @Get('summary')
+  @ApiOperation({ summary: 'MY totals + rate as a teacher' })
+  @ApiOkResponse({ type: AttendanceSummaryDto })
+  async summary(
+    @CurrentUser() user: AuthPrincipal,
+    @Query() query: SummaryQueryDto,
+  ): Promise<AttendanceSummaryDto> {
+    return this.attendance.teacherSummary(
+      await this.access.teacherIdOf(user.userId),
+      query,
+    );
   }
 }
 

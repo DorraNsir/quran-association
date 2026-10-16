@@ -5,6 +5,7 @@ import {
   BookOpen,
   CalendarClock,
   CalendarDays,
+  ClipboardCheck,
   Contact,
   Mail,
   MapPin,
@@ -14,6 +15,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 
+import { TeacherAttendanceHistory } from "@/components/attendance/teacher-attendance-history"
 import { StatusBadge, TeacherRoleBadge } from "@/components/shared/badges"
 import { EmptyState } from "@/components/shared/empty-state"
 import { InfoList, PhoneLink, SectionCard } from "@/components/shared/info-list"
@@ -154,6 +156,9 @@ function TeacherProfileBody({
             )}
           </SectionCard>
 
+          <SectionCard title="الحضور" icon={ClipboardCheck}>
+            <TeacherAttendanceHistory scope="admin" teacherId={teacher.id} />
+          </SectionCard>
         </div>
 
         <div className="space-y-6">

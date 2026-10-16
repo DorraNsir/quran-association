@@ -10,10 +10,10 @@ import { api, type Page } from "./client"
 /** NotificationDto (API): read state is readAt (isRead is derived). */
 export interface NotificationDto {
   id: string
-  type: "RESOURCE_PUBLISHED" | "ANNOUNCEMENT_PUBLISHED"
+  type: "RESOURCE_PUBLISHED" | "ANNOUNCEMENT_PUBLISHED" | "ATTENDANCE_MODIFIED"
   title: string
   message: string
-  entityType: "RESOURCE" | "ANNOUNCEMENT"
+  entityType: "RESOURCE" | "ANNOUNCEMENT" | "SESSION"
   entityId: string
   createdAt: string
   readAt: string | null

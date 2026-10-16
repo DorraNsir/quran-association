@@ -25,6 +25,13 @@ const dateTimeFormatter = new Intl.DateTimeFormat(intlLocale, {
   timeZone: "Africa/Tunis",
 })
 
+const monthFormatter = new Intl.DateTimeFormat(intlLocale, { month: "long", timeZone: "UTC" })
+
+/** Month name (1–12), in the platform's locale. */
+export function formatMonthName(month: number) {
+  return monthFormatter.format(new Date(Date.UTC(2000, month - 1, 1)))
+}
+
 /** "15 سبتمبر 2026" — dates are parsed as UTC so server and client agree. */
 export function formatDate(date: ISODate) {
   return dateFormatter.format(new Date(date))

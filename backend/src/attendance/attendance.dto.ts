@@ -1,8 +1,8 @@
+import { applyDecorators } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
-  ArrayMinSize,
   IsArray,
   IsEnum,
   IsOptional,
@@ -16,9 +16,12 @@ import {
 import { IsDateOnly } from '../common/dates.js';
 import { PaginationMetaDto, PaginationQueryDto } from '../common/pagination.js';
 import {
+  AttendanceChangeKind,
   AttendanceStatus,
+  AttendanceSubject,
   CompletionSource,
   SessionStatus,
+  TeachingRole,
 } from '../generated/prisma/enums.js';
 
 export const NOTE_MAX = 300;
@@ -46,20 +49,100 @@ export class AttendanceRecordInputDto {
   @IsString()
   @MaxLength(NOTE_MAX)
   note?: string | null;
+  @ExpectedStatus() expectedStatus?: AttendanceStatus | null;
+}
+
+/** Optimistic concurrency: the status the client last saw (null = not recorded). */
+function ExpectedStatus() {
+  return applyDecorators(
+    ApiPropertyOptional({
+      enum: AttendanceStatus,
+      enumName: 'AttendanceStatus',
+      nullable: true,
+      description:
+        'The saved status the client started from (null = not recorded). If someone changed it meanwhile, the save is refused (409 ATTENDANCE_CHANGED) instead of silently overwriting. Omit to skip the check.',
+    }),
+    IsOptional(),
+    ValidateIf((_: unknown, v: unknown) => v !== null),
+    IsEnum(AttendanceStatus),
+  );
+}
+
+export class TeacherAttendanceInputDto {
+  @ApiProperty({ format: 'uuid' }) @IsUUID() teacherId!: string;
+  @ApiProperty({
+    enum: AttendanceStatus,
+    enumName: 'AttendanceStatus',
+    description: 'حاضر / غائب / متأخر / غياب مبرر',
+  })
+  @IsEnum(AttendanceStatus)
+  status!: AttendanceStatus;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    maxLength: NOTE_MAX,
+    description: 'Omit to keep, null/"" to clear',
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || null : value,
+  )
+  @IsOptional()
+  @ValidateIf((_: unknown, v: unknown) => v !== null)
+  @IsString()
+  @MaxLength(NOTE_MAX)
+  note?: string | null;
+  @ExpectedStatus() expectedStatus?: AttendanceStatus | null;
 }
 
 /**
- * Bulk save (all-or-nothing). Listed students are created or updated; other
- * records of the session are left untouched (nothing is deleted).
+ * Bulk save (all-or-nothing) of a session's attendance: students
+ * (`records`) and/or teachers (`teachers`), at least one entry. Listed
+ * entries are created or updated; others are left untouched (nothing is
+ * deleted, nothing is marked absent by default).
  */
 export class SaveAttendanceDto {
-  @ApiProperty({ type: AttendanceRecordInputDto, isArray: true })
+  @ApiPropertyOptional({ type: AttendanceRecordInputDto, isArray: true })
+  @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
   @ArrayMaxSize(200)
   @ValidateNested({ each: true })
   @Type(() => AttendanceRecordInputDto)
-  records!: AttendanceRecordInputDto[];
+  records?: AttendanceRecordInputDto[];
+  @ApiPropertyOptional({ type: TeacherAttendanceInputDto, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => TeacherAttendanceInputDto)
+  teachers?: TeacherAttendanceInputDto[];
+}
+
+export class RosterTeacherDto {
+  @ApiProperty() teacherId!: string;
+  @ApiProperty() firstName!: string;
+  @ApiProperty() lastName!: string;
+  @ApiPropertyOptional({ type: String, nullable: true }) photoUrl!:
+    string | null;
+  @ApiPropertyOptional({
+    enum: TeachingRole,
+    enumName: 'TeachingRole',
+    nullable: true,
+    description:
+      "Role in THIS session (its team snapshot); null = recorded but no longer in the session's team",
+  })
+  role!: TeachingRole | null;
+  @ApiProperty() recorded!: boolean;
+  @ApiPropertyOptional({
+    enum: AttendanceStatus,
+    enumName: 'AttendanceStatus',
+    nullable: true,
+    description: 'null = not recorded yet (لم يسجل بعد)',
+  })
+  status!: AttendanceStatus | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) note!: string | null;
+  @ApiPropertyOptional({ type: Date, nullable: true }) recordedAt!: Date | null;
+  @ApiPropertyOptional({ type: String, nullable: true })
+  recordedBy!: string | null;
 }
 
 export class RosterStudentDto {
@@ -122,6 +205,42 @@ export class SessionAttendanceDto {
   editable!: boolean;
   @ApiProperty({ type: RosterStudentDto, isArray: true })
   students!: RosterStudentDto[];
+  @ApiProperty({
+    description: "Teachers of the session's team snapshot (who taught it)",
+  })
+  teacherExpectedCount!: number;
+  @ApiProperty({ description: 'Of them, with a recorded status' })
+  teacherRecordedCount!: number;
+  @ApiProperty({
+    type: RosterTeacherDto,
+    isArray: true,
+    description: 'Supervisor first',
+  })
+  teachers!: RosterTeacherDto[];
+}
+
+export class AttendanceChangeDto {
+  @ApiProperty() id!: string;
+  @ApiProperty({ enum: AttendanceSubject, enumName: 'AttendanceSubject' })
+  subject!: AttendanceSubject;
+  @ApiProperty({ description: 'Student or teacher id' }) subjectId!: string;
+  @ApiProperty() subjectName!: string;
+  @ApiProperty({ enum: AttendanceChangeKind, enumName: 'AttendanceChangeKind' })
+  kind!: AttendanceChangeKind;
+  @ApiPropertyOptional({
+    enum: AttendanceStatus,
+    enumName: 'AttendanceStatus',
+    nullable: true,
+  })
+  previousStatus!: AttendanceStatus | null;
+  @ApiProperty({ enum: AttendanceStatus, enumName: 'AttendanceStatus' })
+  newStatus!: AttendanceStatus;
+  @ApiPropertyOptional({ type: String, nullable: true })
+  previousNote!: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) newNote!:
+    string | null;
+  @ApiProperty() actorName!: string;
+  @ApiProperty() createdAt!: Date;
 }
 
 export class StudentAttendanceQueryDto extends PaginationQueryDto {
@@ -165,6 +284,22 @@ export class StudentAttendanceRecordDto {
   @ApiProperty() updatedAt!: Date;
 }
 
+export class TeacherAttendanceRecordDto extends StudentAttendanceRecordDto {
+  @ApiPropertyOptional({
+    enum: TeachingRole,
+    enumName: 'TeachingRole',
+    nullable: true,
+    description: 'Role in that session (team snapshot)',
+  })
+  role!: TeachingRole | null;
+}
+
+export class TeacherAttendanceListDto {
+  @ApiProperty({ type: TeacherAttendanceRecordDto, isArray: true })
+  data!: TeacherAttendanceRecordDto[];
+  @ApiProperty({ type: PaginationMetaDto }) meta!: PaginationMetaDto;
+}
+
 export class StudentAttendanceListDto {
   @ApiProperty({ type: StudentAttendanceRecordDto, isArray: true })
   data!: StudentAttendanceRecordDto[];
@@ -181,6 +316,11 @@ export class AttendanceSummaryDto {
   @ApiProperty() absent!: number;
   @ApiProperty() late!: number;
   @ApiProperty() excused!: number;
+  @ApiProperty({ description: 'PRESENT + LATE' }) attended!: number;
+  @ApiProperty({
+    description: 'PRESENT + LATE + ABSENT (the rate denominator)',
+  })
+  eligible!: number;
   @ApiPropertyOptional({
     type: Number,
     nullable: true,
@@ -214,6 +354,13 @@ export class StudentsSummaryQueryDto {
   @IsOptional()
   @IsUUID()
   branchId?: string;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Sessions this teacher taught (team snapshot)',
+  })
+  @IsOptional()
+  @IsUUID()
+  teacherId?: string;
 }
 
 export class StudentSummaryLineDto {
@@ -227,5 +374,26 @@ export class StudentSummaryLineDto {
   @ApiProperty() absent!: number;
   @ApiProperty() late!: number;
   @ApiProperty() excused!: number;
+  @ApiProperty() attended!: number;
+  @ApiProperty() eligible!: number;
+  @ApiPropertyOptional({ type: Number, nullable: true }) rate!: number | null;
+}
+
+/** Association-wide, per teacher (their own attendance in the sessions they taught). */
+export class TeachersSummaryQueryDto extends StudentsSummaryQueryDto {}
+
+export class TeacherSummaryLineDto {
+  @ApiProperty() teacherId!: string;
+  @ApiProperty() firstName!: string;
+  @ApiProperty() lastName!: string;
+  @ApiPropertyOptional({ type: String, nullable: true }) photoUrl!:
+    string | null;
+  @ApiProperty() recorded!: number;
+  @ApiProperty() present!: number;
+  @ApiProperty() absent!: number;
+  @ApiProperty() late!: number;
+  @ApiProperty() excused!: number;
+  @ApiProperty() attended!: number;
+  @ApiProperty() eligible!: number;
   @ApiPropertyOptional({ type: Number, nullable: true }) rate!: number | null;
 }

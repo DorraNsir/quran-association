@@ -21,6 +21,7 @@ import { workspacePaths, type Workspace } from "@/lib/workspace"
 import type { ID } from "@/types/domain"
 
 import { AttendanceStatusBadge } from "./attendance-badges"
+import { AttendancePeriodStats } from "./attendance-period-stats"
 import { AttendanceStats } from "./attendance-stats"
 
 /**
@@ -44,6 +45,9 @@ export function StudentAttendanceHistory({ studentId, workspace = "admin" }: { s
 
   return (
     <div className="space-y-5">
+      <AttendancePeriodStats subject={{ kind: "student", scope: workspace, id: studentId }} />
+
+      <h3 className="pt-1 text-sm font-semibold">سجل الحضور حسب الحصة</h3>
       <div className="flex flex-wrap items-center gap-2">
         <PeriodFilter
           value={period}
@@ -109,7 +113,7 @@ export function StudentAttendanceHistory({ studentId, workspace = "admin" }: { s
         <Pager page={page} totalPages={records.data?.meta.totalPages ?? 1} onPage={setPage} />
         {shown.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            {countLabels.sessions(records.data?.meta.total ?? shown.length)} · نسبة الحضور = (حاضر + متأخر) ÷ (الحصص المسجّلة − الغياب المبرر).
+            {countLabels.sessions(records.data?.meta.total ?? shown.length)} · نسبة الحضور = (حاضر + متأخر) ÷ (حاضر + متأخر + غائب).
           </p>
         )}
       </QueryState>

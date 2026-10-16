@@ -14,6 +14,7 @@ import {
 import Link from "next/link"
 
 import { AnnouncementItem, useReaderAnnouncements } from "@/components/communication/announcements-views"
+import { AttendancePeriodStats } from "@/components/attendance/attendance-period-stats"
 import { SectionCard } from "@/components/shared/info-list"
 import { StatCard } from "@/components/shared/stat-card"
 import { Button } from "@/components/ui/button"
@@ -135,6 +136,10 @@ export function TeacherDashboard({
           <TeacherSessionList rows={pending.slice(0, 4)} today={today} emptyTitle="الحضور مسجَّل لكل حصصك" />
         </SectionCard>
       </div>
+
+      <SectionCard title="حضوري" icon={ClipboardCheck}>
+        <AttendancePeriodStats subject={{ kind: "teacher", scope: "teacher" }} />
+      </SectionCard>
 
       <SectionCard
         title="متابعة الحفظ"

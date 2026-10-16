@@ -856,7 +856,11 @@ export class SessionsService {
   }
 
   private async assertNoAttendance(tx: Tx, sessionId: string) {
-    if (await tx.studentAttendance.count({ where: { sessionId } })) {
+    // Any recorded attendance (students or teachers) means the lesson took place
+    if (
+      (await tx.studentAttendance.count({ where: { sessionId } })) ||
+      (await tx.teacherAttendance.count({ where: { sessionId } }))
+    ) {
       throw conflict(
         'SESSION_HAS_ATTENDANCE',
         'سُجّل حضور هذه الحصة: لا يمكن إلغاؤها أو تغيير موعدها',

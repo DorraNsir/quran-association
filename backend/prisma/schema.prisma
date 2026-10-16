@@ -145,6 +145,20 @@ enum AnnouncementStatus {
 enum NotificationType {
   RESOURCE_PUBLISHED
   ANNOUNCEMENT_PUBLISHED
+  /// An assistant changed saved attendance of a session: its supervisor is told
+  ATTENDANCE_MODIFIED
+}
+
+/// Whose attendance an audit entry is about
+enum AttendanceSubject {
+  STUDENT
+  TEACHER
+}
+
+/// First recording of a status, or a change of a saved one
+enum AttendanceChangeKind {
+  CREATED
+  MODIFIED
 }
 
 enum PublicGroupStatus {
@@ -241,26 +255,28 @@ model User {
   roles    UserRole[]
   sessions AuthSession[]
 
-  memorizationUpdates    MemorizationProgress[]
-  createdRegistrations   RegistrationRequest[]  @relation("RegistrationCreator")
-  reviewedRegistrations  RegistrationRequest[]  @relation("RegistrationReviewer")
-  recordedPayments       Payment[]              @relation("PaymentRecorder")
-  issuedReceipts         Payment[]              @relation("PaymentReceiptIssuer")
-  voidedPayments         Payment[]              @relation("PaymentVoider")
-  createdGroupFees       GroupFee[]             @relation("GroupFeeCreator")
-  deactivatedGroupFees   GroupFee[]             @relation("GroupFeeDeactivator")
-  createdObligations     PaymentObligation[]    @relation("ObligationCreator")
-  voidedObligations      PaymentObligation[]    @relation("ObligationVoider")
-  graduateConsents       QuranGraduate[]        @relation("GraduateConsentRecorder")
-  uploadedFiles          StoredFile[]           @relation("FileUploader")
-  publishedResources     Resource[]
-  publishedAnnouncements Announcement[]
-  notifications          Notification[]
-  recordedAttendance     StudentAttendance[]
-  recordedEnrollments    StudentEnrollment[]
-  recordedStatusChanges  StudentStatusChange[]
-  completedSessions      Session[]
-  administrationMember   AdministrationMember[]
+  memorizationUpdates       MemorizationProgress[]
+  createdRegistrations      RegistrationRequest[]  @relation("RegistrationCreator")
+  reviewedRegistrations     RegistrationRequest[]  @relation("RegistrationReviewer")
+  recordedPayments          Payment[]              @relation("PaymentRecorder")
+  issuedReceipts            Payment[]              @relation("PaymentReceiptIssuer")
+  voidedPayments            Payment[]              @relation("PaymentVoider")
+  createdGroupFees          GroupFee[]             @relation("GroupFeeCreator")
+  deactivatedGroupFees      GroupFee[]             @relation("GroupFeeDeactivator")
+  createdObligations        PaymentObligation[]    @relation("ObligationCreator")
+  voidedObligations         PaymentObligation[]    @relation("ObligationVoider")
+  graduateConsents          QuranGraduate[]        @relation("GraduateConsentRecorder")
+  uploadedFiles             StoredFile[]           @relation("FileUploader")
+  publishedResources        Resource[]
+  publishedAnnouncements    Announcement[]
+  notifications             Notification[]
+  recordedAttendance        StudentAttendance[]
+  recordedTeacherAttendance TeacherAttendance[]    @relation("TeacherAttendanceRecorder")
+  attendanceChanges         AttendanceChange[]
+  recordedEnrollments       StudentEnrollment[]
+  recordedStatusChanges     StudentStatusChange[]
+  completedSessions         Session[]
+  administrationMember      AdministrationMember[]
 
   @@map("users")
 }
@@ -293,6 +309,7 @@ model Teacher {
   supervisedClasses  GroupClass[]          @relation("GroupClassSupervisor")
   assistedClasses    GroupClassAssistant[]
   attendance         TeacherAttendance[]
+  attendanceChanges  AttendanceChange[]
   sessionAssignments SessionTeacher[]
   notes              TeacherNote[]
 
@@ -319,6 +336,7 @@ model Student {
   groupClass GroupClass? @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
 
   attendance          StudentAttendance[]
+  attendanceChanges   AttendanceChange[]
   enrollments         StudentEnrollment[]
   statusChanges       StudentStatusChange[]
   memorization        MemorizationProgress[]
@@ -591,6 +609,8 @@ model Session {
 
   studentAttendance StudentAttendance[]
   teacherAttendance TeacherAttendance[]
+  attendanceChanges AttendanceChange[]
+  notifications     Notification[]
 
   /// A weekly slot generates at most one session per date
   @@unique([weeklyScheduleId, date])
@@ -639,20 +659,54 @@ model StudentAttendance {
 
 /// Presence of an assigned teacher in a session (no HR system).
 model TeacherAttendance {
-  id        String           @id @default(uuid(7)) @db.Uuid
-  sessionId String           @db.Uuid
-  teacherId String           @db.Uuid
-  status    AttendanceStatus
-  note      String?
-  createdAt DateTime         @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime         @updatedAt @db.Timestamptz(3)
+  id               String           @id @default(uuid(7)) @db.Uuid
+  sessionId        String           @db.Uuid
+  teacherId        String           @db.Uuid
+  status           AttendanceStatus
+  note             String?
+  /// Who recorded or last changed it (admin or a teacher of the session)
+  recordedByUserId String?          @db.Uuid
+  createdAt        DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime         @updatedAt @db.Timestamptz(3)
 
-  session Session @relation(fields: [sessionId], references: [id], onDelete: Restrict)
-  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  session    Session @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  teacher    Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  recordedBy User?   @relation("TeacherAttendanceRecorder", fields: [recordedByUserId], references: [id], onDelete: SetNull)
 
   @@unique([sessionId, teacherId])
   @@index([teacherId])
   @@map("teacher_attendance")
+}
+
+/// Attendance audit trail (append-only): every first recording and every
+/// real change of a student's or teacher's status/note in a session, with who
+/// did it. Identifies the record by (session, student|teacher), its natural key.
+model AttendanceChange {
+  id             String               @id @default(uuid(7)) @db.Uuid
+  sessionId      String               @db.Uuid
+  subject        AttendanceSubject
+  /// Set iff subject = STUDENT (CHECK)
+  studentId      String?              @db.Uuid
+  /// Set iff subject = TEACHER (CHECK)
+  teacherId      String?              @db.Uuid
+  kind           AttendanceChangeKind
+  /// null for CREATED
+  previousStatus AttendanceStatus?
+  newStatus      AttendanceStatus
+  previousNote   String?
+  newNote        String?
+  actorUserId    String?              @db.Uuid
+  /// Display name snapshot of the actor at the time of the change
+  actorName      String
+  createdAt      DateTime             @default(now()) @db.Timestamptz(3)
+
+  session Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  actor   User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId, createdAt])
+  @@map("attendance_changes")
 }
 
 // ──────────────────────── Memorization & notes ────────────────────────
@@ -967,6 +1021,8 @@ model Notification {
   message        String
   resourceId     String?          @db.Uuid
   announcementId String?          @db.Uuid
+  /// ATTENDANCE_MODIFIED: the session whose attendance was changed
+  sessionId      String?          @db.Uuid
   /// null = unread
   readAt         DateTime?        @db.Timestamptz(3)
   createdAt      DateTime         @default(now()) @db.Timestamptz(3)
@@ -974,11 +1030,13 @@ model Notification {
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   resource     Resource?     @relation(fields: [resourceId], references: [id], onDelete: Cascade)
   announcement Announcement? @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  session      Session?      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   /// One delivery per user and content item (NULLs are distinct)
   @@unique([userId, resourceId])
   @@unique([userId, announcementId])
   @@index([userId, createdAt])
+  @@index([sessionId])
   @@map("notifications")
 }
 
