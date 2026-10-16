@@ -293,6 +293,10 @@ export class GroupClassesService {
           await this.conflicts.syncSlotRooms(tx, rooms, today);
         if (teamChanged)
           await this.conflicts.syncUpcomingSessions(tx, id, today);
+        // A class skipped by an earlier generation (its supervisor was
+        // inactive then) gets its missing sessions from its new supervisor
+        if (supervisorId !== current.supervisorId)
+          await this.sessions.generateForCurrentYear(tx, { groupClassId: id });
         return id;
       }),
     );

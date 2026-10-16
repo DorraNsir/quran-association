@@ -319,4 +319,138 @@ describe('Automatic session generation (e2e)', () => {
     await patch(`groups/${id.group2}/status`, { status: 'ACTIVE' }).expect(200);
     expect((await sessionsOf('C')).map((r) => r.date)).toEqual(datesOf(DAY_A));
   });
+
+  /** A teacher, and a class of a NEW inactive group with one slot (so nothing generated yet). */
+  async function classOfNewGroup(key: string, start: string) {
+    id[`t${key}`] = (
+      await post('teachers', {
+        person: {
+          firstName: key,
+          lastName: tag('معلم'),
+          gender: 'FEMALE',
+          phone: '22345679',
+        },
+        joinedAt: '2024-09-01',
+      }).expect(201)
+    ).body.id;
+    id[`g${key}`] = (
+      await post('groups', { name: tag(`مجموعة ${key}`) }).expect(201)
+    ).body.id;
+    id[key] = (
+      await post('group-classes', {
+        groupId: id[`g${key}`],
+        branchId: id.branch,
+        supervisorId: id[`t${key}`],
+      }).expect(201)
+    ).body.id;
+    await patch(`groups/${id[`g${key}`]}/status`, {
+      status: 'INACTIVE',
+    }).expect(200);
+    const end = `${String(Number(start.slice(0, 2)) + 1).padStart(2, '0')}:00`;
+    await slot(key, DAY_A, start, end).expect(201);
+    expect(await sessionsOf(key)).toEqual([]);
+  }
+
+  it('a supervisor inactive during a generation: reactivating them creates the skipped sessions', async () => {
+    await classOfNewGroup('D', '07:00');
+    await patch(`teachers/${id.tD}/status`, { status: 'INACTIVE' }).expect(200);
+    // The group comes back while its supervisor is inactive: the class is skipped
+    await patch(`groups/${id.gD}/status`, { status: 'ACTIVE' }).expect(200);
+    expect(await sessionsOf('D')).toEqual([]);
+    await patch(`teachers/${id.tD}/status`, { status: 'ACTIVE' }).expect(200);
+    expect((await sessionsOf('D')).map((r) => r.date)).toEqual(datesOf(DAY_A));
+    // Deactivating again keeps the sessions (nothing deleted, nothing duplicated)
+    await patch(`teachers/${id.tD}/status`, { status: 'INACTIVE' }).expect(200);
+    await patch(`teachers/${id.tD}/status`, { status: 'ACTIVE' }).expect(200);
+    expect((await sessionsOf('D')).map((r) => r.date)).toEqual(datesOf(DAY_A));
+  });
+
+  it('assigning a new supervisor creates the sessions skipped while the old one was inactive', async () => {
+    await classOfNewGroup('E', '20:00');
+    await patch(`teachers/${id.tE}/status`, { status: 'INACTIVE' }).expect(200);
+    await patch(`groups/${id.gE}/status`, { status: 'ACTIVE' }).expect(200);
+    expect(await sessionsOf('E')).toEqual([]);
+    await patch(`group-classes/${id.E}`, { supervisorId: id.tD }).expect(200);
+    const rows = await prisma.session.findMany({
+      where: { groupClassId: id.E },
+      orderBy: { date: 'asc' },
+      select: {
+        date: true,
+        teachers: { select: { teacherId: true, role: true } },
+      },
+    });
+    expect(rows.map((r) => r.date.toISOString().slice(0, 10))).toEqual(
+      datesOf(DAY_A),
+    );
+    expect(
+      rows.every(
+        (r) =>
+          r.teachers.length === 1 &&
+          r.teachers[0].teacherId === id.tD &&
+          r.teachers[0].role === 'SUPERVISOR',
+      ),
+    ).toBe(true);
+  });
+
+  describe('«حصة إضافية (مرة واحدة)»', () => {
+    const extra = (body: object) =>
+      post('sessions/extra', {
+        groupClassId: id.A,
+        roomId: id.room,
+        date: addDays(TODAY, 1),
+        startTime: '21:00',
+        endTime: '22:00',
+        ...body,
+      });
+
+    it('is refused in the past (today and later only)', async () => {
+      const res = await extra({ date: addDays(TODAY, -1) }).expect(400);
+      expect(res.body.code).toBe('SESSION_DATE_PAST');
+      expect(res.body.message).toContain('تاريخ سابق');
+    });
+
+    it('creates one SCHEDULED session, not tied to a weekly slot, with the class team', async () => {
+      const today = await extra({
+        date: TODAY,
+        startTime: '22:00',
+        endTime: '23:00',
+      }).expect(201);
+      expect(today.body).toMatchObject({
+        date: TODAY,
+        status: 'SCHEDULED',
+        weeklyScheduleId: null,
+      });
+      id.extra = (await extra({}).expect(201)).body.id;
+      const row = await prisma.session.findUniqueOrThrow({
+        where: { id: id.extra },
+        select: {
+          weeklyScheduleId: true,
+          teachers: { select: { teacherId: true, role: true } },
+        },
+      });
+      expect(row.weeklyScheduleId).toBeNull();
+      expect(row.teachers).toEqual([
+        { teacherId: id.teacher, role: 'SUPERVISOR' },
+      ]);
+    });
+
+    it('a room or teacher conflict is refused', async () => {
+      // Same room, same time as the extra session just created
+      const res = await extra({ groupClassId: id.D }).expect(409);
+      expect(res.body.code).toMatch(/CONFLICT/);
+    });
+
+    it('moving or deleting a weekly slot never touches it', async () => {
+      await http()
+        .delete(`/api/admin/group-classes/${id.A}/schedules/${id.slotB}`)
+        .set(as())
+        .expect((r) => expect([200, 204]).toContain(r.status));
+      const row = await prisma.session.findUniqueOrThrow({
+        where: { id: id.extra },
+        select: { status: true, startTime: true },
+      });
+      expect(row.status).toBe('SCHEDULED');
+      expect(row.startTime.toISOString().slice(11, 16)).toBe('21:00');
+    });
+  });
 });

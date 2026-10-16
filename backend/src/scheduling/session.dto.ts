@@ -43,6 +43,25 @@ export class CreateSessionDto {
   status?: SessionStatus;
 }
 
+/**
+ * «حصة إضافية (مرة واحدة)»: one extra SCHEDULED lesson of a class, today or
+ * later, not tied to any weekly slot (moving / deleting a slot never touches it).
+ */
+export class CreateExtraSessionDto {
+  @ApiProperty({ format: 'uuid' }) @IsUUID() groupClassId!: string;
+  @ApiProperty({
+    format: 'uuid',
+    description: "Room of this lesson: an active room of the class's branch",
+  })
+  @IsUUID()
+  roomId!: string;
+  @ApiProperty({ format: 'date', description: 'Today or later (Africa/Tunis)' })
+  @IsDateOnly()
+  date!: string;
+  @IsTimeOfDay() startTime!: string;
+  @IsTimeOfDay() endTime!: string;
+}
+
 /** Reschedule a SCHEDULED session (date and/or times). Class and status are not editable here. */
 export class UpdateSessionDto {
   @IsDateOnly({ optional: true }) date?: string;

@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useState } from "react"
 
 import { AttendanceAction } from "@/components/sessions/attendance-action"
-import { GenerateSessionsButton } from "@/components/sessions/generate-sessions-sheet"
+import { WeeklySlotButton } from "@/components/calendar/scheduling-actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { toSessionRow, type SessionRow } from "@/components/sessions/use-session-rows"
 import { Pager } from "@/components/shared/pager"
@@ -236,7 +236,7 @@ function AttendanceRecording({ lookups }: { lookups: Lookups }) {
           <AlertDescription>
             <p>يُسجَّل الحضور في الحصص الفعلية المؤرخة، وهي تُنشأ تلقائيًا من المواعيد الأسبوعية للأقسام النشطة خلال السنة الدراسية الحالية. لذلك تبقى الإحصائيات صفرًا إلى حين برمجة المواعيد.</p>
             <div className="mt-2">
-              <GenerateSessionsButton lookups={lookups} today={today} variant="outline" />
+              <WeeklySlotButton lookups={lookups} variant="outline" />
             </div>
           </AlertDescription>
         </Alert>

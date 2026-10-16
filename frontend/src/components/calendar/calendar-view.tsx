@@ -1,6 +1,6 @@
 "use client"
 
-import { CalendarPlus, Info } from "lucide-react"
+import { CalendarRange, Info } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 
@@ -34,6 +34,7 @@ import { formatWeekRange, fromMinutes, toMinutes, visibleHours } from "./calenda
 import { MobileAgenda } from "./mobile-agenda"
 import { ScheduleDetailsSheet } from "./schedule-details-sheet"
 import { ScheduleFormSheet, type SchedulePreset } from "./schedule-form-sheet"
+import { ExtraSessionButton, useSaveWeeklySlot } from "./scheduling-actions"
 import { TimeGrid, type GridColumn } from "./time-grid"
 import { usePlatformSettings } from "@/lib/store/settings"
 
@@ -79,7 +80,6 @@ export function CalendarView({
   const indexes = indexLookups(live)
   const { branchesById, classesById, groupsById, roomsById } = indexes
   const studentCounts = countActiveStudentsByClass(students)
-  const hours = visibleHours(lookups.schedules)
 
   // ── Entries: one per slot of a running class; place and team come from the class ──
   const entries: CalendarEntry[] = schedules.flatMap((schedule) => {
@@ -110,18 +110,48 @@ export function CalendarView({
   const week = weekDates(date)
   const sessionsQuery = useSessionRange("admin", { from: week[0].date, to: week[week.length - 1].date })
   const occurrences = new Map((sessionsQuery.data ?? []).map((s) => [`${s.weeklyScheduleId}|${s.date}`, toSession(s)]))
+  // Extra one-off sessions (no weekly slot): each is an entry of its own date
+  const extras: CalendarEntry[] = (sessionsQuery.data ?? []).flatMap((s) => {
+    if (s.weeklyScheduleId) return []
+    const groupClass = classesById.get(s.groupClass.id)
+    if (!groupClass) return []
+    const view = describeClass(groupClass, indexes)
+    if (!view.group) return []
+    const session = toSession(s)
+    return [
+      {
+        ...view,
+        group: view.group,
+        schedule: { id: `extra-${s.id}`, groupClassId: groupClass.id, day: weekdayOf(s.date), start: s.startTime, end: s.endTime, roomId: s.room.id },
+        room: roomsById.get(s.room.id),
+        studentCount: studentCounts.get(groupClass.id) ?? 0,
+        tone: Math.max(0, lookups.branches.findIndex((b) => b.id === groupClass.branchId)),
+        occurrence: session,
+        extra: true,
+      },
+    ]
+  })
+  const visibleExtras = extras.filter(
+    ({ groupClass, group }) =>
+      (filters.branch === ALL || groupClass.branchId === filters.branch) &&
+      (filters.group === ALL || group.id === filters.group) &&
+      (filters.teacher === ALL || classTeacherIds(groupClass).includes(filters.teacher))
+  )
   /** A day's entries, each linked to its dated session (attendance, cancellation). */
   const entriesOn = (d: ISODate) =>
     visible
       .filter((e) => e.schedule.day === weekdayOf(d))
-      .map((e) => {
+      .map((e): CalendarEntry => {
         const occurrence = occurrences.get(`${e.schedule.id}|${d}`)
         // A session keeps its own room (moved for one date, or planned before a slot's room change)
         const room = occurrence ? (roomsById.get(occurrence.roomId) ?? e.room) : e.room
         return { ...e, occurrence, room }
       })
+      .concat(visibleExtras.filter((e) => e.occurrence?.date === d))
       .filter((e) => filters.room === ALL || e.room?.id === filters.room)
       .sort((a, b) => a.schedule.start.localeCompare(b.schedule.start))
+
+  const hours = visibleHours([...lookups.schedules, ...extras.map((e) => e.schedule)])
 
   const setFilter = (key: keyof CalendarFilters) => (value: string) =>
     setFilters((prev) => ({ ...prev, [key]: value, ...(key === "branch" ? { room: ALL } : {}) }))
@@ -145,15 +175,7 @@ export function CalendarView({
     ...(roomId ? { roomId } : {}),
   })
 
-  const saveMutation = useApiMutation(
-    (saved: WeeklySchedule) => {
-      const body = { dayOfWeek: saved.day, startTime: saved.start, endTime: saved.end, roomId: saved.roomId }
-      return saved.id
-        ? api(`/admin/group-classes/${saved.groupClassId}/schedules/${saved.id}`, { method: "PATCH", body })
-        : api(`/admin/group-classes/${saved.groupClassId}/schedules`, { method: "POST", body })
-    },
-    [keys.schedules, keys.sessions, keys.rooms]
-  )
+  const saveWeeklySlot = useSaveWeeklySlot(live)
   /** Cancels one dated session only (PATCH status → CANCELLED); the weekly slot is untouched */
   const cancelSessionMutation = useApiMutation(
     ({ id, reason }: { id: ID; reason?: string }) =>
@@ -166,12 +188,7 @@ export function CalendarView({
   )
 
   async function saveSchedule(saved: WeeklySchedule) {
-    const exists = Boolean(saved.id)
-    await saveMutation.mutateAsync(saved)
-    const group = groupsById.get(classesById.get(saved.groupClassId)?.groupId ?? "")
-    toast.success(
-      `${exists ? "تم تعديل حصة" : "تمت برمجة حصة"} ${group?.name ?? ""} — ${labels.weekday[saved.day]} ${formatTimeRange(saved.start, saved.end)}`
-    )
+    await saveWeeklySlot(saved)
     setFormState((s) => (s ? { ...s, open: false } : s))
     setDetails(null)
     setDate(dateOfWeekday(date, saved.day))
@@ -194,7 +211,7 @@ export function CalendarView({
       </button>
     ),
     entries: entriesOn(d),
-    emptyHint: "انقر لبرمجة حصة في هذا الوقت",
+    emptyHint: "انقر لبرمجة موعد أسبوعي في هذا الوقت",
     onEmptyClick: (start) => openCreate(slotPreset(d, start)),
   }))
 
@@ -221,7 +238,7 @@ export function CalendarView({
         </>
       ),
       entries: entriesOn(date).filter((e) => e.room?.id === room.id),
-      emptyHint: `انقر لبرمجة حصة في ${room.name}`,
+      emptyHint: `انقر لبرمجة موعد أسبوعي في ${room.name}`,
       onEmptyClick: (start) => openCreate(slotPreset(date, start, room.id)),
     }))
 
@@ -232,12 +249,22 @@ export function CalendarView({
     <>
       <PageHeader
         title="الرزنامة"
-        description="من يدرس، أين، متى، ومع أي معلم — كل الحصص الأسبوعية للمجموعات النشطة في مكان واحد."
+        description="من يدرس، أين، متى، ومع أي معلم — المواعيد الأسبوعية للمجموعات النشطة والحصص الإضافية في مكان واحد."
         actions={
-          <Button onClick={() => openCreate()}>
-            <CalendarPlus />
-            برمجة حصة
-          </Button>
+          <>
+            <Button onClick={() => openCreate()}>
+              <CalendarRange />
+              برمجة موعد أسبوعي
+            </Button>
+            <ExtraSessionButton
+              lookups={live}
+              students={students}
+              preset={() => {
+                const p = presetFromFilters()
+                return { groupClassId: p.groupClassId, roomId: p.roomId, date: view === "week" ? undefined : date }
+              }}
+            />
+          </>
         }
       />
 
@@ -300,8 +327,8 @@ export function CalendarView({
           <span className="inline-flex items-center gap-1.5 ms-auto">
             <Info className="size-3.5" aria-hidden />
             {view === "week"
-              ? "انقر على يوم لعرض قاعاته، أو على وقت فارغ لبرمجة حصة."
-              : "الخانات الفارغة قاعات متاحة — انقر لبرمجة حصة فيها."}
+              ? "انقر على يوم لعرض قاعاته، أو على وقت فارغ لبرمجة موعد أسبوعي."
+              : "الخانات الفارغة قاعات متاحة — انقر لبرمجة موعد أسبوعي فيها."}
           </span>
         </div>
       </div>

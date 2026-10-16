@@ -95,10 +95,10 @@ export function ScheduleFormSheet({
     <FormSheet
       open={open}
       onOpenChange={onOpenChange}
-      title={schedule ? "تعديل الحصة الأسبوعية" : "برمجة حصة أسبوعية"}
-      description="تتكرر الحصة كل أسبوع في نفس اليوم والتوقيت والقاعة، مع معلمي القسم."
+      title={schedule ? "تعديل الموعد الأسبوعي" : "برمجة موعد أسبوعي"}
+      description="يتكرر الموعد كل أسبوع في نفس اليوم والتوقيت والقاعة، مع معلمي القسم. تُنشأ حصصه تلقائيًا حتى نهاية السنة الدراسية الحالية."
       onSubmit={submit}
-      submitLabel={schedule ? "حفظ التعديلات" : "برمجة الحصة"}
+      submitLabel={schedule ? "حفظ التعديلات" : "برمجة الموعد"}
       submitDisabled={conflicts.length > 0}
       pending={form.pending}
       error={form.serverError}

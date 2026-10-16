@@ -16,6 +16,7 @@ import { ScheduleConflictService } from './schedule-conflicts.service.js';
 import { classNotFound } from './scheduling-errors.js';
 import type {
   AttentionFlag,
+  CreateExtraSessionDto,
   CreateSessionDto,
   GenerateSessionsDto,
   GenerateSessionsResultDto,
@@ -279,53 +280,88 @@ export class SessionsService {
     assertTimeRange(dto.startTime, dto.endTime);
     const id = await this.prisma.$transaction(async (tx) => {
       await this.conflicts.lockScheduling(tx);
-      const team = await this.conflicts.sessionTeamOf(tx, dto.groupClassId);
-      if (!team) throw classNotFound();
-      if (!team.classActive)
-        throw conflict('GROUP_CLASS_INACTIVE', 'القسم غير نشط');
-      if (!team.supervisorActive) throw supervisorInactive();
-      await this.conflicts.assertRoomForClass(tx, dto.roomId, team.branchId, {
-        requireActive: true,
-      });
-      const status = dto.status ?? SessionStatus.SCHEDULED;
-      if (status === SessionStatus.COMPLETED)
-        await this.assertNotFuture(tx, dto.date);
-      this.conflicts.throwIfAny(
-        await this.conflicts.sessionConflicts(
-          tx,
-          team.occupancy,
-          [
-            {
-              date: dto.date,
-              start: dto.startTime,
-              end: dto.endTime,
-              roomId: dto.roomId,
-            },
-          ],
-          {
-            includeSameClass: true,
-          },
-        ),
-        'SESSION',
-      );
-      const created = await tx.session.create({
-        data: {
-          groupClassId: dto.groupClassId,
-          roomId: dto.roomId,
-          date: toDbDate(dto.date),
-          startTime: toDbTime(dto.startTime),
-          endTime: toDbTime(dto.endTime),
-          status,
-          ...(status === SessionStatus.COMPLETED
-            ? this.completion(CompletionSource.ADMIN_OVERRIDE, actorUserId)
-            : {}),
-        },
-        select: { id: true },
-      });
-      await this.conflicts.writeSessionTeams(tx, [created.id], team);
-      return created.id;
+      return this.createInTx(tx, dto, actorUserId);
     });
     return this.get(id);
+  }
+
+  /**
+   * «حصة إضافية (مرة واحدة)»: same rules as create() (active class and
+   * supervisor, active room of the class's branch, no room / teacher / class
+   * conflict, the class's active team) — always SCHEDULED, and never in the
+   * past: a missed lesson is not back-filled from here.
+   */
+  async createExtra(dto: CreateExtraSessionDto): Promise<SessionDto> {
+    assertTimeRange(dto.startTime, dto.endTime);
+    const id = await this.prisma.$transaction(async (tx) => {
+      await this.conflicts.lockScheduling(tx);
+      if (dto.date < (await platformToday(tx)))
+        throw badRequest(
+          'SESSION_DATE_PAST',
+          'لا يمكن برمجة حصة إضافية في تاريخ سابق: اختر تاريخ اليوم أو بعده',
+        );
+      return this.createInTx(tx, {
+        groupClassId: dto.groupClassId,
+        roomId: dto.roomId,
+        date: dto.date,
+        startTime: dto.startTime,
+        endTime: dto.endTime,
+        status: SessionStatus.SCHEDULED,
+      });
+    });
+    return this.get(id);
+  }
+
+  private async createInTx(
+    tx: Tx,
+    dto: CreateSessionDto,
+    actorUserId?: string,
+  ): Promise<string> {
+    const team = await this.conflicts.sessionTeamOf(tx, dto.groupClassId);
+    if (!team) throw classNotFound();
+    if (!team.classActive)
+      throw conflict('GROUP_CLASS_INACTIVE', 'القسم غير نشط');
+    if (!team.supervisorActive) throw supervisorInactive();
+    await this.conflicts.assertRoomForClass(tx, dto.roomId, team.branchId, {
+      requireActive: true,
+    });
+    const status = dto.status ?? SessionStatus.SCHEDULED;
+    if (status === SessionStatus.COMPLETED)
+      await this.assertNotFuture(tx, dto.date);
+    this.conflicts.throwIfAny(
+      await this.conflicts.sessionConflicts(
+        tx,
+        team.occupancy,
+        [
+          {
+            date: dto.date,
+            start: dto.startTime,
+            end: dto.endTime,
+            roomId: dto.roomId,
+          },
+        ],
+        {
+          includeSameClass: true,
+        },
+      ),
+      'SESSION',
+    );
+    const created = await tx.session.create({
+      data: {
+        groupClassId: dto.groupClassId,
+        roomId: dto.roomId,
+        date: toDbDate(dto.date),
+        startTime: toDbTime(dto.startTime),
+        endTime: toDbTime(dto.endTime),
+        status,
+        ...(status === SessionStatus.COMPLETED
+          ? this.completion(CompletionSource.ADMIN_OVERRIDE, actorUserId)
+          : {}),
+      },
+      select: { id: true },
+    });
+    await this.conflicts.writeSessionTeams(tx, [created.id], team);
+    return created.id;
   }
 
   /**

@@ -14,6 +14,7 @@ import {
   type Prisma,
 } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { SessionsService } from '../../scheduling/sessions.service.js';
 import {
   accountSummarySelect,
   classBriefSelect,
@@ -87,6 +88,7 @@ export class TeachersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pageSizes: PageSizeService,
+    private readonly sessions: SessionsService,
   ) {}
 
   async list(query: TeacherListQueryDto): Promise<TeacherListDto> {
@@ -241,14 +243,35 @@ export class TeachersService {
   /**
    * Like the admin UI, deactivating does not detach the teacher from its
    * classes (the admin then appoints a replacement); an inactive teacher
-   * cannot receive NEW assignments.
+   * cannot receive NEW assignments. Their existing sessions are kept.
+   * Reactivated: the classes they supervise get the sessions an earlier
+   * generation skipped while they were inactive (a new academic year made
+   * current, a group reactivated…) — nothing is created otherwise.
    */
   async setStatus(
     id: string,
     status: ActivationStatus,
   ): Promise<TeacherDetailDto> {
-    await this.get(id);
-    await this.prisma.teacher.update({ where: { id }, data: { status } });
+    const before = await this.get(id);
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.teacher.update({ where: { id }, data: { status } });
+        if (
+          status !== ActivationStatus.ACTIVE ||
+          before.status === ActivationStatus.ACTIVE
+        )
+          return;
+        const supervised = await tx.groupClass.findMany({
+          where: { supervisorId: id },
+          select: { id: true },
+        });
+        for (const c of supervised)
+          await this.sessions.generateForCurrentYear(tx, {
+            groupClassId: c.id,
+          });
+      },
+      { timeout: 30_000 },
+    );
     return this.get(id);
   }
 }

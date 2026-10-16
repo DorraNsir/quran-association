@@ -48,6 +48,8 @@ export function ScheduleDetailsSheet({
   const dir = useDirection()
   if (!entry) return null
   const { schedule, group, branch, room, supervisor, assistants } = entry
+  // An extra one-off session has no weekly slot to edit or delete
+  const extra = Boolean(entry.extra)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -61,7 +63,7 @@ export function ScheduleDetailsSheet({
             {group.name}
           </SheetTitle>
           <SheetDescription className="flex items-center gap-2">
-            حصة أسبوعية · {group.audience}
+            {extra ? "حصة إضافية (مرة واحدة)" : "حصة أسبوعية"} · {group.audience}
             {group.status !== "ACTIVE" && <StatusBadge status={group.status} />}
           </SheetDescription>
         </SheetHeader>
@@ -71,7 +73,10 @@ export function ScheduleDetailsSheet({
             items={[
               {
                 label: "اليوم",
-                value: `كل ${labels.weekday[schedule.day]}${date ? ` · ${formatDate(date)}` : ""}`,
+                value:
+                  extra && entry.occurrence
+                    ? `${labels.weekday[schedule.day]} ${formatDate(entry.occurrence.date)} (مرة واحدة)`
+                    : `كل ${labels.weekday[schedule.day]}${date ? ` · ${formatDate(date)}` : ""}`,
                 icon: CalendarDays,
               },
               {
@@ -101,7 +106,8 @@ export function ScheduleDetailsSheet({
               </div>
               {entry.occurrence.status === "CANCELLED" && (
                 <p className="text-xs text-muted-foreground">
-                  أُلغيت هذه الحصة فقط{entry.occurrence.cancellationReason ? ` (${entry.occurrence.cancellationReason})` : ""}؛ البرنامج الأسبوعي لم يتغيّر.
+                  أُلغيت هذه الحصة فقط{entry.occurrence.cancellationReason ? ` (${entry.occurrence.cancellationReason})` : ""}
+                  {extra ? "." : "؛ البرنامج الأسبوعي لم يتغيّر."}
                 </p>
               )}
               <Button asChild size="sm" className="w-full">
@@ -142,10 +148,12 @@ export function ScheduleDetailsSheet({
               عرض المجموعة
             </Link>
           </Button>
-          <Button onClick={() => onEdit(entry)}>
-            <Pencil />
-            تعديل الحصة
-          </Button>
+          {!extra && (
+            <Button onClick={() => onEdit(entry)}>
+              <Pencil />
+              تعديل الموعد الأسبوعي
+            </Button>
+          )}
           {/* This date only: the session is cancelled (kept, shown as «ملغاة»), the weekly slot stays */}
           {entry.occurrence?.status === "SCHEDULED" &&  (
             <Button variant="outline" className="ms-auto text-destructive hover:text-destructive" onClick={() => onCancelSession(entry)}>
@@ -154,10 +162,12 @@ export function ScheduleDetailsSheet({
             </Button>
           )}
           {/* Every week: the slot leaves the weekly programme */}
-          <Button variant="destructive" className={entry.occurrence?.status === "SCHEDULED" ? undefined : "ms-auto"} onClick={() => onRemove(entry)}>
-            <Trash2 />
-            حذف الموعد الأسبوعي
-          </Button>
+          {!extra && (
+            <Button variant="destructive" className={entry.occurrence?.status === "SCHEDULED" ? undefined : "ms-auto"} onClick={() => onRemove(entry)}>
+              <Trash2 />
+              حذف الموعد الأسبوعي
+            </Button>
+          )}
         </SheetFooter>
       </SheetContent>
     </Sheet>

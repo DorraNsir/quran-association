@@ -25,6 +25,7 @@ import type { AuthPrincipal } from '../auth/auth.types.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { SchedulingConflictDto } from './schedule.dto.js';
 import {
+  CreateExtraSessionDto,
   CreateSessionDto,
   GenerateSessionsDto,
   GenerateSessionsResultDto,
@@ -112,6 +113,24 @@ export class SessionsController {
     @Body() dto: CreateSessionDto,
   ): Promise<SessionDto> {
     return this.sessions.create(dto, actor.userId);
+  }
+
+  @Post('extra')
+  @ApiOperation({
+    summary:
+      'Extra one-off session (حصة إضافية): today or later, not tied to a weekly slot',
+  })
+  @ApiCreatedResponse({ type: SessionDto })
+  @ApiBadRequestResponse({
+    description: 'SESSION_TIME_INVALID, SESSION_DATE_PAST',
+  })
+  @ApiNotFoundResponse({ description: 'GROUP_CLASS_NOT_FOUND' })
+  @ApiConflictResponse({
+    type: SchedulingConflictDto,
+    description: `GROUP_CLASS_INACTIVE, SUPERVISOR_INACTIVE, ${CONFLICTS}`,
+  })
+  createExtra(@Body() dto: CreateExtraSessionDto): Promise<SessionDto> {
+    return this.sessions.createExtra(dto);
   }
 
   @Patch(':id')

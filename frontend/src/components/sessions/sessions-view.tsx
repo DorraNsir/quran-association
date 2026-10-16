@@ -12,6 +12,7 @@ import { ALL, FilterBar, FilterSelect } from "@/components/shared/filters"
 import { PageHeader } from "@/components/shared/page-header"
 import { PeriodFilter, resolvePeriod, type Period } from "@/components/shared/period-filter"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Pager } from "@/components/shared/pager"
 import { QueryState } from "@/components/shared/query-state"
@@ -26,8 +27,9 @@ import { cn } from "@/lib/utils"
 import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
 import type { ISODate } from "@/types/domain"
 
+import { ExtraSessionButton, WeeklySlotButton } from "@/components/calendar/scheduling-actions"
+
 import { AttendanceAction } from "./attendance-action"
-import { GenerateSessionsButton } from "./generate-sessions-sheet"
 import { toSessionRow, type SessionRow } from "./use-session-rows"
 import { useCurrentAcademicYear, usePlatformSettings } from "@/lib/store/settings"
 
@@ -157,6 +159,7 @@ export function SessionsView({
       cell: (r) => (
         <Link href={paths.session(r.session.id)} className="block hover:opacity-80">
           <span className="font-medium">{r.group?.name}</span>
+          {!r.session.scheduleId && <ExtraBadge />}
           <span className="block text-xs text-muted-foreground">
             {r.room?.name} · {r.branch?.name}
           </span>
@@ -187,14 +190,19 @@ export function SessionsView({
         description={
           isTeacher
             ? "حصص مجموعاتك المؤرخة مع حالة تسجيل الحضور لكل حصة."
-            : "الحصص الفعلية المؤرخة، المتولدة من البرنامج الأسبوعي للمجموعات، مع حالة تسجيل الحضور لكل حصة."
+            : "الحصص الفعلية المؤرخة — حصص المواعيد الأسبوعية (تُنشأ تلقائيًا) والحصص الإضافية — مع حالة تسجيل الحضور لكل حصة."
         }
         actions={
           <>
             <Button asChild variant="outline">
               <Link href={paths.schedule}>{isTeacher ? "جدولي الأسبوعي" : "البرنامج الأسبوعي"}</Link>
             </Button>
-            {!isTeacher && <GenerateSessionsButton lookups={lookups} today={today} />}
+            {!isTeacher && (
+              <>
+                <WeeklySlotButton lookups={lookups} />
+                <ExtraSessionButton lookups={lookups} />
+              </>
+            )}
           </>
         }
       />
@@ -295,14 +303,17 @@ export function SessionsView({
                     ? "اطّلع على الحصص القادمة أو على كل الحصص."
                     : undefined
             }
-            action={noneGenerated && !isTeacher ? <GenerateSessionsButton lookups={lookups} today={today} variant="outline" /> : undefined}
+            action={noneGenerated && !isTeacher ? <WeeklySlotButton lookups={lookups} variant="outline" /> : undefined}
           />
         }
         renderMobileCard={(r) => (
           <div className="space-y-2.5">
             <div className="flex items-start justify-between gap-2">
               <Link href={paths.session(r.session.id)} className="min-w-0">
-                <p className="font-medium">{r.group?.name}</p>
+                <p className="font-medium">
+                  {r.group?.name}
+                  {!r.session.scheduleId && <ExtraBadge />}
+                </p>
                 {when(r)}
               </Link>
               <SessionStatusBadge status={r.session.status} />
@@ -323,4 +334,9 @@ export function SessionsView({
       </QueryState>
     </>
   )
+}
+
+/** «إضافية»: a one-off session, not from a weekly slot. */
+function ExtraBadge() {
+  return <Badge variant="secondary" className="ms-1.5 align-middle text-[0.7rem]">إضافية</Badge>
 }
