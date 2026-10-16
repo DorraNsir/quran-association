@@ -86,7 +86,7 @@ export function StudentAttendanceHistory({ studentId, workspace = "admin" }: { s
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {record.groupClass.group.name} ·{" "}
-                        <span dir="ltr" className="inline-block tabular-nums">{formatTimeRange(record.startTime, record.endTime)}</span>
+                        <span className="inline-block tabular-nums">{formatTimeRange(record.startTime, record.endTime)}</span>
                       </p>
                     </div>
                     <div className="flex items-center gap-2">

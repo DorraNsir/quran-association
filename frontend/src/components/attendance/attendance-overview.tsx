@@ -125,7 +125,7 @@ function AttendanceRecording({ lookups }: { lookups: Lookups }) {
           </p>
           <p className="text-xs text-muted-foreground">
             {labels.weekdayShort[weekdayOf(r.session.date)]} {formatShortDate(r.session.date)} ·{" "}
-            <span dir="ltr" className="tabular-nums">{formatTimeRange(r.session.start, r.session.end)}</span>
+            <span className="tabular-nums">{formatTimeRange(r.session.start, r.session.end)}</span>
           </p>
         </Link>
       ),

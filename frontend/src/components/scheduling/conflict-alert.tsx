@@ -63,7 +63,7 @@ export function ConflictAlert({
                   const when = (
                     <span className="text-muted-foreground">
                       {labels.weekday[c.schedule.day]}{" "}
-                      <span dir="ltr" className="tabular-nums">
+                      <span  className="tabular-nums">
                         {formatTimeRange(c.schedule.start, c.schedule.end)}
                       </span>
                     </span>

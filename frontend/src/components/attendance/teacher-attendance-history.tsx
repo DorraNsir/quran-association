@@ -68,7 +68,7 @@ export function TeacherAttendanceHistory({ teacherId, scope }: { teacherId?: str
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {record.groupClass.group.name} ·{" "}
-                        <span dir="ltr" className="inline-block tabular-nums">{formatTimeRange(record.startTime, record.endTime)}</span>
+                        <span className="inline-block tabular-nums">{formatTimeRange(record.startTime, record.endTime)}</span>
                         {record.sessionStatus === "CANCELLED" && " · حصة ملغاة (لا تُحتسب)"}
                       </p>
                     </div>
