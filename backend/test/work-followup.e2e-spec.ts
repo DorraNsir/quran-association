@@ -396,7 +396,9 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
         create('sup', 's2', 'u2', [{ type: 'REVISION', description: 'أ' }]),
         create('asst', 's2', 'u2', [{ type: 'REVISION', description: 'ب' }]),
       ]);
-      expect(both.map((r) => r.status).sort((a, b) => a - b)).toEqual([201, 409]);
+      expect(both.map((r) => r.status).sort((a, b) => a - b)).toEqual([
+        201, 409,
+      ]);
       expect(
         await prisma.workProgram.count({
           where: { studentId: id.s2, sessionId: id.u2 },
@@ -817,7 +819,9 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
           targetSessionId: id.u4,
         }),
       ]);
-      expect(both.map((r) => r.status).sort((a, b) => a - b)).toEqual([201, 409]);
+      expect(both.map((r) => r.status).sort((a, b) => a - b)).toEqual([
+        201, 409,
+      ]);
       expect(
         await prisma.workItem.count({
           where: { carriedFromItemId: p.items[1].id },
@@ -1180,6 +1184,119 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
           })
         ).weeklyScheduleId,
       ).toBeNull();
+    });
+  });
+
+  // ───────────────────────── student space (read-only) ─────────────────────────
+
+  describe('student space: my work programs (read-only)', () => {
+    const student = (path = '', query: object = {}) =>
+      http()
+        .get(`/api/student/work-programs${path}`)
+        .query(query)
+        .set(as('pupil'));
+
+    it('lists ONLY my programs, with session, teacher, types, descriptions and results', async () => {
+      const mine = (await student('', { pageSize: 100 }).expect(200)).body;
+      const all = await prisma.workProgram.findMany({
+        where: { studentId: id.s1 },
+        select: { id: true },
+      });
+      expect(mine.meta.total).toBe(all.length);
+      expect(mine.data.map((p: { id: string }) => p.id).sort()).toEqual(
+        all.map((p) => p.id).sort(),
+      );
+      const p1 = mine.data.find((p: { id: string }) => p.id === id.p1);
+      expect(p1.session).toMatchObject({
+        id: id.u1,
+        date: addDays(TODAY, 2),
+        groupName: tag('مجموعة الماهر'),
+      });
+      expect(p1.teacherName).toBe(`sup ${tag('حساب')}`);
+      expect(p1.items[0]).toMatchObject({
+        type: 'REVISION',
+        status: expect.any(String),
+      });
+      expect(p1.progress).toMatchObject({ total: p1.items.length });
+      // Nothing internal: no versions, editors, links or the teachers' program notes
+      expect(p1).not.toHaveProperty('generalNotes');
+      expect(p1).not.toHaveProperty('version');
+      expect(p1).not.toHaveProperty('lastEditedBy');
+      expect(p1.items[0]).not.toHaveProperty('version');
+      expect(p1.items[0]).not.toHaveProperty('carriedTo');
+      // A carried item says where it came from
+      const target = mine.data.find((p: { id: string }) => p.id === id.p3);
+      expect(target.items[0].carriedFrom).toEqual({
+        sessionDate: addDays(TODAY, 2),
+        status: 'NOT_COMPLETED',
+      });
+    });
+
+    it('an evaluation comment is shown once the item is evaluated, never before', async () => {
+      let p = await programOf('sup', id.p1);
+      const pending = p.items.find((i) => i.status === 'NOT_EVALUATED')!;
+      p = (
+        await evaluate('sup', p, pending.id, 'NOT_EVALUATED', {
+          evaluationComment: 'ملاحظة قبل التقييم',
+        }).expect(200)
+      ).body;
+      const seen = (await student(`/${id.p1}`).expect(200)).body.items.find(
+        (i: { id: string }) => i.id === pending.id,
+      );
+      expect(seen.evaluationComment).toBeNull();
+      await evaluate('sup', p, pending.id, 'PARTIAL', {
+        evaluationComment: 'حفظ نصف الصفحة',
+      }).expect(200);
+      const after = (await student(`/${id.p1}`).expect(200)).body.items.find(
+        (i: { id: string }) => i.id === pending.id,
+      );
+      expect(after).toMatchObject({
+        status: 'PARTIAL',
+        evaluationComment: 'حفظ نصف الصفحة',
+      });
+    });
+
+    it('upcoming vs. history', async () => {
+      const upcoming = (
+        await student('', { period: 'upcoming', pageSize: 100 }).expect(200)
+      ).body.data;
+      const past = (
+        await student('', { period: 'past', pageSize: 100 }).expect(200)
+      ).body.data;
+      expect(
+        upcoming.every(
+          (p: { session: { date: string } }) => p.session.date >= TODAY,
+        ),
+      ).toBe(true);
+      expect(past.map((p: { id: string }) => p.id)).toContain(id.pastProgram);
+      expect(upcoming.map((p: { id: string }) => p.id)).not.toContain(
+        id.pastProgram,
+      );
+    });
+
+    it('another student’s program is not found; nothing can be written; staff routes are refused', async () => {
+      await student(`/${id.p2}`).expect(404); // s2's
+      await http()
+        .post('/api/student/work-programs')
+        .set(as('pupil'))
+        .send({})
+        .expect(404);
+      await http()
+        .patch(`/api/student/work-programs/${id.p1}`)
+        .set(as('pupil'))
+        .send({})
+        .expect(404);
+      await http()
+        .get('/api/teacher/work-programs')
+        .set(as('pupil'))
+        .expect(403);
+      await http()
+        .patch(`/api/teacher/work-programs/${id.p1}/evaluation`)
+        .set(as('pupil'))
+        .send({ items: [] })
+        .expect(403);
+      // Teachers do not use the student route
+      await http().get('/api/student/work-programs').set(as('sup')).expect(403);
     });
   });
 });

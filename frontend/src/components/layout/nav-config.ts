@@ -115,6 +115,7 @@ export const studentNav: NavSection[] = [
       { label: "جدولي", href: "/student/schedule", icon: CalendarDays, ready: true },
       { label: "الحضور", href: "/student/attendance", icon: ClipboardCheck, ready: true },
       { label: "متابعة الحفظ", href: "/student/memorization", icon: BookOpenCheck, ready: true },
+      { label: "متابعة العمل", href: "/student/work-followup", icon: ListChecks, ready: true },
       { label: "الموارد", href: "/student/resources", icon: FolderOpen, ready: true },
       { label: "الإعلانات", href: "/student/announcements", icon: Megaphone, ready: true },
       { label: "المدفوعات", href: "/student/payments", icon: Wallet, ready: true },

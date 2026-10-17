@@ -81,3 +81,23 @@ export interface WorkProgram {
   progress: WorkProgress
   items: WorkItem[]
 }
+
+/** A student's own work program (GET /api/student/work-programs) — read-only, no internal metadata. */
+export interface StudentWorkProgram {
+  id: ID
+  session: WorkSession
+  /** The teacher who planned it (else the session supervisor) */
+  teacherName: string | null
+  progress: WorkProgress
+  items: {
+    id: ID
+    type: WorkType
+    description: string
+    status: WorkStatus
+    recitationNumber: number | null
+    /** Only once the item is evaluated */
+    evaluationComment: string | null
+    /** Carried from an earlier session: its date and the result then */
+    carriedFrom: { sessionDate: ISODate; status: WorkStatus } | null
+  }[]
+}

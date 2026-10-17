@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 
-import type { WorkProgram, WorkSession, WorkStatus, WorkType } from "@/types/work-followup"
+import type { StudentWorkProgram, WorkProgram, WorkSession, WorkStatus, WorkType } from "@/types/work-followup"
 
 import { api, useApiMutation } from "./academic"
 import type { Page, Query } from "./client"
@@ -130,3 +130,13 @@ export function useScheduleWorkItem() {
   )
 }
 
+
+/** The signed-in student's OWN programs (read-only: the API offers no write for students). */
+export function useMyWorkPrograms(period: "upcoming" | "past" | undefined, page: number, pageSize: number) {
+  return useQuery({
+    queryKey: [...workKeys.all, "student", period ?? "all", page, pageSize],
+    queryFn: ({ signal }) =>
+      api<Page<StudentWorkProgram>>("/student/work-programs", { query: clean({ period, page, pageSize }), signal }),
+    placeholderData: keepPreviousData,
+  })
+}

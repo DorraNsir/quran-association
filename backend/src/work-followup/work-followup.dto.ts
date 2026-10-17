@@ -433,3 +433,61 @@ export class WorkProgramListDto {
   @ApiProperty({ type: WorkProgramDto, isArray: true }) data!: WorkProgramDto[];
   @ApiProperty({ type: PaginationMetaDto }) meta!: PaginationMetaDto;
 }
+
+// ───────────────────────── student (read-only) ─────────────────────────
+
+export class StudentWorkProgramQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ enum: PERIODS })
+  @IsOptional()
+  @IsIn(PERIODS)
+  period?: (typeof PERIODS)[number];
+}
+
+export class StudentWorkItemDto {
+  @ApiProperty() id!: string;
+  @ApiProperty({ enum: WorkType, enumName: 'WorkType' }) type!: WorkType;
+  @ApiProperty() description!: string;
+  @ApiProperty({ enum: WorkStatus, enumName: 'WorkStatus' })
+  status!: WorkStatus;
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  recitationNumber!: number | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      "The teacher's evaluation comment — only once the item is evaluated",
+  })
+  evaluationComment!: string | null;
+  @ApiPropertyOptional({
+    type: Object,
+    nullable: true,
+    description:
+      'Carried from an earlier session: its date and the result then',
+  })
+  carriedFrom!: { sessionDate: string; status: WorkStatus } | null;
+}
+
+/**
+ * A student's own work program, read-only: what to do, for which session,
+ * and the results. No versions, no editor names, no internal links, and not
+ * the program-level teacher notes (kept for the teachers).
+ */
+export class StudentWorkProgramDto {
+  @ApiProperty() id!: string;
+  @ApiProperty({ type: WorkSessionDto }) session!: WorkSessionDto;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'The teacher who planned it (else the session supervisor)',
+  })
+  teacherName!: string | null;
+  @ApiProperty({ type: WorkProgressDto }) progress!: WorkProgressDto;
+  @ApiProperty({ type: StudentWorkItemDto, isArray: true })
+  items!: StudentWorkItemDto[];
+}
+
+export class StudentWorkProgramListDto {
+  @ApiProperty({ type: StudentWorkProgramDto, isArray: true })
+  data!: StudentWorkProgramDto[];
+  @ApiProperty({ type: PaginationMetaDto }) meta!: PaginationMetaDto;
+}

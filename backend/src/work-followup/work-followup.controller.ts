@@ -21,6 +21,8 @@ import {
 import { AdminApi } from '../academic/admin-api.decorator.js';
 import type { AuthPrincipal } from '../auth/auth.types.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
+import { StudentAccessService } from '../student-space/student-access.service.js';
+import { StudentApi } from '../student-space/student-api.decorator.js';
 import { TeacherApi } from '../teaching/teacher-api.decorator.js';
 import {
   AddWorkItemsDto,
@@ -31,6 +33,9 @@ import {
   EvaluateWorkProgramDto,
   NextRecitationDto,
   ScheduleWorkItemDto,
+  StudentWorkProgramDto,
+  StudentWorkProgramListDto,
+  StudentWorkProgramQueryDto,
   UpdateWorkProgramDto,
   WorkItemEditDto,
   WorkProgramDto,
@@ -258,5 +263,46 @@ export class TeacherWorkFollowupController extends WorkFollowupRoutes {
   }
   protected actor(user: AuthPrincipal): WorkActor {
     return { kind: 'teacher', userId: user.userId };
+  }
+}
+
+/**
+ * The signed-in student's OWN work programs — read-only (GET only: no
+ * creation, edit, evaluation or transfer). The student comes from the
+ * account (StudentAccessService), never from the request.
+ */
+@ApiTags('student / work follow-up')
+@StudentApi()
+@Controller('student/work-programs')
+export class StudentWorkFollowupController {
+  constructor(
+    private readonly work: WorkFollowupService,
+    private readonly access: StudentAccessService,
+  ) {}
+
+  @Get()
+  @ApiOperation({
+    summary: 'My work programs (upcoming / past), with items and results',
+  })
+  @ApiOkResponse({ type: StudentWorkProgramListDto })
+  async list(
+    @CurrentUser() user: AuthPrincipal,
+    @Query() query: StudentWorkProgramQueryDto,
+  ) {
+    const { studentId } = await this.access.scopeOf(user.userId);
+    return this.work.listForStudent(studentId, query);
+  }
+
+  @Get(':id')
+  @ApiOkResponse({ type: StudentWorkProgramDto })
+  @ApiNotFoundResponse({
+    description: 'WORK_PROGRAM_NOT_FOUND (also for another student’s program)',
+  })
+  async get(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const { studentId } = await this.access.scopeOf(user.userId);
+    return this.work.getForStudent(studentId, id);
   }
 }

@@ -30,6 +30,9 @@ import type {
   NewWorkItemDto,
   NextRecitationDto,
   ScheduleWorkItemDto,
+  StudentWorkProgramDto,
+  StudentWorkProgramListDto,
+  StudentWorkProgramQueryDto,
   UpdateWorkProgramDto,
   WorkItemEditDto,
   WorkProgramDto,
@@ -213,6 +216,88 @@ function toDto(p: ProgramRow): WorkProgramDto {
         : null,
       carriedTo: i.carriedTo.map(link),
       continuedBy: i.continuedBy.map(link),
+    })),
+  };
+}
+
+/** What a student may see of their own program (read-only, no internal metadata). */
+const studentInclude = {
+  session: {
+    select: {
+      ...programInclude.session.select,
+      teachers: {
+        where: { role: 'SUPERVISOR' },
+        select: {
+          teacher: {
+            select: { person: { select: { firstName: true, lastName: true } } },
+          },
+        },
+      },
+    },
+  },
+  createdBy: {
+    select: {
+      person: {
+        select: {
+          firstName: true,
+          lastName: true,
+          teacher: { select: { id: true } },
+        },
+      },
+    },
+  },
+  items: {
+    orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+    select: {
+      id: true,
+      type: true,
+      description: true,
+      status: true,
+      recitationNumber: true,
+      evaluationComment: true,
+      carriedFromStatus: true,
+      carriedFrom: {
+        select: {
+          program: { select: { session: { select: { date: true } } } },
+        },
+      },
+    },
+  },
+} satisfies Prisma.WorkProgramInclude;
+
+type StudentProgramRow = Prisma.WorkProgramGetPayload<{
+  include: typeof studentInclude;
+}>;
+
+function toStudentDto(p: StudentProgramRow): StudentWorkProgramDto {
+  const supervisor = p.session.teachers[0]?.teacher.person;
+  const creator = p.createdBy?.person;
+  return {
+    id: p.id,
+    session: toSession(p.session),
+    // The teacher who planned it; an admin-planned program shows the session supervisor
+    teacherName: creator?.teacher
+      ? `${creator.firstName} ${creator.lastName}`
+      : supervisor
+        ? `${supervisor.firstName} ${supervisor.lastName}`
+        : null,
+    progress: progressOf(p.items.map((i) => i.status)),
+    items: p.items.map((i) => ({
+      id: i.id,
+      type: i.type,
+      description: i.description,
+      status: i.status,
+      recitationNumber: i.recitationNumber,
+      // A comment is shown once the item has been evaluated
+      evaluationComment:
+        i.status === WorkStatus.NOT_EVALUATED ? null : i.evaluationComment,
+      carriedFrom:
+        i.carriedFrom && i.carriedFromStatus
+          ? {
+              sessionDate: fromDbDate(i.carriedFrom.program.session.date),
+              status: i.carriedFromStatus,
+            }
+          : null,
     })),
   };
 }
@@ -414,6 +499,61 @@ export class WorkFollowupService {
         programId: programBySession.get(s.id) ?? null,
       }),
     );
+  }
+
+  // ───────────────────────── student (read-only) ─────────────────────────
+
+  /** The student's OWN programs only (the id comes from their account, never the client). */
+  async listForStudent(
+    studentId: string,
+    query: StudentWorkProgramQueryDto,
+  ): Promise<StudentWorkProgramListDto> {
+    const pageSize = await this.pageSizes.resolve(query.pageSize);
+    const { today, now } = await this.clock(this.prisma);
+    const upcoming: Prisma.SessionWhereInput = {
+      OR: [
+        { date: { gt: toDbDate(today) } },
+        { date: toDbDate(today), endTime: { gt: toDbTime(now) } },
+      ],
+    };
+    const where: Prisma.WorkProgramWhereInput = {
+      studentId,
+      ...(query.period === 'upcoming' ? { session: upcoming } : {}),
+      ...(query.period === 'past' ? { session: { NOT: upcoming } } : {}),
+    };
+    // Upcoming: soonest first; history: most recent first
+    const direction = query.period === 'upcoming' ? 'asc' : 'desc';
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.workProgram.count({ where }),
+      this.prisma.workProgram.findMany({
+        where,
+        include: studentInclude,
+        orderBy: [
+          { session: { date: direction } },
+          { session: { startTime: direction } },
+          { id: 'asc' },
+        ],
+        skip: (query.page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+    return {
+      data: rows.map(toStudentDto),
+      meta: paginationMeta(query.page, pageSize, total),
+    };
+  }
+
+  /** One of the student's own programs — another student's is "not found". */
+  async getForStudent(
+    studentId: string,
+    id: string,
+  ): Promise<StudentWorkProgramDto> {
+    const program = await this.prisma.workProgram.findFirst({
+      where: { id, studentId },
+      include: studentInclude,
+    });
+    if (!program) throw programNotFound();
+    return toStudentDto(program);
   }
 
   // ───────────────────────── writes ─────────────────────────
