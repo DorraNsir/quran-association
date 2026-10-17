@@ -7,7 +7,8 @@ import type { FileKind } from './file-signature.js';
  *
  *  ASSOCIATION_LOGO      ADMIN               images   → association settings logo
  *  CMS_IMAGE             ADMIN               images   → website content (slides, news…)
- *  PROFILE_PHOTO         ADMIN               images   → a student's / teacher's photo
+ *  PROFILE_PHOTO         ADMIN, or an active images   → a student's / teacher's photo
+ *                        STUDENT (own photo)
  *  EDUCATIONAL_RESOURCE  ADMIN, or TEACHER   images, PDF, audio → a resource
  *                        for a class they are CURRENTLY assigned to
  */

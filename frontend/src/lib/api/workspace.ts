@@ -1,11 +1,11 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import type { Lookups } from "@/lib/domain"
 import type { Branch, Gender, Group, GroupClass, ISODate, RecordStatus, Room, Student, Teacher, Weekday, WeeklySchedule } from "@/types/domain"
 
-import { api } from "./client"
+import { api, uploadFile } from "./client"
 
 type ActivationStatus = "ACTIVE" | "INACTIVE"
 
@@ -100,6 +100,22 @@ export function useTeacherWorkspace() {
     queryKey: workspaceKeys.teacher,
     queryFn: ({ signal }) => api<TeacherWorkspaceDto>("/teacher/workspace", { signal }),
     select: (w) => ({ teacher: toTeacher(w.teacher), lookups: toLookups(w), students: w.students.map(toStudent) }),
+  })
+}
+
+/**
+ * The signed-in student's OWN photo — the only profile field a student may
+ * change: upload (PROFILE_PHOTO) then attach, or remove (null).
+ */
+export function useSetMyPhoto() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (photo: File | null) => {
+      if (photo === null) return api("/student/profile/photo", { method: "DELETE" })
+      const file = await uploadFile<{ id: string }>("/files", { purpose: "PROFILE_PHOTO" }, photo)
+      return api("/student/profile/photo", { method: "PUT", body: { fileId: file.id } })
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKeys.student }),
   })
 }
 

@@ -18,7 +18,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * Upload authorization, decided from ?purpose= (and ?groupClassId=) BEFORE
  * the multipart body is accepted — an unauthorized upload is refused
  * without storing a byte. Never a generic "authenticated may upload":
- *  - ASSOCIATION_LOGO, CMS_IMAGE, PROFILE_PHOTO: ADMIN only;
+ *  - ASSOCIATION_LOGO, CMS_IMAGE: ADMIN only;
+ *  - PROFILE_PHOTO: ADMIN, or an ACTIVE STUDENT (their own photo — the file
+ *    can then only be attached to their own profile: own uploads only);
  *  - EDUCATIONAL_RESOURCE: ADMIN, or a TEACHER for a class (groupClassId)
  *    they are CURRENTLY assigned to.
  */
@@ -62,6 +64,21 @@ export class UploadPermissionGuard implements CanActivate {
       });
     }
     const isAdmin = user.roles.includes(Role.ADMIN);
+    if (
+      purpose === FilePurpose.PROFILE_PHOTO &&
+      !isAdmin &&
+      user.roles.includes(Role.STUDENT)
+    ) {
+      const student = await this.prisma.student.findFirst({
+        where: {
+          status: 'ACTIVE',
+          person: { user: { id: user.userId } },
+        },
+        select: { id: true },
+      });
+      if (!student) throw forbidden();
+      return true;
+    }
     if (purpose !== FilePurpose.EDUCATIONAL_RESOURCE) {
       if (!isAdmin) throw forbidden();
       return true;

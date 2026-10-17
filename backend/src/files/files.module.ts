@@ -18,6 +18,7 @@ import { FilesService } from './files.service.js';
 import {
   PersonPhotosController,
   PersonPhotosService,
+  StudentProfilePhotoController,
 } from './person-photos.controller.js';
 import {
   STORAGE_DRIVER,
@@ -70,6 +71,7 @@ import { UploadPermissionGuard } from './upload-permission.guard.js';
     PublicFilesController,
     AdminFilesController,
     PersonPhotosController,
+    StudentProfilePhotoController,
   ],
   providers: [
     FilesService,

@@ -154,6 +154,14 @@ export function FormField({
 /** Profile photos accepted by the API (PROFILE_PHOTO): JPEG, PNG or WebP, ≤ 5 MB. */
 const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"]
 const PHOTO_MAX_BYTES = 5 * 1024 * 1024
+export const PHOTO_ACCEPT = "image/png,image/jpeg,image/webp"
+
+/** The Arabic reason a picked file cannot be a profile photo, or null when it can. */
+export function photoFileError(file: File) {
+  if (!PHOTO_TYPES.includes(file.type)) return "الصيغ المقبولة: JPG أو PNG أو WebP."
+  if (file.size > PHOTO_MAX_BYTES) return "حجم الصورة يتجاوز 5 م.ب."
+  return null
+}
 
 export function PhotoInput({
   id,
@@ -176,8 +184,8 @@ export function PhotoInput({
     const file = event.target.files?.[0]
     event.target.value = ""
     if (!file) return
-    if (!PHOTO_TYPES.includes(file.type)) return setError("الصيغ المقبولة: JPG أو PNG أو WebP.")
-    if (file.size > PHOTO_MAX_BYTES) return setError("حجم الصورة يتجاوز 5 م.ب.")
+    const invalid = photoFileError(file)
+    if (invalid) return setError(invalid)
     setError(null)
     if (value?.startsWith("blob:")) URL.revokeObjectURL(value)
     onChange(URL.createObjectURL(file))
@@ -217,7 +225,7 @@ export function PhotoInput({
           ref={inputRef}
           id={id}
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept={PHOTO_ACCEPT}
           className="sr-only"
           tabIndex={-1}
           aria-label="صورة شمسية"

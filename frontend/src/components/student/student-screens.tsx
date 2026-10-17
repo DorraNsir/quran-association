@@ -15,6 +15,7 @@ import { formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { getStudentGroupClass } from "@/lib/student-access"
 
+import { MyPhotoActions } from "./my-photo-actions"
 import { MyAttendance, MyMemorization, MySessions, StudentDashboard } from "./student-space"
 import { NoGroupClass } from "./student-states"
 
@@ -157,7 +158,12 @@ export function StudentProfileScreen() {
         const view = getStudentGroupClass(student, lookups)
         return (
           <>
-            <ProfileHeader name={fullName(student)} photoUrl={student.photoUrl} meta={<span>{labels.role.STUDENT}</span>} />
+            <ProfileHeader
+              name={fullName(student)}
+              photoUrl={student.photoUrl}
+              meta={<span>{labels.role.STUDENT}</span>}
+              actions={<MyPhotoActions hasPhoto={Boolean(student.photoUrl)} />}
+            />
             <div className="grid gap-4 lg:grid-cols-2">
               <SectionCard title="معلوماتي" icon={UserRound}>
                 <InfoList
@@ -184,7 +190,7 @@ export function StudentProfileScreen() {
                 />
               </SectionCard>
             </div>
-            <p className="mt-4 text-xs text-muted-foreground">لتعديل معلوماتك تواصل مع إدارة الجمعية.</p>
+            <p className="mt-4 text-xs text-muted-foreground">يمكنك تغيير صورتك فقط؛ لتعديل بقية معلوماتك تواصل مع إدارة الجمعية.</p>
           </>
         )
       }}

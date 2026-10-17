@@ -1084,6 +1084,72 @@ describe('Settings & file storage (e2e)', () => {
           .body.photoUrl,
       ).toBeNull();
     });
+
+    it('a student changes ONLY their own photo, with a file they uploaded themselves', async () => {
+      const mine = await uploadOk(
+        's1',
+        { purpose: 'PROFILE_PHOTO' },
+        JPEG(),
+        'me.jpg',
+        'image/jpeg',
+      );
+      const own = (path = '') =>
+        http().put(`/api/student/profile/photo${path}`).set(as(token.s1));
+      expect(
+        (await own().send({ fileId: mine }).expect(200)).body,
+      ).toMatchObject({ photoFileId: mine, photoUrl: `/api/files/${mine}` });
+      expect(
+        (await admin.get(`students/${id['student:s1']}`)).body.person.photoUrl,
+      ).toBe(`/api/files/${mine}`);
+      await fetchFile('s1', mine).expect(200);
+      await fetchFile('sup', mine).expect(200);
+      await fetchFile('s2', mine).expect(404);
+      // Another student cannot use it; nor can s1 use a file someone else uploaded
+      await http()
+        .put('/api/student/profile/photo')
+        .set(as(token.s2))
+        .send({ fileId: mine })
+        .expect(404);
+      const adminFile = await uploadOk(
+        'admin',
+        { purpose: 'PROFILE_PHOTO' },
+        PNG(),
+      );
+      await own().send({ fileId: adminFile }).expect(404);
+      await own().send({ fileId: id.cmsImage }).expect(404);
+      // Nothing else of the profile is editable by the student
+      await http()
+        .patch(`/api/admin/students/${id['student:s1']}`)
+        .set(as(token.s1))
+        .send({ person: { firstName: 'x' } })
+        .expect(403);
+      // Teachers still cannot upload profile photos; an inactive student neither
+      expect(
+        (await upload('sup', { purpose: 'PROFILE_PHOTO' }, PNG()).expect(403))
+          .body.code,
+      ).toBe('FILE_PURPOSE_FORBIDDEN');
+      await prisma.student.update({
+        where: { id: id['student:s2'] },
+        data: { status: 'INACTIVE' },
+      });
+      try {
+        await upload('s2', { purpose: 'PROFILE_PHOTO' }, PNG()).expect(403);
+      } finally {
+        await prisma.student.update({
+          where: { id: id['student:s2'] },
+          data: { status: 'ACTIVE' },
+        });
+      }
+      // Removing it
+      expect(
+        (
+          await http()
+            .delete('/api/student/profile/photo')
+            .set(as(token.s1))
+            .expect(200)
+        ).body.photoUrl,
+      ).toBeNull();
+    });
   });
 
   /* ================================================================ */
