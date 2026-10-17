@@ -2,19 +2,27 @@ import { describe, expect, it } from "vitest"
 
 import { buildWorkFollowupMock } from "@/lib/mock/work-followup"
 
-import { eligibleSessions, nextRecitation, phaseOf, progressOf, recitationOrdinal } from "./work-followup"
+import { eligibleSessions, isTransferable, nextRecitation, phaseOf, progressLabel, progressOf, recitationOrdinal, WORK_STATUSES } from "./work-followup"
 
 const TODAY = "2026-10-17" // a Saturday
 
 describe("«متابعة العمل» rules (prototype)", () => {
   it("counts only «منجز» as done; partial / postponed are not", () => {
-    const items = (["COMPLETED", "PARTIAL", "POSTPONED", "NOT_EVALUATED"] as const).map((status, i) => ({
+    const items = (["COMPLETED", "PARTIAL", "POSTPONED", "NOT_EVALUATED", "CANCELLED"] as const).map((status, i) => ({
       id: String(i),
       type: "REVISION" as const,
       description: "x",
       status,
     }))
-    expect(progressOf({ items })).toEqual({ total: 4, completed: 1, pending: 1, unfinished: 2 })
+    // CANCELLED is left out of the active total and counted apart
+    expect(progressOf({ items })).toEqual({ total: 5, active: 4, completed: 1, pending: 1, unfinished: 2, cancelled: 1 })
+    expect(progressLabel(progressOf({ items }))).toBe("1 من 4 أعمال نشطة منجزة")
+    expect(progressLabel(progressOf({ items: items.filter((i) => i.status !== "CANCELLED") }))).toBe("1 من 4 أعمال منجزة")
+    expect(progressLabel(progressOf({ items: items.filter((i) => i.status === "CANCELLED") }))).toBe("لا توجد أعمال نشطة")
+  })
+
+  it("transfer is offered for غير منجز / جزئي / مؤجل / ملغى only", () => {
+    expect(WORK_STATUSES.filter(isTransferable)).toEqual(["NOT_COMPLETED", "PARTIAL", "POSTPONED", "CANCELLED"])
   })
 
   it("the next recitation increments the number and keeps the Surah (no limit at four)", () => {
@@ -52,7 +60,7 @@ describe("«متابعة العمل» rules (prototype)", () => {
     const data = buildWorkFollowupMock(TODAY)
     const items = data.programs.flatMap((p) => p.items)
     expect(new Set(items.map((i) => i.type))).toEqual(new Set(["MEMORIZATION", "REVISION", "RECITATION", "EXAM"]))
-    expect(new Set(items.map((i) => i.status))).toEqual(new Set(["NOT_EVALUATED", "COMPLETED", "NOT_COMPLETED", "PARTIAL", "POSTPONED"]))
+    expect(new Set(items.map((i) => i.status))).toEqual(new Set(["NOT_EVALUATED", "COMPLETED", "NOT_COMPLETED", "PARTIAL", "POSTPONED", "CANCELLED"]))
     expect(items.some((i) => i.carriedFromItemId)).toBe(true)
     const yassine = items.filter((i) => i.type === "RECITATION" && i.description.includes("يس")).map((i) => i.recitationNumber)
     expect(yassine).toEqual([1, 2, 3])

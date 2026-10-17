@@ -7,7 +7,8 @@ import type { ID, ISODate } from "@/types/domain"
 
 export type WorkType = "MEMORIZATION" | "REVISION" | "RECITATION" | "EXAM"
 
-export type WorkStatus = "NOT_EVALUATED" | "COMPLETED" | "NOT_COMPLETED" | "PARTIAL" | "POSTPONED"
+/** CANCELLED = this work item was dropped (not a cancelled session); it stays in its program. */
+export type WorkStatus = "NOT_EVALUATED" | "COMPLETED" | "NOT_COMPLETED" | "PARTIAL" | "POSTPONED" | "CANCELLED"
 
 export interface WorkItem {
   id: ID

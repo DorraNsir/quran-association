@@ -8,7 +8,7 @@ import { UserAvatar } from "@/components/shared/user-avatar"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { progressOf, sessionLabel, WORK_STATUSES, workStatusLabel } from "@/lib/work-followup"
+import { cancelledLabel, progressLabel, progressOf, sessionLabel, WORK_STATUSES, workStatusLabel } from "@/lib/work-followup"
 import type { MockClass, MockSession, MockStudent, WorkProgram, WorkStatus } from "@/types/work-followup"
 
 import { WORK_STATUS_STYLE, WorkTypeBadge } from "./work-badges"
@@ -40,7 +40,7 @@ export function WorkEvaluationSheet({
   const [items, setItems] = useState(program.items)
   const [notes, setNotes] = useState(program.generalNotes ?? "")
   const name = `${student.firstName} ${student.lastName}`
-  const { completed, total, pending } = progressOf({ items })
+  const progress = progressOf({ items })
   const setItem = (id: string, patch: { status?: WorkStatus; evaluationComment?: string }) =>
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)))
 
@@ -49,7 +49,7 @@ export function WorkEvaluationSheet({
       open={open}
       onOpenChange={onOpenChange}
       title="تقييم الأعمال"
-      description={`${completed} من ${total} أعمال منجزة${pending ? ` · ${pending} بانتظار التقييم` : ""}`}
+      description={`${progressLabel(progress)}${progress.pending ? ` · ${progress.pending} بانتظار التقييم` : ""}${progress.cancelled ? ` · ${cancelledLabel(progress.cancelled)}` : ""}`}
       onSubmit={(event) => {
         event.preventDefault()
         onSave({
@@ -81,9 +81,9 @@ export function WorkEvaluationSheet({
             <li key={item.id} className="space-y-2.5 border-b pb-4 last:border-b-0 last:pb-0">
               <div className="flex flex-wrap items-center gap-2">
                 <WorkTypeBadge type={item.type} recitationNumber={item.recitationNumber} />
-                <span className="text-sm font-medium">{item.description}</span>
+                <span className="min-w-0 max-w-full text-sm font-medium whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{item.description}</span>
               </div>
-              <div role="radiogroup" aria-label={`تقييم: ${item.description}`} className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
+              <div role="radiogroup" aria-label={`تقييم: ${item.description}`} className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
                 {WORK_STATUSES.map((status) => {
                   const { icon: Icon, selected } = WORK_STATUS_STYLE[status]
                   const checked = item.status === status

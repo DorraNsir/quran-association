@@ -13,6 +13,7 @@ import { eligibleSessions, newWorkId, programOf, sessionLabel, WORK_TYPES, workT
 import type { ID, ISODate } from "@/types/domain"
 import type { WorkFollowupData, WorkItem, WorkProgram, WorkType } from "@/types/work-followup"
 
+import { AutoTextarea } from "./auto-textarea"
 import { WorkStatusBadge } from "./work-badges"
 
 interface DraftItem {
@@ -193,7 +194,7 @@ export function WorkProgramForm({
       <FormSection title="الأعمال">
         <div className="space-y-3 sm:col-span-2">
           {items.map((item, index) => (
-            <fieldset key={item.key} className="space-y-3 rounded-lg border p-3">
+            <fieldset key={item.key} className="min-w-0 space-y-3 rounded-lg border p-3">
               <legend className="sr-only">العمل {index + 1}</legend>
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-medium">العمل {index + 1}</p>
@@ -213,11 +214,12 @@ export function WorkProgramForm({
                   )}
                 </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
+              {/* One column: type, then the full-width description, then the recitation number */}
+              <div className="space-y-3">
                 <div className="space-y-1.5">
                   <label htmlFor={`${item.key}-type`} className="text-xs text-muted-foreground">نوع العمل</label>
                   <Select value={item.type} onValueChange={(type) => update(item.key, { type: type as WorkType })}>
-                    <SelectTrigger id={`${item.key}-type`} className="w-full">
+                    <SelectTrigger id={`${item.key}-type`} className="w-full sm:w-56">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent position="popper">
@@ -229,14 +231,14 @@ export function WorkProgramForm({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5 sm:col-span-2">
+                <div className="space-y-1.5">
                   <label htmlFor={`${item.key}-desc`} className="text-xs text-muted-foreground">وصف العمل</label>
-                  <Input
+                  <AutoTextarea
                     id={`${item.key}-desc`}
                     value={item.description}
                     onChange={(e) => update(item.key, { description: e.target.value })}
                     placeholder={PLACEHOLDER[item.type]}
-                    maxLength={160}
+                    maxLength={1000}
                   />
                 </div>
                 {item.type === "RECITATION" && (
@@ -248,6 +250,7 @@ export function WorkProgramForm({
                       min={1}
                       step={1}
                       dir="ltr"
+                      className="w-28"
                       value={item.recitationNumber}
                       onChange={(e) => update(item.key, { recitationNumber: e.target.value })}
                       placeholder="2"

@@ -79,7 +79,7 @@ export function WorkScheduleDialog({
             <p className="text-xs text-muted-foreground">العمل الأصلي — {sourceSession && sessionLabel(sourceSession)}</p>
             <div className="flex flex-wrap items-center gap-2">
               <WorkTypeBadge type={item.type} recitationNumber={item.recitationNumber} />
-              <span className="font-medium">{item.description}</span>
+              <span className="min-w-0 max-w-full font-medium whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{item.description}</span>
               <WorkStatusBadge status={item.status} />
             </div>
           </div>

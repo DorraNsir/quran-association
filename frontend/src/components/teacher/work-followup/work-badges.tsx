@@ -1,4 +1,4 @@
-import { BookOpen, CircleCheck, CircleDashed, CircleMinus, CircleX, ClipboardCheck, Clock, Mic, RotateCcw, type LucideIcon } from "lucide-react"
+import { Ban, BookOpen, CircleCheck, CircleDashed, CircleMinus, CircleX, ClipboardCheck, Clock, Mic, RotateCcw, type LucideIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { workStatusLabel, workTypeLabel } from "@/lib/work-followup"
@@ -18,7 +18,9 @@ export const WORK_STATUS_STYLE: Record<WorkStatus, { icon: LucideIcon; badge: st
   COMPLETED: { icon: CircleCheck, badge: "bg-brand-soft text-brand-soft-foreground", selected: "border-primary bg-primary text-primary-foreground" },
   NOT_COMPLETED: { icon: CircleX, badge: "bg-destructive/10 text-destructive", selected: "border-destructive bg-destructive text-white" },
   PARTIAL: { icon: CircleMinus, badge: "bg-warning-soft text-warning", selected: "border-warning bg-warning text-white" },
-  POSTPONED: { icon: Clock, badge: "bg-muted text-muted-foreground", selected: "border-foreground/60 bg-foreground/80 text-background" },
+  POSTPONED: { icon: Clock, badge: "bg-sky-50 text-sky-800", selected: "border-sky-700 bg-sky-700 text-white" },
+  // A dropped work item (not a cancelled session): neutral gray
+  CANCELLED: { icon: Ban, badge: "bg-muted text-muted-foreground", selected: "border-muted-foreground bg-muted-foreground text-background" },
 }
 
 export function WorkTypeBadge({ type, recitationNumber }: { type: WorkType; recitationNumber?: number }) {

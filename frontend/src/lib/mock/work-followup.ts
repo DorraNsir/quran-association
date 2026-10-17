@@ -118,7 +118,12 @@ export function buildWorkFollowupMock(today: ISODate): WorkFollowupData {
     sessionId: past("wf-c1", 1),
     lastEditedBy: "المعلمة مريم",
     items: [
-      item({ type: "MEMORIZATION", description: "حفظ الربع الأول من سورة الكهف", status: "NOT_EVALUATED" }),
+      item({
+        type: "MEMORIZATION",
+        description:
+          "حفظ الربع الأول من سورة الكهف مع التركيز على مخارج الحروف وأحكام المدّ، ثم تسميعه مرتين أمام المعلمة قبل نهاية الحصة.\nالبدء بالآيات من 1 إلى 16 ثم الانتقال إلى بقية الربع إن سمح الوقت.",
+        status: "NOT_EVALUATED",
+      }),
       item({ type: "REVISION", description: "مراجعة سورة مريم", status: "NOT_EVALUATED" }),
     ],
   }
@@ -132,6 +137,7 @@ export function buildWorkFollowupMock(today: ISODate): WorkFollowupData {
       items: [
         item({ type: "EXAM", description: "اختبار في جزء عمّ", status: "COMPLETED", evaluationComment: "ممتاز" }),
         item({ type: "MEMORIZATION", description: "حفظ سورة النبأ", status: "PARTIAL", evaluationComment: "حفظ نصف السورة" }),
+        item({ type: "RECITATION", description: "العرضة الأولى من سورة الملك", recitationNumber: 1, status: "CANCELLED", evaluationComment: "أُلغيت لتخصيص الوقت للاختبار" }),
       ],
     },
     {

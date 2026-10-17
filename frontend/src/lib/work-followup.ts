@@ -10,7 +10,7 @@ import type { ID, ISODate } from "@/types/domain"
 import type { MockSession, WorkFollowupData, WorkItem, WorkProgram, WorkStatus, WorkType } from "@/types/work-followup"
 
 export const WORK_TYPES: WorkType[] = ["MEMORIZATION", "REVISION", "RECITATION", "EXAM"]
-export const WORK_STATUSES: WorkStatus[] = ["NOT_EVALUATED", "COMPLETED", "NOT_COMPLETED", "PARTIAL", "POSTPONED"]
+export const WORK_STATUSES: WorkStatus[] = ["NOT_EVALUATED", "COMPLETED", "NOT_COMPLETED", "PARTIAL", "POSTPONED", "CANCELLED"]
 
 export const workTypeLabel: Record<WorkType, string> = {
   MEMORIZATION: "حفظ",
@@ -25,18 +25,44 @@ export const workStatusLabel: Record<WorkStatus, string> = {
   NOT_COMPLETED: "غير منجز",
   PARTIAL: "جزئي",
   POSTPONED: "مؤجل",
+  CANCELLED: "ملغى",
 }
 
-/** Unfinished results that can be continued in a later session. */
+/** Results that may be continued in a later session («نقل إلى الحصة القادمة») — manually only. */
+export const isTransferable = (status: WorkStatus) =>
+  status === "NOT_COMPLETED" || status === "PARTIAL" || status === "POSTPONED" || status === "CANCELLED"
+
+/** Evaluated but not done (a cancelled item is counted apart). */
 export const isUnfinished = (status: WorkStatus) => status === "NOT_COMPLETED" || status === "PARTIAL" || status === "POSTPONED"
 
-/** «2 من 4 أعمال منجزة»: only COMPLETED counts (partial / postponed are not done). */
+/**
+ * «2 من 3 أعمال نشطة منجزة»: only COMPLETED counts as done (partial /
+ * postponed are not); CANCELLED items are left out of the active total and
+ * counted apart.
+ */
 export function progressOf(program: Pick<WorkProgram, "items">) {
+  const count = (test: (s: WorkStatus) => boolean) => program.items.filter((i) => test(i.status)).length
   const total = program.items.length
-  const completed = program.items.filter((i) => i.status === "COMPLETED").length
-  const pending = program.items.filter((i) => i.status === "NOT_EVALUATED").length
-  const unfinished = program.items.filter((i) => isUnfinished(i.status)).length
-  return { total, completed, pending, unfinished }
+  const cancelled = count((s) => s === "CANCELLED")
+  return {
+    total,
+    active: total - cancelled,
+    completed: count((s) => s === "COMPLETED"),
+    pending: count((s) => s === "NOT_EVALUATED"),
+    unfinished: count(isUnfinished),
+    cancelled,
+  }
+}
+
+/** «1 من 3 أعمال منجزة» — «نشطة» is added only when some work was cancelled. */
+export function progressLabel(p: ReturnType<typeof progressOf>) {
+  if (p.active === 0) return p.total ? "لا توجد أعمال نشطة" : "لا توجد أعمال"
+  return `${p.completed} من ${p.active} ${p.cancelled ? "أعمال نشطة منجزة" : "أعمال منجزة"}`
+}
+
+/** «عمل ملغى واحد» / «عملان ملغيان» / «3 أعمال ملغاة» */
+export function cancelledLabel(n: number) {
+  return n === 1 ? "عمل ملغى واحد" : n === 2 ? "عملان ملغيان" : `${n} أعمال ملغاة`
 }
 
 export type SessionPhase = "UPCOMING" | "ONGOING" | "PAST"
