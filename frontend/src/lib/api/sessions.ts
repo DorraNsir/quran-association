@@ -29,6 +29,8 @@ export interface SessionDto {
   status: SessionStatus
   cancellationReason: string | null
   weeklyScheduleId: string | null
+  /** Created as a one-off extra lesson (stored; a deleted slot's sessions also lose weeklyScheduleId) */
+  isExtra: boolean
   completion?: { completedAt: string; source: "ATTENDANCE" | "ADMIN_OVERRIDE"; completedBy: string | null } | null
   groupClass: { id: string; status: RecordStatus; group: { id: string; name: string; status: RecordStatus } }
   room: { id: string; name: string; status: ActivationStatus; branch: { id: string; name: string; status: ActivationStatus } }
@@ -134,6 +136,7 @@ export const toSession = (s: SessionDto): Session => ({
   id: s.id,
   groupClassId: s.groupClass.id,
   scheduleId: s.weeklyScheduleId ?? "",
+  extra: s.isExtra,
   roomId: s.room.id,
   date: s.date,
   start: s.startTime,

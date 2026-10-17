@@ -159,7 +159,7 @@ export function SessionsView({
       cell: (r) => (
         <Link href={paths.session(r.session.id)} className="block hover:opacity-80">
           <span className="font-medium">{r.group?.name}</span>
-          {!r.session.scheduleId && <ExtraBadge />}
+          {r.session.extra && <ExtraBadge />}
           <span className="block text-xs text-muted-foreground">
             {r.room?.name} · {r.branch?.name}
           </span>
@@ -312,7 +312,7 @@ export function SessionsView({
               <Link href={paths.session(r.session.id)} className="min-w-0">
                 <p className="font-medium">
                   {r.group?.name}
-                  {!r.session.scheduleId && <ExtraBadge />}
+                  {r.session.extra && <ExtraBadge />}
                 </p>
                 {when(r)}
               </Link>

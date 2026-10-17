@@ -110,9 +110,10 @@ export function CalendarView({
   const week = weekDates(date)
   const sessionsQuery = useSessionRange("admin", { from: week[0].date, to: week[week.length - 1].date })
   const occurrences = new Map((sessionsQuery.data ?? []).map((s) => [`${s.weeklyScheduleId}|${s.date}`, toSession(s)]))
-  // Extra one-off sessions (no weekly slot): each is an entry of its own date
+  // Sessions without a weekly slot, each an entry of its own date: extra
+  // sessions, and the kept (not cancelled) lessons of a deleted slot
   const extras: CalendarEntry[] = (sessionsQuery.data ?? []).flatMap((s) => {
-    if (s.weeklyScheduleId) return []
+    if (s.weeklyScheduleId || (!s.isExtra && s.status === "CANCELLED")) return []
     const groupClass = classesById.get(s.groupClass.id)
     if (!groupClass) return []
     const view = describeClass(groupClass, indexes)
@@ -127,7 +128,8 @@ export function CalendarView({
         studentCount: studentCounts.get(groupClass.id) ?? 0,
         tone: Math.max(0, lookups.branches.findIndex((b) => b.id === groupClass.branchId)),
         occurrence: session,
-        extra: true,
+        detached: true,
+        extra: s.isExtra,
       },
     ]
   })

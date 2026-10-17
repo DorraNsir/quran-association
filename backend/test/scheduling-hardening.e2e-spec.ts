@@ -475,7 +475,7 @@ describe('Scheduling hardening (e2e)', () => {
   // ───────────────────────── 5. weekly slot edits ─────────────────────────
 
   describe('weekly slot delete & recreate', () => {
-    it('never duplicates sessions (scheduled or cancelled)', async () => {
+    it('never duplicates sessions; a date cancelled on purpose stays cancelled, one cancelled by the deletion is planned again', async () => {
       const slot = (
         await post(`group-classes/${id.F}/schedules`, {
           dayOfWeek: 'WED',
@@ -488,10 +488,13 @@ describe('Scheduling hardening (e2e)', () => {
         to: addDays(MON2, 6),
         groupClassId: id.F,
       }).expect(200);
-      const first = (await sessionsOf('F')).filter(
-        (s) => s.startTime.toISOString().slice(11, 16) === '09:00',
-      );
+      const at9 = async () =>
+        (await sessionsOf('F')).filter(
+          (s) => s.startTime.toISOString().slice(11, 16) === '09:00',
+        );
+      const first = await at9();
       expect(first).toHaveLength(2);
+      // The first date is cancelled on purpose (e.g. a holiday)
       await patch(`sessions/${first[0].id}/status`, {
         status: 'CANCELLED',
       }).expect(200);
@@ -500,45 +503,60 @@ describe('Scheduling hardening (e2e)', () => {
         .delete(`/api/admin/group-classes/${id.F}/schedules/${slot}`)
         .set(as(admin))
         .expect(204);
-      expect(
-        (await prisma.session.findUniqueOrThrow({ where: { id: first[0].id } }))
-          .weeklyScheduleId,
-      ).toBeNull(); // kept, unlinked
-      await post(`group-classes/${id.F}/schedules`, {
-        dayOfWeek: 'WED',
-        startTime: '09:00',
-        endTime: '10:00',
-      }).expect(201);
-      const regen = await post('sessions/generate', {
+      // Both kept as history, unlinked; the second cancelled by the deletion
+      const kept = await prisma.session.findMany({
+        where: { id: { in: first.map((s) => s.id) } },
+        select: { id: true, weeklyScheduleId: true, status: true },
+      });
+      expect(kept.every((k) => k.weeklyScheduleId === null)).toBe(true);
+      expect(kept.every((k) => k.status === 'CANCELLED')).toBe(true);
+
+      id.slotF = (
+        await post(`group-classes/${id.F}/schedules`, {
+          dayOfWeek: 'WED',
+          startTime: '09:00',
+          endTime: '10:00',
+        }).expect(201)
+      ).body.id;
+      await post('sessions/generate', {
         from: MON1,
         to: addDays(MON2, 6),
         groupClassId: id.F,
       }).expect(200);
-      expect(regen.body).toMatchObject({ created: 0, skippedExisting: 2 });
-      const after = (await sessionsOf('F')).filter(
-        (s) => s.startTime.toISOString().slice(11, 16) === '09:00',
+      const after = await at9();
+      // Old sessions untouched; one new lesson, on the date cancelled by the deletion only
+      expect(after).toHaveLength(3);
+      const fresh = after.filter((s) => !first.some((f) => f.id === s.id));
+      expect(fresh).toHaveLength(1);
+      expect(fresh[0].status).toBe('SCHEDULED');
+      expect(fresh[0].date.toISOString().slice(0, 10)).toBe(
+        first[1].date.toISOString().slice(0, 10),
       );
-      expect(after.map((s) => s.id).sort()).toEqual(
-        first.map((s) => s.id).sort(),
-      );
-      expect(after.find((s) => s.id === first[0].id)!.status).toBe('CANCELLED');
+      // Never two live lessons of the class at the same time
+      const live = after.filter((s) => s.status !== 'CANCELLED');
+      const dates = live.map((s) => s.date.toISOString().slice(0, 10));
+      expect(new Set(dates).size).toBe(dates.length);
     });
 
-    it('editing a slot does not modify sessions already generated from it', async () => {
-      const slot = await prisma.weeklySchedule.findFirstOrThrow({
-        where: { groupClassId: id.F },
-      });
-      const before = (await sessionsOf('F')).map((s) => [
-        s.id,
-        s.startTime.getTime(),
-      ]);
-      await patch(`group-classes/${id.F}/schedules/${slot.id}`, {
+    it('editing a slot moves only ITS never-held lessons; other sessions of the class are untouched', async () => {
+      const others = (await sessionsOf('F'))
+        .filter((s) => s.weeklyScheduleId !== id.slotF)
+        .map((s) => [s.id, s.startTime.getTime()]);
+      await patch(`group-classes/${id.F}/schedules/${id.slotF}`, {
         startTime: '09:30',
         endTime: '10:30',
       }).expect(200);
+      const after = await sessionsOf('F');
       expect(
-        (await sessionsOf('F')).map((s) => [s.id, s.startTime.getTime()]),
-      ).toEqual(before);
+        after
+          .filter((s) => s.weeklyScheduleId !== id.slotF)
+          .map((s) => [s.id, s.startTime.getTime()]),
+      ).toEqual(others);
+      expect(
+        after
+          .filter((s) => s.weeklyScheduleId === id.slotF)
+          .every((s) => s.startTime.toISOString().slice(11, 16) === '09:30'),
+      ).toBe(true);
     });
   });
 

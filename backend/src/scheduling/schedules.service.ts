@@ -54,7 +54,7 @@ const toDto = (
 });
 
 export { classNotFound } from './scheduling-errors.js';
-import { classNotFound } from './scheduling-errors.js';
+import { classNotFound, SLOT_DELETED_REASON } from './scheduling-errors.js';
 /** Writes that also (re)generate a year of sessions */
 const LONG_TX = { timeout: 30_000 };
 
@@ -316,7 +316,7 @@ export class SchedulesService {
         },
         data: {
           status: SessionStatus.CANCELLED,
-          cancellationReason: 'حُذف الموعد الأسبوعي من البرنامج',
+          cancellationReason: SLOT_DELETED_REASON,
         },
       });
       await tx.weeklySchedule.delete({ where: { id: scheduleId } });

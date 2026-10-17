@@ -429,6 +429,7 @@ describe('Automatic session generation (e2e)', () => {
         },
       });
       expect(row.weeklyScheduleId).toBeNull();
+      expect(today.body.isExtra).toBe(true);
       expect(row.teachers).toEqual([
         { teacherId: id.teacher, role: 'SUPERVISOR' },
       ]);
@@ -438,6 +439,48 @@ describe('Automatic session generation (e2e)', () => {
       // Same room, same time as the extra session just created
       const res = await extra({ groupClassId: id.D }).expect(409);
       expect(res.body.code).toMatch(/CONFLICT/);
+    });
+
+    it('a deleted slot’s sessions are NOT extra; re-creating that slot plans its lessons again', async () => {
+      const slotId = (await slot('A', DAY_A, '19:00', '20:00').expect(201)).body
+        .id;
+      const ofSlot = { weeklyScheduleId: slotId };
+      expect(await prisma.session.count({ where: ofSlot })).toBe(
+        datesOf(DAY_A).length,
+      );
+      const ids = (
+        await prisma.session.findMany({ where: ofSlot, select: { id: true } })
+      ).map((r) => r.id);
+      await http()
+        .delete(`/api/admin/group-classes/${id.A}/schedules/${slotId}`)
+        .set(as())
+        .expect((r) => expect([200, 204]).toContain(r.status));
+      // They lose the slot link, are cancelled, and are never shown as «إضافية»
+      const orphans = await prisma.session.findMany({
+        where: { id: { in: ids } },
+        select: { weeklyScheduleId: true, isExtra: true, status: true },
+      });
+      expect(
+        orphans.every(
+          (o) =>
+            o.weeklyScheduleId === null &&
+            !o.isExtra &&
+            o.status === 'CANCELLED',
+        ),
+      ).toBe(true);
+      const api = await http()
+        .get(`/api/admin/sessions/${ids[0]}`)
+        .set(as())
+        .expect(200);
+      expect(api.body.isExtra).toBe(false);
+      // The same slot again: its cancelled leftovers do not block the new lessons
+      const again = (await slot('A', DAY_A, '19:00', '20:00').expect(201)).body
+        .id;
+      expect(
+        await prisma.session.count({
+          where: { weeklyScheduleId: again, status: 'SCHEDULED' },
+        }),
+      ).toBe(datesOf(DAY_A).length);
     });
 
     it('moving or deleting a weekly slot never touches it', async () => {

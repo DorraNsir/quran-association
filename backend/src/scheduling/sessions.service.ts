@@ -13,7 +13,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 import { expectedOnDate } from './roster.sql.js';
 import { ScheduleConflictService } from './schedule-conflicts.service.js';
-import { classNotFound } from './scheduling-errors.js';
+import { classNotFound, SLOT_DELETED_REASON } from './scheduling-errors.js';
 import type {
   AttentionFlag,
   CreateExtraSessionDto,
@@ -49,6 +49,7 @@ const select = {
   status: true,
   cancellationReason: true,
   weeklyScheduleId: true,
+  isExtra: true,
   completedAt: true,
   completionSource: true,
   completedBy: { select: { username: true } },
@@ -127,6 +128,7 @@ const toDto = (
   status: s.status,
   cancellationReason: s.cancellationReason,
   weeklyScheduleId: s.weeklyScheduleId,
+  isExtra: s.isExtra,
   completion:
     s.completedAt && s.completionSource
       ? {
@@ -354,6 +356,8 @@ export class SessionsService {
         startTime: toDbTime(dto.startTime),
         endTime: toDbTime(dto.endTime),
         status,
+        // A lesson created on its own date, not from a weekly slot
+        isExtra: true,
         ...(status === SessionStatus.COMPLETED
           ? this.completion(CompletionSource.ADMIN_OVERRIDE, actorUserId)
           : {}),
@@ -692,11 +696,20 @@ export class SessionsService {
             start: fromDbTime(ws.startTime),
             end: fromDbTime(ws.endTime),
           };
+          // This slot's own occurrence (even cancelled) is never recreated, nor
+          // is a date where the class already has a lesson at that time or one
+          // cancelled ON PURPOSE — but a lesson cancelled only because its
+          // slot was deleted does not block a re-created slot
           if (
             sameDay.some(
               (s) =>
                 s.weeklyScheduleId === ws.id ||
-                (s.groupClassId === c.id && overlaps(s, slot)),
+                (s.groupClassId === c.id &&
+                  !(
+                    s.status === SessionStatus.CANCELLED &&
+                    s.cancellationReason === SLOT_DELETED_REASON
+                  ) &&
+                  overlaps(s, slot)),
             )
           ) {
             skippedExisting++;
@@ -738,6 +751,7 @@ export class SessionsService {
             date,
             ...slot,
             status: SessionStatus.SCHEDULED,
+            cancellationReason: null,
             groupClassId: c.id,
             weeklyScheduleId: ws.id,
             roomId: ws.roomId,
@@ -872,6 +886,7 @@ export class SessionsService {
         startTime: true,
         endTime: true,
         status: true,
+        cancellationReason: true,
         groupClassId: true,
         weeklyScheduleId: true,
         roomId: true,
@@ -884,6 +899,7 @@ export class SessionsService {
       start: fromDbTime(s.startTime),
       end: fromDbTime(s.endTime),
       status: s.status,
+      cancellationReason: s.cancellationReason,
       groupClassId: s.groupClassId,
       weeklyScheduleId: s.weeklyScheduleId,
       roomId: s.roomId,

@@ -52,4 +52,18 @@ describe("calendar session sheet — delete the weekly slot vs cancel one sessio
       expect(screen.getByRole("button", { name: "حذف الموعد الأسبوعي" })).toBeTruthy()
     }
   )
+
+  it("a kept lesson of a DELETED slot is not «إضافية» and has no weekly-slot actions", () => {
+    renderSheet({ ...entry("SCHEDULED"), detached: true, extra: false })
+    expect(screen.getByText(/حصة من موعد أسبوعي محذوف/)).toBeTruthy()
+    expect(screen.queryByText(/حصة إضافية/)).toBeNull()
+    expect(screen.queryByRole("button", { name: "حذف الموعد الأسبوعي" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "تعديل الموعد الأسبوعي" })).toBeNull()
+    expect(screen.getByRole("button", { name: "إلغاء الحصة" })).toBeTruthy()
+  })
+
+  it("an extra session says so (from the stored flag)", () => {
+    renderSheet({ ...entry("SCHEDULED"), detached: true, extra: true })
+    expect(screen.getByText(/حصة إضافية \(مرة واحدة\)/)).toBeTruthy()
+  })
 })

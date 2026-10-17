@@ -23,9 +23,12 @@ export interface CalendarEntry extends ClassView {
   /** The dated session for the displayed date, when one exists (Part 3) */
   occurrence?: Session
   /**
-   * «حصة إضافية (مرة واحدة)»: a session on its own date, not from a weekly
-   * slot — `schedule` then only mirrors its date and time for display.
+   * A session without a weekly slot (an extra one, or a kept lesson of a
+   * deleted slot): `schedule` then only mirrors its date and time for display,
+   * and there is no weekly slot to edit or delete.
    */
+  detached?: boolean
+  /** «حصة إضافية (مرة واحدة)» — from the API's stored flag */
   extra?: boolean
 }
 

@@ -196,8 +196,10 @@ export interface Session extends Omit<ScheduleSlot, "day"> {
   id: ID
   /** The class that meets — group, branch, room and teachers derive from it */
   groupClassId: ID
-  /** The weekly slot this session comes from */
+  /** The weekly slot this session comes from ("" when created on its own date, or once its slot was deleted) */
   scheduleId: ID
+  /** «حصة إضافية (مرة واحدة)» — stored by the API, never guessed from scheduleId */
+  extra?: boolean
   /** Its own room: the weekly slot's room when planned (kept for history), or moved for this date only */
   roomId: ID
   date: ISODate

@@ -13,6 +13,7 @@ const session = (over: Partial<SessionDto> = {}): SessionDto => ({
   status: "SCHEDULED",
   cancellationReason: null,
   weeklyScheduleId: "w1",
+  isExtra: false,
   groupClass: { id: "c1", status: "ACTIVE", group: { id: "g1", name: "مجموعة", status: "ACTIVE" } },
   room: { id: "r1", name: "قاعة", status: "ACTIVE", branch: { id: "b1", name: "فرع", status: "ACTIVE" } },
   teachers: [

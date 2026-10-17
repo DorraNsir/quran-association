@@ -585,8 +585,11 @@ model StudentStatusChange {
 model Session {
   id                 String            @id @default(uuid(7)) @db.Uuid
   groupClassId       String            @db.Uuid
-  /// The weekly slot it was generated from (null for an ad-hoc session)
+  /// The weekly slot it was generated from (null for an ad-hoc session, or once its slot was deleted)
   weeklyScheduleId   String?           @db.Uuid
+  /// «حصة إضافية (مرة واحدة)»: created as a one-off extra lesson. Stored, never
+  /// inferred from weeklyScheduleId (a deleted slot's sessions lose that link too)
+  isExtra            Boolean           @default(false)
   /// Room actually used (snapshot of the weekly slot's room, or chosen for an ad-hoc session)
   roomId             String            @db.Uuid
   date               DateTime          @db.Date

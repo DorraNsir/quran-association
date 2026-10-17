@@ -265,6 +265,11 @@ export class SessionDto {
     description: 'Weekly slot it was generated from (null = manual)',
   })
   weeklyScheduleId!: string | null;
+  @ApiProperty({
+    description:
+      'Created as a one-off extra lesson («حصة إضافية»), not from a weekly slot — stored, not inferred from weeklyScheduleId (null too once a slot is deleted)',
+  })
+  isExtra!: boolean;
   @ApiPropertyOptional({ type: SessionCompletionDto, nullable: true })
   completion!: SessionCompletionDto | null;
   @ApiProperty({ type: SessionClassDto }) groupClass!: SessionClassDto;

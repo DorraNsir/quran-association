@@ -20,6 +20,7 @@ const session: SessionDto = {
   status: "SCHEDULED",
   cancellationReason: null,
   weeklyScheduleId: null,
+  isExtra: false,
   groupClass: { id: "c1", status: "ACTIVE", group: { id: "g1", name: "مجموعة الماهر", status: "ACTIVE" } },
   room: { id: "r1", name: "القاعة 1", status: "ACTIVE", branch: { id: "b1", name: "فرع المركز", status: "ACTIVE" } },
   teachers: [],
