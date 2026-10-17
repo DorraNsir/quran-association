@@ -273,16 +273,13 @@ export interface MemorizationProgress {
  * Workspace must not read this type. The class is derived from the
  * student and the author from the signed-in teacher — never chosen.
  */
+/** «ملاحظاتي»: a teacher's PRIVATE note — its text and automatic dates only (no student, no date to enter). */
 export interface TeacherNote {
   id: ID
-  studentId: ID
-  teacherId: ID
-  /** The student's class when the note was written */
-  groupClassId: ID
-  date: ISODate
   content: string
-  createdAt: ISODate
-  updatedAt: ISODate
+  /** ISO instants, set by the server */
+  createdAt: string
+  updatedAt: string
 }
 
 /* ------------------------------------------------------------------ */

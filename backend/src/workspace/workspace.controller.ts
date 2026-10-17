@@ -29,7 +29,6 @@ import { TeacherApi } from '../teaching/teacher-api.decorator.js';
 import {
   CreateTeacherNoteDto,
   DashboardStatsDto,
-  StudentTeacherNoteDto,
   StudentWorkspaceDto,
   TeacherNoteDto,
   TeacherNoteListDto,
@@ -58,7 +57,10 @@ export class TeacherWorkspaceController {
   }
 
   @Get('notes')
-  @ApiOperation({ summary: 'My private notes (newest first)' })
+  @ApiOperation({
+    summary:
+      'My private notes (most recently updated first) — nobody else can read them',
+  })
   @ApiOkResponse({ type: TeacherNoteListDto })
   notes(
     @CurrentUser() user: AuthPrincipal,
@@ -69,14 +71,12 @@ export class TeacherWorkspaceController {
 
   @Post('notes')
   @ApiOperation({
-    summary: 'Write a note about a student currently in one of my classes',
+    summary: 'Write a private note (owner and dates set by the server)',
   })
   @ApiCreatedResponse({ type: TeacherNoteDto })
   @ApiBadRequestResponse({
-    description:
-      'TEACHER_NOTE_STUDENT_NOT_ASSIGNED, TEACHER_NOTE_DATE_FUTURE, validation',
+    description: 'Validation (content required, ≤ 2000)',
   })
-  @ApiNotFoundResponse({ description: 'STUDENT_NOT_FOUND' })
   createNote(
     @CurrentUser() user: AuthPrincipal,
     @Body() dto: CreateTeacherNoteDto,
@@ -127,25 +127,6 @@ export class StudentWorkspaceController {
     @CurrentUser() user: AuthPrincipal,
   ): Promise<StudentWorkspaceDto> {
     return this.workspace.studentWorkspace(user.userId);
-  }
-}
-
-@ApiTags('admin / teacher notes')
-@AdminApi()
-@Controller('admin/students/:studentId/teacher-notes')
-export class AdminTeacherNotesController {
-  constructor(private readonly workspace: WorkspaceService) {}
-
-  @Get()
-  @ApiOperation({
-    summary: "Teachers' private notes about a student (read-only, with author)",
-  })
-  @ApiOkResponse({ type: [StudentTeacherNoteDto] })
-  @ApiNotFoundResponse({ description: 'STUDENT_NOT_FOUND' })
-  list(
-    @Param('studentId', ParseUUIDPipe) studentId: string,
-  ): Promise<StudentTeacherNoteDto[]> {
-    return this.workspace.notesForStudent(studentId);
   }
 }
 

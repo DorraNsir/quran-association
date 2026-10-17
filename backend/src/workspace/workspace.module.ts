@@ -5,7 +5,6 @@ import { StudentSpaceModule } from '../student-space/student-space.module.js';
 import { TeachingModule } from '../teaching/teaching.module.js';
 import {
   AdminDashboardController,
-  AdminTeacherNotesController,
   StudentWorkspaceController,
   TeacherWorkspaceController,
 } from './workspace.controller.js';
@@ -18,7 +17,6 @@ import { WorkspaceService } from './workspace.service.js';
     TeacherWorkspaceController,
     StudentWorkspaceController,
     AdminDashboardController,
-    AdminTeacherNotesController,
   ],
   providers: [WorkspaceService, PageSizeService],
 })

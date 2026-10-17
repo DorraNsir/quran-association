@@ -9,7 +9,6 @@ import {
   DoorOpen,
   LayoutGrid,
   MapPin,
-  NotebookPen,
   Phone,
   ShieldCheck,
   UserPlus,
@@ -150,24 +149,20 @@ export function TeacherMemorizationScreen() {
 export function TeacherNotesScreen() {
   return (
     <>
-      <PageHeader title="ملاحظاتي" description="ملاحظاتك الخاصة حول تقدّم طلبتك وسلوكهم. لا يطّلع عليها الطلبة ولا الأولياء." />
-      <WithTeacherWorkspace>
-        {({ teacher, lookups, students }) => (
-          <TeacherNotes teacherId={teacher.id} lookups={lookups} students={students.filter((s) => s.status === "ACTIVE")} today={todayInTunis()} />
-        )}
-      </WithTeacherWorkspace>
+      <PageHeader title="ملاحظاتي" description="ملاحظاتك الشخصية الخاصة، لا يمكن لأي شخص آخر الاطلاع عليها." />
+      <TeacherNotes />
     </>
   )
 }
 
-const TABS = ["overview", "attendance", "memorization", "notes"]
+const TABS = ["overview", "attendance", "memorization"]
 
 /** A student of one of the teacher's current classes — anyone else is "no access". */
 export function TeacherStudentScreen({ id, tab }: { id: string; tab?: string }) {
   const today = todayInTunis()
   return (
     <WithTeacherWorkspace>
-      {({ teacher, lookups, students }) => {
+      {({ lookups, students }) => {
         const student = students.find((s) => s.id === id)
         if (!student) return <NoAccess backHref="/teacher/students" backLabel="العودة إلى طلابي" />
         const view = studentClass(student, indexLookups(lookups))
@@ -226,12 +221,6 @@ export function TeacherStudentScreen({ id, tab }: { id: string; tab?: string }) 
                   label: "متابعة الحفظ",
                   icon: <BookOpenCheck aria-hidden />,
                   content: <StudentMemorization studentId={student.id} lookups={lookups} students={students} today={today} scope="teacher" />,
-                },
-                {
-                  value: "notes",
-                  label: "ملاحظاتي",
-                  icon: <NotebookPen aria-hidden />,
-                  content: <TeacherNotes teacherId={teacher.id} lookups={lookups} students={students} today={today} studentId={student.id} />,
                 },
               ]}
             />

@@ -210,7 +210,15 @@ describe('Workspaces (e2e)', () => {
     ).map((p) => p.id);
     const studentWhere = { personId: { in: persons } };
     const classes = { group: { name: { endsWith: RUN } } };
-    await prisma.teacherNote.deleteMany({ where: { student: studentWhere } });
+    // Private notes have no student any more: clean them up by their author too
+    await prisma.teacherNote.deleteMany({
+      where: {
+        OR: [
+          { student: studentWhere },
+          { teacher: { personId: { in: persons } } },
+        ],
+      },
+    });
     await prisma.studentAttendance.deleteMany({
       where: { student: studentWhere },
     });
@@ -385,77 +393,144 @@ describe('Workspaces (e2e)', () => {
     });
   });
 
-  describe('teacher notes', () => {
-    it('are private to their author', async () => {
+  describe('teacher notes «ملاحظاتي» (private notebook)', () => {
+    it('a teacher creates, reads, edits and deletes their own notes — no student, no date', async () => {
+      const long = `ملاحظة طويلة\nسطر ثانٍ ${'ا'.repeat(300)}`;
       const created = await send('sup', 'post', 'teacher/notes', {
-        studentId: id.s1,
-        content: '  يحتاج إلى مراجعة سورة النبأ  ',
+        content: `  ${long}  `,
       }).expect(201);
-      expect(created.body).toMatchObject({
-        studentId: id.s1,
-        groupClassId: id.A,
-        date: TODAY,
-        content: 'يحتاج إلى مراجعة سورة النبأ',
-      });
-      id.note = created.body.id;
-
-      const mine = await get('sup', 'teacher/notes', {
-        studentId: id.s1,
-      }).expect(200);
-      expect(mine.body.data.map((n: { id: string }) => n.id)).toEqual([
-        id.note,
+      // Only text and automatic dates: no author, student, class or date field
+      expect(Object.keys(created.body).sort()).toEqual([
+        'content',
+        'createdAt',
+        'id',
+        'updatedAt',
       ]);
-      const theirs = await get('asst', 'teacher/notes').expect(200);
-      expect(theirs.body.data).toEqual([]);
+      expect(created.body.content).toBe(long);
+      id.note = created.body.id;
+      const row = await prisma.teacherNote.findUniqueOrThrow({
+        where: { id: id.note },
+      });
+      expect(row).toMatchObject({
+        teacherId: id.sup,
+        studentId: null,
+        groupClassId: null,
+        date: null,
+      });
 
+      const second = await send('sup', 'post', 'teacher/notes', {
+        content: 'الثانية',
+      }).expect(201);
+      // Most recently updated first
+      let mine = (await get('sup', 'teacher/notes').expect(200)).body.data.map(
+        (n: { id: string }) => n.id,
+      );
+      expect(mine.slice(0, 2)).toEqual([second.body.id, id.note]);
+      const edited = await send('sup', 'patch', `teacher/notes/${id.note}`, {
+        content: 'تحسّن ملحوظ',
+      }).expect(200);
+      expect(edited.body.content).toBe('تحسّن ملحوظ');
+      expect(new Date(edited.body.updatedAt).getTime()).toBeGreaterThan(
+        new Date(created.body.updatedAt).getTime(),
+      );
+      mine = (await get('sup', 'teacher/notes').expect(200)).body.data.map(
+        (n: { id: string }) => n.id,
+      );
+      expect(mine[0]).toBe(id.note);
+
+      await send('sup', 'delete', `teacher/notes/${second.body.id}`).expect(
+        204,
+      );
+      await send('sup', 'delete', `teacher/notes/${second.body.id}`).expect(
+        404,
+      );
+    });
+
+    it('the owner is never chosen by the client; a student / date / teacher is refused', async () => {
+      for (const extra of [
+        { teacherId: id.asst },
+        { studentId: id.s1 },
+        { date: TODAY },
+      ])
+        await send('sup', 'post', 'teacher/notes', {
+          content: 'x',
+          ...extra,
+        }).expect(400);
+      await send('sup', 'post', 'teacher/notes', { content: '   ' }).expect(
+        400,
+      );
+      await send('sup', 'post', 'teacher/notes', {
+        content: 'x'.repeat(2001),
+      }).expect(400);
+    });
+
+    it('another teacher, an admin and a student can never reach them', async () => {
+      // Another teacher: invisible (404), even with the id
+      expect(
+        (await get('asst', 'teacher/notes').expect(200)).body.data.map(
+          (n: { id: string }) => n.id,
+        ),
+      ).not.toContain(id.note);
       await send('asst', 'patch', `teacher/notes/${id.note}`, {
         content: 'x',
       }).expect(404);
       await send('other', 'delete', `teacher/notes/${id.note}`).expect(404);
-
-      const edited = await send('sup', 'patch', `teacher/notes/${id.note}`, {
-        content: 'تحسّن ملحوظ',
-        date: addDays(TODAY, -1),
-      }).expect(200);
-      expect(edited.body).toMatchObject({
-        content: 'تحسّن ملحوظ',
-        date: addDays(TODAY, -1),
-      });
-      const forAdmin = await get(
-        'admin',
-        `admin/students/${id.s1}/teacher-notes`,
-      ).expect(200);
-      expect(forAdmin.body).toEqual([
-        expect.objectContaining({
-          id: id.note,
-          teacher: expect.objectContaining({ id: id.sup }),
-        }),
-      ]);
-      await get('sup', `admin/students/${id.s1}/teacher-notes`).expect(403);
-      await send('sup', 'delete', `teacher/notes/${id.note}`).expect(204);
-      await send('sup', 'delete', `teacher/notes/${id.note}`).expect(404);
+      // Admins: the teacher routes are refused, and the old admin route no longer exists
+      await get('admin', 'teacher/notes').expect(403);
+      await get('admin', `admin/students/${id.s1}/teacher-notes`).expect(404);
+      // No admin student response carries notes
+      const student = await get('admin', `admin/students/${id.s1}`).expect(200);
+      expect(JSON.stringify(student.body)).not.toContain('تحسّن ملحوظ');
+      // Students
+      await get('pupil', 'teacher/notes').expect(403);
+      await send('pupil', 'post', 'teacher/notes', { content: 'x' }).expect(
+        403,
+      );
+      expect(
+        await prisma.teacherNote.findUnique({ where: { id: id.note } }),
+      ).toMatchObject({ content: 'تحسّن ملحوظ' });
     });
 
-    it('only for my current students, never in the future, never empty', async () => {
-      const other = await send('other', 'post', 'teacher/notes', {
+    it('a note written about a student BEFORE the refactor stays its author’s, unchanged', async () => {
+      const legacy = await prisma.teacherNote.create({
+        data: {
+          teacherId: id.sup,
+          studentId: id.s1,
+          groupClassId: id.A,
+          date: new Date(`${addDays(TODAY, -30)}T00:00:00Z`),
+          content: 'ملاحظة قديمة عن الطالب',
+        },
+      });
+      const mine = (
+        await get('sup', 'teacher/notes', { pageSize: 100 }).expect(200)
+      ).body.data;
+      expect(mine.find((n: { id: string }) => n.id === legacy.id)).toEqual({
+        id: legacy.id,
+        content: 'ملاحظة قديمة عن الطالب',
+        createdAt: legacy.createdAt.toISOString(),
+        updatedAt: legacy.updatedAt.toISOString(),
+      });
+      await send('sup', 'patch', `teacher/notes/${legacy.id}`, {
+        content: 'معدّلة',
+      }).expect(200);
+      // Its historical columns are kept as they were
+      expect(
+        await prisma.teacherNote.findUniqueOrThrow({
+          where: { id: legacy.id },
+        }),
+      ).toMatchObject({
+        teacherId: id.sup,
         studentId: id.s1,
-        content: 'ملاحظة',
-      }).expect(400);
-      expect(other.body.code).toBe('TEACHER_NOTE_STUDENT_NOT_ASSIGNED');
-      const future = await send('sup', 'post', 'teacher/notes', {
-        studentId: id.s1,
-        content: 'ملاحظة',
-        date: addDays(TODAY, 2),
-      }).expect(400);
-      expect(future.body.code).toBe('TEACHER_NOTE_DATE_FUTURE');
-      await send('sup', 'post', 'teacher/notes', {
-        studentId: id.s1,
-        content: '   ',
-      }).expect(400);
-      await send('pupil', 'post', 'teacher/notes', {
-        studentId: id.s1,
-        content: 'x',
-      }).expect(403);
+        groupClassId: id.A,
+        content: 'معدّلة',
+      });
+      await get('asst', 'teacher/notes')
+        .expect(200)
+        .then((r) =>
+          expect(r.body.data.map((n: { id: string }) => n.id)).not.toContain(
+            legacy.id,
+          ),
+        );
     });
   });
 

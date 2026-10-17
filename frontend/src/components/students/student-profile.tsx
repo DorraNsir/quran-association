@@ -4,7 +4,6 @@ import {
   CalendarDays,
   ClipboardCheck,
   LayoutGrid,
-  NotebookPen,
   Phone,
   ShieldCheck,
   Wallet,
@@ -18,7 +17,6 @@ import { ProfileTabs } from "@/components/shared/profile-tabs"
 import { StudentAttendanceHistory } from "@/components/attendance/student-attendance-history"
 import { StudentMemorization } from "@/components/memorization/student-memorization"
 import { StudentPayments } from "@/components/payments/payments-views"
-import { StudentTeacherNotes } from "@/components/teacher/teacher-notes"
 
 import { EnrollmentHistory } from "./enrollment-history"
 import { StudentOverview } from "./student-overview"
@@ -30,7 +28,7 @@ import { AccountCard } from "@/components/shared/account-card"
 import type { AccountSummary } from "@/lib/api/academic"
 import type { Student } from "@/types/domain"
 
-export const STUDENT_PROFILE_TABS = ["overview", "attendance", "memorization", "payments", "notes"]
+export const STUDENT_PROFILE_TABS = ["overview", "attendance", "memorization", "payments"]
 
 /**
  * Admin student profile (API data).
@@ -127,12 +125,6 @@ export function StudentProfile({
             content: (
               <StudentPayments studentId={student.id} mode="admin" groupClassId={student.groupClassId || undefined} />
             ),
-          },
-          {
-            value: "notes",
-            label: "ملاحظات المعلمين",
-            icon: <NotebookPen aria-hidden />,
-            content: <StudentTeacherNotes studentId={student.id} lookups={lookups} />,
           },
         ]}
       />

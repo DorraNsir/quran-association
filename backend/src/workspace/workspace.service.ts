@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { fromDbDate, fromDbDateOrNull, toDbDate } from '../common/dates.js';
-import { badRequest, notFound } from '../common/errors.js';
+import { notFound } from '../common/errors.js';
 import { PageSizeService } from '../common/page-size.service.js';
 import { paginationMeta } from '../common/pagination.js';
 import { platformToday } from '../common/platform-clock.js';
@@ -20,7 +20,6 @@ import { TeacherAccessService } from '../teaching/teacher-access.service.js';
 import type {
   CreateTeacherNoteDto,
   DashboardStatsDto,
-  StudentTeacherNoteDto,
   StudentWorkspaceDto,
   TeacherNoteDto,
   TeacherNoteListDto,
@@ -119,6 +118,14 @@ const toStudent = (s: StudentRow): WsStudentDto => ({
 const unique = <T extends { id: string }>(rows: T[]) => [
   ...new Map(rows.map((r) => [r.id, r])).values(),
 ];
+
+/** What a note exposes: its text and automatic dates — never its author, a student or a class. */
+const noteSelect = {
+  id: true,
+  content: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.TeacherNoteSelect;
 
 const noteNotFound = () =>
   notFound('TEACHER_NOTE_NOT_FOUND', 'الملاحظة غير موجودة');
@@ -258,9 +265,11 @@ export class WorkspaceService {
   // ───────────────────────── teacher notes ─────────────────────────
 
   /**
-   * Private notes: only their author reads or edits them (never students,
-   * never other teachers). A note is written for a student CURRENTLY in one
-   * of the author's classes; it keeps that class as a historical snapshot.
+   * «ملاحظاتي»: the teacher's PRIVATE notebook. A note belongs to the
+   * authenticated teacher (never chosen by the client) and only its author
+   * can read, change or delete it — another teacher's note simply does not
+   * exist for them (404), and no admin or student route returns notes.
+   * Most recently updated first; dates are automatic.
    */
   async notes(
     userId: string,
@@ -268,48 +277,29 @@ export class WorkspaceService {
   ): Promise<TeacherNoteListDto> {
     const teacherId = await this.teacherAccess.teacherIdOf(userId);
     const pageSize = await this.pageSizes.resolve(query.pageSize);
-    const where: Prisma.TeacherNoteWhereInput = {
-      teacherId,
-      ...(query.studentId ? { studentId: query.studentId } : {}),
-    };
+    const where: Prisma.TeacherNoteWhereInput = { teacherId };
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.teacherNote.count({ where }),
       this.prisma.teacherNote.findMany({
         where,
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        select: noteSelect,
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
         skip: (query.page - 1) * pageSize,
         take: pageSize,
       }),
     ]);
-    return {
-      data: rows.map((n) => this.toNote(n)),
-      meta: paginationMeta(query.page, pageSize, total),
-    };
+    return { data: rows, meta: paginationMeta(query.page, pageSize, total) };
   }
 
   async createNote(
     userId: string,
     dto: CreateTeacherNoteDto,
   ): Promise<TeacherNoteDto> {
-    const scope = await this.teacherAccess.currentScope(userId);
-    const student = await this.prisma.student.findUnique({
-      where: { id: dto.studentId },
-      select: { groupClassId: true },
+    const teacherId = await this.teacherAccess.teacherIdOf(userId);
+    return this.prisma.teacherNote.create({
+      data: { teacherId, content: dto.content },
+      select: noteSelect,
     });
-    if (!student) throw notFound('STUDENT_NOT_FOUND', 'الطالب غير موجود');
-    if (!student.groupClassId || !scope.classIds.includes(student.groupClassId))
-      throw this.notMyStudent();
-    const date = await this.noteDate(dto.date);
-    const note = await this.prisma.teacherNote.create({
-      data: {
-        teacherId: scope.teacherId,
-        studentId: dto.studentId,
-        groupClassId: student.groupClassId,
-        date: toDbDate(date),
-        content: dto.content,
-      },
-    });
-    return this.toNote(note);
   }
 
   async updateNote(
@@ -318,19 +308,16 @@ export class WorkspaceService {
     dto: UpdateTeacherNoteDto,
   ): Promise<TeacherNoteDto> {
     const teacherId = await this.teacherAccess.teacherIdOf(userId);
-    const note = await this.prisma.teacherNote.findUnique({ where: { id } });
-    // Someone else's note does not exist for this teacher
-    if (!note || note.teacherId !== teacherId) throw noteNotFound();
-    const updated = await this.prisma.teacherNote.update({
-      where: { id },
-      data: {
-        ...(dto.content !== undefined ? { content: dto.content } : {}),
-        ...(dto.date !== undefined
-          ? { date: toDbDate(await this.noteDate(dto.date)) }
-          : {}),
-      },
+    // The author is part of the WHERE: someone else's note does not exist for this teacher
+    const { count } = await this.prisma.teacherNote.updateMany({
+      where: { id, teacherId },
+      data: { content: dto.content },
     });
-    return this.toNote(updated);
+    if (count === 0) throw noteNotFound();
+    return this.prisma.teacherNote.findUniqueOrThrow({
+      where: { id },
+      select: noteSelect,
+    });
   }
 
   async deleteNote(userId: string, id: string): Promise<void> {
@@ -339,61 +326,6 @@ export class WorkspaceService {
       where: { id, teacherId },
     });
     if (count === 0) throw noteNotFound();
-  }
-
-  /** Admin: every teacher's notes about one student (read-only), newest first. */
-  async notesForStudent(studentId: string): Promise<StudentTeacherNoteDto[]> {
-    const student = await this.prisma.student.findUnique({
-      where: { id: studentId },
-      select: { id: true },
-    });
-    if (!student) throw notFound('STUDENT_NOT_FOUND', 'الطالب غير موجود');
-    const rows = await this.prisma.teacherNote.findMany({
-      where: { studentId },
-      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
-      include: {
-        teacher: {
-          select: {
-            id: true,
-            person: { select: { firstName: true, lastName: true } },
-          },
-        },
-      },
-    });
-    return rows.map(({ teacher, ...n }) =>
-      Object.assign(this.toNote(n), {
-        teacher: { id: teacher.id, ...teacher.person },
-      }),
-    );
-  }
-
-  private async noteDate(date?: string) {
-    const today = await platformToday(this.prisma);
-    if (date && date > today)
-      throw badRequest(
-        'TEACHER_NOTE_DATE_FUTURE',
-        'لا يمكن أن يكون تاريخ الملاحظة في المستقبل',
-      );
-    return date ?? today;
-  }
-
-  private notMyStudent() {
-    return badRequest(
-      'TEACHER_NOTE_STUDENT_NOT_ASSIGNED',
-      'هذا الطالب ليس في أحد أقسامك الحالية',
-    );
-  }
-
-  private toNote(n: {
-    id: string;
-    studentId: string;
-    groupClassId: string;
-    date: Date;
-    content: string;
-    createdAt: Date;
-    updatedAt: Date;
-  }): TeacherNoteDto {
-    return { ...n, date: fromDbDate(n.date) };
   }
 
   // ───────────────────────── admin dashboard ─────────────────────────

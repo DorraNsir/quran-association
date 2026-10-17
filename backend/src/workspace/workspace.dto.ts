@@ -1,14 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import {
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsString, MaxLength, MinLength } from 'class-validator';
 
-import { IsDateOnly } from '../common/dates.js';
 import { PaginationMetaDto, PaginationQueryDto } from '../common/pagination.js';
 import {
   ActivationStatus,
@@ -139,26 +132,15 @@ export class StudentWorkspaceDto extends WsBundleDto {
 
 /* ------------------------------ teacher notes ------------------------------ */
 
-export class TeacherNoteQueryDto extends PaginationQueryDto {
-  @ApiPropertyOptional({ format: 'uuid' })
-  @IsOptional()
-  @IsUUID()
-  studentId?: string;
-}
+/** «ملاحظاتي»: the teacher's own private notes (most recently updated first). */
+export class TeacherNoteQueryDto extends PaginationQueryDto {}
 
 export class CreateTeacherNoteDto {
   @ApiProperty({
-    format: 'uuid',
-    description: 'A student of one of my classes',
+    maxLength: 2000,
+    description:
+      'The note — owner and dates are set by the server (no student, no date)',
   })
-  @IsUUID()
-  studentId!: string;
-  @IsDateOnly({
-    optional: true,
-    description: 'Default: today (platform timezone); not in the future',
-  })
-  date?: string;
-  @ApiProperty({ maxLength: 2000 })
   @Transform(trim)
   @IsString()
   @MinLength(1, { message: 'نص الملاحظة مطلوب' })
@@ -166,31 +148,14 @@ export class CreateTeacherNoteDto {
   content!: string;
 }
 
-export class UpdateTeacherNoteDto {
-  @IsDateOnly({ optional: true }) date?: string;
-  @ApiPropertyOptional({ maxLength: 2000 })
-  @IsOptional()
-  @Transform(trim)
-  @IsString()
-  @MinLength(1, { message: 'نص الملاحظة مطلوب' })
-  @MaxLength(2000)
-  content?: string;
-}
+export class UpdateTeacherNoteDto extends CreateTeacherNoteDto {}
 
+/** A private note: its text and automatic dates only. */
 export class TeacherNoteDto {
   @ApiProperty() id!: string;
-  @ApiProperty() studentId!: string;
-  @ApiProperty({ description: "The student's class when the note was written" })
-  groupClassId!: string;
-  @ApiProperty({ format: 'date' }) date!: string;
   @ApiProperty() content!: string;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
-}
-
-/** Admin read-only view: a note with its author. */
-export class StudentTeacherNoteDto extends TeacherNoteDto {
-  @ApiProperty() teacher!: { id: string; firstName: string; lastName: string };
 }
 
 export class TeacherNoteListDto {

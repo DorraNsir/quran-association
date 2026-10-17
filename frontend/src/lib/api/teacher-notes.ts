@@ -2,61 +2,36 @@
 
 import { useQuery } from "@tanstack/react-query"
 
-import { tunisDateOf } from "@/lib/dates"
 import type { ID, TeacherNote } from "@/types/domain"
 
 import { api, useApiMutation } from "./academic"
 import { fetchAll } from "./client"
 
-interface TeacherNoteDto {
-  id: string
-  studentId: string
-  groupClassId: string
-  date: string
-  content: string
-  createdAt: string
-  updatedAt: string
-}
-
 export const notesKey = ["teacher-notes"] as const
 
-const toNote = (teacherId: ID) => (n: TeacherNoteDto): TeacherNote => ({
-  ...n,
-  teacherId,
-  createdAt: tunisDateOf(n.createdAt),
-  updatedAt: tunisDateOf(n.updatedAt),
-})
-
-/** The signed-in teacher's own private notes (the API never returns anyone else's). */
-export function useTeacherNotes(teacherId: ID) {
+/**
+ * «ملاحظاتي»: the signed-in teacher's own private notes, most recently
+ * updated first (the API returns only the author's notes; no admin or
+ * student route exposes them).
+ */
+export function useTeacherNotes() {
   return useQuery({
     queryKey: notesKey,
-    queryFn: async ({ signal }) => (await fetchAll<TeacherNoteDto>("/teacher/notes", {}, signal)).map(toNote(teacherId)),
+    queryFn: ({ signal }) => fetchAll<TeacherNote>("/teacher/notes", {}, signal),
   })
 }
 
+/** Create or edit a note: only its text — the owner and dates are set by the server. */
 export function useSaveTeacherNote() {
   return useApiMutation(
-    ({ id, studentId, date, content }: { id?: ID; studentId: ID; date: string; content: string }) =>
+    ({ id, content }: { id?: ID; content: string }) =>
       id
-        ? api(`/teacher/notes/${id}`, { method: "PATCH", body: { date, content } })
-        : api("/teacher/notes", { method: "POST", body: { studentId, date, content } }),
+        ? api<TeacherNote>(`/teacher/notes/${id}`, { method: "PATCH", body: { content } })
+        : api<TeacherNote>("/teacher/notes", { method: "POST", body: { content } }),
     [notesKey]
   )
 }
 
 export function useDeleteTeacherNote() {
   return useApiMutation((id: ID) => api(`/teacher/notes/${id}`, { method: "DELETE" }), [notesKey])
-}
-
-/** Admin, read-only: every teacher's notes about one student (with the author). */
-export function useStudentTeacherNotes(studentId: ID) {
-  return useQuery({
-    queryKey: [...notesKey, "student", studentId],
-    queryFn: ({ signal }) =>
-      api<(TeacherNoteDto & { teacher: { id: string; firstName: string; lastName: string } })[]>(
-        `/admin/students/${studentId}/teacher-notes`,
-        { signal }
-      ),
-  })
 }

@@ -762,23 +762,31 @@ model MemorizationProgress {
 }
 
 /// A teacher's private note about a student — never student-facing.
+/// «ملاحظاتي»: a teacher's PRIVATE personal note — only its author reads or
+/// changes it (never other teachers, admins or students). Owned by the
+/// teacher (never chosen by the client); dated automatically (createdAt /
+/// updatedAt). studentId / groupClassId / date are HISTORICAL: notes written
+/// before the notebook became personal keep them; new notes leave them empty.
 model TeacherNote {
-  id           String   @id @default(uuid(7)) @db.Uuid
-  studentId    String   @db.Uuid
-  teacherId    String   @db.Uuid
-  /// The student's class when the note was written (historical snapshot)
-  groupClassId String   @db.Uuid
-  date         DateTime @db.Date
+  id           String    @id @default(uuid(7)) @db.Uuid
+  teacherId    String    @db.Uuid
   content      String
-  createdAt    DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+  /// Historical only (notes written about a student before the refactor)
+  studentId    String?   @db.Uuid
+  /// Historical only: that student's class when the note was written
+  groupClassId String?   @db.Uuid
+  /// Historical only: the date the teacher entered by hand
+  date         DateTime? @db.Date
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
 
-  student    Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
-  teacher    Teacher    @relation(fields: [teacherId], references: [id], onDelete: Restrict)
-  groupClass GroupClass @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
+  teacher    Teacher     @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  student    Student?    @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  groupClass GroupClass? @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
 
   @@index([studentId, date])
   @@index([teacherId])
+  @@index([teacherId, updatedAt])
   @@map("teacher_notes")
 }
 

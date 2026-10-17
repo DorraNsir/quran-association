@@ -1,6 +1,6 @@
 "use client"
 
-import { GraduationCap, NotebookPen, SearchX } from "lucide-react"
+import { GraduationCap, SearchX } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 
@@ -15,7 +15,6 @@ import { labels } from "@/lib/i18n"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
 import { useTeacherStudentRates } from "@/lib/api/attendance"
 import { useClassesMemorization } from "@/lib/api/memorization"
-import { useTeacherNotes } from "@/lib/api/teacher-notes"
 import { getTeacherGroupClasses } from "@/lib/teacher-access"
 import type { ID, ISODate, MemorizationProgress, Student } from "@/types/domain"
 
@@ -26,7 +25,6 @@ interface Row {
   view?: ClassView
   record?: MemorizationProgress
   rate: number | null
-  notes: number
 }
 
 /** The students of the teacher's classes only, with their key follow-up figures. */
@@ -53,7 +51,6 @@ export function TeacherStudentsView({
     semester: period.semester,
   })
   const byKey = indexMemorization(memo.records)
-  const myNotes = useTeacherNotes(teacherId).data ?? []
   const active = students.filter((s) => s.status === "ACTIVE")
   const rates = useTeacherStudentRates(active.map((s) => s.id))
 
@@ -63,7 +60,6 @@ export function TeacherStudentsView({
       view: studentClass(student, indexes),
       record: byKey.get(memorizationKey(student.id, period.academicYearId, period.semester)),
       rate: rates.get(student.id) ?? null,
-      notes: myNotes.filter((n) => n.studentId === student.id).length,
     }))
     .sort((a, b) => fullName(a.student).localeCompare(fullName(b.student), "ar"))
   const filtered = rows.filter(
@@ -71,12 +67,6 @@ export function TeacherStudentsView({
   )
   const classLabel = (v?: ClassView) => (v ? `${v.group?.name ?? ""} — ${v.branch?.name ?? ""}` : "—")
   const rate = (r: Row) => <span className="tabular-nums">{r.rate === null ? "—" : `${r.rate}%`}</span>
-  const notes = (r: Row) =>
-    r.notes > 0 ? (
-      <span className="inline-flex items-center gap-1 text-muted-foreground"><NotebookPen className="size-3.5" aria-hidden />{r.notes}</span>
-    ) : (
-      <span className="text-muted-foreground">—</span>
-    )
   const href = (r: Row) => `/teacher/students/${r.student.id}`
 
   const columns: Column<Row>[] = [
@@ -92,7 +82,6 @@ export function TeacherStudentsView({
     { id: "class", header: "المجموعة", cell: (r) => <span className="whitespace-nowrap">{classLabel(r.view)}</span> },
     { id: "surah", header: `آخر سورة محفوظة (${labels.semester[period.semester]})`, cell: (r) => <MemorizationValue surah={r.record?.lastMemorizedSurah} /> },
     { id: "rate", header: "نسبة الحضور", cell: rate },
-    { id: "notes", header: "ملاحظاتي", className: "hidden lg:table-cell", cell: notes },
   ]
 
   return (

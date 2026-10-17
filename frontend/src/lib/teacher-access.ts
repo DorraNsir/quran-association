@@ -1,5 +1,5 @@
 import { teacherAssignments, type Lookups } from "@/lib/domain"
-import type { ID, Session, Student, TeacherNote } from "@/types/domain"
+import type { ID, Session, Student } from "@/types/domain"
 
 /**
  * What a teacher may see, always resolved through GroupClass (supervisor or
@@ -43,7 +43,3 @@ export function canTeacherAccessSession(teacherId: ID, session: Pick<Session, "g
   return canTeacherAccessClass(teacherId, session.groupClassId, lookups)
 }
 
-/** A teacher only ever sees their own private notes. */
-export function getTeacherNotes(teacherId: ID, notes: TeacherNote[]) {
-  return notes.filter((n) => n.teacherId === teacherId)
-}
