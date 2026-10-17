@@ -1,7 +1,8 @@
 "use client"
 
-import { ArrowLeftRight, Mic } from "lucide-react"
+import { ArrowLeftRight, Loader2, Mic } from "lucide-react"
 import { useState } from "react"
+import { toast } from "sonner"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -9,9 +10,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { eligibleSessions, nextRecitation, programOf, recitationOrdinal, sessionLabel } from "@/lib/work-followup"
-import type { ID, ISODate } from "@/types/domain"
-import type { WorkFollowupData, WorkItem, WorkProgram } from "@/types/work-followup"
+import { errorMessage } from "@/lib/api/errors"
+import { useEligibleSessions, useScheduleWorkItem } from "@/lib/api/work-followup"
+import { nextRecitation, recitationOrdinal, sessionLabel } from "@/lib/work-followup"
+import type { WorkItem, WorkProgram } from "@/types/work-followup"
 
 import { WorkStatusBadge, WorkTypeBadge } from "./work-badges"
 
@@ -19,12 +21,13 @@ export type ScheduleMode = "carry" | "next"
 
 /**
  * Two separate, MANUAL actions on one item, both into an existing upcoming
- * session of the same student (never an arbitrary date):
+ * session of the same student, later than the source (never a free date —
+ * the API lists and re-checks them):
  *  - «نقل إلى الحصة القادمة» continues the SAME unfinished task (same type,
  *    description and number); the original item keeps its result.
  *  - «إضافة العرضة التالية» plans the NEXT numbered recitation (+1).
- * The new item starts «لم يُقيّم بعد» and is appended to the target
- * session's program (created if the student has none there).
+ * The new item starts «لم يُقيّم بعد» in the target session's program
+ * (created if the student has none there). Duplicates are refused.
  */
 export function WorkScheduleDialog({
   open,
@@ -32,32 +35,40 @@ export function WorkScheduleDialog({
   mode,
   item,
   source,
-  data,
-  today,
-  onConfirm,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   mode: ScheduleMode
   item: WorkItem
   source: WorkProgram
-  data: WorkFollowupData
-  today: ISODate
-  onConfirm: (targetSessionId: ID, item: Omit<WorkItem, "id">) => void
 }) {
   const proposal = mode === "next" ? nextRecitation(item) : undefined
   const [description, setDescription] = useState(proposal?.description ?? item.description)
-  const options = eligibleSessions(data, source.studentId, today).filter((s) => s.id !== source.sessionId)
-  const [targetId, setTargetId] = useState(options[0]?.id ?? "")
-  const sourceSession = data.sessions.find((s) => s.id === source.sessionId)
+  const eligible = useEligibleSessions(source.student.id, source.session.id)
+  const options = eligible.data ?? []
+  const [picked, setPicked] = useState<string | null>(null)
+  const targetId = picked ?? options[0]?.id ?? ""
+  const target = options.find((s) => s.id === targetId)
+  const scheduleItem = useScheduleWorkItem()
+  const [serverError, setServerError] = useState<string | null>(null)
 
-  // No accidental duplicate in the target session
-  const target = targetId ? programOf(data.programs, source.studentId, targetId) : undefined
-  const duplicate =
-    mode === "carry"
-      ? target?.items.some((i) => i.carriedFromItemId === item.id)
-      : target?.items.some((i) => i.type === "RECITATION" && i.recitationNumber === proposal?.number && i.description === description.trim())
+  // Known duplicates (the API refuses them anyway)
+  const already = (mode === "carry" ? item.carriedTo : item.continuedBy).some((l) => l.sessionId === targetId)
   const Icon = mode === "carry" ? ArrowLeftRight : Mic
+
+  async function confirm() {
+    if (!targetId || scheduleItem.isPending) return
+    setServerError(null)
+    try {
+      await scheduleItem.mutateAsync({ itemId: item.id, mode, targetSessionId: targetId, description: description.trim() })
+      toast.success(mode === "carry" ? "تم نقل العمل إلى الحصة القادمة" : "تمت إضافة العرضة التالية", {
+        description: target ? `${sessionLabel(target)}${target.programId ? " — أُضيف إلى البرنامج الموجود" : " — برنامج جديد"}` : undefined,
+      })
+      onOpenChange(false)
+    } catch (error) {
+      setServerError(errorMessage(error))
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -74,11 +85,11 @@ export function WorkScheduleDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3 text-sm">
-            <p className="text-xs text-muted-foreground">العمل الأصلي — {sourceSession && sessionLabel(sourceSession)}</p>
+            <p className="text-xs text-muted-foreground">العمل الأصلي — {sessionLabel(source.session)}</p>
             <div className="flex flex-wrap items-center gap-2">
-              <WorkTypeBadge type={item.type} recitationNumber={item.recitationNumber} />
+              <WorkTypeBadge type={item.type} recitationNumber={item.recitationNumber ?? undefined} />
               <span className="min-w-0 max-w-full font-medium whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{item.description}</span>
               <WorkStatusBadge status={item.status} />
             </div>
@@ -87,16 +98,20 @@ export function WorkScheduleDialog({
           {mode === "next" && proposal && (
             <div className="space-y-1.5">
               <Label htmlFor="wf-next-desc">العرضة التالية (العرضة {recitationOrdinal(proposal.number)})</Label>
-              <Input id="wf-next-desc" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={160} />
+              <Input id="wf-next-desc" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={2000} />
             </div>
           )}
 
           <div className="space-y-1.5">
             <Label htmlFor="wf-target">الحصة</Label>
-            {options.length === 0 ? (
+            {eligible.isPending ? (
+              <p className="text-sm text-muted-foreground">جارٍ تحميل الحصص القادمة…</p>
+            ) : eligible.isError ? (
+              <p role="alert" className="text-sm text-destructive">{errorMessage(eligible.error)}</p>
+            ) : options.length === 0 ? (
               <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">لا توجد حصص قادمة متاحة لهذا الطالب</p>
             ) : (
-              <Select value={targetId} onValueChange={setTargetId}>
+              <Select value={targetId} onValueChange={setPicked}>
                 <SelectTrigger id="wf-target" className="w-full">
                   <SelectValue placeholder="اختر من الحصص القادمة" />
                 </SelectTrigger>
@@ -104,21 +119,23 @@ export function WorkScheduleDialog({
                   {options.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
                       {sessionLabel(s)}
-                      {programOf(data.programs, source.studentId, s.id) ? " · يوجد برنامج" : ""}
+                      {s.programId ? " · يوجد برنامج" : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             )}
-            {target && !duplicate && (
-              <p className="text-xs text-muted-foreground">سيُضاف العمل إلى برنامج هذه الحصة الموجود ({target.items.length} أعمال).</p>
+            {target?.programId && !already && (
+              <p className="text-xs text-muted-foreground">سيُضاف العمل إلى برنامج هذه الحصة الموجود.</p>
             )}
           </div>
 
-          {duplicate && (
+          {(already || serverError) && (
             <Alert variant="destructive">
               <AlertDescription>
-                {mode === "carry" ? "سبق نقل هذا العمل إلى هذه الحصة." : "هذه العرضة مبرمجة مسبقًا في هذه الحصة."} اختر حصة أخرى.
+                {already
+                  ? `${mode === "carry" ? "سبق نقل هذا العمل إلى هذه الحصة." : "هذه العرضة مبرمجة مسبقًا في هذه الحصة."} اختر حصة أخرى.`
+                  : serverError}
               </AlertDescription>
             </Alert>
           )}
@@ -128,19 +145,8 @@ export function WorkScheduleDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             إلغاء
           </Button>
-          <Button
-            disabled={!targetId || Boolean(duplicate) || !description.trim()}
-            onClick={() =>
-              onConfirm(targetId, {
-                type: item.type,
-                description: description.trim(),
-                status: "NOT_EVALUATED",
-                recitationNumber: mode === "next" ? proposal?.number : item.recitationNumber,
-                // Only a continuation references the original item
-                carriedFromItemId: mode === "carry" ? item.id : undefined,
-              })
-            }
-          >
+          <Button disabled={!targetId || already || !description.trim() || scheduleItem.isPending} onClick={confirm}>
+            {scheduleItem.isPending && <Loader2 className="animate-spin" />}
             تأكيد
           </Button>
         </DialogFooter>

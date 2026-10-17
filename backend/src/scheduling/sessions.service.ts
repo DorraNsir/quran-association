@@ -13,7 +13,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 import { expectedOnDate } from './roster.sql.js';
 import { ScheduleConflictService } from './schedule-conflicts.service.js';
-import { classNotFound, SLOT_DELETED_REASON } from './scheduling-errors.js';
+import { classNotFound, SLOT_CHANGE_REASONS } from './scheduling-errors.js';
 import type {
   AttentionFlag,
   CreateExtraSessionDto,
@@ -707,7 +707,8 @@ export class SessionsService {
                 (s.groupClassId === c.id &&
                   !(
                     s.status === SessionStatus.CANCELLED &&
-                    s.cancellationReason === SLOT_DELETED_REASON
+                    s.cancellationReason !== null &&
+                    SLOT_CHANGE_REASONS.includes(s.cancellationReason)
                   ) &&
                   overlaps(s, slot)),
             )

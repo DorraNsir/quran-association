@@ -1,66 +1,83 @@
 /**
- * «متابعة العمل» — PROTOTYPE types (frontend only, mock data). Hierarchy:
+ * «متابعة العمل» — the API's shapes (GET /api/teacher/work-programs…).
  * Student → Session → Work program (one per student per session) → Work items.
- * Kept isolated so they can later be replaced by the API's DTOs.
+ * The program's date, time, class and branch always come from its session.
  */
-import type { ID, ISODate } from "@/types/domain"
+import type { ID, ISODate, SessionStatus } from "@/types/domain"
 
 export type WorkType = "MEMORIZATION" | "REVISION" | "RECITATION" | "EXAM"
 
 /** CANCELLED = this work item was dropped (not a cancelled session); it stays in its program. */
 export type WorkStatus = "NOT_EVALUATED" | "COMPLETED" | "NOT_COMPLETED" | "PARTIAL" | "POSTPONED" | "CANCELLED"
 
-export interface WorkItem {
+export interface WorkSession {
   id: ID
-  type: WorkType
-  description: string
-  status: WorkStatus
-  /** عرضة only: 1, 2, 3… (no maximum) */
-  recitationNumber?: number
-  evaluationComment?: string
-  /** Continues an unfinished item of an earlier session («نقل إلى الحصة القادمة») */
-  carriedFromItemId?: ID
-}
-
-/** One student's work for ONE session — its date always comes from the session. */
-export interface WorkProgram {
-  id: ID
-  studentId: ID
-  sessionId: ID
-  items: WorkItem[]
-  /** «ملاحظات المعلم» — not the private «ملاحظاتي» notes */
-  generalNotes?: string
-  lastEditedBy: string
-}
-
-export interface MockClass {
-  id: ID
+  date: ISODate
+  startTime: string
+  endTime: string
+  status: SessionStatus
+  groupClassId: ID
   groupName: string
   branchName: string
 }
 
-export interface MockStudent {
-  id: ID
-  firstName: string
-  lastName: string
-  groupClassId: ID
-  photoUrl?: string
+/** Another item this one is linked to, with its session's date. */
+export interface WorkItemLink {
+  itemId: ID
+  programId: ID
+  sessionId: ID
+  sessionDate: ISODate
 }
 
-export interface MockSession {
+export interface WorkItem {
   id: ID
-  groupClassId: ID
-  date: ISODate
-  start: string
-  end: string
-  status: "SCHEDULED" | "CANCELLED"
+  /** Optimistic concurrency: sent back with every change */
+  version: number
+  position: number
+  type: WorkType
+  description: string
+  status: WorkStatus
+  /** عرضة only: 1, 2, 3… (no maximum) */
+  recitationNumber: number | null
+  evaluationComment: string | null
+  evaluatedAt: string | null
+  evaluatedBy: string | null
+  /** Continues an unfinished item of an earlier session — with that item's status WHEN it was carried */
+  carriedFrom: (WorkItemLink & { status: WorkStatus }) | null
+  /** The previous numbered recitation this one follows */
+  continuedFrom: (WorkItemLink & { recitationNumber: number | null }) | null
+  /** Carried into later sessions */
+  carriedTo: WorkItemLink[]
+  /** Its next recitation(s) */
+  continuedBy: WorkItemLink[]
 }
 
-export interface WorkFollowupData {
-  /** The signed-in teacher (mock) — shown as the author of new changes */
-  me: string
-  classes: MockClass[]
-  students: MockStudent[]
-  sessions: MockSession[]
-  programs: WorkProgram[]
+export interface WorkProgress {
+  total: number
+  /** total − cancelled */
+  active: number
+  /** COMPLETED only */
+  completed: number
+  /** NOT_EVALUATED */
+  pending: number
+  /** NOT_COMPLETED + PARTIAL + POSTPONED */
+  unfinished: number
+  cancelled: number
+  /** null when there is no active item */
+  rate: number | null
+}
+
+export interface WorkProgram {
+  id: ID
+  /** Optimistic concurrency of the notes */
+  version: number
+  student: { id: ID; firstName: string; lastName: string; photoUrl: string | null }
+  session: WorkSession
+  /** «ملاحظات المعلم» — not the private «ملاحظاتي» notes */
+  generalNotes: string | null
+  lastEditedBy: string | null
+  createdAt: string
+  updatedAt: string
+  progress: WorkProgress
+  items: WorkItem[]
 }

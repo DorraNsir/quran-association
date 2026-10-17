@@ -161,6 +161,24 @@ enum AttendanceChangeKind {
   MODIFIED
 }
 
+/// «متابعة العمل»: the kind of a work item (حفظ / مراجعة / عرضة / اختبار)
+enum WorkType {
+  MEMORIZATION
+  REVISION
+  RECITATION
+  EXAM
+}
+
+/// «متابعة العمل»: the result of a work item. CANCELLED = this item was dropped (not a cancelled session)
+enum WorkStatus {
+  NOT_EVALUATED
+  COMPLETED
+  NOT_COMPLETED
+  PARTIAL
+  POSTPONED
+  CANCELLED
+}
+
 enum PublicGroupStatus {
   COMING_SOON
   OPEN
@@ -273,6 +291,11 @@ model User {
   recordedAttendance        StudentAttendance[]
   recordedTeacherAttendance TeacherAttendance[]    @relation("TeacherAttendanceRecorder")
   attendanceChanges         AttendanceChange[]
+  createdWorkPrograms       WorkProgram[]             @relation("WorkProgramCreator")
+  updatedWorkPrograms       WorkProgram[]             @relation("WorkProgramUpdater")
+  createdWorkItems          WorkItem[]                @relation("WorkItemCreator")
+  updatedWorkItems          WorkItem[]                @relation("WorkItemUpdater")
+  evaluatedWorkItems        WorkItem[]                @relation("WorkItemEvaluator")
   recordedEnrollments       StudentEnrollment[]
   recordedStatusChanges     StudentStatusChange[]
   completedSessions         Session[]
@@ -341,6 +364,7 @@ model Student {
   statusChanges       StudentStatusChange[]
   memorization        MemorizationProgress[]
   teacherNotes        TeacherNote[]
+  workPrograms        WorkProgram[]
   paymentObligations  PaymentObligation[]
   registrationRequest RegistrationRequest?
   graduateEntries     QuranGraduate[]
@@ -614,6 +638,7 @@ model Session {
   teacherAttendance TeacherAttendance[]
   attendanceChanges AttendanceChange[]
   notifications     Notification[]
+  workPrograms      WorkProgram[]
 
   /// A weekly slot generates at most one session per date
   @@unique([weeklyScheduleId, date])
@@ -1389,3 +1414,79 @@ model StoredFile {
   @@index([uploadedByUserId])
   @@map("stored_files")
 }
+
+/// «متابعة العمل»: ONE student's work for ONE dated session (at most one per
+/// student and session). Its date, time, class and branch all come from the
+/// session — never stored here. Never deleted with a session or a student
+/// (Restrict): a session that has work is kept (cancelled), never removed.
+model WorkProgram {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  studentId       String   @db.Uuid
+  sessionId       String   @db.Uuid
+  /// «ملاحظات المعلم» — not the private «ملاحظاتي» notes (TeacherNote)
+  generalNotes    String?
+  /// Optimistic concurrency of the program's own fields (notes)
+  version         Int      @default(1)
+  createdByUserId String?  @db.Uuid
+  updatedByUserId String?  @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  student   Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  session   Session    @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  createdBy User?      @relation("WorkProgramCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy User?      @relation("WorkProgramUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  items     WorkItem[]
+
+  @@unique([studentId, sessionId])
+  @@index([sessionId])
+  @@map("work_programs")
+}
+
+/// One task of a work program, evaluated on its own. Never deleted: a dropped
+/// task is evaluated CANCELLED. A transfer («نقل إلى الحصة القادمة») or the
+/// next recitation («إضافة العرضة التالية») creates a NEW item that points to
+/// its source; the source is never changed.
+model WorkItem {
+  id                String     @id @default(uuid(7)) @db.Uuid
+  workProgramId     String     @db.Uuid
+  /// Display order inside the program
+  position          Int
+  type              WorkType
+  description       String
+  status            WorkStatus @default(NOT_EVALUATED)
+  /// عرضة only: 1, 2, 3… (no maximum)
+  recitationNumber  Int?
+  evaluationComment String?
+  /// Continues this unfinished item of an earlier session (same task)
+  carriedFromItemId String?    @db.Uuid
+  /// The source item's status when it was carried (its status may change later)
+  carriedFromStatus WorkStatus?
+  /// The previous numbered recitation this one follows (number + 1)
+  continuedFromItemId String?  @db.Uuid
+  /// Optimistic concurrency: a stale client never overwrites a newer value
+  version           Int        @default(1)
+  createdByUserId   String?    @db.Uuid
+  updatedByUserId   String?    @db.Uuid
+  evaluatedByUserId String?    @db.Uuid
+  evaluatedAt       DateTime?  @db.Timestamptz(3)
+  createdAt         DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime   @updatedAt @db.Timestamptz(3)
+
+  program         WorkProgram @relation(fields: [workProgramId], references: [id], onDelete: Restrict)
+  carriedFrom     WorkItem?   @relation("WorkItemCarry", fields: [carriedFromItemId], references: [id], onDelete: Restrict)
+  carriedTo       WorkItem[]  @relation("WorkItemCarry")
+  continuedFrom   WorkItem?   @relation("WorkItemNextRecitation", fields: [continuedFromItemId], references: [id], onDelete: Restrict)
+  continuedBy     WorkItem[]  @relation("WorkItemNextRecitation")
+  createdBy       User?       @relation("WorkItemCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy       User?       @relation("WorkItemUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  evaluatedBy     User?       @relation("WorkItemEvaluator", fields: [evaluatedByUserId], references: [id], onDelete: SetNull)
+
+  /// The same item is carried at most once into a given program (= student + session)
+  @@unique([carriedFromItemId, workProgramId])
+  /// The next recitation of an item is planned at most once into a given program
+  @@unique([continuedFromItemId, workProgramId])
+  @@index([workProgramId, position])
+  @@map("work_items")
+}
+

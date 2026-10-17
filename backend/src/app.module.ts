@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AcademicModule } from './academic/academic.module.js';
 import { AccountsModule } from './accounts/accounts.module.js';
 import { AttendanceModule } from './attendance/attendance.module.js';
+import { WorkFollowupModule } from './work-followup/work-followup.module.js';
 import { CmsModule } from './cms/cms.module.js';
 import { CommunicationModule } from './communication/communication.module.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -34,6 +35,7 @@ import { WorkspaceModule } from './workspace/workspace.module.js';
     AcademicModule,
     SchedulingModule,
     AttendanceModule,
+    WorkFollowupModule,
     MemorizationModule,
     RegistrationModule,
     FinanceModule,

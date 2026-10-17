@@ -54,7 +54,11 @@ const toDto = (
 });
 
 export { classNotFound } from './scheduling-errors.js';
-import { classNotFound, SLOT_DELETED_REASON } from './scheduling-errors.js';
+import {
+  classNotFound,
+  SLOT_DELETED_REASON,
+  SLOT_MOVED_REASON,
+} from './scheduling-errors.js';
 /** Writes that also (re)generate a year of sessions */
 const LONG_TX = { timeout: 30_000 };
 
@@ -257,7 +261,21 @@ export class SchedulesService {
           select: { date: true },
         });
         replannedUntil = last ? fromDbDate(last.date) : null;
-        await tx.session.deleteMany({ where: neverHeld });
+        // A lesson with work planned («متابعة العمل») is kept, cancelled:
+        // its work programs are history and are never deleted with it
+        await tx.session.updateMany({
+          where: { ...neverHeld, workPrograms: { some: {} } },
+          // Unlinked like a deleted slot's lessons: the slot plans its new
+          // lesson on that date (one session per slot and date)
+          data: {
+            status: SessionStatus.CANCELLED,
+            cancellationReason: SLOT_MOVED_REASON,
+            weeklyScheduleId: null,
+          },
+        });
+        await tx.session.deleteMany({
+          where: { ...neverHeld, workPrograms: { none: {} } },
+        });
       }
       await tx.weeklySchedule.update({
         where: { id: scheduleId },

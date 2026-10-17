@@ -1,21 +1,25 @@
 "use client"
 
-import { ClipboardList, FlaskConical, Plus, SearchX } from "lucide-react"
+import { ClipboardList, Plus, SearchX } from "lucide-react"
 import { useState } from "react"
 
 import { EmptyState } from "@/components/shared/empty-state"
-import { ALL, FilterBar, FilterSelect, matchesText, SearchInput } from "@/components/shared/filters"
+import { ALL, FilterBar, FilterSelect, SearchInput } from "@/components/shared/filters"
 import { PageHeader } from "@/components/shared/page-header"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Pager } from "@/components/shared/pager"
+import { QueryState } from "@/components/shared/query-state"
 import { Button } from "@/components/ui/button"
+import { useWorkPrograms, useWorkSessionOptions, type WorkProgramFilters } from "@/lib/api/work-followup"
+import { todayInTunis } from "@/lib/dates"
+import { usePlatformSettings } from "@/lib/store/settings"
 import { cn } from "@/lib/utils"
-import { phaseOf, progressOf, sessionLabel } from "@/lib/work-followup"
+import { phaseOf, sessionLabel } from "@/lib/work-followup"
 
 import { useWorkFollowup } from "./work-followup-provider"
 import { WorkProgramCard } from "./work-program-card"
 
 type Period = "all" | "upcoming" | "past"
-type ProgramState = "pending" | "unfinished" | "cancelled" | "done"
+type ProgramState = NonNullable<WorkProgramFilters["state"]>
 
 const PERIODS: [Period, string][] = [
   ["all", "الكل"],
@@ -24,55 +28,42 @@ const PERIODS: [Period, string][] = [
 ]
 
 /**
- * «متابعة العمل» — CLIENT DEMONSTRATION PROTOTYPE (shared mock state, no
- * API). Compact cards: one per student and session; the full program is on
- * its own page.
+ * «متابعة العمل»: the teacher's work programs (the API returns only those of
+ * sessions they teach), filtered and paginated on the server. Compact cards:
+ * one per student and session; the full program is on its own page.
  */
 export function WorkFollowupScreen() {
-  const { data, today, studentsById, classesById, sessionsById, openCreate, openEdit, openEvaluate } = useWorkFollowup()
+  const { students, classes, openCreate, openEdit, openEvaluate } = useWorkFollowup()
+  const today = todayInTunis()
+  const pageSize = usePlatformSettings().defaultPageSize
   const [query, setQuery] = useState("")
   const [studentId, setStudentId] = useState(ALL)
   const [classId, setClassId] = useState(ALL)
   const [sessionId, setSessionId] = useState(ALL)
   const [state, setState] = useState(ALL)
   const [period, setPeriod] = useState<Period>("all")
+  const [page, setPage] = useState(1)
+  const reset = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v)
+    setPage(1)
+  }
 
-  const rows = data.programs
-    .map((program) => {
-      const student = studentsById.get(program.studentId)!
-      const session = sessionsById.get(program.sessionId)!
-      return { program, student, session, klass: classesById.get(student.groupClassId), phase: phaseOf(session, today) }
-    })
-    .filter(({ program, student, session, phase }) => {
-      const p = progressOf(program)
-      return (
-        (!query.trim() || matchesText(`${student.firstName} ${student.lastName}`, query)) &&
-        (studentId === ALL || student.id === studentId) &&
-        (classId === ALL || student.groupClassId === classId) &&
-        (sessionId === ALL || session.id === sessionId) &&
-        (period === "all" || (period === "past" ? phase === "PAST" : phase !== "PAST")) &&
-        (state === ALL ||
-          (state === "pending" && p.pending > 0) ||
-          (state === "unfinished" && p.unfinished > 0) ||
-          (state === "cancelled" && p.cancelled > 0) ||
-          (state === "done" && p.active > 0 && p.completed === p.active))
-      )
-    })
-    // Upcoming first (soonest first), then the history (most recent first)
-    .sort((a, b) => {
-      const pa = a.phase === "PAST" ? 1 : 0
-      const pb = b.phase === "PAST" ? 1 : 0
-      if (pa !== pb) return pa - pb
-      const order = a.session.date.localeCompare(b.session.date) || a.session.start.localeCompare(b.session.start)
-      return (pa ? -order : order) || a.student.lastName.localeCompare(b.student.lastName, "ar")
-    })
+  const filters: WorkProgramFilters = {
+    q: query.trim() || undefined,
+    studentId: studentId === ALL ? undefined : studentId,
+    groupClassId: classId === ALL ? undefined : classId,
+    sessionId: sessionId === ALL ? undefined : sessionId,
+    period: period === "all" ? undefined : period,
+    state: state === ALL ? undefined : (state as ProgramState),
+  }
+  const list = useWorkPrograms(filters, page, pageSize)
+  const sessions = useWorkSessionOptions()
+  const programs = list.data?.data ?? []
+  const total = list.data?.meta.total ?? 0
 
-  // Sessions that have at least one program (for the session filter)
-  const sessionOptions = [...new Set(data.programs.map((p) => p.sessionId))]
-    .map((id) => sessionsById.get(id)!)
+  const sessionOptions = (sessions.data ?? [])
     .filter((s) => classId === ALL || s.groupClassId === classId)
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .map((s) => ({ value: s.id, label: `${classesById.get(s.groupClassId)?.groupName ?? ""} · ${sessionLabel(s)}` }))
+    .map((s) => ({ value: s.id, label: `${s.groupName} · ${sessionLabel(s)}` }))
 
   const hasActiveFilters = Boolean(query) || period !== "all" || [studentId, classId, sessionId, state].some((v) => v !== ALL)
   const resetFilters = () => {
@@ -82,6 +73,7 @@ export function WorkFollowupScreen() {
     setSessionId(ALL)
     setState(ALL)
     setPeriod("all")
+    setPage(1)
   }
 
   return (
@@ -97,11 +89,6 @@ export function WorkFollowupScreen() {
         }
       />
 
-      <Alert className="mb-4 border-primary/30 bg-brand-soft/30">
-        <FlaskConical aria-hidden />
-        <AlertDescription>نموذج أولي للعرض على الجمعية: البيانات تجريبية ولا تُحفظ، وتعود إلى حالتها الأولى عند تحديث الصفحة.</AlertDescription>
-      </Alert>
-
       <div role="tablist" aria-label="الفترة" className="mb-4 inline-flex rounded-lg border bg-card p-1">
         {PERIODS.map(([value, label]) => (
           <button
@@ -109,7 +96,7 @@ export function WorkFollowupScreen() {
             type="button"
             role="tab"
             aria-selected={period === value}
-            onClick={() => setPeriod(value)}
+            onClick={() => reset(setPeriod)(value)}
             className={cn(
               "rounded-md px-4 py-1.5 text-sm transition-colors",
               period === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
@@ -123,8 +110,8 @@ export function WorkFollowupScreen() {
       <FilterBar
         hasActiveFilters={hasActiveFilters}
         onReset={resetFilters}
-        resultLabel={`${rows.length} برنامج عمل`}
-        search={<SearchInput value={query} onChange={setQuery} label="البحث عن طالب" placeholder="ابحث عن طالب…" />}
+        resultLabel={`${total} برنامج عمل`}
+        search={<SearchInput value={query} onChange={reset(setQuery)} label="البحث عن طالب" placeholder="ابحث عن طالب…" />}
       >
         <FilterSelect
           label="القسم"
@@ -134,24 +121,25 @@ export function WorkFollowupScreen() {
             setClassId(v)
             setStudentId(ALL)
             setSessionId(ALL)
+            setPage(1)
           }}
-          options={data.classes.map((c) => ({ value: c.id, label: `${c.groupName} — ${c.branchName}` }))}
+          options={classes.map((c) => ({ value: c.id, label: c.label }))}
         />
         <FilterSelect
           label="الطالب"
           allLabel="كل الطلبة"
           value={studentId}
-          onValueChange={setStudentId}
-          options={data.students
+          onValueChange={reset(setStudentId)}
+          options={students
             .filter((s) => classId === ALL || s.groupClassId === classId)
             .map((s) => ({ value: s.id, label: `${s.firstName} ${s.lastName}` }))}
         />
-        <FilterSelect label="الحصة" allLabel="كل الحصص" value={sessionId} onValueChange={setSessionId} options={sessionOptions} />
+        <FilterSelect label="الحصة" allLabel="كل الحصص" value={sessionId} onValueChange={reset(setSessionId)} options={sessionOptions} />
         <FilterSelect
           label="حالة البرنامج"
           allLabel="كل الحالات"
           value={state}
-          onValueChange={setState}
+          onValueChange={reset(setState)}
           options={[
             { value: "pending" satisfies ProgramState, label: "بانتظار التقييم" },
             { value: "unfinished" satisfies ProgramState, label: "به أعمال غير مكتملة" },
@@ -161,41 +149,41 @@ export function WorkFollowupScreen() {
         />
       </FilterBar>
 
-      {rows.length === 0 ? (
-        <div className="rounded-xl border bg-card">
-          {data.programs.length === 0 ? (
-            <EmptyState
-              icon={ClipboardList}
-              title="لا توجد برامج عمل بعد"
-              description="أضف برنامج عمل لطالب في إحدى حصصه القادمة."
-              action={
-                <Button onClick={openCreate}>
-                  <Plus />
-                  إضافة برنامج عمل
-                </Button>
-              }
-            />
-          ) : (
-            <EmptyState icon={SearchX} title="لا توجد برامج مطابقة" description="غيّر عوامل التصفية لعرض برامج أخرى." />
-          )}
-        </div>
-      ) : (
-        // Natural heights: a short card never stretches to match its neighbour
-        <div className="grid items-start gap-4 xl:grid-cols-2">
-          {rows.map(({ program, student, session, klass, phase }) => (
-            <WorkProgramCard
-              key={program.id}
-              program={program}
-              student={student}
-              klass={klass}
-              session={session}
-              phase={phase}
-              onEdit={() => openEdit(program)}
-              onEvaluate={() => openEvaluate(program)}
-            />
-          ))}
-        </div>
-      )}
+      <QueryState query={list}>
+        {programs.length === 0 ? (
+          <div className="rounded-xl border bg-card">
+            {hasActiveFilters ? (
+              <EmptyState icon={SearchX} title="لا توجد برامج مطابقة" description="غيّر عوامل التصفية لعرض برامج أخرى." />
+            ) : (
+              <EmptyState
+                icon={ClipboardList}
+                title="لا توجد برامج عمل بعد"
+                description="أضف برنامج عمل لطالب في إحدى حصصه القادمة."
+                action={
+                  <Button onClick={openCreate}>
+                    <Plus />
+                    إضافة برنامج عمل
+                  </Button>
+                }
+              />
+            )}
+          </div>
+        ) : (
+          // Natural heights: a short card never stretches to match its neighbour
+          <div className="grid items-start gap-4 xl:grid-cols-2">
+            {programs.map((program) => (
+              <WorkProgramCard
+                key={program.id}
+                program={program}
+                phase={phaseOf(program.session, today)}
+                onEdit={() => openEdit(program)}
+                onEvaluate={() => openEvaluate(program)}
+              />
+            ))}
+          </div>
+        )}
+        <Pager page={page} totalPages={list.data?.meta.totalPages ?? 1} onPage={setPage} />
+      </QueryState>
     </>
   )
 }

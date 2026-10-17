@@ -8,8 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import { cancelledLabel, progressLabel, progressOf, sessionLabel, sessionPhaseLabel, type SessionPhase } from "@/lib/work-followup"
-import type { MockClass, MockSession, MockStudent, WorkProgram } from "@/types/work-followup"
+import { cancelledLabel, progressLabel, sessionLabel, sessionPhaseLabel, type SessionPhase } from "@/lib/work-followup"
+import type { WorkProgram, WorkProgress, WorkSession } from "@/types/work-followup"
 
 import { WorkStatusBadge, WorkTypeBadge } from "./work-badges"
 
@@ -28,21 +28,16 @@ const PREVIEW = 2
  */
 export function WorkProgramCard({
   program,
-  student,
-  klass,
-  session,
   phase,
   onEvaluate,
   onEdit,
 }: {
   program: WorkProgram
-  student: MockStudent
-  klass?: MockClass
-  session: MockSession
   phase: SessionPhase
   onEvaluate: () => void
   onEdit: () => void
 }) {
+  const { student, session } = program
   const name = `${student.firstName} ${student.lastName}`
   const href = programHref(program.id)
   const more = program.items.length - PREVIEW
@@ -51,7 +46,7 @@ export function WorkProgramCard({
     <Card className="relative gap-0 overflow-hidden p-0 transition-colors hover:border-primary/40 hover:bg-muted/20 has-[a[data-card-link]:focus-visible]:ring-3 has-[a[data-card-link]:focus-visible]:ring-ring/50">
       <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <UserAvatar name={name} photoUrl={student.photoUrl} />
+          <UserAvatar name={name} photoUrl={student.photoUrl ?? undefined} />
           <div className="min-w-0">
             <Link
               href={href}
@@ -62,18 +57,18 @@ export function WorkProgramCard({
               {name}
             </Link>
             <p className="truncate text-xs text-muted-foreground">
-              {klass?.groupName} — {klass?.branchName}
+              {session.groupName} — {session.branchName}
             </p>
             <SessionLine session={session} phase={phase} className="mt-1" />
           </div>
         </div>
-        <ProgramProgress program={program} className="sm:w-48 sm:shrink-0" />
+        <ProgramProgress progress={program.progress} className="sm:w-48 sm:shrink-0" />
       </div>
 
       <ol className="divide-y border-t">
         {program.items.slice(0, PREVIEW).map((item) => (
           <li key={item.id} className="flex items-start gap-3 px-4 py-2.5">
-            <WorkTypeBadge type={item.type} recitationNumber={item.recitationNumber} />
+            <WorkTypeBadge type={item.type} recitationNumber={item.recitationNumber ?? undefined} />
             {/* Two lines at most here — the full text is on the program's page */}
             <p className={cn("line-clamp-2 flex-1 text-sm", WRAP)}>{item.description}</p>
             <WorkStatusBadge status={item.status} className="shrink-0" />
@@ -110,7 +105,7 @@ export function WorkProgramCard({
 }
 
 /** Date, time and «قادمة / جارية / سابقة». */
-export function SessionLine({ session, phase, className }: { session: MockSession; phase: SessionPhase; className?: string }) {
+export function SessionLine({ session, phase, className }: { session: WorkSession; phase: SessionPhase; className?: string }) {
   return (
     <p className={cn("flex flex-wrap items-center gap-1.5 text-sm", className)}>
       <CalendarDays className="size-3.5 text-muted-foreground" aria-hidden />
@@ -130,9 +125,8 @@ export function SessionLine({ session, phase, className }: { session: MockSessio
   )
 }
 
-/** «2 من 3 أعمال نشطة منجزة» + bar; cancelled items counted apart, never a misleading % . */
-export function ProgramProgress({ program, className }: { program: Pick<WorkProgram, "items">; className?: string }) {
-  const p = progressOf(program)
+/** «2 من 3 أعمال نشطة منجزة» + bar (the API's numbers); cancelled items counted apart, never a misleading %. */
+export function ProgramProgress({ progress: p, className }: { progress: WorkProgress; className?: string }) {
   const percent = p.active ? Math.round((p.completed / p.active) * 100) : 0
   return (
     <div className={cn("space-y-1.5", className)}>
