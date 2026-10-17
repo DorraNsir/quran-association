@@ -203,6 +203,11 @@ export class SessionAttendanceDto {
   complete!: boolean;
   @ApiProperty({ description: 'Whether the caller may record / correct now' })
   editable!: boolean;
+  @ApiProperty({
+    description:
+      'Whether the caller may also CHANGE already saved values (teachers: within TEACHER_ATTENDANCE_WINDOW_DAYS; first recordings have no time limit)',
+  })
+  correctable!: boolean;
   @ApiProperty({ type: RosterStudentDto, isArray: true })
   students!: RosterStudentDto[];
   @ApiProperty({

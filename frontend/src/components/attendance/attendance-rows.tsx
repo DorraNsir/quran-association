@@ -12,6 +12,7 @@ import type { AttendanceEntry } from "@/lib/attendance"
 import { cn } from "@/lib/utils"
 import type { AttendanceStatus, Student, Teacher, TeachingRole } from "@/types/domain"
 
+import { AttendanceStatusBadge } from "./attendance-badges"
 import { StatusPicker } from "./status-picker"
 
 /**
@@ -76,7 +77,10 @@ export function StudentAttendanceRow({
             <StickyNote />
           </Button>
         </div>
-        {disabled ? null : (
+        {disabled ? (
+          // Read-only (locked or not editable): the saved status, if any
+          entry && <AttendanceStatusBadge status={entry.status} className="self-start lg:ms-auto lg:self-center" />
+        ) : (
           <StatusPicker
             label={`حضور ${name}`}
             value={entry?.status}

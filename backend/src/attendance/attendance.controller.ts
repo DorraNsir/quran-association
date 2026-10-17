@@ -216,7 +216,7 @@ export class TeacherAttendanceController {
   @Put()
   @ApiOperation({
     ...SAVE_DOC,
-    description: `${SAVE_DOC.description} Teachers: sessions dated within the last TEACHER_ATTENDANCE_WINDOW_DAYS days (default 7, today included); admins at any time.`,
+    description: `${SAVE_DOC.description} Teachers: a first status can be recorded at any time (not for a future or cancelled session); changing a saved status or note only for sessions dated within the last TEACHER_ATTENDANCE_WINDOW_DAYS days (default 7, today included) — 409 ATTENDANCE_CORRECTION_WINDOW_CLOSED otherwise. Admins at any time.`,
   })
   @ApiOkResponse({ type: SessionAttendanceDto })
   @ApiBadRequestResponse({ description: SAVE_ERRORS_400 })

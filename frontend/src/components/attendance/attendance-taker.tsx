@@ -27,7 +27,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { AttendanceEntry } from "@/lib/attendance"
 import { ApiError, errorMessage } from "@/lib/api/errors"
-import { todayInTunis } from "@/lib/dates"
 import { rosterKey, useSaveAttendance, type SaveAttendanceBody, type SessionRosterDto } from "@/lib/api/sessions"
 import { fullName } from "@/lib/domain"
 import { countLabels, formatDate } from "@/lib/format"
@@ -96,6 +95,9 @@ export function AttendanceTaker({ row, roster: saved, workspace = "admin" }: { r
   const [conflict, setConflict] = useState<string | null>(null)
 
   const editable = saved.editable
+  // Correction window closed (teachers): saved rows are locked, unrecorded ones stay open
+  const correctable = saved.correctable
+  const locked = (draftSaved: Draft, id: ID) => !editable || (!correctable && draftSaved.has(id))
   const isEdit = saved.recordedCount > 0 || saved.teacherRecordedCount > 0
   const unmarked = roster.filter((s) => s.expected && !students.has(s.id))
   const expectedCount = roster.filter((s) => s.expected).length
@@ -168,19 +170,19 @@ export function AttendanceTaker({ row, roster: saved, workspace = "admin" }: { r
       {!editable && (
         <Alert className="mb-6">
           {session.status === "CANCELLED" ? <CalendarX2 /> : <Lock />}
-          <AlertTitle>
-            {session.status === "CANCELLED"
-              ? "هذه الحصة ملغاة"
-              : session.date > todayInTunis()
-                ? "لم يحن موعد هذه الحصة بعد"
-                : "انتهت مهلة تسجيل الحضور"}
-          </AlertTitle>
+          <AlertTitle>{session.status === "CANCELLED" ? "هذه الحصة ملغاة" : "لم يحن موعد هذه الحصة بعد"}</AlertTitle>
           <AlertDescription>
-            {session.status === "CANCELLED"
-              ? "لا يُسجَّل الحضور في حصة ملغاة."
-              : session.date > todayInTunis()
-                ? "يمكن تسجيل الحضور يوم الحصة أو بعدها."
-                : "انقضت المهلة المسموح بها للمعلمين لتسجيل الحضور أو تعديله. تواصل مع الإدارة."}
+            {session.status === "CANCELLED" ? "لا يُسجَّل الحضور في حصة ملغاة." : "يمكن تسجيل الحضور يوم الحصة أو بعدها."}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {editable && !correctable && (
+        <Alert className="mb-6">
+          <Lock />
+          <AlertTitle>انتهت مهلة تعديل الحضور المسجَّل</AlertTitle>
+          <AlertDescription>
+            يمكنك تسجيل حضور من لم يُسجَّل بعد في أي وقت، أما الحضور المسجَّل فقد انقضت مهلة تعديله. لتصحيحه تواصل مع الإدارة.
           </AlertDescription>
         </Alert>
       )}
@@ -217,7 +219,7 @@ export function AttendanceTaker({ row, roster: saved, workspace = "admin" }: { r
                 key={teacher.id}
                 student={teacher}
                 entry={teachers.get(teacher.id)}
-                disabled={!editable}
+                disabled={locked(savedTeachers, teacher.id)}
                 badge={teacher.role ? <TeacherRoleBadge role={teacher.role} /> : <Badge variant="secondary">سابقًا</Badge>}
                 onStatus={(status) => updateTeacher(teacher.id, (prev) => ({ ...prev, status }))}
                 onNote={(note) => updateTeacher(teacher.id, (prev) => ({ status: prev?.status ?? "PRESENT", note }))}
@@ -268,7 +270,7 @@ export function AttendanceTaker({ row, roster: saved, workspace = "admin" }: { r
                 key={student.id}
                 student={student}
                 entry={students.get(student.id)}
-                disabled={!editable}
+                disabled={locked(savedStudents, student.id)}
                 onStatus={(status) => updateStudent(student.id, (prev) => ({ ...prev, status }))}
                 onNote={(note) => updateStudent(student.id, (prev) => ({ status: prev?.status ?? "PRESENT", note }))}
               />

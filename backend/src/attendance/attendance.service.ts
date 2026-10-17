@@ -76,9 +76,10 @@ const addDays = (date: string, n: number) => {
 };
 
 /**
- * Teachers record / correct attendance of their sessions dated within the
- * last `windowDays` days, today included (TEACHER_ATTENDANCE_WINDOW_DAYS,
- * default 7). Admins are never limited.
+ * Teachers CORRECT attendance (change a saved status or note) of their
+ * sessions dated within the last `windowDays` days, today included
+ * (TEACHER_ATTENDANCE_WINDOW_DAYS, default 7). Recording a status for the
+ * first time has no time limit. Admins are never limited.
  */
 export function withinTeacherWindow(
   sessionDate: string,
@@ -110,8 +111,9 @@ const personSelect = {
  * (source ATTENDANCE) once every expected student has a status. Partial saves
  * never complete it; an empty roster never completes it (admin override
  * instead). Corrections on a COMPLETED session keep it COMPLETED (never
- * reopened). Teachers may record/correct within TEACHER_ATTENDANCE_WINDOW_DAYS (config)
- * of the session date; admins at any time.
+ * reopened). Teachers may record a first status at any time (past sessions
+ * included) but correct a saved one only within TEACHER_ATTENDANCE_WINDOW_DAYS
+ * (config) of the session date; admins at any time.
  */
 @Injectable()
 export class AttendanceService {
@@ -177,7 +179,7 @@ export class AttendanceService {
         },
       });
       if (!session) throw notFound('SESSION_NOT_FOUND', 'الحصة غير موجودة');
-      await this.assertEditable(tx, session, actor);
+      await this.assertEditable(tx, session);
 
       const date = fromDbDate(session.date);
       const roster = await this.rosterIds(tx, sessionId, date);
@@ -228,6 +230,33 @@ export class AttendanceService {
             'عدّل مستخدم آخر حضور هذه الحصة في الأثناء: أعد تحميل الصفحة لرؤية آخر القيم ثم أعد التعديل',
           conflicts: stale,
         });
+      }
+
+      // Correction window (teachers): a first recording is always allowed, a
+      // change to a saved value only within the window — checked before any write
+      const correctionClosed = this.correctionClosedReason(
+        date,
+        await platformToday(tx),
+        actor,
+      );
+      if (correctionClosed) {
+        const changesSaved = (
+          current:
+            { status: AttendanceStatus; note: string | null } | undefined,
+          input: { status: AttendanceStatus; note?: string | null },
+        ) =>
+          current !== undefined &&
+          (current.status !== input.status ||
+            (input.note !== undefined && current.note !== input.note));
+        if (
+          studentInputs.some((r) =>
+            changesSaved(existing.get(r.studentId), r),
+          ) ||
+          teacherInputs.some((t) =>
+            changesSaved(existingTeachers.get(t.teacherId), t),
+          )
+        )
+          throw correctionClosed;
       }
 
       const actorName = await this.displayName(tx, actor.userId);
@@ -838,16 +867,14 @@ export class AttendanceService {
   private async assertEditable(
     tx: Tx,
     session: { status: SessionStatus; date: Date },
-    actor: AttendanceActor,
   ) {
-    const reason = await this.notEditableReason(tx, session, actor);
+    const reason = await this.notEditableReason(tx, session);
     if (reason) throw reason;
   }
 
   private async notEditableReason(
     tx: Tx | PrismaService,
     session: { status: SessionStatus; date: Date },
-    actor: AttendanceActor,
   ) {
     if (session.status === SessionStatus.CANCELLED) {
       return conflict(
@@ -862,15 +889,23 @@ export class AttendanceService {
         'ATTENDANCE_SESSION_FUTURE',
         'لا يمكن تسجيل حضور حصة لم يحن موعدها',
       );
+    return undefined;
+  }
+
+  /** Teachers may change SAVED values only within the window (first recordings: any time). */
+  private correctionClosedReason(
+    date: string,
+    today: string,
+    actor: AttendanceActor,
+  ) {
     if (
       actor.kind === 'teacher' &&
       !withinTeacherWindow(date, today, this.teacherWindowDays)
-    ) {
+    )
       return conflict(
         'ATTENDANCE_CORRECTION_WINDOW_CLOSED',
-        `انتهت مهلة تسجيل الحضور أو تعديله (${this.teacherWindowDays} أيام): تواصل مع الإدارة`,
+        `انتهت مهلة تعديل الحضور المسجَّل (${this.teacherWindowDays} أيام): يمكن تسجيل غير المسجَّلين فقط، ولتعديل حضور مسجَّل تواصل مع الإدارة`,
       );
-    }
     return undefined;
   }
 
@@ -1018,6 +1053,7 @@ export class AttendanceService {
           a.lastName.localeCompare(b.lastName, 'ar') ||
           a.firstName.localeCompare(b.firstName, 'ar'),
       );
+    const editable = !(await this.notEditableReason(db, session));
     return {
       sessionId: session.id,
       date,
@@ -1035,7 +1071,14 @@ export class AttendanceService {
       recordedCount,
       complete:
         roster.expected.size > 0 && recordedCount === roster.expected.size,
-      editable: !(await this.notEditableReason(db, session, actor)),
+      editable,
+      correctable:
+        editable &&
+        !this.correctionClosedReason(
+          fromDbDate(session.date),
+          await platformToday(db),
+          actor,
+        ),
       students: rows,
       teacherExpectedCount: team.snapshot.length,
       teacherRecordedCount: teachers.filter((t) => t.role && t.recorded).length,

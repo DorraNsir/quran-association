@@ -49,8 +49,10 @@ export interface SessionRosterDto {
   expectedCount: number
   recordedCount: number
   complete: boolean
-  /** Server rule: not cancelled, not in the future, and (teachers) within the correction window */
+  /** Server rule: may record (not cancelled, not in the future) — first recordings have no time limit */
   editable: boolean
+  /** May also CHANGE saved values (teachers: within the correction window; admins: always) */
+  correctable: boolean
   students: {
     studentId: string
     firstName: string

@@ -70,7 +70,7 @@ export function SessionDetails({
   const setStatus = useSetSessionStatus(session.id)
   const [dialog, setDialog] = useState<"cancel" | "complete" | null>(null)
   const [reason, setReason] = useState("")
-  // The server decides (cancelled, future, teacher correction window)
+  // The server decides (cancelled, future); the teacher correction window only locks saved values
   const editable = roster.editable
   // Expected students, plus anyone recorded who has since left the class
   const students = roster.students.filter((s) => s.expected || s.recorded)

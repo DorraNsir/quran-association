@@ -513,20 +513,50 @@ describe('Attendance & memorization (e2e)', () => {
       expect(await statusOf(id.emptyC)).toBe('SCHEDULED'); // explicit admin override needed
     });
 
-    it('teachers are limited to recent sessions; admins are not', async () => {
+    it('teachers record an old session for the first time freely, but cannot correct it after the window; admins can', async () => {
+      const before = (
+        await teacher('sup').get(`sessions/${id.old}/attendance`).expect(200)
+      ).body;
+      expect(before).toMatchObject({ editable: true, correctable: false });
+      // First recording: no time limit
+      await teacher('sup')
+        .put(`sessions/${id.old}/attendance`, {
+          records: [{ studentId: id.s1, status: 'PRESENT' }],
+        })
+        .expect(200);
+      // Re-sending the same value is not a correction
+      await teacher('sup')
+        .put(`sessions/${id.old}/attendance`, {
+          records: [{ studentId: id.s1, status: 'PRESENT' }],
+        })
+        .expect(200);
+      // Changing the saved status or its note: window closed
+      for (const record of [
+        { studentId: id.s1, status: 'ABSENT' },
+        { studentId: id.s1, status: 'PRESENT', note: 'تأخر' },
+      ]) {
+        const res = await teacher('sup')
+          .put(`sessions/${id.old}/attendance`, { records: [record] })
+          .expect(409);
+        expect(res.body.code).toBe('ATTENDANCE_CORRECTION_WINDOW_CLOSED');
+        expect(res.body.message).toContain('يمكن تسجيل غير المسجَّلين فقط');
+      }
+      // Nothing was written by the refused saves
+      expect(
+        (
+          await prisma.studentAttendance.findFirstOrThrow({
+            where: { sessionId: id.old, studentId: id.s1 },
+          })
+        ).status,
+      ).toBe('PRESENT');
+      // Recent sessions stay correctable for the teacher; admins correct anything
       expect(
         (
           await teacher('sup')
-            .put(`sessions/${id.old}/attendance`, {
-              records: [{ studentId: id.s1, status: 'PRESENT' }],
-            })
-            .expect(409)
-        ).body.code,
-      ).toBe('ATTENDANCE_CORRECTION_WINDOW_CLOSED');
-      expect(
-        (await teacher('sup').get(`sessions/${id.old}/attendance`).expect(200))
-          .body.editable,
-      ).toBe(false);
+            .get(`sessions/${id.past2}/attendance`)
+            .expect(200)
+        ).body.correctable,
+      ).toBe(true);
       await admin
         .put(`sessions/${id.old}/attendance`, {
           records: [{ studentId: id.s1, status: 'ABSENT' }],

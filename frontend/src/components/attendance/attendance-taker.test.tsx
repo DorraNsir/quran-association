@@ -34,7 +34,7 @@ const teacher = (id: string, firstName: string, role: "SUPERVISOR" | "ASSISTANT"
 })
 const roster: SessionRosterDto = {
   sessionId: "se1", date: "2026-10-14", startTime: "17:00", endTime: "18:00", sessionStatus: "SCHEDULED",
-  expectedCount: 2, recordedCount: 1, complete: false, editable: true,
+  expectedCount: 2, recordedCount: 1, complete: false, editable: true, correctable: true,
   students: [student("s1", "أنس", "PRESENT"), student("s2", "يوسف", null)],
   teacherExpectedCount: 2, teacherRecordedCount: 1,
   teachers: [teacher("t1", "مريم", "SUPERVISOR", "PRESENT"), teacher("t2", "سلمى", "ASSISTANT", null)],
@@ -129,5 +129,23 @@ describe("session attendance page — teachers and students, one save", () => {
     expect(await screen.findByText(message)).toBeTruthy()
     expect(screen.getByRole("button", { name: "تحميل آخر القيم" })).toBeTruthy()
     expect(push).not.toHaveBeenCalled()
+  })
+
+  it("correction window closed (teacher): saved rows are locked and shown read-only, unrecorded rows can still be recorded", async () => {
+    const puts = routeFetch(() => json(200, roster))
+    renderTaker({ ...roster, correctable: false })
+    expect(screen.getByText("انتهت مهلة تعديل الحضور المسجَّل")).toBeTruthy()
+    // Saved: أنس (student) and مريم (teacher) → no status buttons
+    expect(screen.queryByRole("radiogroup", { name: "حضور أنس التونسي" })).toBeNull()
+    expect(screen.queryByRole("radiogroup", { name: "حضور مريم المؤدب" })).toBeNull()
+    // Not recorded yet: يوسف and سلمى can be recorded
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "حضور يوسف التونسي" })).getByRole("radio", { name: "حاضر" }))
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "حضور سلمى المؤدب" })).getByRole("radio", { name: "حاضر" }))
+    fireEvent.click(screen.getByRole("button", { name: "حفظ الحضور" }))
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0]).toEqual({
+      records: [{ studentId: "s2", status: "PRESENT", note: null, expectedStatus: null }],
+      teachers: [{ teacherId: "t2", status: "PRESENT", note: null, expectedStatus: null }],
+    })
   })
 })
