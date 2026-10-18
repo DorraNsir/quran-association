@@ -1,10 +1,12 @@
 import 'reflect-metadata';
 
-import { plainToInstance } from 'class-transformer';
+import { plainToInstance, Transform } from 'class-transformer';
 import {
+  IsBoolean,
   IsEnum,
   IsIn,
   IsInt,
+  IsOptional,
   IsString,
   Matches,
   Max,
@@ -108,6 +110,28 @@ export class EnvironmentVariables {
   @Min(0)
   @Max(5)
   TRUST_PROXY: number = 0;
+
+  /**
+   * TEMPORARY «استكمال بيانات الطلبة» (student-onboarding module): links per
+   * class and public submissions. false (default) disables every onboarding
+   * mutation and the public form on the SERVER (the admin menu hides too);
+   * stored submissions and approved students are kept untouched.
+   */
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() === 'true' : value,
+  )
+  @IsBoolean()
+  STUDENT_ONBOARDING_ENABLED: boolean = false;
+
+  /**
+   * Public base URL of the website, used to build shareable links (e.g.
+   * https://omarelkhattab.com). Default: the first FRONTEND_URL origin.
+   */
+  @IsOptional()
+  @Matches(/^https?:\/\/[^,\s/]+$/, {
+    message: 'PUBLIC_APP_URL must be one http(s) origin (no path)',
+  })
+  PUBLIC_APP_URL?: string;
 
   /**
    * How often (seconds) due SCHEDULED announcements are published; 0 turns

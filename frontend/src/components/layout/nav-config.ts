@@ -12,6 +12,7 @@ import {
   GraduationCap,
   LayoutDashboard,
   ListChecks,
+  Link2,
   Megaphone,
   NotebookPen,
   Settings,
@@ -31,6 +32,8 @@ export interface NavItem {
   ready: boolean
   /** Match only the exact path (used for the dashboard root). */
   exact?: boolean
+  /** Shown only while a backend feature flag is on. */
+  feature?: "studentOnboarding"
 }
 
 export interface NavSection {
@@ -62,6 +65,8 @@ export const adminNav: NavSection[] = [
     items: [
       { label: "المدفوعات", href: "/admin/payments", icon: Wallet, ready: true },
       { label: "طلبات التسجيل", href: "/admin/registration-requests", icon: ClipboardList, ready: true },
+      // TEMPORARY module (STUDENT_ONBOARDING_ENABLED)
+      { label: "استكمال بيانات الطلبة", href: "/admin/student-onboarding", icon: Link2, ready: true, feature: "studentOnboarding" },
     ],
   },
   {

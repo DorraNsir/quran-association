@@ -96,6 +96,28 @@ export const studentNotFound = () =>
 const cinTaken = () =>
   conflict('CIN_TAKEN', 'رقم بطاقة التعريف مسجّل لطالب آخر');
 
+/**
+ * THE student contact rule (also checked on temporary onboarding
+ * submissions): an adult needs their own phone, a minor (< 18) a guardian's.
+ */
+export function assertStudentContactRule(
+  dateOfBirth: string | null,
+  phone: string | null | undefined,
+  guardianPhone: string | null | undefined,
+) {
+  if (!dateOfBirth)
+    throw badRequest('DATE_OF_BIRTH_REQUIRED', 'تاريخ الولادة مطلوب');
+  if (ageOn(dateOfBirth) < 18) {
+    if (!guardianPhone)
+      throw badRequest(
+        'GUARDIAN_PHONE_REQUIRED',
+        'هاتف الولي مطلوب للطالب القاصر',
+      );
+  } else if (!phone) {
+    throw badRequest('PHONE_REQUIRED', 'رقم هاتف الطالب مطلوب');
+  }
+}
+
 /** Unique violations of a student write → domain errors (others pass through). */
 export function mapStudentWriteError(error: unknown) {
   if (isUniqueViolation(error, 'cin')) return cinTaken();
@@ -384,64 +406,84 @@ export class StudentsService {
     effectiveDate?: string,
     actorUserId?: string,
   ): Promise<StudentDto> {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM students WHERE id = ${id}::uuid FOR UPDATE`;
-      const student = await tx.student.findUnique({
-        where: { id },
-        select: { groupClassId: true },
+    await this.prisma.$transaction((tx) =>
+      this.assignGroupClassInTx(
+        tx,
+        id,
+        groupClassId,
+        effectiveDate,
+        actorUserId,
+      ),
+    );
+    return this.get(id);
+  }
+
+  /**
+   * assignGroupClass inside a caller's transaction (also used when a
+   * temporary onboarding submission is matched to an existing student).
+   */
+  async assignGroupClassInTx(
+    tx: Tx,
+    id: string,
+    groupClassId: string,
+    effectiveDate?: string,
+    actorUserId?: string,
+  ): Promise<void> {
+    await tx.$queryRaw`SELECT id FROM students WHERE id = ${id}::uuid FOR UPDATE`;
+    const student = await tx.student.findUnique({
+      where: { id },
+      select: { groupClassId: true },
+    });
+    if (!student) throw studentNotFound();
+    await this.assertClassOpen(tx, groupClassId);
+
+    const today = await platformToday(tx);
+    const effective = effectiveDate ?? today;
+    if (effective > today)
+      throw badRequest(
+        'FUTURE_EFFECTIVE_DATE',
+        'لا يمكن أن يكون تاريخ النقل في المستقبل',
+      );
+
+    const open = await tx.studentEnrollment.findFirst({
+      where: { studentId: id, endDate: null },
+    });
+    if (
+      open?.groupClassId === groupClassId &&
+      student.groupClassId === groupClassId
+    )
+      return; // already there
+    if (open && effective < fromDbDate(open.startDate)) {
+      throw conflict(
+        'EFFECTIVE_DATE_BEFORE_CURRENT',
+        'تاريخ النقل يسبق بداية القسم الحالي للطالب',
+      );
+    }
+
+    if (open && fromDbDate(open.startDate) === effective) {
+      // Same-day correction: the membership that started today simply changes class
+      await tx.studentEnrollment.update({
+        where: { id: open.id },
+        data: { groupClassId, recordedByUserId: actorUserId ?? null },
       });
-      if (!student) throw studentNotFound();
-      await this.assertClassOpen(tx, groupClassId);
-
-      const today = await platformToday(tx);
-      const effective = effectiveDate ?? today;
-      if (effective > today)
-        throw badRequest(
-          'FUTURE_EFFECTIVE_DATE',
-          'لا يمكن أن يكون تاريخ النقل في المستقبل',
-        );
-
-      const open = await tx.studentEnrollment.findFirst({
-        where: { studentId: id, endDate: null },
-      });
-      if (
-        open?.groupClassId === groupClassId &&
-        student.groupClassId === groupClassId
-      )
-        return; // already there
-      if (open && effective < fromDbDate(open.startDate)) {
-        throw conflict(
-          'EFFECTIVE_DATE_BEFORE_CURRENT',
-          'تاريخ النقل يسبق بداية القسم الحالي للطالب',
-        );
-      }
-
-      if (open && fromDbDate(open.startDate) === effective) {
-        // Same-day correction: the membership that started today simply changes class
+    } else {
+      if (open)
         await tx.studentEnrollment.update({
           where: { id: open.id },
-          data: { groupClassId, recordedByUserId: actorUserId ?? null },
+          data: { endDate: toDbDate(effective) },
         });
-      } else {
-        if (open)
-          await tx.studentEnrollment.update({
-            where: { id: open.id },
-            data: { endDate: toDbDate(effective) },
-          });
-        await tx.studentEnrollment.create({
-          data: {
-            studentId: id,
-            groupClassId,
-            startDate: toDbDate(effective),
-            recordedByUserId: actorUserId ?? null,
-          },
-        });
-      }
-      await tx.student.update({ where: { id }, data: { groupClassId } });
-      // Charged automatically with the new group's current fee (the previous group's stays as history)
-      await billStudents(tx, { studentId: id }, actorUserId);
-    });
-    return this.get(id);
+      await tx.studentEnrollment.create({
+        data: {
+          studentId: id,
+          groupClassId,
+          startDate: toDbDate(effective),
+          recordedByUserId: actorUserId ?? null,
+        },
+      });
+    }
+    await tx.student.update({ where: { id }, data: { groupClassId } });
+    // Charged automatically with the new group's current fee (the previous group's stays as history)
+    await billStudents(tx, { studentId: id }, actorUserId);
   }
 
   /** Class-membership history, most recent first (endDate is exclusive; null = current). */
@@ -588,16 +630,6 @@ export class StudentsService {
     phone: string | null | undefined,
     guardianPhone: string | null | undefined,
   ) {
-    if (!dateOfBirth)
-      throw badRequest('DATE_OF_BIRTH_REQUIRED', 'تاريخ الولادة مطلوب');
-    if (ageOn(dateOfBirth) < 18) {
-      if (!guardianPhone)
-        throw badRequest(
-          'GUARDIAN_PHONE_REQUIRED',
-          'هاتف الولي مطلوب للطالب القاصر',
-        );
-    } else if (!phone) {
-      throw badRequest('PHONE_REQUIRED', 'رقم هاتف الطالب مطلوب');
-    }
+    assertStudentContactRule(dateOfBirth, phone, guardianPhone);
   }
 }

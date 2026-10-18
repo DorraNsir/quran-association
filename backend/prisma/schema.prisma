@@ -296,6 +296,8 @@ model User {
   createdWorkItems          WorkItem[]                @relation("WorkItemCreator")
   updatedWorkItems          WorkItem[]                @relation("WorkItemUpdater")
   evaluatedWorkItems        WorkItem[]                @relation("WorkItemEvaluator")
+  createdOnboardingLinks    OnboardingLink[]
+  reviewedOnboardings       OnboardingSubmission[]
   recordedEnrollments       StudentEnrollment[]
   recordedStatusChanges     StudentStatusChange[]
   completedSessions         Session[]
@@ -365,6 +367,8 @@ model Student {
   memorization        MemorizationProgress[]
   teacherNotes        TeacherNote[]
   workPrograms        WorkProgram[]
+  /// TEMPORARY onboarding submissions approved as this student (optional back-link)
+  onboardingSubmissions OnboardingSubmission[]
   paymentObligations  PaymentObligation[]
   registrationRequest RegistrationRequest?
   graduateEntries     QuranGraduate[]
@@ -501,6 +505,8 @@ model GroupClass {
   resourceTargets     ResourceTarget[]
   announcementTargets AnnouncementTarget[]
   uploadedFiles       StoredFile[]
+  onboardingLinks       OnboardingLink[]
+  onboardingSubmissions OnboardingSubmission[]
 
   @@index([groupId])
   @@index([branchId])
@@ -1496,5 +1502,90 @@ model WorkItem {
   @@unique([continuedFromItemId, workProgramId])
   @@index([workProgramId, position])
   @@map("work_items")
+}
+
+// ─────────────── TEMPORARY: «استكمال بيانات الطلبة» (student onboarding) ───────────────
+// Isolated, removable module (STUDENT_ONBOARDING_ENABLED). Permanent records
+// (Person, Student, enrollments, accounts) NEVER depend on these tables: the
+// only link is the OPTIONAL OnboardingSubmission.approvedStudentId (SET NULL).
+
+enum OnboardingSubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Who filled the public form
+enum OnboardingSubmitter {
+  STUDENT
+  GUARDIAN
+}
+
+/// One temporary public link for one class. Status is derived: revoked
+/// (revokedAt) › expired (expiresAt ≤ now) › active. At most one non-revoked
+/// link per class (enforced under a lock on the class row).
+model OnboardingLink {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  groupClassId    String    @db.Uuid
+  /// SHA-256 (hex) of the public token — the lookup key; the token itself is never stored in clear
+  tokenHash       String    @unique
+  /// The token encrypted (AES-256-GCM) so an admin can copy the link / QR again
+  tokenSealed     String
+  expiresAt       DateTime  @db.Timestamptz(3)
+  revokedAt       DateTime? @db.Timestamptz(3)
+  createdByUserId String?   @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
+
+  groupClass  GroupClass             @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
+  createdBy   User?                  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  submissions OnboardingSubmission[]
+
+  @@index([groupClassId, revokedAt])
+  @@map("onboarding_links")
+}
+
+/// One public submission, reviewed by an admin. The class is the link's
+/// (snapshot), never chosen by the submitter. The fields mirror the admin
+/// student form; originalData keeps exactly what was submitted (admin edits
+/// change the fields, never it).
+model OnboardingSubmission {
+  id                String                     @id @default(uuid(7)) @db.Uuid
+  onboardingLinkId  String                     @db.Uuid
+  groupClassId      String                     @db.Uuid
+  status            OnboardingSubmissionStatus @default(PENDING)
+  submittedBy       OnboardingSubmitter
+  firstName         String
+  lastName          String
+  gender            Gender
+  dateOfBirth       DateTime                   @db.Date
+  address           String
+  phone             String?
+  email             String?
+  guardianPhone     String?
+  cin               String?
+  /// Exactly what the submitter sent (never edited)
+  originalData      Json
+  /// Optimistic concurrency of admin edits / decisions
+  version           Int                        @default(1)
+  reviewedByUserId  String?                    @db.Uuid
+  reviewedAt        DateTime?                  @db.Timestamptz(3)
+  rejectionReason   String?
+  /// The permanent student created or matched on approval — OPTIONAL, cleared if that student is ever removed
+  approvedStudentId String?                    @db.Uuid
+  /// true when approved by linking an existing student (not creating one)
+  linkedExisting    Boolean                    @default(false)
+  createdAt         DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime                   @updatedAt @db.Timestamptz(3)
+
+  link            OnboardingLink @relation(fields: [onboardingLinkId], references: [id], onDelete: Restrict)
+  groupClass      GroupClass     @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
+  reviewedBy      User?          @relation(fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  approvedStudent Student?       @relation(fields: [approvedStudentId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([groupClassId])
+  @@index([onboardingLinkId])
+  @@map("onboarding_submissions")
 }
 

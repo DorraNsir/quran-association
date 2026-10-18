@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 
+import { useOnboardingStatus } from "@/lib/api/student-onboarding"
 import { labels } from "@/lib/i18n"
 import type { Workspace } from "@/lib/workspace"
 
@@ -70,6 +71,8 @@ function NavLink({
 export function SidebarNav({ workspace, onNavigate }: { workspace: Workspace; onNavigate?: () => void }) {
   const pathname = usePathname()
   const { sections, footer } = workspaceNav[workspace]
+  const onboarding = useOnboardingStatus(workspace === "admin")
+  const visible = (item: NavItem) => item.feature !== "studentOnboarding" || onboarding.data?.enabled === true
 
   return (
     <nav aria-label="القائمة الرئيسية" className="flex flex-1 flex-col gap-5">
@@ -80,7 +83,7 @@ export function SidebarNav({ workspace, onNavigate }: { workspace: Workspace; on
               {section.label}
             </p>
           )}
-          {section.items.map((item) => (
+          {section.items.filter(visible).map((item) => (
             <NavLink
               key={item.href}
               item={item}

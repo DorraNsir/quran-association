@@ -5,6 +5,7 @@ import { AcademicModule } from './academic/academic.module.js';
 import { AccountsModule } from './accounts/accounts.module.js';
 import { AttendanceModule } from './attendance/attendance.module.js';
 import { WorkFollowupModule } from './work-followup/work-followup.module.js';
+import { StudentOnboardingModule } from './student-onboarding/student-onboarding.module.js';
 import { CmsModule } from './cms/cms.module.js';
 import { CommunicationModule } from './communication/communication.module.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -36,6 +37,8 @@ import { WorkspaceModule } from './workspace/workspace.module.js';
     SchedulingModule,
     AttendanceModule,
     WorkFollowupModule,
+    // TEMPORARY (STUDENT_ONBOARDING_ENABLED) — removable without touching student data
+    StudentOnboardingModule,
     MemorizationModule,
     RegistrationModule,
     FinanceModule,
