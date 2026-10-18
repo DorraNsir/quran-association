@@ -3,7 +3,7 @@
 import { CircleCheck, Clock, Info, Link2Off, Loader2, ShieldCheck } from "lucide-react"
 import { useState } from "react"
 
-import { FormSection } from "@/components/shared/form"
+import { FormSection, PhotoInput } from "@/components/shared/form"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -71,6 +71,8 @@ function OnboardingForm({
   const [submittedBy, setSubmittedBy] = useState<Submitter | "">("")
   const [consent, setConsent] = useState(false)
   const [website, setWebsite] = useState("") // anti-spam honeypot (hidden)
+  const [photoPreview, setPhotoPreview] = useState<string | undefined>()
+  const [photo, setPhoto] = useState<File | null>(null)
   const [tried, setTried] = useState(false)
   const extraErrors = {
     submittedBy: submittedBy ? undefined : "حدّد من يملأ الاستمارة",
@@ -80,7 +82,7 @@ function OnboardingForm({
   const submit = form.handleSubmit(async (v) => {
     setTried(true)
     if (extraErrors.submittedBy || extraErrors.consent) throw new Error(extraErrors.submittedBy ?? extraErrors.consent)
-    await submitOnboarding({ token, submittedBy: submittedBy as Submitter, consent, website, ...toPayload(v) })
+    await submitOnboarding({ token, submittedBy: submittedBy as Submitter, consent, website, ...toPayload(v) }, photo)
     onDone()
   })
 
@@ -130,6 +132,13 @@ function OnboardingForm({
         </fieldset>
 
         <FormSection title="بيانات الطالب" description="الحقول المعلَّمة بـ * إلزامية.">
+          <PhotoInput
+            id="onboarding-photo"
+            name={`${form.values.firstName} ${form.values.lastName}`.trim()}
+            value={photoPreview}
+            onChange={setPhotoPreview}
+            onFile={setPhoto}
+          />
           <StudentFields form={form} />
         </FormSection>
 

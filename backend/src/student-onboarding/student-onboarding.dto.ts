@@ -255,6 +255,10 @@ export class OnboardingSubmissionDto extends OnboardingStudentFieldsDto {
     string | null;
   @ApiProperty() linkedExisting!: boolean;
   @ApiProperty({
+    description: 'A photo was sent (GET submissions/:id/photo)',
+  })
+  hasPhoto!: boolean;
+  @ApiProperty({
     description: 'Whether an admin corrected the submitted fields',
   })
   edited!: boolean;

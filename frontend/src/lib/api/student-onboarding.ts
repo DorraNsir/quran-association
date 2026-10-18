@@ -22,6 +22,16 @@ export const onboardingKeys = {
 
 const BASE = "/admin/student-onboarding"
 
+/** The submitted photo (admin only — fetched with the token). */
+export const onboardingPhotoPath = (id: string) => `${BASE}/submissions/${id}/photo`
+
+/** Default registration date of an approved student: 1 September of the current school year. */
+export function schoolYearStart(today: string) {
+  const year = Number(today.slice(0, 4))
+  const start = `${year}-09-01`
+  return today >= start ? start : `${year - 1}-09-01`
+}
+
 export type LinkStatus = "ACTIVE" | "EXPIRED" | "REVOKED"
 export type SubmissionStatus = "PENDING" | "APPROVED" | "REJECTED"
 export type Submitter = "STUDENT" | "GUARDIAN"
@@ -68,6 +78,8 @@ export interface OnboardingSubmission extends OnboardingStudentFields {
   rejectionReason: string | null
   approvedStudentId: string | null
   linkedExisting: boolean
+  /** A photo was sent with the form (see onboardingPhotoPath) */
+  hasPhoto: boolean
   edited: boolean
 }
 
@@ -208,6 +220,15 @@ export function useResolveOnboardingLink(token: string) {
   })
 }
 
-export function submitOnboarding(body: OnboardingStudentFields & { token: string; submittedBy: Submitter; consent: boolean; website?: string }) {
-  return api<{ received: true }>("/public/student-onboarding/submissions", { method: "POST", body })
+/** JSON, or multipart (`data` = the same JSON, `photo` = the image) when a photo is attached. */
+export function submitOnboarding(
+  body: OnboardingStudentFields & { token: string; submittedBy: Submitter; consent: boolean; website?: string },
+  photo?: File | null
+) {
+  const path = "/public/student-onboarding/submissions"
+  if (!photo) return api<{ received: true }>(path, { method: "POST", body })
+  const form = new FormData()
+  form.append("data", JSON.stringify(body))
+  form.append("photo", photo)
+  return api<{ received: true }>(path, { method: "POST", form })
 }

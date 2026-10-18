@@ -291,11 +291,11 @@ model User {
   recordedAttendance        StudentAttendance[]
   recordedTeacherAttendance TeacherAttendance[]    @relation("TeacherAttendanceRecorder")
   attendanceChanges         AttendanceChange[]
-  createdWorkPrograms       WorkProgram[]             @relation("WorkProgramCreator")
-  updatedWorkPrograms       WorkProgram[]             @relation("WorkProgramUpdater")
-  createdWorkItems          WorkItem[]                @relation("WorkItemCreator")
-  updatedWorkItems          WorkItem[]                @relation("WorkItemUpdater")
-  evaluatedWorkItems        WorkItem[]                @relation("WorkItemEvaluator")
+  createdWorkPrograms       WorkProgram[]          @relation("WorkProgramCreator")
+  updatedWorkPrograms       WorkProgram[]          @relation("WorkProgramUpdater")
+  createdWorkItems          WorkItem[]             @relation("WorkItemCreator")
+  updatedWorkItems          WorkItem[]             @relation("WorkItemUpdater")
+  evaluatedWorkItems        WorkItem[]             @relation("WorkItemEvaluator")
   createdOnboardingLinks    OnboardingLink[]
   reviewedOnboardings       OnboardingSubmission[]
   recordedEnrollments       StudentEnrollment[]
@@ -360,18 +360,18 @@ model Student {
   person     Person      @relation(fields: [personId], references: [id], onDelete: Restrict)
   groupClass GroupClass? @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
 
-  attendance          StudentAttendance[]
-  attendanceChanges   AttendanceChange[]
-  enrollments         StudentEnrollment[]
-  statusChanges       StudentStatusChange[]
-  memorization        MemorizationProgress[]
-  teacherNotes        TeacherNote[]
-  workPrograms        WorkProgram[]
+  attendance            StudentAttendance[]
+  attendanceChanges     AttendanceChange[]
+  enrollments           StudentEnrollment[]
+  statusChanges         StudentStatusChange[]
+  memorization          MemorizationProgress[]
+  teacherNotes          TeacherNote[]
+  workPrograms          WorkProgram[]
   /// TEMPORARY onboarding submissions approved as this student (optional back-link)
   onboardingSubmissions OnboardingSubmission[]
-  paymentObligations  PaymentObligation[]
-  registrationRequest RegistrationRequest?
-  graduateEntries     QuranGraduate[]
+  paymentObligations    PaymentObligation[]
+  registrationRequest   RegistrationRequest?
+  graduateEntries       QuranGraduate[]
 
   @@index([groupClassId])
   @@index([status])
@@ -496,15 +496,15 @@ model GroupClass {
   branch     Branch  @relation(fields: [branchId], references: [id], onDelete: Restrict)
   supervisor Teacher @relation("GroupClassSupervisor", fields: [supervisorId], references: [id], onDelete: Restrict)
 
-  assistants          GroupClassAssistant[]
-  students            Student[]
-  enrollments         StudentEnrollment[]
-  schedules           WeeklySchedule[]
-  sessions            Session[]
-  teacherNotes        TeacherNote[]
-  resourceTargets     ResourceTarget[]
-  announcementTargets AnnouncementTarget[]
-  uploadedFiles       StoredFile[]
+  assistants            GroupClassAssistant[]
+  students              Student[]
+  enrollments           StudentEnrollment[]
+  schedules             WeeklySchedule[]
+  sessions              Session[]
+  teacherNotes          TeacherNote[]
+  resourceTargets       ResourceTarget[]
+  announcementTargets   AnnouncementTarget[]
+  uploadedFiles         StoredFile[]
   onboardingLinks       OnboardingLink[]
   onboardingSubmissions OnboardingSubmission[]
 
@@ -1462,39 +1462,39 @@ model WorkProgram {
 /// next recitation («إضافة العرضة التالية») creates a NEW item that points to
 /// its source; the source is never changed.
 model WorkItem {
-  id                String     @id @default(uuid(7)) @db.Uuid
-  workProgramId     String     @db.Uuid
+  id                  String      @id @default(uuid(7)) @db.Uuid
+  workProgramId       String      @db.Uuid
   /// Display order inside the program
-  position          Int
-  type              WorkType
-  description       String
-  status            WorkStatus @default(NOT_EVALUATED)
+  position            Int
+  type                WorkType
+  description         String
+  status              WorkStatus  @default(NOT_EVALUATED)
   /// عرضة only: 1, 2, 3… (no maximum)
-  recitationNumber  Int?
-  evaluationComment String?
+  recitationNumber    Int?
+  evaluationComment   String?
   /// Continues this unfinished item of an earlier session (same task)
-  carriedFromItemId String?    @db.Uuid
+  carriedFromItemId   String?     @db.Uuid
   /// The source item's status when it was carried (its status may change later)
-  carriedFromStatus WorkStatus?
+  carriedFromStatus   WorkStatus?
   /// The previous numbered recitation this one follows (number + 1)
-  continuedFromItemId String?  @db.Uuid
+  continuedFromItemId String?     @db.Uuid
   /// Optimistic concurrency: a stale client never overwrites a newer value
-  version           Int        @default(1)
-  createdByUserId   String?    @db.Uuid
-  updatedByUserId   String?    @db.Uuid
-  evaluatedByUserId String?    @db.Uuid
-  evaluatedAt       DateTime?  @db.Timestamptz(3)
-  createdAt         DateTime   @default(now()) @db.Timestamptz(3)
-  updatedAt         DateTime   @updatedAt @db.Timestamptz(3)
+  version             Int         @default(1)
+  createdByUserId     String?     @db.Uuid
+  updatedByUserId     String?     @db.Uuid
+  evaluatedByUserId   String?     @db.Uuid
+  evaluatedAt         DateTime?   @db.Timestamptz(3)
+  createdAt           DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime    @updatedAt @db.Timestamptz(3)
 
-  program         WorkProgram @relation(fields: [workProgramId], references: [id], onDelete: Restrict)
-  carriedFrom     WorkItem?   @relation("WorkItemCarry", fields: [carriedFromItemId], references: [id], onDelete: Restrict)
-  carriedTo       WorkItem[]  @relation("WorkItemCarry")
-  continuedFrom   WorkItem?   @relation("WorkItemNextRecitation", fields: [continuedFromItemId], references: [id], onDelete: Restrict)
-  continuedBy     WorkItem[]  @relation("WorkItemNextRecitation")
-  createdBy       User?       @relation("WorkItemCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedBy       User?       @relation("WorkItemUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
-  evaluatedBy     User?       @relation("WorkItemEvaluator", fields: [evaluatedByUserId], references: [id], onDelete: SetNull)
+  program       WorkProgram @relation(fields: [workProgramId], references: [id], onDelete: Restrict)
+  carriedFrom   WorkItem?   @relation("WorkItemCarry", fields: [carriedFromItemId], references: [id], onDelete: Restrict)
+  carriedTo     WorkItem[]  @relation("WorkItemCarry")
+  continuedFrom WorkItem?   @relation("WorkItemNextRecitation", fields: [continuedFromItemId], references: [id], onDelete: Restrict)
+  continuedBy   WorkItem[]  @relation("WorkItemNextRecitation")
+  createdBy     User?       @relation("WorkItemCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy     User?       @relation("WorkItemUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  evaluatedBy   User?       @relation("WorkItemEvaluator", fields: [evaluatedByUserId], references: [id], onDelete: SetNull)
 
   /// The same item is carried at most once into a given program (= student + session)
   @@unique([carriedFromItemId, workProgramId])
@@ -1578,10 +1578,11 @@ model OnboardingSubmission {
   createdAt         DateTime                   @default(now()) @db.Timestamptz(3)
   updatedAt         DateTime                   @updatedAt @db.Timestamptz(3)
 
-  link            OnboardingLink @relation(fields: [onboardingLinkId], references: [id], onDelete: Restrict)
-  groupClass      GroupClass     @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
-  reviewedBy      User?          @relation(fields: [reviewedByUserId], references: [id], onDelete: SetNull)
-  approvedStudent Student?       @relation(fields: [approvedStudentId], references: [id], onDelete: SetNull)
+  link            OnboardingLink   @relation(fields: [onboardingLinkId], references: [id], onDelete: Restrict)
+  groupClass      GroupClass       @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
+  reviewedBy      User?            @relation(fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  approvedStudent Student?         @relation(fields: [approvedStudentId], references: [id], onDelete: SetNull)
+  photo           OnboardingPhoto?
 
   @@index([status, createdAt])
   @@index([groupClassId])
@@ -1589,3 +1590,18 @@ model OnboardingSubmission {
   @@map("onboarding_submissions")
 }
 
+/// TEMPORARY: the photo sent with a submission, kept here (not in stored_files:
+/// a public visitor is no user) until approval copies it into a regular
+/// PROFILE_PHOTO uploaded by the approving admin. Separate table so lists never load bytes.
+model OnboardingPhoto {
+  submissionId String   @id @db.Uuid
+  /// Detected from the content (signature), never the client's claim
+  mimeType     String
+  size         Int
+  data         Bytes
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  submission OnboardingSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@map("onboarding_photos")
+}

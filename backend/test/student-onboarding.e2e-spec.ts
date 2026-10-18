@@ -14,6 +14,7 @@ import { todayIn } from '../src/common/dates.js';
 import { Role } from '../src/generated/prisma/enums.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { OnboardingRateLimiter } from '../src/student-onboarding/student-onboarding.controller.js';
+import { schoolYearStart } from '../src/student-onboarding/student-onboarding.service.js';
 
 const RUN = randomUUID().slice(0, 8);
 const PASSWORD = 'initial-pass-123';
@@ -26,6 +27,11 @@ const addDays = (date: string, n: number) => {
 };
 const IN_A_WEEK = `${addDays(TODAY, 7)}T20:00`;
 const tokenOf = (url: string) => url.split('/student-info/')[1];
+// A valid 1×1 PNG
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64',
+);
 
 /**
  * TEMPORARY «استكمال بيانات الطلبة»: links per class, public submissions,
@@ -75,6 +81,33 @@ describe('Student onboarding — temporary module (e2e)', () => {
         address: 'نابل، شارع الحبيب بورقيبة',
         guardianPhone: '98765432',
         ...fields,
+      });
+  /** The public form as multipart: `data` (the JSON) + `photo`. */
+  const submitWithPhoto = (
+    t: string,
+    photo: { bytes: Buffer; name: string; type: string },
+    fields: object = {},
+  ) =>
+    http()
+      .post('/api/public/student-onboarding/submissions')
+      .field(
+        'data',
+        JSON.stringify({
+          token: t,
+          submittedBy: 'STUDENT',
+          consent: true,
+          firstName: 'صورة',
+          lastName: tag('المصوّر'),
+          gender: 'FEMALE',
+          dateOfBirth: '2001-07-21',
+          address: 'سوسة',
+          phone: '55443322',
+          ...fields,
+        }),
+      )
+      .attach('photo', photo.bytes, {
+        filename: photo.name,
+        contentType: photo.type,
       });
   const submissionsOf = (linkId: string) =>
     prisma.onboardingSubmission.findMany({
@@ -208,6 +241,14 @@ describe('Student onboarding — temporary module (e2e)', () => {
     await prisma.groupFee
       .deleteMany({ where: { group: { name: { endsWith: RUN } } } })
       .catch(() => undefined);
+    // Profile photos copied at approval (uploaded by this run's admin)
+    await prisma.person.updateMany({
+      where: { id: { in: persons } },
+      data: { photoFileId: null, photoUrl: null },
+    });
+    await prisma.storedFile.deleteMany({
+      where: { uploadedBy: { personId: { in: persons } } },
+    });
     await prisma.teacher.deleteMany({ where: { personId: { in: persons } } });
     await prisma.user.deleteMany({ where: { personId: { in: persons } } });
     await prisma.person.deleteMany({ where: { id: { in: persons } } });
@@ -693,6 +734,134 @@ describe('Student onboarding — temporary module (e2e)', () => {
         approvedStudentId: null,
       });
       expect(await prisma.student.count()).toBe(before);
+    });
+  });
+
+  // ───────────────────────── photo ─────────────────────────
+
+  describe('photo', () => {
+    it('optional photo (multipart): images only, viewable by admins only', async () => {
+      const before = await prisma.onboardingSubmission.count();
+      expect(
+        (
+          await submitWithPhoto(token.link, {
+            bytes: Buffer.from('not an image at all'),
+            name: 'x.png',
+            type: 'image/png',
+          }).expect(400)
+        ).body.code,
+      ).toBe('FILE_TYPE_NOT_ALLOWED');
+      await http()
+        .post('/api/public/student-onboarding/submissions')
+        .field('data', '{oops')
+        .expect(400);
+      expect(await prisma.onboardingSubmission.count()).toBe(before);
+
+      await submitWithPhoto(token.link, {
+        bytes: PNG,
+        name: 'me.png',
+        type: 'image/png',
+      }).expect(201);
+      const [listed] = (
+        await admin.get('submissions', { q: 'صورة' }).expect(200)
+      ).body.data;
+      expect(listed).toMatchObject({ hasPhoto: true, submittedBy: 'STUDENT' });
+      id.photoSub = listed.id;
+      const photo = await admin
+        .get(`submissions/${id.photoSub}/photo`)
+        .buffer(true)
+        .expect(200);
+      expect(photo.headers['content-type']).toBe('image/png');
+      expect(photo.headers['cache-control']).toContain('no-store');
+      expect(Buffer.compare(photo.body as Buffer, PNG)).toBe(0);
+      await http()
+        .get(`/api/admin/student-onboarding/submissions/${id.photoSub}/photo`)
+        .expect(401);
+      await http()
+        .get(`/api/admin/student-onboarding/submissions/${id.photoSub}/photo`)
+        .set(as('pupil'))
+        .expect(403);
+      // Without a photo: none
+      expect(
+        (await admin.get(`submissions/${id.sub}/photo`).expect(404)).body.code,
+      ).toBe('ONBOARDING_PHOTO_NOT_FOUND');
+    });
+
+    it('approval: the photo becomes a regular profile photo, registered on 1 September', async () => {
+      const sub = (await admin.get(`submissions/${id.photoSub}`).expect(200))
+        .body;
+      const ok = (
+        await admin
+          .post(`submissions/${id.photoSub}/approve`, {
+            version: sub.version,
+            confirmNoDuplicate: true,
+          })
+          .expect(200)
+      ).body;
+      const student = await prisma.student.findUniqueOrThrow({
+        where: { id: ok.approvedStudentId },
+        include: { person: true, enrollments: true },
+      });
+      expect(student.registrationDate.toISOString().slice(0, 10)).toBe(
+        schoolYearStart(TODAY),
+      );
+      expect(student.enrollments[0].startDate.toISOString().slice(0, 10)).toBe(
+        schoolYearStart(TODAY),
+      );
+      const fileId = student.person.photoFileId!;
+      expect(student.person.photoUrl).toBe(`/api/files/${fileId}`);
+      const file = await prisma.storedFile.findUniqueOrThrow({
+        where: { id: fileId },
+      });
+      expect(file).toMatchObject({
+        purpose: 'PROFILE_PHOTO',
+        mimeType: 'image/png',
+        size: PNG.length,
+      });
+      const reviewed = await prisma.onboardingSubmission.findUniqueOrThrow({
+        where: { id: id.photoSub },
+      });
+      expect(file.uploadedByUserId).toBe(reviewed.reviewedByUserId);
+
+      // Independent of the temporary tables
+      await prisma.onboardingPhoto.delete({
+        where: { submissionId: id.photoSub },
+      });
+      const served = await http()
+        .get(`/api/files/${fileId}`)
+        .set(as('admin'))
+        .buffer(true)
+        .expect(200);
+      expect(Buffer.compare(served.body as Buffer, PNG)).toBe(0);
+      id.photoStudent = student.id;
+    });
+
+    it('«ربط بطالب موجود» never replaces an existing photo', async () => {
+      await submitWithPhoto(token.link, {
+        bytes: PNG,
+        name: 'again.png',
+        type: 'image/png',
+      }).expect(201);
+      const [again] = (
+        await admin
+          .get('submissions', { q: 'صورة', status: 'PENDING' })
+          .expect(200)
+      ).body.data;
+      const before = await prisma.student.findUniqueOrThrow({
+        where: { id: id.photoStudent },
+        include: { person: true },
+      });
+      await admin
+        .post(`submissions/${again.id}/link`, {
+          version: again.version,
+          studentId: id.photoStudent,
+        })
+        .expect(200);
+      const after = await prisma.student.findUniqueOrThrow({
+        where: { id: id.photoStudent },
+        include: { person: true },
+      });
+      expect(after.person.photoFileId).toBe(before.person.photoFileId);
     });
   });
 

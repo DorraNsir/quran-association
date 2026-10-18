@@ -1,8 +1,15 @@
+import { randomUUID } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import {
+  BadRequestException,
   ConflictException,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -22,7 +29,16 @@ import {
 } from '../common/platform-clock.js';
 import type { EnvironmentVariables } from '../config/env.validation.js';
 import { Prisma } from '../generated/prisma/client.js';
-import { OnboardingSubmissionStatus } from '../generated/prisma/enums.js';
+import {
+  FilePurpose,
+  OnboardingSubmissionStatus,
+} from '../generated/prisma/enums.js';
+import { detectFileType, SIGNATURE_BYTES } from '../files/file-signature.js';
+import { FilesService, privateFileUrl } from '../files/files.service.js';
+import {
+  STORAGE_DRIVER,
+  type StorageDriver,
+} from '../files/storage/storage-driver.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   hashToken,
@@ -74,6 +90,8 @@ const toClass = (c: ClassRow) => ({
 
 const submissionInclude = {
   groupClass: { select: classSelect },
+  // Only whether there is one — never the bytes
+  photo: { select: { size: true } },
   reviewedBy: {
     select: { person: { select: { firstName: true, lastName: true } } },
   },
@@ -129,6 +147,7 @@ function toSubmission(s: SubmissionRow): OnboardingSubmissionDto {
     rejectionReason: s.rejectionReason,
     approvedStudentId: s.approvedStudentId,
     linkedExisting: s.linkedExisting,
+    hasPhoto: s.photo !== null,
     edited: (Object.keys(fields) as (keyof typeof fields)[]).some(
       (k) => (original[k] ?? null) !== fields[k],
     ),
@@ -149,6 +168,19 @@ const linkExpired = () =>
     },
     HttpStatus.GONE,
   );
+/** The photo of the public form, as multer (memory storage) hands it over. */
+export interface IncomingPhoto {
+  buffer: Buffer;
+  size: number;
+}
+
+/** Start of the current school year: 1 September (of last year before September). */
+export function schoolYearStart(today: string) {
+  const year = Number(today.slice(0, 4));
+  const start = `${year}-09-01`;
+  return today >= start ? start : `${year - 1}-09-01`;
+}
+
 const submissionNotFound = () =>
   notFound('ONBOARDING_SUBMISSION_NOT_FOUND', 'طلب الاستكمال غير موجود');
 const notPending = () =>
@@ -174,6 +206,8 @@ export class StudentOnboardingService {
     private readonly students: StudentsService,
     private readonly pageSizes: PageSizeService,
     private readonly config: ConfigService<EnvironmentVariables, true>,
+    private readonly files: FilesService,
+    @Inject(STORAGE_DRIVER) private readonly storage: StorageDriver,
   ) {}
 
   enabled() {
@@ -324,11 +358,15 @@ export class StudentOnboardingService {
    * A PENDING submission for the link's class (never a student). The link is
    * re-checked under a share lock, so a concurrent revocation is serialized.
    */
-  async submit(dto: OnboardingSubmitDto): Promise<{ received: true }> {
+  async submit(
+    dto: OnboardingSubmitDto,
+    file?: IncomingPhoto,
+  ): Promise<{ received: true }> {
     // Anti-spam honeypot: a filled hidden field is accepted silently, never stored
     if (dto.website?.trim()) return { received: true };
     const today = await platformToday(this.prisma);
     this.assertFields(dto, today);
+    const photo = file ? this.checkPhoto(file) : null;
     await this.prisma.$transaction(async (tx) => {
       const [link] = await tx.$queryRaw<
         {
@@ -351,6 +389,15 @@ export class StudentOnboardingService {
           ...fields,
           dateOfBirth: toDbDate(fields.dateOfBirth),
           originalData: { ...fields, submittedBy: dto.submittedBy },
+          ...(photo && {
+            photo: {
+              create: {
+                mimeType: photo.mimeType,
+                size: photo.size,
+                data: photo.data,
+              },
+            },
+          }),
         },
       });
     });
@@ -451,6 +498,7 @@ export class StudentOnboardingService {
     dto: ApproveOnboardingSubmissionDto,
     actorUserId: string,
   ): Promise<OnboardingSubmissionDetailDto> {
+    const photoFileId = await this.photoAsStoredFile(id, actorUserId);
     try {
       await this.prisma.$transaction(async (tx) => {
         const sub = await this.lockPending(tx, id, dto.version);
@@ -462,7 +510,7 @@ export class StudentOnboardingService {
             possibleMatches: matches,
           });
         const today = await platformToday(tx);
-        const registrationDate = dto.registrationDate ?? today;
+        const registrationDate = dto.registrationDate ?? schoolYearStart(today);
         if (registrationDate > today)
           throw badRequest(
             'REGISTRATION_DATE_IN_FUTURE',
@@ -487,6 +535,8 @@ export class StudentOnboardingService {
           },
           actorUserId,
         );
+        if (photoFileId)
+          await this.attachPhoto(tx, studentId, photoFileId, actorUserId);
         await this.decide(tx, id, actorUserId, {
           status: OnboardingSubmissionStatus.APPROVED,
           approvedStudentId: studentId,
@@ -509,6 +559,11 @@ export class StudentOnboardingService {
     dto: LinkOnboardingSubmissionDto,
     actorUserId: string,
   ): Promise<OnboardingSubmissionDetailDto> {
+    const photoFileId = await this.photoAsStoredFile(
+      id,
+      actorUserId,
+      dto.studentId,
+    );
     try {
       await this.prisma.$transaction(async (tx) => {
         const sub = await this.lockPending(tx, id, dto.version);
@@ -524,6 +579,11 @@ export class StudentOnboardingService {
           undefined,
           actorUserId,
         );
+        // Only a student without a photo gets this one (nothing is overwritten)
+        if (photoFileId)
+          await this.attachPhoto(tx, dto.studentId, photoFileId, actorUserId, {
+            onlyIfNone: true,
+          });
         await this.decide(tx, id, actorUserId, {
           status: OnboardingSubmissionStatus.APPROVED,
           approvedStudentId: dto.studentId,
@@ -552,7 +612,116 @@ export class StudentOnboardingService {
     return this.getSubmission(id);
   }
 
+  /** The submitted photo's bytes (admin review). */
+  async photo(id: string) {
+    const photo = await this.prisma.onboardingPhoto.findUnique({
+      where: { submissionId: id },
+      select: { mimeType: true, size: true, data: true },
+    });
+    if (!photo)
+      throw notFound('ONBOARDING_PHOTO_NOT_FOUND', 'لا توجد صورة لهذا الطلب');
+    return photo;
+  }
+
   // ───────────────────────── internals ─────────────────────────
+
+  /** An image (detected from the content, never the client's claim) within the image size limit. */
+  private checkPhoto(file: IncomingPhoto) {
+    const max = this.config.get('FILE_MAX_IMAGE_BYTES', { infer: true });
+    if (file.size <= 0 || file.size > max)
+      throw new PayloadTooLargeException({
+        code: 'FILE_TOO_LARGE',
+        message: `حجم الصورة يتجاوز الحد المسموح (${Math.floor(max / 1024 / 1024)} م.ب)`,
+      });
+    const detected = detectFileType(file.buffer.subarray(0, SIGNATURE_BYTES));
+    if (!detected || detected.kind !== 'IMAGE')
+      throw new BadRequestException({
+        code: 'FILE_TYPE_NOT_ALLOWED',
+        message: 'الصورة يجب أن تكون بصيغة JPG أو PNG أو WEBP',
+      });
+    return {
+      mimeType: detected.mimeType,
+      size: file.size,
+      data: new Uint8Array(file.buffer),
+    };
+  }
+
+  /**
+   * A PENDING submission's photo copied into a regular PROFILE_PHOTO,
+   * uploaded by the reviewing admin (the platform's own upload checks), so
+   * the student's photo never depends on the temporary tables. Done before
+   * the decision's transaction: if the decision fails, the file is simply
+   * unattached and removed by the usual file cleanup.
+   */
+  private async photoAsStoredFile(
+    id: string,
+    actorUserId: string,
+    existingStudentId?: string,
+  ) {
+    const sub = await this.prisma.onboardingSubmission.findUnique({
+      where: { id },
+      select: {
+        status: true,
+        photo: { select: { mimeType: true, data: true } },
+      },
+    });
+    if (!sub?.photo || sub.status !== OnboardingSubmissionStatus.PENDING)
+      return null;
+    // An existing student who already has a photo keeps it: nothing to copy
+    if (existingStudentId) {
+      const student = await this.prisma.student.findUnique({
+        where: { id: existingStudentId },
+        select: { person: { select: { photoFileId: true } } },
+      });
+      if (!student || student.person.photoFileId) return null;
+    }
+    const detected = detectFileType(
+      sub.photo.data.subarray(0, SIGNATURE_BYTES),
+    );
+    if (!detected) return null;
+    const path = join(this.storage.tempDir, `onboarding-${randomUUID()}`);
+    await writeFile(path, sub.photo.data, { mode: 0o600 });
+    const stored = await this.files.upload(
+      {
+        path,
+        originalname: `photo.${detected.extensions[0]}`,
+        mimetype: detected.mimeType,
+        size: sub.photo.data.byteLength,
+      },
+      FilePurpose.PROFILE_PHOTO,
+      undefined,
+      actorUserId,
+    );
+    return stored.id;
+  }
+
+  /** Sets the student's photo (the admin photo rules), optionally only when they have none. */
+  private async attachPhoto(
+    tx: Tx,
+    studentId: string,
+    fileId: string,
+    actorUserId: string,
+    { onlyIfNone = false } = {},
+  ) {
+    const { personId } = await tx.student.findUniqueOrThrow({
+      where: { id: studentId },
+      select: { personId: true },
+    });
+    const [person] = await tx.$queryRaw<{ photoFileId: string | null }[]>`
+      SELECT "photoFileId" FROM persons WHERE id = ${personId}::uuid FOR UPDATE`;
+    if (onlyIfNone && person?.photoFileId) return;
+    await this.files.assertAttachable(
+      tx,
+      fileId,
+      FilePurpose.PROFILE_PHOTO,
+      { userId: actorUserId, isAdmin: true },
+      { kinds: ['IMAGE'] },
+    );
+    await tx.person.update({
+      where: { id: personId },
+      data: { photoFileId: fileId, photoUrl: privateFileUrl(fileId) },
+    });
+  }
 
   /**
    * Possible duplicates — shown, never merged: same full name; same birth

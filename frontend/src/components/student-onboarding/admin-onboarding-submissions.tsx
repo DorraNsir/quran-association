@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, Check, ExternalLink, Inbox, Link2, Pencil, UserPlus, X } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
@@ -23,10 +23,12 @@ import { Label } from "@/components/ui/label"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
 import { useFormState } from "@/hooks/use-form-state"
-import { api } from "@/lib/api/client"
+import { api, fetchPrivateBlob } from "@/lib/api/client"
 import { ApiError, errorMessage } from "@/lib/api/errors"
 import {
   onboardingKeys,
+  onboardingPhotoPath,
+  schoolYearStart,
   useOnboardingSubmission,
   useOnboardingSubmissions,
   useReviewOnboardingSubmission,
@@ -35,6 +37,7 @@ import {
   type PossibleMatch,
   type SubmissionStatus,
 } from "@/lib/api/student-onboarding"
+import { todayInTunis } from "@/lib/dates"
 import { describeClass, fullName, indexLookups, type Lookups } from "@/lib/domain"
 import { formatDate, formatDateTime } from "@/lib/format"
 import { labels } from "@/lib/i18n"
@@ -201,7 +204,14 @@ function Review({ sub, onDone }: { sub: OnboardingSubmissionDetail; onDone: () =
   const [linkTo, setLinkTo] = useState<{ id: string; name: string } | null>(null)
   const [searching, setSearching] = useState(false)
   const [rejecting, setRejecting] = useState(false)
+  // The student's registration date when approved (default: start of the school year)
+  const [registrationDate, setRegistrationDate] = useState(() => schoolYearStart(todayInTunis()))
   const pending = sub.status === "PENDING"
+  const approve = (confirmNoDuplicate?: boolean) =>
+    run(
+      { kind: "approve", id: sub.id, version: sub.version, registrationDate: registrationDate || undefined, confirmNoDuplicate },
+      "تم قبول الطلب وإضافة الطالب"
+    )
 
   async function run(action: Parameters<typeof review.mutateAsync>[0], success: string) {
     try {
@@ -231,9 +241,13 @@ function Review({ sub, onDone }: { sub: OnboardingSubmissionDetail; onDone: () =
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <StatusBadge status={sub.status} />
-        {sub.edited && <Badge variant="secondary">عدّلت الإدارة البيانات</Badge>}
+      <div className="flex items-center gap-4">
+        {sub.hasPhoto && <SubmissionPhoto id={sub.id} name={`${sub.firstName} ${sub.lastName}`} />}
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge status={sub.status} />
+          {sub.edited && <Badge variant="secondary">عدّلت الإدارة البيانات</Badge>}
+          {!sub.hasPhoto && <Badge variant="outline" className="text-muted-foreground">بدون صورة</Badge>}
+        </div>
       </div>
 
       {pending && sub.possibleMatches.length > 0 && (
@@ -307,14 +321,25 @@ function Review({ sub, onDone }: { sub: OnboardingSubmissionDetail; onDone: () =
       {sub.status === "REJECTED" && <p className="text-sm text-muted-foreground">سبب الرفض: {sub.rejectionReason ?? "—"}</p>}
 
       {pending && (
-        <div className="flex flex-wrap gap-2 border-t pt-4">
+        <div className="space-y-1.5 border-t pt-4">
+          <Label htmlFor={`ob-reg-${sub.id}`}>تاريخ التسجيل</Label>
+          <Input
+            id={`ob-reg-${sub.id}`}
+            type="date"
+            dir="ltr"
+            max={todayInTunis()}
+            value={registrationDate}
+            onChange={(e) => setRegistrationDate(e.target.value)}
+            className="w-full sm:w-48"
+          />
+          <p className="text-xs text-muted-foreground">يُعتمد عند «قبول وإضافة الطالب» — افتراضيًا بداية السنة الدراسية (1 سبتمبر).</p>
+        </div>
+      )}
+      {pending && (
+        <div className="flex flex-wrap gap-2">
           <Button
             disabled={review.isPending}
-            onClick={() =>
-              sub.possibleMatches.length > 0
-                ? setConfirmCreate(true)
-                : run({ kind: "approve", id: sub.id, version: sub.version }, "تم قبول الطلب وإضافة الطالب")
-            }
+            onClick={() => (sub.possibleMatches.length > 0 ? setConfirmCreate(true) : approve())}
           >
             <UserPlus />
             قبول وإضافة الطالب
@@ -340,7 +365,7 @@ function Review({ sub, onDone }: { sub: OnboardingSubmissionDetail; onDone: () =
         title="إنشاء طالب جديد رغم وجود تشابه؟"
         description="تأكّد أن هذا الطلب لا يخص أحد الطلبة المعروضين أعلاه (قد يشترك الإخوة في هاتف الولي). سيُضاف طالب جديد في فوج الرابط."
         confirmLabel="إنشاء طالب جديد بعد التأكيد"
-        onConfirm={() => run({ kind: "approve", id: sub.id, version: sub.version, confirmNoDuplicate: true }, "تم قبول الطلب وإضافة الطالب")}
+        onConfirm={() => approve(true)}
       />
       <ConfirmDialog
         open={linkTo !== null}
@@ -367,6 +392,28 @@ function Review({ sub, onDone }: { sub: OnboardingSubmissionDetail; onDone: () =
         />
       )}
     </div>
+  )
+}
+
+/** The submitted photo — fetched with the admin's token, kept in memory only. */
+function SubmissionPhoto({ id, name }: { id: string; name: string }) {
+  const blob = useQuery({
+    queryKey: [...onboardingKeys.submission(id), "photo"],
+    queryFn: ({ signal }) => fetchPrivateBlob(onboardingPhotoPath(id), signal),
+    staleTime: 5 * 60_000,
+    retry: false,
+  })
+  const src = useMemo(() => (blob.data ? URL.createObjectURL(blob.data) : null), [blob.data])
+  useEffect(() => () => {
+    if (src) URL.revokeObjectURL(src)
+  }, [src])
+  if (blob.isError) return null
+  if (!src) return <div className="size-24 shrink-0 animate-pulse rounded-xl bg-muted" aria-hidden />
+  return (
+    <a href={src} target="_blank" rel="noreferrer" className="shrink-0" title="فتح الصورة">
+      {/* eslint-disable-next-line @next/next/no-img-element -- an in-memory blob: URL, nothing for next/image to optimize */}
+      <img src={src} alt={`صورة ${name}`} className="size-24 rounded-xl border object-cover" />
+    </a>
   )
 }
 
