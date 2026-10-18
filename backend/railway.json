@@ -2,10 +2,12 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "RAILPACK",
-    "buildCommand": "npm run build"
+    "buildCommand": "npx prisma generate --config prisma7.config.ts && npm run build"
   },
   "deploy": {
-    "preDeployCommand": ["npx prisma migrate deploy --config prisma7.config.ts"],
+    "preDeployCommand": [
+      "npx prisma migrate deploy --config prisma7.config.ts"
+    ],
     "startCommand": "node dist/main.js",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 120,
