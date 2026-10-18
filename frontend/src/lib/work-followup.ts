@@ -54,10 +54,26 @@ export function progressOf(items: Pick<WorkItem, "status">[]): WorkProgress {
   }
 }
 
-/** «1 من 3 أعمال منجزة» — «نشطة» is added only when some work was cancelled. */
-export function progressLabel(p: WorkProgress) {
-  if (p.active === 0) return p.total ? "لا توجد أعمال نشطة" : "لا توجد أعمال"
-  return `${p.completed} من ${p.active} ${p.cancelled ? "أعمال نشطة منجزة" : "أعمال منجزة"}`
+export function progressLabel(p: WorkProgress): string {
+  if (p.total === 0) {
+    return "لا توجد أعمال"
+  }
+
+  if (p.active === 0) {
+    return "لا توجد أعمال نشطة"
+  }
+
+  if (p.completed === 0) {
+    return `${p.active} أعمال بانتظار الإنجاز`
+  }
+
+  if (p.completed === p.active) {
+    return `تم إنجاز جميع الأعمال (${p.completed}/${p.active})`
+  }
+
+  return `تم إنجاز ${p.completed} من أصل ${p.active} ${
+    p.cancelled ? "أعمال نشطة" : "أعمال"
+  }`
 }
 
 /** «عمل ملغى واحد» / «عملان ملغيان» / «3 أعمال ملغاة» */

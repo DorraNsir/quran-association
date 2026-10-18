@@ -72,7 +72,7 @@ export function WorkProgramDetails({ programId }: { programId: string }) {
             </Button>
           </div>
         </div>
-        <div className="grid gap-4 border-t p-5 sm:grid-cols-[1fr_16rem]">
+        {/* <div className="grid gap-4 border-t p-5 sm:grid-cols-[1fr_16rem]">
           <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
               { label: "كل الأعمال", value: p.total },
@@ -87,7 +87,7 @@ export function WorkProgramDetails({ programId }: { programId: string }) {
             ))}
           </dl>
           <ProgramProgress progress={p} />
-        </div>
+        </div> */}
       </Card>
 
       <section aria-labelledby="wf-items" className="space-y-3">
