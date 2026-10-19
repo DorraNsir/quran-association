@@ -18,7 +18,7 @@ import { InfoList, PhoneLink, SectionCard } from "@/components/shared/info-list"
 import { ScheduleSummary } from "@/components/shared/schedule"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
-import { ageOn, fullName, indexLookups, type Lookups, roomsLabel, schedulesOf, studentClass } from "@/lib/domain"
+import { ageOn, fullName, indexLookups, type Lookups, roomsLabel, participatingSchedulesOf, studentClass } from "@/lib/domain"
 import { formatDate, formatElapsed } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { todayInTunis } from "@/lib/dates"
@@ -144,7 +144,7 @@ export function StudentOverview({ student, lookups }: { student: Student; lookup
                 <ShieldCheck className="size-3.5" aria-hidden />
                 مواعيد الحصص
               </p>
-              <ScheduleSummary schedule={schedulesOf(cls.groupClass.id, lookups.schedules)} />
+              <ScheduleSummary schedule={participatingSchedulesOf(cls.groupClass.id, lookups.schedules)} />
             </div>
           </div>
         ) : (

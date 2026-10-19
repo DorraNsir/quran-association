@@ -92,3 +92,81 @@ export class ClassMemorizationDto {
   })
   students!: ClassMemorizationStudentDto[];
 }
+
+/**
+ * A session's period: both or neither (default — the academic year and
+ * semester that contain the session date).
+ */
+export class SessionMemorizationQueryDto {
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  academicYearId?: string;
+  @ApiPropertyOptional({ enum: Semester, enumName: 'Semester' })
+  @IsOptional()
+  @IsEnum(Semester, { message: 'السداسي غير صالح (FIRST أو SECOND)' })
+  semester?: Semester;
+}
+
+export class MemorizationClassRefDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() group!: { id: string; name: string };
+}
+
+export class SessionMemorizationStudentDto {
+  @ApiProperty() studentId!: string;
+  @ApiProperty() firstName!: string;
+  @ApiProperty() lastName!: string;
+  @ApiPropertyOptional({ type: String, nullable: true }) photoUrl!:
+    string | null;
+  @ApiProperty({ enum: RecordStatus, enumName: 'RecordStatus' })
+  studentStatus!: RecordStatus;
+  @ApiProperty({
+    type: MemorizationClassRefDto,
+    description: "The student's class (and program) ON the session date",
+  })
+  groupClass!: MemorizationClassRefDto;
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description: 'null = not recorded yet',
+  })
+  lastMemorizedSurahNumber!: number | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) surahName!:
+    string | null;
+  @ApiPropertyOptional({ type: Date, nullable: true }) updatedAt!: Date | null;
+}
+
+/**
+ * «متابعة الحفظ» of ONE session's students — the combined list of a shared
+ * session («الحصص المشتركة»). Read-only: each student's record is updated
+ * through the usual per-student endpoint (same rules, same single record).
+ */
+export class SessionMemorizationDto {
+  @ApiProperty() sessionId!: string;
+  @ApiProperty({ format: 'date' }) date!: string;
+  @ApiProperty({
+    type: MemorizationClassRefDto,
+    isArray: true,
+    description: 'Participating classes (host first)',
+  })
+  classes!: MemorizationClassRefDto[];
+  @ApiProperty({
+    description:
+      "The caller's students: all, or only those of groupClassIds (an assistant of a shared session — their assigned classes)",
+  })
+  scope!: { allStudents: boolean; groupClassIds: string[] };
+  @ApiProperty() academicYear!: { id: string; label: string };
+  @ApiProperty({ enum: Semester, enumName: 'Semester' }) semester!: Semester;
+  @ApiProperty({ description: 'Semester dates (inclusive)' }) period!: {
+    from: string;
+    to: string;
+  };
+  @ApiProperty({
+    type: SessionMemorizationStudentDto,
+    isArray: true,
+    description:
+      'Students enrolled in a participating class on the session date (in the caller scope)',
+  })
+  students!: SessionMemorizationStudentDto[];
+}

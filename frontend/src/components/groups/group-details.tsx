@@ -28,7 +28,7 @@ import { WeeklyScheduleGrid } from "@/components/shared/schedule"
 import { StatCard } from "@/components/shared/stat-card"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
-import { classesOf, classTeacherIds, describeClass, fullName, indexLookups, roomsLabel, schedulesOf, studentClass, studentsInGroup } from "@/lib/domain"
+import { classesOf, classTeacherIds, describeClass, fullName, indexLookups, roomsLabel, participatingSchedulesOf, studentClass, studentsInGroup } from "@/lib/domain"
 import { countLabels, formatDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { Student, Teacher, TeachingRole } from "@/types/domain"
@@ -76,7 +76,10 @@ function GroupDetailsBody({ id, lookups, students }: { id: string; lookups: Look
   const members = studentsInGroup(group.id, students, lookups.groupClasses)
   const activeMembers = members.filter((s) => s.status === "ACTIVE")
   const teacherCount = new Set(running.flatMap((v) => classTeacherIds(v.groupClass))).size
-  const weeklySlots = running.flatMap((v) => schedulesOf(v.groupClass.id, schedules).map((slot) => ({ slot, view: v })))
+  // A shared lesson of two classes of this group counts once
+  const weeklySlots = running
+    .flatMap((v) => participatingSchedulesOf(v.groupClass.id, schedules).map((slot) => ({ slot, view: v })))
+    .filter((e, i, all) => all.findIndex((x) => x.slot.id === e.slot.id) === i)
   const recentMembers = [...members].sort((a, b) => b.registrationDate.localeCompare(a.registrationDate)).slice(0, 5)
   /** Tells two classes of the same group apart */
   const classTag = (v: (typeof classes)[number]) => `${v.branch?.name ?? ""} — ${v.supervisor ? fullName(v.supervisor) : "—"}`

@@ -5,17 +5,33 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import type { Prisma } from '../generated/prisma/client.js';
+import { Prisma } from '../generated/prisma/client.js';
 import type { Weekday } from '../generated/prisma/enums.js';
+import {
+  extraClassIds as extraClassIdsSelect,
+  loadParticipants,
+  participantIds,
+  scheduleClassIdsSql,
+  scheduleOfClass,
+  sessionClassIdsSql,
+  sessionOfClass,
+} from './participants.js';
 
 type Tx = Prisma.TransactionClient;
 
 /**
- * The occupancy a class brings to a time slot: its whole teaching team
- * (supervisor + assistants — availability is per teacher, whatever the
- * assignment type). The ROOM belongs to each slot (weekly slot or session).
+ * The occupancy a slot / session brings to a time: its participating classes
+ * (host + additional classes of a shared lesson — see participants.ts) and
+ * its whole teaching team (supervisor + assistants — availability is per
+ * teacher, whatever the assignment type). The ROOM belongs to each slot.
  */
 export interface ClassOccupancy {
+  groupClassIds: string[];
+  teacherIds: string[];
+}
+
+/** A class whose team / rooms / activation change (its own new team). */
+export interface ClassTeamChange {
   groupClassId: string;
   teacherIds: string[];
 }
@@ -103,10 +119,12 @@ const MESSAGES: Record<
  *
  *   overlap  ⇔  newStart < existingEnd AND newEnd > existingStart   (touching is fine)
  *
- * - CLASS:   the same class twice at overlapping times;
- * - ROOM:    another class's slot/session in the SAME ROOM (each weekly slot
- *            and each session carries its own room);
- * - TEACHER: another class whose supervisor/assistants share a teacher.
+ * - CLASS:   a class in two overlapping slots/sessions — as host OR as an
+ *            additional class of a shared lesson (participant sets intersect);
+ * - ROOM:    another lesson in the SAME ROOM (each weekly slot and each
+ *            session carries its own room — a shared lesson books it once);
+ * - TEACHER: another lesson whose team shares a teacher (a shared lesson's
+ *            team is its participants' union — booked once).
  *
  * Weekly slots: only RUNNING classes (class ACTIVE and group ACTIVE) occupy
  * rooms and teachers. Dated sessions: every non-CANCELLED session does.
@@ -138,17 +156,15 @@ export class ScheduleConflictService {
     },
   ): Promise<ConflictDetail[]> {
     if (slots.length === 0) return [];
+    const mine = occupancy.groupClassIds;
     const rows = await tx.$queryRaw<Row[]>`
       SELECT ws.id AS "otherId", ws."dayOfWeek"::text AS day, NULL::text AS date,
              to_char(ws."startTime", 'HH24:MI') AS start, to_char(ws."endTime", 'HH24:MI') AS "end",
              gc.id AS "groupClassId", g.name AS "groupName", b.name AS "branchName", r.name AS "roomName",
-             (gc.id = ${occupancy.groupClassId}::uuid) AS "sameClass",
+             (p.ids && ${mine}::uuid[]) AS "sameClass",
              (ws."roomId" = c.room) AS "sameRoom",
              ARRAY(
-               SELECT t FROM (
-                 SELECT gc."supervisorId" AS t
-                 UNION SELECT a."teacherId" FROM group_class_assistants a WHERE a."groupClassId" = gc.id
-               ) team WHERE t = ANY(${occupancy.teacherIds}::uuid[])
+               SELECT DISTINCT x FROM unnest(t.team) x WHERE x = ANY(${occupancy.teacherIds}::uuid[])
              )::text[] AS "sharedTeacherIds"
       FROM unnest(${slots.map((s) => s.dayOfWeek)}::text[], ${slots.map((s) => s.start)}::text[], ${slots.map((s) => s.end)}::text[], ${slots.map((s) => s.roomId)}::uuid[])
            AS c(day, start, "end", room)
@@ -158,17 +174,21 @@ export class ScheduleConflictService {
       JOIN groups g ON g.id = gc."groupId"
       JOIN branches b ON b.id = gc."branchId"
       JOIN rooms r ON r.id = ws."roomId"
+      -- Participants of the other slot (host + additional classes) and their assigned team
+      CROSS JOIN LATERAL (SELECT ARRAY${scheduleClassIdsSql('ws')} AS ids) p
+      CROSS JOIN LATERAL (
+        SELECT ARRAY(
+          SELECT pc."supervisorId" FROM group_classes pc WHERE pc.id = ANY(p.ids)
+          UNION SELECT a."teacherId" FROM group_class_assistants a WHERE a."groupClassId" = ANY(p.ids)
+        ) AS team
+      ) t
       WHERE ws.id <> ALL(${options.excludeScheduleIds ?? []}::uuid[])
         AND (
-          (${options.includeSameClass} AND gc.id = ${occupancy.groupClassId}::uuid)
+          (${options.includeSameClass} AND p.ids && ${mine}::uuid[])
           OR (
-            ${options.checkOtherClasses} AND gc.id <> ${occupancy.groupClassId}::uuid
+            ${options.checkOtherClasses} AND NOT (p.ids && ${mine}::uuid[])
             AND gc.status = 'ACTIVE' AND g.status = 'ACTIVE'
-            AND (
-              ws."roomId" = c.room
-              OR gc."supervisorId" = ANY(${occupancy.teacherIds}::uuid[])
-              OR EXISTS (SELECT 1 FROM group_class_assistants a WHERE a."groupClassId" = gc.id AND a."teacherId" = ANY(${occupancy.teacherIds}::uuid[]))
-            )
+            AND (ws."roomId" = c.room OR t.team && ${occupancy.teacherIds}::uuid[])
           )
         )
       ORDER BY ws."dayOfWeek", ws."startTime"
@@ -188,11 +208,12 @@ export class ScheduleConflictService {
     options: { excludeSessionIds?: string[]; includeSameClass: boolean },
   ): Promise<ConflictDetail[]> {
     if (slots.length === 0) return [];
+    const mine = occupancy.groupClassIds;
     const rows = await tx.$queryRaw<Row[]>`
       SELECT s.id AS "otherId", NULL::text AS day, to_char(s.date, 'YYYY-MM-DD') AS date,
              to_char(s."startTime", 'HH24:MI') AS start, to_char(s."endTime", 'HH24:MI') AS "end",
              gc.id AS "groupClassId", g.name AS "groupName", b.name AS "branchName", r.name AS "roomName",
-             (s."groupClassId" = ${occupancy.groupClassId}::uuid) AS "sameClass",
+             (p.ids && ${mine}::uuid[]) AS "sameClass",
              (s."roomId" = c.room) AS "sameRoom",
              ARRAY(
                SELECT st."teacherId" FROM session_teachers st
@@ -206,12 +227,14 @@ export class ScheduleConflictService {
       JOIN groups g ON g.id = gc."groupId"
       JOIN rooms r ON r.id = s."roomId"
       JOIN branches b ON b.id = r."branchId"
+      -- Participants of the other session (host + additional classes, its snapshot)
+      CROSS JOIN LATERAL (SELECT ARRAY${sessionClassIdsSql('s')} AS ids) p
       WHERE s.status <> 'CANCELLED'
         AND s.id <> ALL(${options.excludeSessionIds ?? []}::uuid[])
         AND (
-          (${options.includeSameClass} AND s."groupClassId" = ${occupancy.groupClassId}::uuid)
+          (${options.includeSameClass} AND p.ids && ${mine}::uuid[])
           OR (
-            s."groupClassId" <> ${occupancy.groupClassId}::uuid
+            NOT (p.ids && ${mine}::uuid[])
             AND (
               s."roomId" = c.room
               OR EXISTS (
@@ -228,8 +251,9 @@ export class ScheduleConflictService {
 
   /**
    * A class's team / activation / slot rooms are changing: its weekly slots
-   * (when running) and its UPCOMING SCHEDULED sessions must stay free of
-   * ROOM and TEACHER conflicts. Each slot is checked in its own room — the
+   * (when running) and its UPCOMING SCHEDULED sessions — those it hosts and
+   * the shared ones it takes part in — must stay free of ROOM and TEACHER
+   * conflicts (the other participants' teams were already checked). Each slot is checked in its own room — the
    * proposed one from `roomOverrides` (scheduleId → roomId) when given — and
    * each upcoming session in the room it will have: its slot's (new) room for
    * a generated session, its own room for an ad-hoc one. Teams are the ACTIVE
@@ -237,14 +261,18 @@ export class ScheduleConflictService {
    */
   async assertClassOccupancyFree(
     tx: Tx,
-    occupancy: ClassOccupancy,
+    change: ClassTeamChange,
     today: string,
     options: { checkWeekly: boolean; roomOverrides?: Map<string, string> },
   ) {
     const overrides = options.roomOverrides ?? new Map<string, string>();
+    const occupancy: ClassOccupancy = {
+      groupClassIds: [change.groupClassId],
+      teacherIds: change.teacherIds,
+    };
     const [schedules, sessions, active] = await Promise.all([
       tx.weeklySchedule.findMany({
-        where: { groupClassId: occupancy.groupClassId },
+        where: scheduleOfClass({ id: change.groupClassId }),
         select: {
           id: true,
           dayOfWeek: true,
@@ -255,7 +283,7 @@ export class ScheduleConflictService {
       }),
       tx.session.findMany({
         where: {
-          groupClassId: occupancy.groupClassId,
+          ...sessionOfClass({ id: change.groupClassId }),
           status: 'SCHEDULED',
           date: { gte: new Date(`${today}T00:00:00.000Z`) },
           // A lesson with attendance already happened where it happened
@@ -311,67 +339,116 @@ export class ScheduleConflictService {
     );
   }
 
-  /** Branch and assigned team of a class (weekly occupancy: supervisor + assistants). */
-  async occupancyOf(tx: Tx, groupClassId: string) {
-    const c = await tx.groupClass.findUnique({
-      where: { id: groupClassId },
-      select: {
-        branchId: true,
-        supervisorId: true,
-        status: true,
-        group: { select: { status: true } },
-        assistants: { select: { teacherId: true } },
-        supervisor: { select: { status: true } },
-      },
-    });
-    if (!c) return undefined;
+  /**
+   * Branch and assigned team of a weekly slot's participants (weekly
+   * occupancy: the common supervisor + every participant's assistants). A
+   * shared slot (additional classes) is validated (participants.ts).
+   */
+  async occupancyOf(tx: Tx, groupClassId: string, extraIds: string[] = []) {
+    const p = await loadParticipants(tx, groupClassId, extraIds);
+    if (!p) return undefined;
     return {
       occupancy: {
-        groupClassId,
-        teacherIds: [c.supervisorId, ...c.assistants.map((a) => a.teacherId)],
-      },
-      branchId: c.branchId,
-      running: c.status === 'ACTIVE' && c.group.status === 'ACTIVE',
-      status: c.status,
-      supervisorActive: c.supervisor.status === 'ACTIVE',
+        groupClassIds: p.groupClassIds,
+        teacherIds: [p.supervisorId, ...p.assignedAssistantIds],
+      } satisfies ClassOccupancy,
+      branchId: p.branchId,
+      running: p.running,
+      supervisorActive: p.supervisorActive,
+      extraIds: p.extraIds,
     };
   }
 
   /**
-   * Team snapshot for a session planned NOW: the class's supervisor and its
-   * ACTIVE assistants (the room comes from the weekly slot or the request). An inactive supervisor blocks new sessions
-   * (the admin appoints a replacement first); inactive assistants are left out.
+   * Team snapshot for a session planned NOW: the common supervisor and the
+   * ACTIVE assistants of every participant (the room comes from the weekly
+   * slot or the request). An inactive supervisor blocks new sessions (the
+   * admin appoints a replacement first); inactive assistants are left out.
+   * A shared session's participants are validated (participants.ts).
    */
-  async sessionTeamOf(tx: Tx, groupClassId: string) {
-    const c = await tx.groupClass.findUnique({
-      where: { id: groupClassId },
-      select: {
-        branchId: true,
-        status: true,
-        group: { select: { status: true } },
-        supervisor: { select: { id: true, status: true } },
-        assistants: {
-          select: { teacher: { select: { id: true, status: true } } },
-        },
-      },
-    });
-    if (!c) return undefined;
-    const assistantIds = c.assistants
-      .map((a) => a.teacher)
-      .filter((t) => t.status === 'ACTIVE')
-      .map((t) => t.id);
+  async sessionTeamOf(tx: Tx, groupClassId: string, extraIds: string[] = []) {
+    const p = await loadParticipants(tx, groupClassId, extraIds);
+    if (!p) return undefined;
     return {
-      branchId: c.branchId,
-      supervisorId: c.supervisor.id,
-      supervisorActive: c.supervisor.status === 'ACTIVE',
-      assistantIds,
+      branchId: p.branchId,
+      supervisorId: p.supervisorId,
+      supervisorActive: p.supervisorActive,
+      assistantIds: p.activeAssistantIds,
+      extraIds: p.extraIds,
       occupancy: {
-        groupClassId,
-        teacherIds: [c.supervisor.id, ...assistantIds],
+        groupClassIds: p.groupClassIds,
+        teacherIds: [p.supervisorId, ...p.activeAssistantIds],
       } satisfies ClassOccupancy,
-      classActive: c.status === 'ACTIVE',
-      running: c.status === 'ACTIVE' && c.group.status === 'ACTIVE',
+      classActive: p.classActive,
+      running: p.running,
     };
+  }
+
+  /** Replaces the additional classes (snapshot) of the given sessions. */
+  async writeSessionExtras(tx: Tx, sessionIds: string[], extraIds: string[]) {
+    if (sessionIds.length === 0) return;
+    await tx.sessionClass.deleteMany({
+      where: { sessionId: { in: sessionIds } },
+    });
+    await tx.sessionClass.createMany({
+      data: sessionIds.flatMap((sessionId) =>
+        extraIds.map((groupClassId) => ({ sessionId, groupClassId })),
+      ),
+    });
+  }
+
+  /**
+   * Classes with SHARED participation that must not be broken: weekly slots
+   * it hosts with additional classes or attends as one, and upcoming
+   * (today onward) SCHEDULED shared sessions. History is not counted.
+   */
+  async sharedParticipation(tx: Tx, groupClassId: string, today: string) {
+    const shared = {
+      OR: [
+        { groupClassId, extraClasses: { some: {} } },
+        { extraClasses: { some: { groupClassId } } },
+      ],
+    };
+    const [schedules, sessions] = await Promise.all([
+      tx.weeklySchedule.count({ where: shared }),
+      tx.session.count({
+        where: {
+          ...shared,
+          status: 'SCHEDULED',
+          date: { gte: new Date(`${today}T00:00:00.000Z`) },
+        },
+      }),
+    ]);
+    return { schedules, sessions };
+  }
+
+  /**
+   * A class leaving shared lessons gets no replacement lesson (the admin
+   * plans one). Refused while one of its students has work planned
+   * («متابعة العمل») in one of those lessons — the program would point at a
+   * lesson the student no longer attends.
+   */
+  async assertNoWorkForRemovedClasses(
+    tx: Tx,
+    sessionIds: string[],
+    removedClassIds: string[],
+  ) {
+    if (sessionIds.length === 0 || removedClassIds.length === 0) return;
+    const [row] = await tx.$queryRaw<{ found: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM work_programs w
+        JOIN sessions s ON s.id = w."sessionId"
+        JOIN student_enrollments e ON e."studentId" = w."studentId"
+          AND e."startDate" <= s.date AND (e."endDate" IS NULL OR e."endDate" > s.date)
+        WHERE w."sessionId" = ANY(${sessionIds}::uuid[])
+          AND e."groupClassId" = ANY(${removedClassIds}::uuid[])
+      ) AS found`;
+    if (row?.found)
+      throw new ConflictException({
+        code: 'SHARED_CLASS_HAS_WORK',
+        message:
+          'لطلبة أحد الأقسام المُزالة برامج عمل في حصص قادمة مشتركة: احذفها أو انقلها قبل إزالة القسم',
+      });
   }
 
   /** Replaces the team snapshot of the given sessions. */
@@ -402,27 +479,67 @@ export class ScheduleConflictService {
 
   /**
    * After a class is re-staffed: its UPCOMING SCHEDULED sessions (today
-   * onward, no attendance yet) take the new active team. Past, completed and
-   * cancelled sessions keep their snapshot — history is never rewritten.
-   * Rooms are synced per weekly slot (`syncSlotRooms`).
+   * onward, no attendance yet) — hosted or shared — take the new active team
+   * of THEIR participants. Past, completed and cancelled sessions keep their
+   * snapshot — history is never rewritten. Rooms are synced per weekly slot
+   * (`syncSlotRooms`).
    */
   async syncUpcomingSessions(tx: Tx, groupClassId: string, today: string) {
-    const team = await this.sessionTeamOf(tx, groupClassId);
-    if (!team) return;
     const upcoming = await tx.session.findMany({
       where: {
-        groupClassId,
+        ...sessionOfClass({ id: groupClassId }),
         status: 'SCHEDULED',
         date: { gte: new Date(`${today}T00:00:00.000Z`) },
         // Sessions with recorded attendance (e.g. today's) keep their snapshot
         studentAttendance: { none: {} },
         teacherAttendance: { none: {} },
       },
-      select: { id: true },
+      select: { id: true, groupClassId: true, ...extraClassIdsSelect },
     });
-    const ids = upcoming.map((u) => u.id);
-    if (ids.length === 0) return;
-    await this.writeSessionTeams(tx, ids, team);
+    // One team per participant set
+    const bySet = new Map<string, { ids: string[]; sessionIds: string[] }>();
+    for (const u of upcoming) {
+      const ids = participantIds(u);
+      const key = ids.join(',');
+      const entry = bySet.get(key) ?? { ids, sessionIds: [] };
+      entry.sessionIds.push(u.id);
+      bySet.set(key, entry);
+    }
+    for (const { ids, sessionIds } of bySet.values()) {
+      const team = await this.teamForSync(tx, ids[0], ids.slice(1));
+      if (team) await this.writeSessionTeams(tx, sessionIds, team);
+    }
+  }
+
+  /**
+   * The team of existing participants (no shared-session validation: an
+   * already planned lesson keeps its participants; supervisor / branch
+   * changes of shared participants are refused upstream).
+   */
+  private async teamForSync(tx: Tx, hostId: string, extraIds: string[]) {
+    const rows = await tx.groupClass.findMany({
+      where: { id: { in: [hostId, ...extraIds] } },
+      select: {
+        id: true,
+        supervisorId: true,
+        assistants: {
+          select: { teacher: { select: { id: true, status: true } } },
+        },
+      },
+    });
+    const host = rows.find((r) => r.id === hostId);
+    if (!host) return undefined;
+    const assistantIds = [
+      ...new Set(
+        rows.flatMap((r) =>
+          r.assistants
+            .map((a) => a.teacher)
+            .filter((t) => t.status === 'ACTIVE')
+            .map((t) => t.id),
+        ),
+      ),
+    ].filter((id) => id !== host.supervisorId);
+    return { supervisorId: host.supervisorId, assistantIds };
   }
 
   /**

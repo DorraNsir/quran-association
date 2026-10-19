@@ -1,4 +1,8 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { fromDbDate, toDbDate } from '../common/dates.js';
@@ -16,6 +20,11 @@ import {
   TeachingRole,
 } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import {
+  participantIds,
+  sessionClassIdsSql,
+  sessionOfClass,
+} from '../scheduling/participants.js';
 import { expectedOnDate } from '../scheduling/roster.sql.js';
 import { SessionsService } from '../scheduling/sessions.service.js';
 import { fromDbTime } from '../scheduling/time.js';
@@ -93,14 +102,39 @@ const personSelect = {
   select: { firstName: true, lastName: true, photoUrl: true },
 } as const;
 
+const classLabelSelect = {
+  id: true,
+  group: { select: { id: true, name: true } },
+} as const;
+
+/** Whose students the caller sees / manages in one session. */
+interface StudentScope {
+  allStudents: boolean;
+  groupClassIds: string[];
+}
+
+const studentNotAllowed = () =>
+  new ForbiddenException({
+    code: 'ATTENDANCE_STUDENT_NOT_ALLOWED',
+    message:
+      'لست مكلّفًا بقسم بعض هؤلاء الطلبة في هذه الحصة المشتركة: يسجّل حضورهم المشرف أو معلمو أقسامهم',
+  });
+
 /**
  * Attendance of a session's students (one record per session + student).
  *
- * ROSTER (who is expected): students ENROLLED in the session's class ON THE
- * SESSION DATE (StudentEnrollment history, not today's class) whose status ON
- * THAT DATE was ACTIVE (StudentStatusChange history, not today's status) —
- * plus anyone who already has a record for the session, so recorded history
- * is never hidden. Missing record = "not recorded", never "absent".
+ * ROSTER (who is expected): students ENROLLED in one of the session's classes
+ * ON THE SESSION DATE (StudentEnrollment history, not today's class) whose
+ * status ON THAT DATE was ACTIVE (StudentStatusChange history, not today's
+ * status) — plus anyone who already has a record for the session, so
+ * recorded history is never hidden. Missing record = "not recorded", never
+ * "absent". A SHARED session («الحصص المشتركة») has several classes (host +
+ * additional ones): one combined roster, each student with their own class.
+ *
+ * WHO: admins and the teachers of a normal session see the whole roster; in a
+ * shared session the supervisor sees it all, an assistant only the students
+ * of the participating classes they are assigned to — for reading, saving
+ * and the change history (TeacherAccessService.sessionStudentScope).
  *
  * SAVE (bulk, all-or-nothing, session row locked): only roster students; a
  * listed student is created or updated (corrections keep createdAt, set
@@ -135,8 +169,6 @@ export class AttendanceService {
     sessionId: string,
     actor: AttendanceActor,
   ): Promise<SessionAttendanceDto> {
-    if (actor.kind === 'teacher')
-      await this.access.assertSessionAccess(actor.userId, sessionId);
     return this.build(this.prisma, sessionId, actor);
   }
 
@@ -165,17 +197,25 @@ export class AttendanceService {
     return this.prisma.$transaction(async (tx) => {
       // One writer per session at a time: no duplicate rows, consistent completion
       await tx.$queryRaw`SELECT id FROM sessions WHERE id = ${sessionId}::uuid FOR UPDATE`;
-      // A teacher must be in THIS session's team (its snapshot), not merely the class's today
-      const actorTeacherId =
+      // A teacher must be in THIS session's team (its snapshot), not merely
+      // the class's today — and, in a shared session, assigned to the
+      // students' classes unless they are its supervisor
+      const teacherScope =
         actor.kind === 'teacher'
-          ? await this.access.assertSessionAccess(actor.userId, sessionId, tx)
+          ? await this.access.sessionStudentScope(actor.userId, sessionId, tx)
           : null;
+      const actorTeacherId = teacherScope?.teacherId ?? null;
       const session = await tx.session.findUnique({
         where: { id: sessionId },
         select: {
           status: true,
           date: true,
           groupClass: { select: { group: { select: { name: true } } } },
+          extraClasses: {
+            select: {
+              groupClass: { select: { group: { select: { name: true } } } },
+            },
+          },
         },
       });
       if (!session) throw notFound('SESSION_NOT_FOUND', 'الحصة غير موجودة');
@@ -188,6 +228,16 @@ export class AttendanceService {
           'ATTENDANCE_STUDENT_NOT_IN_SESSION',
           'بعض الطلبة لا ينتمون إلى قسم هذه الحصة في تاريخها',
         );
+      }
+      // Each student, not only the session: an assistant of a shared session
+      // never writes another class's students (even if sent by hand)
+      if (teacherScope && !teacherScope.allClasses) {
+        const scope = {
+          allStudents: false,
+          groupClassIds: teacherScope.classIds,
+        };
+        if (ids.some((id) => !this.visible(scope, roster.classOf, id)))
+          throw studentNotAllowed();
       }
       const team = await this.teamOf(tx, sessionId);
       if (teacherIds.some((id) => !team.allowed.has(id))) {
@@ -378,7 +428,10 @@ export class AttendanceService {
             (t) => t.role === TeachingRole.SUPERVISOR,
           )?.teacherId,
           actorUserId: actor.userId,
-          groupName: session.groupClass.group.name,
+          groupName: [
+            session.groupClass.group.name,
+            ...session.extraClasses.map((e) => e.groupClass.group.name),
+          ].join(' + '),
           date,
           changed,
         });
@@ -392,15 +445,29 @@ export class AttendanceService {
     sessionId: string,
     actor: AttendanceActor,
   ): Promise<AttendanceChangeDto[]> {
-    if (actor.kind === 'teacher')
-      await this.access.assertSessionAccess(actor.userId, sessionId);
-    else if (
-      !(await this.prisma.session.findUnique({
-        where: { id: sessionId },
-        select: { id: true },
-      }))
-    )
-      throw notFound('SESSION_NOT_FOUND', 'الحصة غير موجودة');
+    const teacherScope =
+      actor.kind === 'teacher'
+        ? await this.access.sessionStudentScope(actor.userId, sessionId)
+        : null;
+    const session = await this.prisma.session.findUnique({
+      where: { id: sessionId },
+      select: { date: true },
+    });
+    if (!session) throw notFound('SESSION_NOT_FOUND', 'الحصة غير موجودة');
+    // An assistant of a shared session: only their classes' students' changes (teachers' stay)
+    let hidden: (studentId: string) => boolean = () => false;
+    if (teacherScope && !teacherScope.allClasses) {
+      const roster = await this.rosterIds(
+        this.prisma,
+        sessionId,
+        fromDbDate(session.date),
+      );
+      const scope = {
+        allStudents: false,
+        groupClassIds: teacherScope.classIds,
+      };
+      hidden = (studentId) => !this.visible(scope, roster.classOf, studentId);
+    }
     const rows = await this.prisma.attendanceChange.findMany({
       where: { sessionId },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -420,22 +487,24 @@ export class AttendanceService {
         teacher: { select: { person: personSelect } },
       },
     });
-    return rows.map((r) => {
-      const person = (r.student ?? r.teacher)!.person;
-      return {
-        id: r.id,
-        subject: r.subject,
-        subjectId: (r.studentId ?? r.teacherId)!,
-        subjectName: `${person.firstName} ${person.lastName}`,
-        kind: r.kind,
-        previousStatus: r.previousStatus,
-        newStatus: r.newStatus,
-        previousNote: r.previousNote,
-        newNote: r.newNote,
-        actorName: r.actorName,
-        createdAt: r.createdAt,
-      };
-    });
+    return rows
+      .filter((r) => !(r.studentId && hidden(r.studentId)))
+      .map((r) => {
+        const person = (r.student ?? r.teacher)!.person;
+        return {
+          id: r.id,
+          subject: r.subject,
+          subjectId: (r.studentId ?? r.teacherId)!,
+          subjectName: `${person.firstName} ${person.lastName}`,
+          kind: r.kind,
+          previousStatus: r.previousStatus,
+          newStatus: r.newStatus,
+          previousNote: r.previousNote,
+          newNote: r.newNote,
+          actorName: r.actorName,
+          createdAt: r.createdAt,
+        };
+      });
   }
 
   /** A student's records, newest first (admin). */
@@ -468,17 +537,37 @@ export class AttendanceService {
               startTime: true,
               endTime: true,
               status: true,
-              groupClass: {
-                select: {
-                  id: true,
-                  group: { select: { id: true, name: true } },
-                },
+              groupClass: { select: classLabelSelect },
+              extraClasses: {
+                select: { groupClass: { select: classLabelSelect } },
               },
             },
           },
         },
       }),
     ]);
+    // A shared session shows the student's OWN class there (their class on its date)
+    const enrollments = rows.some((r) => r.session.extraClasses.length)
+      ? await this.prisma.studentEnrollment.findMany({
+          where: { studentId },
+          select: { groupClassId: true, startDate: true, endDate: true },
+        })
+      : [];
+    const ownClass = (session: (typeof rows)[number]['session']) => {
+      if (session.extraClasses.length === 0) return session.groupClass;
+      const date = session.date.getTime();
+      const enrolled = enrollments.find(
+        (e) =>
+          e.startDate.getTime() <= date &&
+          (!e.endDate || e.endDate.getTime() > date),
+      );
+      return (
+        [
+          session.groupClass,
+          ...session.extraClasses.map((e) => e.groupClass),
+        ].find((c) => c.id === enrolled?.groupClassId) ?? session.groupClass
+      );
+    };
     return {
       data: rows.map((r) => ({
         sessionId: r.session.id,
@@ -486,7 +575,7 @@ export class AttendanceService {
         startTime: fromDbTime(r.session.startTime),
         endTime: fromDbTime(r.session.endTime),
         sessionStatus: r.session.status,
-        groupClass: r.session.groupClass,
+        groupClass: ownClass(r.session),
         status: r.status,
         note: r.note,
         updatedAt: r.updatedAt,
@@ -551,20 +640,27 @@ export class AttendanceService {
    * Counts per student over non-cancelled sessions matching the filters
    * (session's class / group / branch, period) — one grouped query, same
    * rate rule as `summary`. Students without records are not listed.
+   * A class / group filter includes the shared sessions it takes part in,
+   * but only ITS students there (their class on the session date).
    */
   async studentsSummary(
     query: StudentsSummaryQueryDto,
   ): Promise<StudentSummaryLineDto[]> {
     const range = await this.range(query);
-    const groups = await this.prisma.studentAttendance.groupBy({
-      by: ['studentId', 'status'],
-      where: { session: this.sessionFilter(range, query) },
-      _count: { _all: true },
-    });
+    const groups =
+      query.groupClassId || query.groupId
+        ? await this.classScopedCounts(range, query)
+        : (
+            await this.prisma.studentAttendance.groupBy({
+              by: ['studentId', 'status'],
+              where: { session: this.sessionFilter(range, query) },
+              _count: { _all: true },
+            })
+          ).map((g) => ({ ...g, n: g._count._all }));
     const byStudent = new Map<string, StatusCounts>();
     for (const g of groups) {
       const counts = byStudent.get(g.studentId) ?? emptyCounts();
-      counts[g.status] = g._count._all;
+      counts[g.status] = g.n;
       byStudent.set(g.studentId, counts);
     }
     const students = await this.prisma.student.findMany({
@@ -711,6 +807,54 @@ export class AttendanceService {
 
   // ───────────────────────── helpers ─────────────────────────
 
+  /**
+   * Per student and status, over the non-cancelled sessions of the period
+   * (branch / teacher filters as `sessionFilter`) that the class / group
+   * takes part in. A normal session counts all its records (as before); a
+   * SHARED one only the records of students whose class ON its date matches
+   * the class / group — never the other participating classes' students.
+   */
+  private async classScopedCounts(
+    range: { from?: string; to?: string },
+    scope: {
+      groupClassId?: string;
+      groupId?: string;
+      branchId?: string;
+      teacherId?: string;
+    },
+  ) {
+    const matches = (alias: string) => {
+      const c = Prisma.raw(alias);
+      return Prisma.sql`${scope.groupClassId ? Prisma.sql`${c}.id = ${scope.groupClassId}::uuid` : Prisma.sql`TRUE`}
+        AND ${scope.groupId ? Prisma.sql`${c}."groupId" = ${scope.groupId}::uuid` : Prisma.sql`TRUE`}`;
+    };
+    return this.prisma.$queryRaw<
+      { studentId: string; status: AttendanceStatus; n: number }[]
+    >`
+      SELECT a."studentId", a.status, count(*)::int AS n
+      FROM student_attendance a
+      JOIN sessions s ON s.id = a."sessionId"
+      JOIN rooms r ON r.id = s."roomId"
+      CROSS JOIN LATERAL (SELECT ARRAY${sessionClassIdsSql('s')} AS ids) p
+      WHERE s.status <> 'CANCELLED'
+        ${range.from ? Prisma.sql`AND s.date >= ${range.from}::date` : Prisma.empty}
+        ${range.to ? Prisma.sql`AND s.date <= ${range.to}::date` : Prisma.empty}
+        ${scope.branchId ? Prisma.sql`AND r."branchId" = ${scope.branchId}::uuid` : Prisma.empty}
+        ${scope.teacherId ? Prisma.sql`AND EXISTS (SELECT 1 FROM session_teachers st WHERE st."sessionId" = s.id AND st."teacherId" = ${scope.teacherId}::uuid)` : Prisma.empty}
+        AND EXISTS (SELECT 1 FROM group_classes pg WHERE pg.id = ANY(p.ids) AND ${matches('pg')})
+        AND (
+          cardinality(p.ids) = 1
+          OR EXISTS (
+            SELECT 1 FROM student_enrollments e
+            JOIN group_classes eg ON eg.id = e."groupClassId"
+            WHERE e."studentId" = a."studentId"
+              AND e."startDate" <= s.date AND (e."endDate" IS NULL OR e."endDate" > s.date)
+              AND eg.id = ANY(p.ids) AND ${matches('eg')}
+          )
+        )
+      GROUP BY a."studentId", a.status`;
+  }
+
   /** Sessions in a period (and of a class / group / branch / teacher's team), cancelled ones left out. */
   private sessionFilter(
     range: { from?: string; to?: string },
@@ -732,8 +876,19 @@ export class AttendanceService {
             },
           }
         : {}),
-      ...(scope.groupClassId ? { groupClassId: scope.groupClassId } : {}),
-      ...(scope.groupId ? { groupClass: { groupId: scope.groupId } } : {}),
+      // A class's / group's sessions include the shared ones it takes part in
+      ...(scope.groupClassId || scope.groupId
+        ? {
+            AND: [
+              ...(scope.groupClassId
+                ? [sessionOfClass({ id: scope.groupClassId })]
+                : []),
+              ...(scope.groupId
+                ? [sessionOfClass({ groupId: scope.groupId })]
+                : []),
+            ],
+          }
+        : {}),
       ...(scope.branchId ? { room: { branchId: scope.branchId } } : {}),
       ...(scope.teacherId
         ? { teachers: { some: { teacherId: scope.teacherId } } }
@@ -909,7 +1064,12 @@ export class AttendanceService {
     return undefined;
   }
 
-  /** Expected = enrolled on the date + ACTIVE; allowed = expected ∪ already recorded. */
+  /**
+   * Expected = enrolled ON the date in one of the session's classes (host +
+   * additional classes of a shared session) and ACTIVE; allowed = expected ∪
+   * already recorded. classOf = each student's class on that date (a student
+   * has one enrollment per date — never listed twice).
+   */
   private async rosterIds(
     db: Tx | PrismaService,
     sessionId: string,
@@ -917,26 +1077,57 @@ export class AttendanceService {
   ) {
     const session = await db.session.findUniqueOrThrow({
       where: { id: sessionId },
-      select: { groupClassId: true },
+      select: {
+        groupClassId: true,
+        extraClasses: { select: { groupClassId: true } },
+      },
     });
+    const participants = participantIds(session);
     const [enrolled, recorded] = await Promise.all([
-      // Enrolled in the class ON the date, and ACTIVE ON the date (status history:
-      // latest change up to that day) — not today's class or today's status
-      db.$queryRaw<{ studentId: string }[]>`
-        SELECT e."studentId"
+      // Enrolled in a participating class ON the date, and ACTIVE ON the date
+      // (status history: latest change up to that day) — not today's class or status
+      db.$queryRaw<{ studentId: string; groupClassId: string }[]>`
+        SELECT e."studentId", e."groupClassId"
         FROM student_enrollments e
-        WHERE e."groupClassId" = ${session.groupClassId}::uuid
+        WHERE e."groupClassId" = ANY(${participants}::uuid[])
           AND ${expectedOnDate('e', Prisma.sql`${date}::date`)}`,
       db.studentAttendance.findMany({
         where: { sessionId },
         select: { studentId: true },
       }),
     ]);
+    const classOf = new Map(enrolled.map((e) => [e.studentId, e.groupClassId]));
+    // Recorded but not expected (e.g. no longer active that day): their class that day, if any
+    const others = recorded
+      .map((r) => r.studentId)
+      .filter((id) => !classOf.has(id));
+    if (others.length)
+      for (const r of await db.$queryRaw<
+        { studentId: string; groupClassId: string }[]
+      >`
+        SELECT e."studentId", e."groupClassId" FROM student_enrollments e
+        WHERE e."studentId" = ANY(${others}::uuid[])
+          AND e."startDate" <= ${date}::date
+          AND (e."endDate" IS NULL OR e."endDate" > ${date}::date)`)
+        classOf.set(r.studentId, r.groupClassId);
     const expected = new Set(enrolled.map((e) => e.studentId));
     return {
+      participants,
+      classOf,
       expected,
       allowed: new Set([...expected, ...recorded.map((r) => r.studentId)]),
     };
+  }
+
+  /** A student the caller may see / manage (their class on the session date is in scope). */
+  private visible(
+    scope: StudentScope,
+    classOf: Map<string, string>,
+    studentId: string,
+  ) {
+    if (scope.allStudents) return true;
+    const classId = classOf.get(studentId);
+    return classId !== undefined && scope.groupClassIds.includes(classId);
   }
 
   private async build(
@@ -956,6 +1147,7 @@ export class AttendanceService {
         groupClass: {
           select: { id: true, group: { select: { id: true, name: true } } },
         },
+        extraClasses: { select: { groupClass: { select: classLabelSelect } } },
         room: {
           select: {
             id: true,
@@ -966,10 +1158,25 @@ export class AttendanceService {
       },
     });
     if (!session) throw notFound('SESSION_NOT_FOUND', 'الحصة غير موجودة');
+    // Teachers: in the session's team; an assistant of a shared session sees
+    // only their classes' students
+    const teacherScope =
+      actor.kind === 'teacher'
+        ? await this.access.sessionStudentScope(actor.userId, sessionId, db)
+        : null;
     const date = fromDbDate(session.date);
     const roster = await this.rosterIds(db, sessionId, date);
-    const ids = [...roster.allowed];
-    const [students, records] = await Promise.all([
+    const scope: StudentScope = teacherScope
+      ? {
+          allStudents: teacherScope.allClasses,
+          groupClassIds: teacherScope.classIds,
+        }
+      : { allStudents: true, groupClassIds: roster.participants };
+    const ids = [...roster.allowed].filter((id) =>
+      this.visible(scope, roster.classOf, id),
+    );
+    const classIds = [...new Set(roster.classOf.values())];
+    const [students, records, classes] = await Promise.all([
       db.student.findMany({
         where: { id: { in: ids } },
         select: { id: true, person: personSelect },
@@ -984,14 +1191,21 @@ export class AttendanceService {
           recordedBy: { select: { username: true } },
         },
       }),
+      db.groupClass.findMany({
+        where: { id: { in: classIds } },
+        select: classLabelSelect,
+      }),
     ]);
+    const classById = new Map(classes.map((c) => [c.id, c]));
     const bySid = new Map(records.map((r) => [r.studentId, r]));
     const rows: RosterStudentDto[] = students
       .map((s) => {
         const r = bySid.get(s.id);
+        const classId = roster.classOf.get(s.id);
         return {
           studentId: s.id,
           ...s.person,
+          groupClass: (classId && classById.get(classId)) || null,
           expected: roster.expected.has(s.id),
           recorded: Boolean(r),
           status: r?.status ?? null,
@@ -1006,6 +1220,7 @@ export class AttendanceService {
           a.firstName.localeCompare(b.firstName, 'ar'),
       );
     const recordedCount = rows.filter((r) => r.expected && r.recorded).length;
+    const expectedCount = rows.filter((r) => r.expected).length;
 
     // Teachers: the session's own team (snapshot) + anyone already recorded
     const team = await this.teamOf(db, sessionId);
@@ -1067,10 +1282,14 @@ export class AttendanceService {
         room: { id: session.room.id, name: session.room.name },
         branch: session.room.branch,
       },
-      expectedCount: roster.expected.size,
+      additionalClasses: session.extraClasses.map((e) => e.groupClass),
+      scope: {
+        allStudents: scope.allStudents,
+        groupClassIds: scope.groupClassIds,
+      },
+      expectedCount,
       recordedCount,
-      complete:
-        roster.expected.size > 0 && recordedCount === roster.expected.size,
+      complete: expectedCount > 0 && recordedCount === expectedCount,
       editable,
       correctable:
         editable &&

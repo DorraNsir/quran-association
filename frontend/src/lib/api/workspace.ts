@@ -39,7 +39,17 @@ interface WsBundle {
   groups: { id: string; name: string; audience: string | null; status: RecordStatus; createdAt: ISODate }[]
   groupClasses: { id: string; groupId: string; branchId: string; supervisorId: string; assistantIds: string[]; status: RecordStatus }[]
   teachers: WsTeacher[]
-  schedules: { id: string; groupClassId: string; dayOfWeek: Weekday; startTime: string; endTime: string; roomId: string }[]
+  schedules: {
+    id: string
+    groupClassId: string
+    /** «حصة مشتركة»: other participating classes (a shared slot is listed once) */
+    additionalGroupClassIds: string[]
+    participants: { groupClassId: string; group: { id: string; name: string } }[]
+    dayOfWeek: Weekday
+    startTime: string
+    endTime: string
+    roomId: string
+  }[]
 }
 interface TeacherWorkspaceDto extends WsBundle {
   teacher: WsTeacher
@@ -85,7 +95,18 @@ function toLookups(b: WsBundle): Lookups {
     groups: b.groups.map((g): Group => ({ ...g, audience: g.audience ?? "" })),
     groupClasses: b.groupClasses as GroupClass[],
     teachers: b.teachers.map(toTeacher),
-    schedules: b.schedules.map((x): WeeklySchedule => ({ id: x.id, groupClassId: x.groupClassId, day: x.dayOfWeek, start: x.startTime, end: x.endTime, roomId: x.roomId })),
+    schedules: b.schedules.map(
+      (x): WeeklySchedule => ({
+        id: x.id,
+        groupClassId: x.groupClassId,
+        day: x.dayOfWeek,
+        start: x.startTime,
+        end: x.endTime,
+        roomId: x.roomId,
+        additionalGroupClassIds: x.additionalGroupClassIds,
+        participants: x.participants,
+      })
+    ),
   }
 }
 

@@ -12,7 +12,7 @@ import { Breadcrumbs } from "@/components/shared/page-header"
 import { MetaItem, ProfileHeader } from "@/components/shared/profile"
 import { ScheduleSummary, WeeklyScheduleGrid } from "@/components/shared/schedule"
 import { StatCard } from "@/components/shared/stat-card"
-import { activeSchedulesIn, branchStats, describeClass, fullName, indexLookups, roomsLabel, schedulesOf } from "@/lib/domain"
+import { activeSchedulesIn, branchStats, describeClass, fullName, indexLookups, roomsLabel, participatingSchedulesOf } from "@/lib/domain"
 import { formatDuration } from "@/lib/format"
 
 import { NotFoundState } from "@/components/shared/not-found-state"
@@ -86,7 +86,7 @@ function BranchDetailsBody({ id, lookups }: { id: string; lookups: Lookups }) {
                   <p className="text-xs text-muted-foreground">
                     المدرس المشرف: {v.supervisor ? fullName(v.supervisor) : "—"} · {roomsLabel(v.rooms)}
                   </p>
-                  <ScheduleSummary schedule={schedulesOf(v.groupClass.id, lookups.schedules)} />
+                  <ScheduleSummary schedule={participatingSchedulesOf(v.groupClass.id, lookups.schedules)} />
                 </li>
               ))}
             </ul>

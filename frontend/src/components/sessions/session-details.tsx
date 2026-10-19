@@ -26,6 +26,7 @@ import { InfoList, SectionCard } from "@/components/shared/info-list"
 import { Breadcrumbs } from "@/components/shared/page-header"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -47,6 +48,7 @@ import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
 import type { ISODate } from "@/types/domain"
 
 import { SessionHeader } from "./session-header"
+import { SessionMemorizationPanel } from "./session-memorization"
 import type { SessionRow } from "./use-session-rows"
 
 /**
@@ -157,9 +159,13 @@ export function SessionDetails({
                 <ul className="divide-y">
                   {students.map((student) => (
                     <li key={student.studentId} className="flex items-center justify-between gap-3 py-2.5">
-                      <Link href={paths.student(student.studentId)} className="min-w-0 hover:opacity-80">
-                        <PersonCell name={fullName(student)} photoUrl={student.photoUrl ?? undefined} size="sm" secondary={student.note ?? undefined} />
-                      </Link>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Link href={paths.student(student.studentId)} className="min-w-0 hover:opacity-80">
+                          <PersonCell name={fullName(student)} photoUrl={student.photoUrl ?? undefined} size="sm" secondary={student.note ?? undefined} />
+                        </Link>
+                        {/* «حصة مشتركة»: each student keeps their own program */}
+                        {row.shared && student.groupClass && <Badge variant="outline">{student.groupClass.group.name}</Badge>}
+                      </div>
                       {student.status ? (
                         <AttendanceStatusBadge status={student.status} />
                       ) : (
@@ -171,6 +177,7 @@ export function SessionDetails({
               </div>
             )}
           </SectionCard>
+          {row.shared && <SessionMemorizationPanel row={row} workspace={workspace} />}
         </div>
 
         <div className="space-y-6">
@@ -178,15 +185,35 @@ export function SessionDetails({
             <InfoList
               className="sm:grid-cols-1"
               items={[
-                {
-                  label: "المجموعة",
-                  value: group && row.groupClass && (
-                    <Link href={paths.groupClass(row.groupClass)} className="text-primary hover:underline">
-                      {group.name}
-                    </Link>
-                  ),
-                  icon: BookOpen,
-                },
+                row.shared
+                  ? {
+                      label: "حصة مشتركة",
+                      value: (
+                        <ul className="space-y-0.5">
+                          {row.classes.map((c, i) => (
+                            <li key={c.id}>
+                              <Link
+                                href={paths.groupClass({ id: c.id, groupId: c.group.id })}
+                                className="text-primary hover:underline"
+                              >
+                                {c.group.name}
+                              </Link>
+                              {i === 0 && <span className="ms-1 text-xs text-muted-foreground">(القسم الأساسي)</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      ),
+                      icon: BookOpen,
+                    }
+                  : {
+                      label: "المجموعة",
+                      value: group && row.groupClass && (
+                        <Link href={paths.groupClass(row.groupClass)} className="text-primary hover:underline">
+                          {group.name}
+                        </Link>
+                      ),
+                      icon: BookOpen,
+                    },
                 {
                   label: "القسم",
                   value: `${row.branch?.name ?? ""} · ${row.room?.name ?? ""}`,

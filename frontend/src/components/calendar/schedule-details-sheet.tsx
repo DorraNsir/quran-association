@@ -63,7 +63,9 @@ export function ScheduleDetailsSheet({
             {group.name}
           </SheetTitle>
           <SheetDescription className="flex items-center gap-2">
-            {entry.extra ? "حصة إضافية (مرة واحدة)" : detached ? "حصة من موعد أسبوعي محذوف" : "حصة أسبوعية"} · {group.audience}
+            {entry.sharedGroups && "حصة مشتركة · "}
+            {entry.extra ? "حصة إضافية (مرة واحدة)" : detached ? "حصة من موعد أسبوعي محذوف" : "حصة أسبوعية"}
+            {!entry.sharedGroups && ` · ${group.audience}`}
             {group.status !== "ACTIVE" && <StatusBadge status={group.status} />}
           </SheetDescription>
         </SheetHeader>
@@ -97,6 +99,27 @@ export function ScheduleDetailsSheet({
               { label: "عدد الطلبة", value: countLabels.students(entry.studentCount), icon: Users },
             ]}
           />
+
+          {entry.sharedGroups && (
+            <section className="space-y-2">
+              <h3 className="text-sm font-semibold">الأقسام المشاركة</h3>
+              <ul className="space-y-1.5">
+                {entry.sharedGroups.map((g, i) => (
+                  <li key={`${g.id}-${i}`} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm">
+                    <Link href={`/admin/groups/${g.id}`} className="font-medium text-primary hover:underline">
+                      {g.name}
+                    </Link>
+                    {i === 0 && <span className="text-xs text-muted-foreground">القسم الأساسي</span>}
+                  </li>
+                ))}
+              </ul>
+              {!detached && (
+                <p className="text-xs text-muted-foreground">
+                  تُزال الأقسام الإضافية من «تعديل الموعد الأسبوعي» دون إنشاء حصص بديلة لها. القسم الأساسي لا يُزال: لتغييره احذف الموعد وبرمج موعدًا جديدًا.
+                </p>
+              )}
+            </section>
+          )}
 
           {entry.occurrence && (
             <section className="space-y-2 rounded-lg border bg-muted/30 p-3">

@@ -55,6 +55,25 @@ const studentSelect = {
   },
 } as const;
 
+/** A weekly slot with its participants (host + additional classes of a shared slot). */
+const slotSelect = {
+  id: true,
+  groupClassId: true,
+  dayOfWeek: true,
+  startTime: true,
+  endTime: true,
+  // Each weekly slot has its own room
+  room: { select: { id: true, branchId: true, name: true, status: true } },
+  groupClass: { select: { group: { select: { id: true, name: true } } } },
+  extraClasses: {
+    select: {
+      groupClassId: true,
+      groupClass: { select: { group: { select: { id: true, name: true } } } },
+    },
+    orderBy: { groupClassId: 'asc' },
+  },
+} as const satisfies Prisma.WeeklyScheduleSelect;
+
 const classSelect = {
   id: true,
   groupId: true,
@@ -75,16 +94,11 @@ const classSelect = {
     select: { id: true, name: true, address: true, phone: true, status: true },
   },
   schedules: {
-    select: {
-      id: true,
-      dayOfWeek: true,
-      startTime: true,
-      endTime: true,
-      // Each weekly slot has its own room
-      room: { select: { id: true, branchId: true, name: true, status: true } },
-    },
+    select: slotSelect,
     orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
   },
+  // «الحصص المشتركة»: another class's slots this class also attends
+  sharedSchedules: { select: { weeklySchedule: { select: slotSelect } } },
 } as const satisfies Prisma.GroupClassSelect;
 
 type ClassRow = Prisma.GroupClassGetPayload<{ select: typeof classSelect }>;
@@ -144,8 +158,19 @@ export class WorkspaceService {
     private readonly pageSizes: PageSizeService,
   ) {}
 
-  /** The flat reference records of some classes (their group, branch, room, team, weekly slots). */
+  /**
+   * The flat reference records of some classes (their group, branch, room,
+   * team, weekly slots). A SHARED weekly slot is listed ONCE — whether the
+   * classes host it or attend it as an additional class — with its
+   * participants (class + group name), so it shows as one lesson.
+   */
   private async bundle(classes: ClassRow[]) {
+    const slots = unique(
+      classes.flatMap((c) => [
+        ...c.schedules,
+        ...c.sharedSchedules.map((s) => s.weeklySchedule),
+      ]),
+    );
     const teacherIds = [
       ...new Set(
         classes.flatMap((c) => [
@@ -160,7 +185,7 @@ export class WorkspaceService {
     });
     return {
       branches: unique(classes.map((c) => c.branch)),
-      rooms: unique(classes.flatMap((c) => c.schedules.map((s) => s.room))),
+      rooms: unique(slots.map((s) => s.room)),
       groups: unique(
         classes.map((c) => ({
           ...c.group,
@@ -176,16 +201,22 @@ export class WorkspaceService {
         status: c.status,
       })),
       teachers: team.map(toTeacher),
-      schedules: classes.flatMap((c) =>
-        c.schedules.map((s) => ({
-          id: s.id,
-          groupClassId: c.id,
-          roomId: s.room.id,
-          dayOfWeek: s.dayOfWeek,
-          startTime: fromDbTime(s.startTime),
-          endTime: fromDbTime(s.endTime),
-        })),
-      ),
+      schedules: slots.map((s) => ({
+        id: s.id,
+        groupClassId: s.groupClassId,
+        additionalGroupClassIds: s.extraClasses.map((e) => e.groupClassId),
+        participants: [
+          { groupClassId: s.groupClassId, group: s.groupClass.group },
+          ...s.extraClasses.map((e) => ({
+            groupClassId: e.groupClassId,
+            group: e.groupClass.group,
+          })),
+        ],
+        roomId: s.room.id,
+        dayOfWeek: s.dayOfWeek,
+        startTime: fromDbTime(s.startTime),
+        endTime: fromDbTime(s.endTime),
+      })),
     };
   }
 

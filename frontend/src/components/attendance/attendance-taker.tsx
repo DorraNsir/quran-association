@@ -77,7 +77,15 @@ export function AttendanceTaker({ row, roster: saved, workspace = "admin" }: { r
   // Expected students, plus anyone already recorded who has since left the class
   const roster = saved.students
     .filter((s) => s.expected || s.recorded)
-    .map((s) => ({ id: s.studentId, firstName: s.firstName, lastName: s.lastName, photoUrl: s.photoUrl ?? undefined, expected: s.expected }))
+    .map((s) => ({
+      id: s.studentId,
+      firstName: s.firstName,
+      lastName: s.lastName,
+      photoUrl: s.photoUrl ?? undefined,
+      expected: s.expected,
+      // «حصة مشتركة»: each student keeps their own program
+      program: row.shared ? s.groupClass?.group.name : undefined,
+    }))
   const team = saved.teachers.map((t) => ({
     id: t.teacherId,
     firstName: t.firstName,
@@ -187,6 +195,19 @@ export function AttendanceTaker({ row, roster: saved, workspace = "admin" }: { r
         </Alert>
       )}
 
+      {row.shared && saved.scope && !saved.scope.allStudents && (
+        <Alert className="mb-6">
+          <UsersRound />
+          <AlertTitle>حصة مشتركة: تظهر هنا طلبة أقسامك فقط</AlertTitle>
+          <AlertDescription>
+            {`تسجّل حضور طلبة ${row.classes
+              .filter((c) => saved.scope!.groupClassIds.includes(c.id))
+              .map((c) => c.group.name)
+              .join(" و")}. يسجّل حضور بقية الطلبة المدرس المشرف أو معلمو أقسامهم.`}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {conflict && (
         <Alert variant="destructive" className="mb-6">
           <TriangleAlert />
@@ -271,6 +292,7 @@ export function AttendanceTaker({ row, roster: saved, workspace = "admin" }: { r
                 student={student}
                 entry={students.get(student.id)}
                 disabled={locked(savedStudents, student.id)}
+                badge={student.program ? <Badge variant="outline">{student.program}</Badge> : undefined}
                 onStatus={(status) => updateStudent(student.id, (prev) => ({ ...prev, status }))}
                 onNote={(note) => updateStudent(student.id, (prev) => ({ status: prev?.status ?? "PRESENT", note }))}
               />

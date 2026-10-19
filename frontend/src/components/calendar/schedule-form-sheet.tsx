@@ -1,6 +1,6 @@
 "use client"
 
-import { BookOpen, CheckCircle2, DoorOpen } from "lucide-react"
+import { BookOpen, CheckCircle2, DoorOpen, Info } from "lucide-react"
 
 import { ClassPicker } from "@/components/groups/class-picker"
 import { ConflictAlert } from "@/components/scheduling/conflict-alert"
@@ -20,6 +20,8 @@ import { describeClass, fullName, indexLookups, roomsOfBranch, type Lookups } fr
 import { labels, WEEK_ORDER } from "@/lib/i18n"
 import { findConflicts, freeRooms, isValidTimeRange } from "@/lib/scheduling"
 import type { Student, Weekday, WeeklySchedule } from "@/types/domain"
+
+import { SharedClassesField } from "./shared-classes-field"
 
 type ScheduleValues = Omit<WeeklySchedule, "id">
 
@@ -60,6 +62,7 @@ export function ScheduleFormSheet({
       start: schedule?.start ?? preset?.start ?? "09:00",
       end: schedule?.end ?? preset?.end ?? "11:00",
       roomId: schedule?.roomId ?? preset?.roomId ?? "",
+      additionalGroupClassIds: schedule?.additionalGroupClassIds ?? [],
     },
     (v) => ({
       groupClassId: v.groupClassId ? undefined : "اختر المجموعة ثم القسم",
@@ -70,6 +73,12 @@ export function ScheduleFormSheet({
   const { values, setField } = form
   const groupClass = indexes.classesById.get(values.groupClassId)
   const view = groupClass ? describeClass(groupClass, indexes) : undefined
+  const extraIds = values.additionalGroupClassIds ?? []
+  const extraClasses = extraIds.flatMap((id) => indexes.classesById.get(id) ?? [])
+  // The lesson's team: the common supervisor + every participating class's assistants
+  const extraAssistants = extraClasses
+    .flatMap((c) => describeClass(c, indexes).assistants)
+    .filter((t, i, all) => all.findIndex((x) => x.id === t.id) === i && !view?.assistants.some((a) => a.id === t.id))
   // Only rooms of the class's branch (an inactive room stays listed when it is the slot's own)
   const branchRooms = groupClass
     ? roomsOfBranch(groupClass.branchId, lookups.rooms).filter((r) => r.status === "ACTIVE" || r.id === values.roomId)
@@ -83,12 +92,15 @@ export function ScheduleFormSheet({
     ignoreScheduleIds: schedule ? [schedule.id] : [],
   }
   const complete = groupClass && values.roomId && isValidTimeRange(values.start, values.end)
-  const conflicts = complete ? findConflicts({ ...values, id: schedule?.id, groupClass }, context) : []
+  const conflicts = complete ? findConflicts({ ...values, id: schedule?.id, groupClass, additionalClasses: extraClasses }, context) : []
   const alternatives = complete ? freeRooms(values, groupClass.branchId, lookups.rooms, context) : []
 
   const submit = form.handleSubmit((v) => {
     if (conflicts.length > 0) return
-    return onSave({ ...v, id: schedule?.id ?? "" })
+    // Sent only for a shared slot, or to remove the classes of a slot that had some
+    const extras = v.additionalGroupClassIds ?? []
+    const send = extras.length > 0 || (schedule?.additionalGroupClassIds?.length ?? 0) > 0
+    return onSave({ ...v, id: schedule?.id ?? "", additionalGroupClassIds: send ? extras : undefined })
   })
 
   return (
@@ -116,6 +128,8 @@ export function ScheduleFormSheet({
               value={values.groupClassId}
               onChange={(id) => {
                 setField("groupClassId", id)
+                // Shared classes depend on the class (same supervisor, same branch)
+                setField("additionalGroupClassIds", [])
                 // The room must belong to the class's branch: clear a choice that no longer fits
                 const branchId = indexes.classesById.get(id)?.branchId
                 if (room && room.branchId !== branchId) setField("roomId", "")
@@ -139,13 +153,27 @@ export function ScheduleFormSheet({
                 <TeacherRoleBadge role="SUPERVISOR" />
               </div>
             )}
-            {view.assistants.map((t) => (
+            {[...view.assistants, ...extraAssistants].map((t) => (
               <div key={t.id} className="flex items-center justify-between gap-2">
                 <PersonCell name={fullName(t)} size="sm" />
                 <TeacherRoleBadge role="ASSISTANT" />
               </div>
             ))}
           </div>
+        )}
+        <SharedClassesField
+          id="schedule-shared"
+          host={groupClass}
+          value={extraIds}
+          onChange={(ids) => setField("additionalGroupClassIds", ids)}
+          lookups={lookups}
+          students={students}
+        />
+        {schedule && extraIds.length > 0 && (
+          <p className="flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground sm:col-span-2">
+            <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            القسم الأساسي ({view?.group?.name}) ثابت: لا يمكن إزالته من الموعد. لإزالته احذف هذا الموعد ثم برمج موعدًا جديدًا. إزالة قسم إضافي لا تُنشئ له حصة بديلة.
+          </p>
         )}
       </FormSection>
 

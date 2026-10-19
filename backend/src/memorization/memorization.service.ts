@@ -1,10 +1,16 @@
 import { Injectable } from '@nestjs/common';
 
 import { fromDbDate, toDbDate } from '../common/dates.js';
-import { conflict, isUniqueViolation, notFound } from '../common/errors.js';
+import {
+  badRequest,
+  conflict,
+  isUniqueViolation,
+  notFound,
+} from '../common/errors.js';
 import { platformToday } from '../common/platform-clock.js';
 import { type AcademicYear, Semester } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { participantIds } from '../scheduling/participants.js';
 import {
   TeacherAccessService,
   type DateRange,
@@ -15,6 +21,8 @@ import type {
   SemesterRefDto,
   StudentMemorizationQueryDto,
   UpsertMemorizationDto,
+  SessionMemorizationDto,
+  SessionMemorizationQueryDto,
 } from './memorization.dto.js';
 import { surahName } from './surahs.js';
 
@@ -255,6 +263,136 @@ export class MemorizationService {
           a.lastName.localeCompare(b.lastName, 'ar') ||
           a.firstName.localeCompare(b.firstName, 'ar'),
       ),
+    };
+  }
+
+  /**
+   * «متابعة الحفظ» from a session — the COMBINED list of a shared session:
+   * the students enrolled in one of its classes ON its date, each with their
+   * own class / program and their own record for the semester (the one
+   * containing the session date by default). Teachers: in the session's team;
+   * an assistant of a shared session only sees the students of the classes
+   * they are assigned to. Nothing is written here: updates go through
+   * `upsert` (per student, same record, same rules).
+   */
+  async forSession(
+    sessionId: string,
+    query: SessionMemorizationQueryDto,
+    actor: MemorizationActor,
+  ): Promise<SessionMemorizationDto> {
+    if (Boolean(query.academicYearId) !== Boolean(query.semester))
+      throw badRequest(
+        'MEMORIZATION_PERIOD_INCOMPLETE',
+        'حدّد السنة الدراسية والسداسي معًا، أو اتركهما لفترة الحصة',
+      );
+    const teacherScope =
+      actor.kind === 'teacher'
+        ? await this.access.sessionStudentScope(actor.userId, sessionId)
+        : null;
+    const session = await this.prisma.session.findUnique({
+      where: { id: sessionId },
+      select: {
+        id: true,
+        date: true,
+        groupClassId: true,
+        extraClasses: { select: { groupClassId: true } },
+      },
+    });
+    if (!session) throw notFound('SESSION_NOT_FOUND', 'الحصة غير موجودة');
+    const date = fromDbDate(session.date);
+    const participants = participantIds(session);
+    const visibleClasses = teacherScope ? teacherScope.classIds : participants;
+
+    const year = query.academicYearId
+      ? await this.year(query.academicYearId)
+      : await this.prisma.academicYear.findFirst({
+          where: {
+            startDate: { lte: session.date },
+            endDate: { gte: session.date },
+          },
+        });
+    if (!year)
+      throw notFound(
+        'ACADEMIC_YEAR_NOT_FOUND',
+        'لا توجد سنة دراسية تشمل تاريخ هذه الحصة: اختر السنة والسداسي',
+      );
+    const semester =
+      query.semester ??
+      (date >= fromDbDate(year.semester2StartDate)
+        ? Semester.SECOND
+        : Semester.FIRST);
+
+    const [classes, enrollments] = await Promise.all([
+      this.prisma.groupClass.findMany({
+        where: { id: { in: participants } },
+        select: { id: true, group: { select: { id: true, name: true } } },
+      }),
+      // One enrollment per student and date: a student is never listed twice
+      this.prisma.studentEnrollment.findMany({
+        where: {
+          groupClassId: { in: visibleClasses },
+          startDate: { lte: session.date },
+          OR: [{ endDate: null }, { endDate: { gt: session.date } }],
+        },
+        select: {
+          studentId: true,
+          groupClassId: true,
+          student: {
+            select: {
+              status: true,
+              person: {
+                select: { firstName: true, lastName: true, photoUrl: true },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+    const progress = await this.prisma.memorizationProgress.findMany({
+      where: {
+        academicYearId: year.id,
+        semester,
+        studentId: { in: enrollments.map((e) => e.studentId) },
+      },
+      select: {
+        studentId: true,
+        lastMemorizedSurahNumber: true,
+        updatedAt: true,
+      },
+    });
+    const byStudent = new Map(progress.map((p) => [p.studentId, p]));
+    const classById = new Map(classes.map((c) => [c.id, c]));
+    const order = (id: string) => participants.indexOf(id);
+    return {
+      sessionId: session.id,
+      date,
+      classes: [...classes].sort((a, b) => order(a.id) - order(b.id)),
+      scope: {
+        allStudents: visibleClasses.length === participants.length,
+        groupClassIds: visibleClasses,
+      },
+      academicYear: { id: year.id, label: year.label },
+      semester,
+      period: semesterRange(year, semester),
+      students: enrollments
+        .map((e) => {
+          const p = byStudent.get(e.studentId);
+          return {
+            studentId: e.studentId,
+            ...e.student.person,
+            studentStatus: e.student.status,
+            groupClass: classById.get(e.groupClassId)!,
+            lastMemorizedSurahNumber: p?.lastMemorizedSurahNumber ?? null,
+            surahName: p ? surahName(p.lastMemorizedSurahNumber)! : null,
+            updatedAt: p?.updatedAt ?? null,
+          };
+        })
+        .sort(
+          (a, b) =>
+            order(a.groupClass.id) - order(b.groupClass.id) ||
+            a.lastName.localeCompare(b.lastName, 'ar') ||
+            a.firstName.localeCompare(b.firstName, 'ar'),
+        ),
     };
   }
 

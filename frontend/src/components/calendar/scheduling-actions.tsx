@@ -23,6 +23,7 @@ import { isValidTimeRange } from "@/lib/scheduling"
 import type { ISODate, Student, WeeklySchedule } from "@/types/domain"
 
 import { ScheduleFormSheet } from "./schedule-form-sheet"
+import { SharedClassesField } from "./shared-classes-field"
 
 /**
  * Saves a weekly slot (create or edit) through the API — which re-checks
@@ -34,22 +35,55 @@ export function useSaveWeeklySlot(lookups: Lookups) {
   const indexes = indexLookups(lookups)
   const mutation = useApiMutation(
     (saved: WeeklySchedule) => {
-      const body = { dayOfWeek: saved.day, startTime: saved.start, endTime: saved.end, roomId: saved.roomId }
+      const body = {
+        dayOfWeek: saved.day,
+        startTime: saved.start,
+        endTime: saved.end,
+        roomId: saved.roomId,
+        // «حصة مشتركة»: the other classes of the lesson (full list; [] = back to a
+        // normal slot) — omitted for a normal slot, so its request is unchanged
+        ...(saved.additionalGroupClassIds ? { additionalGroupClassIds: saved.additionalGroupClassIds } : {}),
+      }
       return saved.id
-        ? api(`/admin/group-classes/${saved.groupClassId}/schedules/${saved.id}`, { method: "PATCH", body })
-        : api(`/admin/group-classes/${saved.groupClassId}/schedules`, { method: "POST", body })
+        ? api<WeeklySlotWrite>(`/admin/group-classes/${saved.groupClassId}/schedules/${saved.id}`, { method: "PATCH", body })
+        : api<WeeklySlotWrite>(`/admin/group-classes/${saved.groupClassId}/schedules`, { method: "POST", body })
     },
     [keys.schedules, keys.sessions, keys.rooms]
   )
   return async (saved: WeeklySchedule) => {
     const exists = Boolean(saved.id)
-    await mutation.mutateAsync(saved)
-    const group = indexes.groupsById.get(indexes.classesById.get(saved.groupClassId)?.groupId ?? "")
+    const result = await mutation.mutateAsync(saved)
+    const names = [saved.groupClassId, ...(saved.additionalGroupClassIds ?? [])]
+      .map((id) => indexes.groupsById.get(indexes.classesById.get(id)?.groupId ?? "")?.name)
+      .filter(Boolean)
+      .join(" + ")
     toast.success(
-      `${exists ? "تم تعديل الموعد الأسبوعي" : "تمت برمجة موعد أسبوعي"} ${group?.name ?? ""} — ${labels.weekday[saved.day]} ${formatTimeRange(saved.start, saved.end)}`
+      `${exists ? "تم تعديل الموعد الأسبوعي" : "تمت برمجة موعد أسبوعي"} ${names} — ${labels.weekday[saved.day]} ${formatTimeRange(saved.start, saved.end)}`
     )
+    // Dates the automatic planning could not fill (a class, room or teacher was already taken)
+    const skipped = result?.generation?.skippedConflicts ?? []
+    if (skipped.length > 0)
+      toast.warning(`لم تُبرمج ${skipped.length === 1 ? "حصة واحدة" : `${skipped.length} حصص`} من هذا الموعد بسبب تعارض`, {
+        description: skipped
+          .slice(0, 5)
+          .map((s) => `${formatDate(s.date)}: ${SKIP_REASON[s.reason]}`)
+          .join("، "),
+      })
   }
 }
+
+/** What a weekly slot write returns: the dates its automatic planning skipped, and why. */
+interface WeeklySlotWrite {
+  generation: {
+    skippedConflicts: { date: ISODate; reason: "CLASS" | "ROOM" | "TEACHER" }[]
+  } | null
+}
+
+const SKIP_REASON = {
+  CLASS: "أحد الأقسام لديه حصة أخرى",
+  ROOM: "القاعة مشغولة",
+  TEACHER: "أحد المعلمين مشغول",
+} as const
 
 type ButtonVariant = "default" | "outline"
 
@@ -130,6 +164,8 @@ export function ExtraSessionButton({
 
 interface Values {
   groupClassId: string
+  /** «حصة مشتركة»: other classes taught in the same lesson */
+  additionalGroupClassIds: string[]
   date: ISODate
   start: string
   end: string
@@ -158,13 +194,18 @@ export function ExtraSessionSheet({
   const today = todayInTunis()
   const indexes = indexLookups(lookups)
   const create = useCreateExtraSession()
-  // The class's usual room (of its weekly slots) is pre-selected
-  const usualRoom = (groupClassId: string) => indexes.roomsByClass.get(groupClassId)?.[0]?.id ?? ""
+  // The class's usual room is pre-selected: the first ACTIVE room of its branch
+  // among the rooms it meets in (its own weekly slots first, then shared ones)
+  const usualRoom = (groupClassId: string) => {
+    const branchId = indexes.classesById.get(groupClassId)?.branchId
+    return indexes.roomsByClass.get(groupClassId)?.find((r) => r.branchId === branchId && r.status === "ACTIVE")?.id ?? ""
+  }
   const initialClass = preset?.groupClassId ?? ""
   const form = useFormState<Values>(
     "extra-session",
     {
       groupClassId: initialClass,
+      additionalGroupClassIds: [],
       date: preset?.date && preset.date >= today ? preset.date : today,
       start: "09:00",
       end: "10:30",
@@ -183,8 +224,19 @@ export function ExtraSessionSheet({
   const branchRooms = groupClass ? roomsOfBranch(groupClass.branchId, lookups.rooms).filter((r) => r.status === "ACTIVE") : []
 
   const submit = form.handleSubmit(async (v) => {
-    await create.mutateAsync({ groupClassId: v.groupClassId, roomId: v.roomId, date: v.date, startTime: v.start, endTime: v.end })
-    toast.success(`تمت برمجة حصة إضافية ${view?.group?.name ?? ""} — ${formatDate(v.date)} ${formatTimeRange(v.start, v.end)}`)
+    await create.mutateAsync({
+      groupClassId: v.groupClassId,
+      ...(v.additionalGroupClassIds.length ? { additionalGroupClassIds: v.additionalGroupClassIds } : {}),
+      roomId: v.roomId,
+      date: v.date,
+      startTime: v.start,
+      endTime: v.end,
+    })
+    const names = [v.groupClassId, ...v.additionalGroupClassIds]
+      .map((id) => indexes.groupsById.get(indexes.classesById.get(id)?.groupId ?? "")?.name)
+      .filter(Boolean)
+      .join(" + ")
+    toast.success(`تمت برمجة حصة إضافية ${names} — ${formatDate(v.date)} ${formatTimeRange(v.start, v.end)}`)
     onOpenChange(false)
   })
 
@@ -206,6 +258,7 @@ export function ExtraSessionSheet({
             value={values.groupClassId}
             onChange={(id) => {
               setField("groupClassId", id)
+              setField("additionalGroupClassIds", [])
               setField("roomId", usualRoom(id))
               form.touch("groupClassId")
             }}
@@ -230,6 +283,14 @@ export function ExtraSessionSheet({
             ))}
           </div>
         )}
+        <SharedClassesField
+          id="extra-shared"
+          host={groupClass}
+          value={values.additionalGroupClassIds}
+          onChange={(ids) => setField("additionalGroupClassIds", ids)}
+          lookups={lookups}
+          students={students}
+        />
       </FormSection>
 
       <FormSection title="الموعد">

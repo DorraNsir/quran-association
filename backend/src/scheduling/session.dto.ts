@@ -19,6 +19,7 @@ import {
   SessionStatus,
   TeachingRole,
 } from '../generated/prisma/enums.js';
+import { AdditionalClasses, WeeklyScheduleDto } from './schedule.dto.js';
 import { IsTimeOfDay } from './time.js';
 
 /** A real lesson on a real date (manual — never changes the weekly schedule). */
@@ -41,6 +42,10 @@ export class CreateSessionDto {
   @IsOptional()
   @IsIn([SessionStatus.SCHEDULED, SessionStatus.COMPLETED])
   status?: SessionStatus;
+  @AdditionalClasses(
+    'Shared lesson: other classes taught together with groupClassId (same supervisor, same branch, all active); empty = a normal lesson',
+  )
+  additionalGroupClassIds?: string[];
 }
 
 /**
@@ -60,6 +65,10 @@ export class CreateExtraSessionDto {
   date!: string;
   @IsTimeOfDay() startTime!: string;
   @IsTimeOfDay() endTime!: string;
+  @AdditionalClasses(
+    'Shared lesson: other classes taught together with groupClassId (same supervisor, same branch, all active)',
+  )
+  additionalGroupClassIds?: string[];
 }
 
 /** Reschedule a SCHEDULED session (date and/or times). Class and status are not editable here. */
@@ -75,6 +84,10 @@ export class UpdateSessionDto {
   @IsOptional()
   @IsUUID()
   roomId?: string;
+  @AdditionalClasses(
+    'Replaces the additional classes of an UPCOMING lesson without attendance ([] = a normal lesson again); the host class is not editable',
+  )
+  additionalGroupClassIds?: string[];
 }
 
 export class SetSessionStatusDto {
@@ -272,7 +285,18 @@ export class SessionDto {
   isExtra!: boolean;
   @ApiPropertyOptional({ type: SessionCompletionDto, nullable: true })
   completion!: SessionCompletionDto | null;
-  @ApiProperty({ type: SessionClassDto }) groupClass!: SessionClassDto;
+  @ApiProperty({
+    type: SessionClassDto,
+    description: 'The HOST class (the one whose weekly slot it is)',
+  })
+  groupClass!: SessionClassDto;
+  @ApiProperty({
+    type: SessionClassDto,
+    isArray: true,
+    description:
+      '«حصة مشتركة»: the other participating classes (empty for a normal lesson)',
+  })
+  additionalClasses!: SessionClassDto[];
   @ApiProperty({ type: SessionRoomDto }) room!: SessionRoomDto;
   @ApiProperty({
     type: SessionTeacherDto,
@@ -302,7 +326,12 @@ export class SkippedSessionDto {
   @ApiProperty({ format: 'date' }) date!: string;
   @ApiProperty() startTime!: string;
   @ApiProperty() endTime!: string;
-  @ApiProperty({ enum: ['ROOM', 'TEACHER'] }) reason!: 'ROOM' | 'TEACHER';
+  @ApiProperty({
+    enum: ['CLASS', 'ROOM', 'TEACHER'],
+    description:
+      'CLASS: an additional class of a shared slot already has a lesson then',
+  })
+  reason!: 'CLASS' | 'ROOM' | 'TEACHER';
   @ApiProperty({ description: 'The existing session it would collide with' })
   conflictingSessionId!: string;
 }
@@ -320,7 +349,7 @@ export class GenerateSessionsResultDto {
     type: SkippedSessionDto,
     isArray: true,
     description:
-      'Occurrences not created because of a room/teacher conflict with an existing session',
+      'Occurrences not created because of a class/room/teacher conflict with an existing session',
   })
   skippedConflicts!: SkippedSessionDto[];
   @ApiProperty({
@@ -330,4 +359,14 @@ export class GenerateSessionsResultDto {
       'Classes skipped because their supervisor is inactive (appoint a replacement first)',
   })
   skippedInactiveSupervisorClassIds!: string[];
+}
+
+/**
+ * A weekly slot just created / edited, with the result of the automatic
+ * generation of its lessons (null when nothing was generated): dates skipped
+ * because of a CLASS / ROOM / TEACHER conflict are listed with their reason.
+ */
+export class WeeklyScheduleWriteDto extends WeeklyScheduleDto {
+  @ApiPropertyOptional({ type: GenerateSessionsResultDto, nullable: true })
+  generation!: GenerateSessionsResultDto | null;
 }

@@ -18,6 +18,7 @@ import {
   isRunning,
   indexLookups,
   weeklyMinutes,
+  type ClassView,
   type Lookups,
 } from "@/lib/domain"
 import { addDays, dateOfWeekday, startOfWeek, weekDates, weekdayOf } from "@/lib/dates"
@@ -26,7 +27,7 @@ import { labels } from "@/lib/i18n"
 import { keys, useApiMutation } from "@/lib/api/academic"
 import { api } from "@/lib/api/client"
 import { toSession, useSessionRange } from "@/lib/api/sessions"
-import type { ID, ISODate, Student, WeeklySchedule } from "@/types/domain"
+import type { Group, ID, ISODate, Student, WeeklySchedule } from "@/types/domain"
 
 import { toneOf, type CalendarEntry } from "./calendar-event"
 import { CalendarToolbar, type CalendarView as View } from "./calendar-toolbar"
@@ -81,31 +82,53 @@ export function CalendarView({
   const { branchesById, classesById, groupsById, roomsById } = indexes
   const studentCounts = countActiveStudentsByClass(students)
 
+  /**
+   * «حصة مشتركة»: ONE entry for the lesson of several classes — every
+   * participating group (its name reads «أركان + الماهر»), the students of
+   * all of them, and the team of all of them (one supervisor).
+   */
+  const sharedPart = (view: ClassView & { group: Group }, groupClassId: ID, extraIds: ID[]) => {
+    const extras = extraIds.flatMap((id) => {
+      const c = classesById.get(id)
+      return c ? [describeClass(c, indexes)] : []
+    })
+    if (extras.length === 0) return { studentCount: studentCounts.get(groupClassId) ?? 0 }
+    const groups = [view.group, ...extras.flatMap((e) => (e.group ? [e.group] : []))]
+    return {
+      group: { ...view.group, name: groups.map((g) => g.name).join(" + ") },
+      sharedGroups: groups,
+      assistants: [...view.assistants, ...extras.flatMap((e) => e.assistants)].filter(
+        (t, i, all) => all.findIndex((x) => x.id === t.id) === i
+      ),
+      studentCount: [groupClassId, ...extraIds].reduce((n, id) => n + (studentCounts.get(id) ?? 0), 0),
+      teamIds: [...new Set([view.groupClass, ...extras.map((e) => e.groupClass)].flatMap(classTeacherIds))],
+    }
+  }
+
   // ── Entries: one per slot of a running class; place and team come from the class ──
   const entries: CalendarEntry[] = schedules.flatMap((schedule) => {
     const groupClass = classesById.get(schedule.groupClassId)
     if (!groupClass || !isRunning(groupClass, groupsById)) return []
     const view = describeClass(groupClass, indexes)
     if (!view.group) return []
+    const withGroup = { ...view, group: view.group }
     return [
       {
-        ...view,
-        group: view.group,
+        ...withGroup,
         schedule,
         room: roomsById.get(schedule.roomId),
-        studentCount: studentCounts.get(groupClass.id) ?? 0,
         tone: Math.max(0, lookups.branches.findIndex((b) => b.id === groupClass.branchId)),
+        ...sharedPart(withGroup, groupClass.id, schedule.additionalGroupClassIds ?? []),
       },
     ]
   })
+  /** Filters match ANY participating class of a shared lesson (group, teacher). */
+  const matches = (e: CalendarEntry & { teamIds?: ID[] }) =>
+    (filters.branch === ALL || e.groupClass.branchId === filters.branch) &&
+    (filters.group === ALL || (e.sharedGroups ?? [e.group]).some((g) => g.id === filters.group)) &&
+    (filters.teacher === ALL || (e.teamIds ?? classTeacherIds(e.groupClass)).includes(filters.teacher))
   // Group filter keeps every class of the group; teacher filter keeps only that teacher's classes
-  const visible = entries.filter(
-    ({ groupClass, group, schedule }) =>
-      (filters.branch === ALL || groupClass.branchId === filters.branch) &&
-      (filters.room === ALL || schedule.roomId === filters.room) &&
-      (filters.group === ALL || group.id === filters.group) &&
-      (filters.teacher === ALL || classTeacherIds(groupClass).includes(filters.teacher))
-  )
+  const visible = entries.filter((e) => matches(e) && (filters.room === ALL || e.schedule.roomId === filters.room))
   // Dated sessions of the displayed week (cancellations, attendance) — from the API
   const week = weekDates(date)
   const sessionsQuery = useSessionRange("admin", { from: week[0].date, to: week[week.length - 1].date })
@@ -119,26 +142,30 @@ export function CalendarView({
     const view = describeClass(groupClass, indexes)
     if (!view.group) return []
     const session = toSession(s)
+    const withGroup = { ...view, group: view.group }
+    const extraIds = (s.additionalClasses ?? []).map((c) => c.id)
     return [
       {
-        ...view,
-        group: view.group,
-        schedule: { id: `extra-${s.id}`, groupClassId: groupClass.id, day: weekdayOf(s.date), start: s.startTime, end: s.endTime, roomId: s.room.id },
+        ...withGroup,
+        schedule: {
+          id: `extra-${s.id}`,
+          groupClassId: groupClass.id,
+          additionalGroupClassIds: extraIds,
+          day: weekdayOf(s.date),
+          start: s.startTime,
+          end: s.endTime,
+          roomId: s.room.id,
+        },
         room: roomsById.get(s.room.id),
-        studentCount: studentCounts.get(groupClass.id) ?? 0,
         tone: Math.max(0, lookups.branches.findIndex((b) => b.id === groupClass.branchId)),
         occurrence: session,
         detached: true,
         extra: s.isExtra,
+        ...sharedPart(withGroup, groupClass.id, extraIds),
       },
     ]
   })
-  const visibleExtras = extras.filter(
-    ({ groupClass, group }) =>
-      (filters.branch === ALL || groupClass.branchId === filters.branch) &&
-      (filters.group === ALL || group.id === filters.group) &&
-      (filters.teacher === ALL || classTeacherIds(groupClass).includes(filters.teacher))
-  )
+  const visibleExtras = extras.filter(matches)
   /** A day's entries, each linked to its dated session (attendance, cancellation). */
   const entriesOn = (d: ISODate) =>
     visible

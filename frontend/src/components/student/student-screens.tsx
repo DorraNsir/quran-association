@@ -10,7 +10,7 @@ import { ScheduleSummary, WeeklyScheduleGrid } from "@/components/shared/schedul
 import { PersonCell } from "@/components/shared/user-avatar"
 import { WithStudentWorkspace } from "@/components/shared/with-workspace"
 import { todayInTunis, weekdayOf } from "@/lib/dates"
-import { ageOn, fullName, roomsLabel, schedulesOf } from "@/lib/domain"
+import { ageOn, fullName, participatingSchedulesOf, roomsLabel } from "@/lib/domain"
 import { formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { getStudentGroupClass } from "@/lib/student-access"
@@ -52,7 +52,8 @@ export function StudentGroupScreen() {
             </>
           )
         }
-        const schedule = schedulesOf(view.groupClass.id, lookups.schedules)
+        // Its own slots and the shared ones it attends (one lesson with another class)
+        const schedule = participatingSchedulesOf(view.groupClass.id, lookups.schedules)
         // Teachers: name and role only — no contact details or other assignments
         const team = [
           ...(view.supervisor ? [{ teacher: view.supervisor, role: "SUPERVISOR" as const }] : []),
@@ -111,15 +112,22 @@ export function StudentScheduleScreen() {
           return (
             <div className="space-y-6">
               <SectionCard title="البرنامج الأسبوعي" icon={CalendarDays}>
-                {/* A class can meet several times a week: one entry per weekly slot */}
+                {/* A class can meet several times a week: one entry per weekly slot —
+                    a shared lesson shows the student's own program, and with whom */}
                 <WeeklyScheduleGrid
                   emptyLabel="لم يتم تحديد جدول لهذه المجموعة بعد"
-                  entries={schedulesOf(view.groupClass.id, lookups.schedules).map((slot) => ({
-                    slot,
-                    title: view.group?.name ?? "—",
-                    subtitle: `${view.branch?.name ?? ""} · ${view.rooms.find((r) => r.id === slot.roomId)?.name ?? ""}`,
-                    emphasis: true,
-                  }))}
+                  entries={participatingSchedulesOf(view.groupClass.id, lookups.schedules).map((slot) => {
+                    const others = (slot.participants ?? [])
+                      .filter((p) => p.groupClassId !== view.groupClass.id)
+                      .map((p) => p.group.name)
+                    const room = lookups.rooms.find((r) => r.id === slot.roomId)?.name ?? ""
+                    return {
+                      slot,
+                      title: view.group?.name ?? "—",
+                      subtitle: [view.branch?.name ?? "", room, ...(others.length ? [`مشتركة مع ${others.join(" + ")}`] : [])].join(" · "),
+                      emphasis: true,
+                    }
+                  })}
                 />
               </SectionCard>
               <MySessions view={view} today={todayInTunis()} />

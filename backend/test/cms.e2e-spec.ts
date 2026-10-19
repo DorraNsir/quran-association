@@ -525,6 +525,13 @@ describe('Public website & CMS (e2e)', () => {
 
   describe('events', () => {
     it('separates upcoming and past by the Africa/Tunis day; internal and unpublished are hidden', async () => {
+      // Sessions dated today that other suites / runs may have left: only
+      // what THIS test does is checked below
+      const todaySessions = () =>
+        prisma.session.count({
+          where: { date: new Date(`${TODAY}T00:00:00Z`) },
+        });
+      const sessionsBefore = await todaySessions();
       const ev = (title: string, extra: object) => ({
         title: tag(title),
         description: 'وصف',
@@ -607,11 +614,7 @@ describe('Public website & CMS (e2e)', () => {
         'COMPLETED',
       );
       // A public event never creates an academic session
-      expect(
-        await prisma.session.count({
-          where: { date: new Date(`${TODAY}T00:00:00Z`) },
-        }),
-      ).toBe(0);
+      expect(await todaySessions()).toBe(sessionsBefore);
     });
   });
 

@@ -145,12 +145,25 @@ export class RosterTeacherDto {
   recordedBy!: string | null;
 }
 
+/** A class with its group (the student's ORIGINAL class in a shared session). */
+export class AttendanceClassDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() group!: { id: string; name: string };
+}
+
 export class RosterStudentDto {
   @ApiProperty() studentId!: string;
   @ApiProperty() firstName!: string;
   @ApiProperty() lastName!: string;
   @ApiPropertyOptional({ type: String, nullable: true }) photoUrl!:
     string | null;
+  @ApiPropertyOptional({
+    type: AttendanceClassDto,
+    nullable: true,
+    description:
+      "The student's class (and group) ON the session date — in a shared session, which participating class they come from",
+  })
+  groupClass!: AttendanceClassDto | null;
   @ApiProperty({
     description:
       'Enrolled in the class on the session date and active → counts for completion',
@@ -193,12 +206,27 @@ export class SessionAttendanceDto {
     room: { id: string; name: string };
     branch: { id: string; name: string };
   };
-  @ApiProperty({ description: 'Students expected (roster)' })
+  @ApiProperty({
+    type: AttendanceClassDto,
+    isArray: true,
+    description:
+      '«حصة مشتركة»: the other participating classes (empty for a normal session)',
+  })
+  additionalClasses!: AttendanceClassDto[];
+  @ApiProperty({
+    description:
+      "The caller's students: allStudents (admin, the supervisor, any teacher of a normal session) or only those of groupClassIds (an assistant of a shared session — their assigned classes)",
+  })
+  scope!: { allStudents: boolean; groupClassIds: string[] };
+  @ApiProperty({
+    description: 'Students expected (roster, in the caller scope)',
+  })
   expectedCount!: number;
   @ApiProperty({ description: 'Expected students with a recorded status' })
   recordedCount!: number;
   @ApiProperty({
-    description: 'Every expected student recorded (false for an empty roster)',
+    description:
+      'Every expected student recorded (false for an empty roster) — in the caller scope; the session completes when the WHOLE roster is recorded',
   })
   complete!: boolean;
   @ApiProperty({ description: 'Whether the caller may record / correct now' })
@@ -279,7 +307,11 @@ export class StudentAttendanceRecordDto {
   @ApiProperty() endTime!: string;
   @ApiProperty({ enum: SessionStatus, enumName: 'SessionStatus' })
   sessionStatus!: SessionStatus;
-  @ApiProperty() groupClass!: {
+  @ApiProperty({
+    description:
+      "The session's class — for a shared session, the student's own participating class",
+  })
+  groupClass!: {
     id: string;
     group: { id: string; name: string };
   };

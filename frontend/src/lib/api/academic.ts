@@ -123,7 +123,10 @@ export interface ScheduleDto {
   dayOfWeek: Weekday
   startTime: string
   endTime: string
-  groupClass: { id: string }
+  /** The HOST class (whose slot it is) */
+  groupClass: { id: string; group?: { id: string; name: string } }
+  /** «حصة مشتركة»: the other participating classes */
+  additionalClasses?: { id: string; group: { id: string; name: string } }[]
   room: Ref
 }
 export interface AcademicYearDto {
@@ -203,6 +206,15 @@ export const toSchedule = (s: ScheduleDto): WeeklySchedule => ({
   start: s.startTime,
   end: s.endTime,
   roomId: s.room.id,
+  ...(s.additionalClasses?.length
+    ? {
+        additionalGroupClassIds: s.additionalClasses.map((c) => c.id),
+        participants: [
+          ...(s.groupClass.group ? [{ groupClassId: s.groupClass.id, group: s.groupClass.group }] : []),
+          ...s.additionalClasses.map((c) => ({ groupClassId: c.id, group: c.group })),
+        ],
+      }
+    : {}),
 })
 export const toAcademicYear = (y: AcademicYearDto): AcademicYear => ({
   id: y.id,

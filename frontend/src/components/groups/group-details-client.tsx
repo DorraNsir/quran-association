@@ -13,7 +13,7 @@ import { ScheduleSummary } from "@/components/shared/schedule"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { ageOn, classesOf, countActiveStudentsByClass, describeClass, fullName, indexLookups, type Lookups, roomsLabel, schedulesOf, studentClass } from "@/lib/domain"
+import { ageOn, classesOf, countActiveStudentsByClass, describeClass, fullName, indexLookups, type Lookups, roomsLabel, participatingSchedulesOf, studentClass } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { todayInTunis } from "@/lib/dates"
 import { cn } from "@/lib/utils"
@@ -104,7 +104,7 @@ export function GroupClassList({ group, lookups, students }: { group: Group; loo
                   ))}
                 </div>
                 <div className="mt-auto border-t bg-muted/30 px-4 py-3">
-                  <ScheduleSummary schedule={schedulesOf(v.groupClass.id, lookups.schedules)} />
+                  <ScheduleSummary schedule={participatingSchedulesOf(v.groupClass.id, lookups.schedules)} />
                 </div>
               </Card>
             </li>

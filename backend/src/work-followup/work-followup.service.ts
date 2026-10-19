@@ -17,9 +17,16 @@ import {
   WorkType,
 } from '../generated/prisma/enums.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import {
+  sessionClassIdsSql,
+  sessionOfClass,
+} from '../scheduling/participants.js';
 import { expectedOnDate } from '../scheduling/roster.sql.js';
 import { fromDbTime, toDbTime } from '../scheduling/time.js';
-import { TeacherAccessService } from '../teaching/teacher-access.service.js';
+import {
+  managesClassInSession,
+  TeacherAccessService,
+} from '../teaching/teacher-access.service.js';
 import type {
   AddWorkItemsDto,
   CreateWorkProgramDto,
@@ -362,12 +369,21 @@ export class WorkFollowupService {
       WorkStatus.PARTIAL,
       WorkStatus.POSTPONED,
     ];
+    // Shared sessions: programs the caller may not see (another class's
+    // students for an assistant) or outside the filtered class
+    const excluded = await this.excludedInSharedSessions(
+      teacherId,
+      query.groupClassId,
+    );
     const where: Prisma.WorkProgramWhereInput = {
       ...(query.studentId ? { studentId: query.studentId } : {}),
       ...(query.sessionId ? { sessionId: query.sessionId } : {}),
+      ...(excluded.length ? { id: { notIn: excluded } } : {}),
       session: {
         ...(teacherId ? { teachers: { some: { teacherId } } } : {}),
-        ...(query.groupClassId ? { groupClassId: query.groupClassId } : {}),
+        ...(query.groupClassId
+          ? sessionOfClass({ id: query.groupClassId })
+          : {}),
         ...(query.period === 'upcoming' ? upcoming : {}),
         ...(query.period === 'past' ? past : {}),
       },
@@ -432,10 +448,15 @@ export class WorkFollowupService {
   async get(actor: WorkActor, id: string): Promise<WorkProgramDto> {
     const program = await this.prisma.workProgram.findUnique({
       where: { id },
-      select: { sessionId: true },
+      select: { sessionId: true, studentId: true },
     });
     if (!program) throw programNotFound();
-    await this.assertSession(this.prisma, actor, program.sessionId);
+    await this.assertStudent(
+      this.prisma,
+      actor,
+      program.sessionId,
+      program.studentId,
+    );
     return this.build(this.prisma, id);
   }
 
@@ -836,7 +857,12 @@ export class WorkFollowupService {
           },
         });
         if (!source) throw itemNotFound();
-        await this.assertSession(tx, actor, source.program.session.id);
+        await this.assertStudent(
+          tx,
+          actor,
+          source.program.session.id,
+          source.program.studentId,
+        );
         const fields = plan(source);
         const target = await this.assertTarget(
           tx,
@@ -919,6 +945,64 @@ export class WorkFollowupService {
   }
 
   /**
+   * One student's work in one session: a teacher must be in the session's
+   * team and — in a shared session — manage that student's class there
+   * (its supervisor, or assigned to the class). Admins: always.
+   */
+  private async assertStudent(
+    db: Db,
+    actor: WorkActor,
+    sessionId: string,
+    studentId: string,
+  ) {
+    if (actor.kind === 'teacher')
+      await this.access.assertSessionStudentAccess(
+        actor.userId,
+        sessionId,
+        studentId,
+        db,
+      );
+  }
+
+  /**
+   * Programs of SHARED sessions to leave out of a list: for a teacher, those
+   * of students whose class (on the session date) they do not manage there;
+   * for a class filter, those of other participating classes' students.
+   * Normal sessions are never concerned (few rows: shared sessions only).
+   */
+  private async excludedInSharedSessions(
+    teacherId: string | null,
+    groupClassId: string | undefined,
+  ) {
+    if (!teacherId && !groupClassId) return [];
+    const enrolledOnDate = (condition: Prisma.Sql) => Prisma.sql`EXISTS (
+      SELECT 1 FROM student_enrollments e
+      WHERE e."studentId" = w."studentId"
+        AND e."startDate" <= s.date AND (e."endDate" IS NULL OR e."endDate" > s.date)
+        AND e."groupClassId" = ANY(ARRAY${sessionClassIdsSql('s')})
+        AND ${condition}
+    )`;
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT w.id FROM work_programs w
+      JOIN sessions s ON s.id = w."sessionId"
+      WHERE EXISTS (SELECT 1 FROM session_classes x WHERE x."sessionId" = s.id)
+        AND (
+          ${
+            teacherId
+              ? Prisma.sql`(EXISTS (SELECT 1 FROM session_teachers st WHERE st."sessionId" = s.id AND st."teacherId" = ${teacherId}::uuid)
+                  AND NOT ${enrolledOnDate(managesClassInSession('s', Prisma.sql`e."groupClassId"`, teacherId))})`
+              : Prisma.sql`FALSE`
+          }
+          OR ${
+            groupClassId
+              ? Prisma.sql`NOT ${enrolledOnDate(Prisma.sql`e."groupClassId" = ${groupClassId}::uuid`)}`
+              : Prisma.sql`FALSE`
+          }
+        )`;
+    return rows.map((r) => r.id);
+  }
+
+  /**
    * A session that may RECEIVE new work: exists, the caller may act on it,
    * scheduled (not cancelled / completed), upcoming, and the student is
    * expected in it (enrolled and active on its date).
@@ -937,6 +1021,7 @@ export class WorkFollowupService {
         startTime: true,
         status: true,
         groupClassId: true,
+        extraClasses: { select: { groupClassId: true } },
       },
     });
     if (!session) throw notFound('SESSION_NOT_FOUND', 'الحصة غير موجودة');
@@ -957,7 +1042,7 @@ export class WorkFollowupService {
       SELECT EXISTS (
         SELECT 1 FROM student_enrollments e
         WHERE e."studentId" = ${studentId}::uuid
-          AND e."groupClassId" = ${session.groupClassId}::uuid
+          AND e."groupClassId" = ANY(${[session.groupClassId, ...session.extraClasses.map((c) => c.groupClassId)]}::uuid[])
           AND ${expectedOnDate('e', Prisma.sql`${date}::date`)}
       ) AS ok`;
     if (!row?.ok)
@@ -965,6 +1050,8 @@ export class WorkFollowupService {
         'WORK_STUDENT_NOT_IN_SESSION',
         'الطالب ليس من طلبة قسم هذه الحصة في تاريخها',
       );
+    // A shared session: only a student of a class the teacher manages there
+    await this.assertStudent(tx, actor, sessionId, studentId);
     return session;
   }
 
@@ -984,14 +1071,15 @@ export class WorkFollowupService {
         AND EXISTS (
           SELECT 1 FROM student_enrollments e
           WHERE e."studentId" = ${input.studentId}::uuid
-            AND e."groupClassId" = s."groupClassId"
+            AND e."groupClassId" = ANY(ARRAY${sessionClassIdsSql('s')})
             AND ${expectedOnDate('e', Prisma.sql`s.date`)}
+            ${
+              // A teacher of the session who manages the student's class there
+              input.teacherId
+                ? Prisma.sql`AND ${managesClassInSession('s', Prisma.sql`e."groupClassId"`, input.teacherId)}`
+                : Prisma.empty
+            }
         )
-        ${
-          input.teacherId
-            ? Prisma.sql`AND EXISTS (SELECT 1 FROM session_teachers st WHERE st."sessionId" = s.id AND st."teacherId" = ${input.teacherId}::uuid)`
-            : Prisma.empty
-        }
         ${
           input.after
             ? Prisma.sql`AND (s.date, s."startTime") > (${fromDbDate(input.after.date)}::date, ${fromDbTime(input.after.startTime)}::time)`
@@ -1011,11 +1099,12 @@ export class WorkFollowupService {
         id: true,
         version: true,
         sessionId: true,
+        studentId: true,
         session: { select: { status: true } },
       },
     });
     if (!program) throw programNotFound();
-    await this.assertSession(tx, actor, program.sessionId);
+    await this.assertStudent(tx, actor, program.sessionId, program.studentId);
     return program;
   }
 

@@ -99,8 +99,16 @@ export interface ScheduleSlot {
  */
 export interface WeeklySchedule extends ScheduleSlot {
   id: ID
+  /** The HOST class (whose slot it is) */
   groupClassId: ID
   roomId: ID
+  /**
+   * «حصة مشتركة»: the other classes taught in the same lesson (same
+   * supervisor, same branch). Absent / empty for a normal slot.
+   */
+  additionalGroupClassIds?: ID[]
+  /** Every participating class with its group name, host first (when known) */
+  participants?: { groupClassId: ID; group: { id: ID; name: string } }[]
 }
 
 /** CLASS: the same class already meets at an overlapping time */
@@ -200,6 +208,8 @@ export interface Session extends Omit<ScheduleSlot, "day"> {
   scheduleId: ID
   /** «حصة إضافية (مرة واحدة)» — stored by the API, never guessed from scheduleId */
   extra?: boolean
+  /** «حصة مشتركة»: the other classes taught in this lesson (empty for a normal one) */
+  additionalGroupClassIds?: ID[]
   /** Its own room: the weekly slot's room when planned (kept for history), or moved for this date only */
   roomId: ID
   date: ISODate

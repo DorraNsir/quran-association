@@ -13,7 +13,7 @@ import { PageHeader } from "@/components/shared/page-header"
 import { ScheduleSummary } from "@/components/shared/schedule"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { classesOf, type ClassView, countActiveStudentsByClass, describeClass, fullName, indexLookups, type Lookups, roomsLabel, schedulesOf } from "@/lib/domain"
+import { classesOf, type ClassView, countActiveStudentsByClass, describeClass, fullName, indexLookups, type Lookups, roomsLabel, participatingSchedulesOf } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -229,7 +229,7 @@ function GroupCard({
                 {countLabels.students(counts.get(v.groupClass.id) ?? 0)}
               </span>
             </div>
-            <ScheduleSummary schedule={schedulesOf(v.groupClass.id, schedules)} className="text-xs" />
+            <ScheduleSummary schedule={participatingSchedulesOf(v.groupClass.id, schedules)} className="text-xs" />
           </li>
         ))}
       </ul>

@@ -13,8 +13,13 @@ import {
   classCalendarSelect,
   toScheduleClass,
 } from './class-calendar.select.js';
+import { scheduleOfClass } from './participants.js';
 import { ScheduleConflictService } from './schedule-conflicts.service.js';
 import { SessionsService } from './sessions.service.js';
+import type {
+  GenerateSessionsResultDto,
+  WeeklyScheduleWriteDto,
+} from './session.dto.js';
 import type {
   CreateWeeklyScheduleDto,
   UpdateWeeklyScheduleDto,
@@ -30,6 +35,13 @@ const select = {
   endTime: true,
   room: { select: { id: true, name: true } },
   groupClass: { select: classCalendarSelect },
+  extraClasses: {
+    select: { groupClass: { select: classCalendarSelect } },
+    orderBy: [
+      { groupClass: { group: { name: 'asc' } } },
+      { groupClassId: 'asc' },
+    ],
+  },
 } satisfies Prisma.WeeklyScheduleSelect;
 
 const DAY_ORDER: Weekday[] = [
@@ -51,6 +63,7 @@ const toDto = (
   endTime: fromDbTime(s.endTime),
   room: s.room,
   groupClass: toScheduleClass(s.groupClass),
+  additionalClasses: s.extraClasses.map((e) => toScheduleClass(e.groupClass)),
 });
 
 export { classNotFound } from './scheduling-errors.js';
@@ -61,6 +74,23 @@ import {
 } from './scheduling-errors.js';
 /** Writes that also (re)generate a year of sessions */
 const LONG_TX = { timeout: 30_000 };
+
+/** Several generation runs (re-planned period + rest of the year) as one result; null if none. */
+function merge(
+  runs: GenerateSessionsResultDto[],
+): GenerateSessionsResultDto | null {
+  if (runs.length === 0) return null;
+  return {
+    from: runs.map((r) => r.from).sort()[0],
+    to: runs.map((r) => r.to).sort()[runs.length - 1],
+    created: runs.reduce((n, r) => n + r.created, 0),
+    skippedExisting: runs.reduce((n, r) => n + r.skippedExisting, 0),
+    skippedConflicts: runs.flatMap((r) => r.skippedConflicts),
+    skippedInactiveSupervisorClassIds: [
+      ...new Set(runs.flatMap((r) => r.skippedInactiveSupervisorClassIds)),
+    ],
+  };
+}
 
 const scheduleNotFound = () =>
   notFound('SCHEDULE_NOT_FOUND', 'الموعد الأسبوعي غير موجود');
@@ -79,6 +109,11 @@ function assertTimeRange(start: string, end: string) {
  * holds the scheduling lock, then checks CLASS / ROOM / TEACHER conflicts
  * (other classes only when this class is running). Editing or deleting a slot
  * never touches sessions already generated from it.
+ *
+ * «الحصص المشتركة»: a slot may have ADDITIONAL classes (same supervisor, same
+ * branch, all active — participants.ts). It stays ONE slot: one room, one
+ * team (the supervisor + every participant's assistants); every participant
+ * counts for CLASS conflicts. Its generated lessons copy the participants.
  */
 @Injectable()
 export class SchedulesService {
@@ -96,32 +131,38 @@ export class SchedulesService {
     if (!exists) throw classNotFound();
     return this.sorted(
       await this.prisma.weeklySchedule.findMany({
-        where: { groupClassId },
+        // Its own slots and the shared ones it takes part in
+        where: scheduleOfClass({ id: groupClassId }),
         select,
       }),
     );
   }
 
   async list(query: WeeklyScheduleQueryDto): Promise<WeeklyScheduleDto[]> {
+    // Class / group / teacher filters match ANY participant of a shared slot
+    // (host or additional class); branch and running status are the host's
+    const participant: Prisma.GroupClassWhereInput = {
+      ...(query.groupClassId ? { id: query.groupClassId } : {}),
+      ...(query.groupId ? { groupId: query.groupId } : {}),
+      ...(query.teacherId
+        ? {
+            OR: [
+              { supervisorId: query.teacherId },
+              { assistants: { some: { teacherId: query.teacherId } } },
+            ],
+          }
+        : {}),
+    };
     const where: Prisma.WeeklyScheduleWhereInput = {
       ...(query.dayOfWeek ? { dayOfWeek: query.dayOfWeek } : {}),
       ...(query.roomId ? { roomId: query.roomId } : {}),
       groupClass: {
-        ...(query.groupClassId ? { id: query.groupClassId } : {}),
         ...(query.branchId ? { branchId: query.branchId } : {}),
-        ...(query.groupId ? { groupId: query.groupId } : {}),
-        ...(query.teacherId
-          ? {
-              OR: [
-                { supervisorId: query.teacherId },
-                { assistants: { some: { teacherId: query.teacherId } } },
-              ],
-            }
-          : {}),
         ...(query.includeInactive
           ? {}
           : { status: 'ACTIVE', group: { status: 'ACTIVE' } }),
       },
+      ...(Object.keys(participant).length ? scheduleOfClass(participant) : {}),
     };
     return this.sorted(
       await this.prisma.weeklySchedule.findMany({ where, select }),
@@ -131,11 +172,16 @@ export class SchedulesService {
   async create(
     groupClassId: string,
     dto: CreateWeeklyScheduleDto,
-  ): Promise<WeeklyScheduleDto> {
+  ): Promise<WeeklyScheduleWriteDto> {
     assertTimeRange(dto.startTime, dto.endTime);
-    const id = await this.prisma.$transaction(async (tx) => {
+    const { id, generation } = await this.prisma.$transaction(async (tx) => {
       await this.conflicts.lockScheduling(tx);
-      const current = await this.conflicts.occupancyOf(tx, groupClassId);
+      // Host + additional classes (a shared slot: same supervisor, same branch, all active)
+      const current = await this.conflicts.occupancyOf(
+        tx,
+        groupClassId,
+        dto.additionalGroupClassIds ?? [],
+      );
       if (!current) throw classNotFound();
       if (!current.supervisorActive) {
         throw conflict(
@@ -177,14 +223,19 @@ export class SchedulesService {
           dayOfWeek: dto.dayOfWeek,
           startTime: toDbTime(dto.startTime),
           endTime: toDbTime(dto.endTime),
+          extraClasses: {
+            create: current.extraIds.map((id) => ({ groupClassId: id })),
+          },
         },
         select: { id: true },
       });
       // Its dated sessions exist at once, until the end of the current academic year
-      await this.sessions.generateForCurrentYear(tx, { groupClassId });
-      return created.id;
+      const generation = await this.sessions.generateForCurrentYear(tx, {
+        groupClassId,
+      });
+      return { id: created.id, generation };
     }, LONG_TX);
-    return this.get(id);
+    return Object.assign(await this.get(id), { generation });
   }
 
   /**
@@ -192,18 +243,32 @@ export class SchedulesService {
    * room must belong to the class's branch; the slot's upcoming scheduled
    * sessions (no attendance yet) move to it after their own conflict check —
    * history keeps the room it had.
+   *
+   * Additional classes (`additionalGroupClassIds`, full replacement): the
+   * slot's upcoming lessons without attendance take the new participants and
+   * team (an added class must be free then — CLASS / TEACHER conflicts; the
+   * admin first moves its own conflicting lessons). A removed class gets no
+   * replacement lesson; lessons with attendance keep their participants.
    */
   async update(
     groupClassId: string,
     scheduleId: string,
     dto: UpdateWeeklyScheduleDto,
-  ): Promise<WeeklyScheduleDto> {
+  ): Promise<WeeklyScheduleWriteDto> {
+    const generated: GenerateSessionsResultDto[] = [];
     await this.prisma.$transaction(async (tx) => {
       await this.conflicts.lockScheduling(tx);
       const existing = await tx.weeklySchedule.findFirst({
         where: { id: scheduleId, groupClassId },
+        include: { extraClasses: true },
       });
       if (!existing) throw scheduleNotFound();
+      const currentExtras = existing.extraClasses.map((e) => e.groupClassId);
+      const extraIds = dto.additionalGroupClassIds ?? currentExtras;
+      const removedClasses = currentExtras.filter((c) => !extraIds.includes(c));
+      const participantsChanged =
+        removedClasses.length > 0 ||
+        extraIds.some((c) => !currentExtras.includes(c));
       const slot = {
         dayOfWeek: dto.dayOfWeek ?? existing.dayOfWeek,
         start: dto.startTime ?? fromDbTime(existing.startTime),
@@ -211,7 +276,11 @@ export class SchedulesService {
         roomId: dto.roomId ?? existing.roomId,
       };
       assertTimeRange(slot.start, slot.end);
-      const current = (await this.conflicts.occupancyOf(tx, groupClassId))!;
+      const current = (await this.conflicts.occupancyOf(
+        tx,
+        groupClassId,
+        extraIds,
+      ))!;
       const roomChanged = slot.roomId !== existing.roomId;
       if (roomChanged)
         await this.conflicts.assertRoomForClass(
@@ -234,7 +303,7 @@ export class SchedulesService {
         // Its upcoming sessions will take the new room: they must fit there too
         await this.conflicts.assertClassOccupancyFree(
           tx,
-          current.occupancy,
+          { groupClassId, teacherIds: current.occupancy.teacherIds },
           today,
           { checkWeekly: false, roomOverrides: rooms },
         );
@@ -277,6 +346,47 @@ export class SchedulesService {
           where: { ...neverHeld, workPrograms: { none: {} } },
         });
       }
+      // Participants changed in place: the slot's upcoming lessons that never
+      // took place follow (a moved slot re-plans them below with the new ones)
+      if (participantsChanged && !moved) {
+        const upcoming = await tx.session.findMany({
+          where: {
+            weeklyScheduleId: scheduleId,
+            status: SessionStatus.SCHEDULED,
+            date: { gte: toDbDate(today) },
+            studentAttendance: { none: {} },
+            teacherAttendance: { none: {} },
+          },
+          select: { id: true, date: true, startTime: true, endTime: true },
+        });
+        const ids = upcoming.map((u) => u.id);
+        await this.conflicts.assertNoWorkForRemovedClasses(
+          tx,
+          ids,
+          removedClasses,
+        );
+        const team = (await this.conflicts.sessionTeamOf(
+          tx,
+          groupClassId,
+          extraIds,
+        ))!;
+        this.conflicts.throwIfAny(
+          await this.conflicts.sessionConflicts(
+            tx,
+            team.occupancy,
+            upcoming.map((u) => ({
+              date: fromDbDate(u.date),
+              start: fromDbTime(u.startTime),
+              end: fromDbTime(u.endTime),
+              roomId: slot.roomId,
+            })),
+            { excludeSessionIds: ids, includeSameClass: true },
+          ),
+          'SESSION',
+        );
+        await this.conflicts.writeSessionExtras(tx, ids, extraIds);
+        await this.conflicts.writeSessionTeams(tx, ids, team);
+      }
       await tx.weeklySchedule.update({
         where: { id: scheduleId },
         data: {
@@ -286,6 +396,17 @@ export class SchedulesService {
           roomId: slot.roomId,
         },
       });
+      if (participantsChanged) {
+        await tx.weeklyScheduleClass.deleteMany({
+          where: { weeklyScheduleId: scheduleId },
+        });
+        await tx.weeklyScheduleClass.createMany({
+          data: extraIds.map((id) => ({
+            weeklyScheduleId: scheduleId,
+            groupClassId: id,
+          })),
+        });
+      }
       if (moved) {
         // The same period as the removed lessons (even without a current
         // year), then the rest of the current academic year
@@ -296,17 +417,24 @@ export class SchedulesService {
             from = addDays(from, 366)
           ) {
             const to = addDays(from, 365);
-            await this.sessions.generateInTx(tx, {
-              from,
-              to: to < replannedUntil ? to : replannedUntil,
-              groupClassId,
-            });
+            generated.push(
+              await this.sessions.generateInTx(tx, {
+                from,
+                to: to < replannedUntil ? to : replannedUntil,
+                groupClassId,
+              }),
+            );
           }
-        await this.sessions.generateForCurrentYear(tx, { groupClassId });
+        const year = await this.sessions.generateForCurrentYear(tx, {
+          groupClassId,
+        });
+        if (year) generated.push(year);
       } else if (roomChanged)
         await this.conflicts.syncSlotRooms(tx, rooms, today);
     }, LONG_TX);
-    return this.get(scheduleId);
+    return Object.assign(await this.get(scheduleId), {
+      generation: merge(generated),
+    });
   }
 
   /**

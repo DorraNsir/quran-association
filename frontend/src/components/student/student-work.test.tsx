@@ -68,7 +68,7 @@ describe("student space — «متابعة العمل» (read-only)", () => {
     expect(screen.getByText("لم يُقيّم بعد")).toBeTruthy()
     expect(screen.getByText("أداء متقن")).toBeTruthy()
     expect(screen.getByText(/منقول من حصة .* — مؤجل/)).toBeTruthy()
-    expect(screen.getByText("1 من 3 أعمال منجزة")).toBeTruthy()
+    expect(screen.getByText("تم إنجاز 1 من أصل 3 أعمال")).toBeTruthy()
     // Nothing to change: no action buttons, no links to teacher pages
     expect(screen.queryByRole("button", { name: /تقييم|تعديل|نقل|إضافة/ })).toBeNull()
     expect(screen.queryAllByRole("link")).toHaveLength(0)

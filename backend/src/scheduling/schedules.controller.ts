@@ -30,6 +30,7 @@ import {
   WeeklyScheduleDto,
   WeeklyScheduleQueryDto,
 } from './schedule.dto.js';
+import { WeeklyScheduleWriteDto } from './session.dto.js';
 import { SchedulesService } from './schedules.service.js';
 
 const CONFLICTS =
@@ -66,14 +67,14 @@ export class SchedulesController {
     summary:
       'Add a weekly slot (conflicts checked against the class itself and other running classes)',
   })
-  @ApiCreatedResponse({ type: WeeklyScheduleDto })
+  @ApiCreatedResponse({ type: WeeklyScheduleWriteDto })
   @ApiBadRequestResponse({ description: 'SCHEDULE_TIME_INVALID' })
   @ApiNotFoundResponse({ description: 'GROUP_CLASS_NOT_FOUND' })
   @ApiConflictResponse({ type: SchedulingConflictDto, description: CONFLICTS })
   create(
     @Param('groupClassId', ParseUUIDPipe) groupClassId: string,
     @Body() dto: CreateWeeklyScheduleDto,
-  ): Promise<WeeklyScheduleDto> {
+  ): Promise<WeeklyScheduleWriteDto> {
     return this.schedules.create(groupClassId, dto);
   }
 
@@ -81,7 +82,7 @@ export class SchedulesController {
   @ApiOperation({
     summary: 'Edit a weekly slot (sessions already generated are not changed)',
   })
-  @ApiOkResponse({ type: WeeklyScheduleDto })
+  @ApiOkResponse({ type: WeeklyScheduleWriteDto })
   @ApiBadRequestResponse({ description: 'SCHEDULE_TIME_INVALID' })
   @ApiNotFoundResponse({ description: 'SCHEDULE_NOT_FOUND' })
   @ApiConflictResponse({ type: SchedulingConflictDto, description: CONFLICTS })
@@ -89,7 +90,7 @@ export class SchedulesController {
     @Param('groupClassId', ParseUUIDPipe) groupClassId: string,
     @Param('scheduleId', ParseUUIDPipe) scheduleId: string,
     @Body() dto: UpdateWeeklyScheduleDto,
-  ): Promise<WeeklyScheduleDto> {
+  ): Promise<WeeklyScheduleWriteDto> {
     return this.schedules.update(groupClassId, scheduleId, dto);
   }
 

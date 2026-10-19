@@ -70,9 +70,28 @@ export class WsTeacherDto {
   @ApiProperty({ format: 'date' }) joinedAt!: string;
 }
 
+/** A participating class of a weekly slot, with its group (name only). */
+export class WsSlotParticipantDto {
+  @ApiProperty() groupClassId!: string;
+  @ApiProperty() group!: { id: string; name: string };
+}
+
 export class WsScheduleDto {
   @ApiProperty() id!: string;
-  @ApiProperty() groupClassId!: string;
+  @ApiProperty({ description: 'The HOST class (whose slot it is)' })
+  groupClassId!: string;
+  @ApiProperty({
+    type: [String],
+    description:
+      '«حصة مشتركة»: the other participating classes (empty for a normal slot)',
+  })
+  additionalGroupClassIds!: string[];
+  @ApiProperty({
+    type: [WsSlotParticipantDto],
+    description:
+      'Every participating class (host first) — a shared slot is listed once',
+  })
+  participants!: WsSlotParticipantDto[];
   @ApiProperty({ description: 'The room of this weekly slot' }) roomId!: string;
   @ApiProperty({ enum: Weekday, enumName: 'Weekday' }) dayOfWeek!: Weekday;
   @ApiProperty({ example: '17:00' }) startTime!: string;

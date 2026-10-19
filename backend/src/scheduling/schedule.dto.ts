@@ -1,9 +1,39 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsEnum, IsOptional, IsUUID } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsUUID,
+} from 'class-validator';
 
 import { RecordStatus, Weekday } from '../generated/prisma/enums.js';
 import { IsTimeOfDay } from './time.js';
+
+/** «الحصص المشتركة»: at most this many additional classes in one lesson. */
+export const MAX_ADDITIONAL_CLASSES = 10;
+
+/**
+ * Additional classes of ONE shared lesson (weekly slot or session): ids of
+ * other classes with the same supervisor, in the same branch (checked by the
+ * API). Repetitions and the host itself are refused with an Arabic message.
+ */
+export function AdditionalClasses(description: string): PropertyDecorator {
+  return (target, key) => {
+    ApiPropertyOptional({
+      type: String,
+      format: 'uuid',
+      isArray: true,
+      description,
+    })(target, key);
+    IsOptional()(target, key);
+    IsArray()(target, key);
+    ArrayMaxSize(MAX_ADDITIONAL_CLASSES)(target, key);
+    IsUUID('all', { each: true })(target, key);
+  };
+}
 
 /**
  * A recurring weekly slot with ITS OWN room (a room of the class's branch);
@@ -22,6 +52,10 @@ export class CreateWeeklyScheduleDto {
   })
   @IsUUID()
   roomId!: string;
+  @AdditionalClasses(
+    'Shared slot: other classes taught together with this class (same supervisor, same branch, all active); empty = a normal slot',
+  )
+  additionalGroupClassIds?: string[];
 }
 
 export class UpdateWeeklyScheduleDto {
@@ -39,6 +73,10 @@ export class UpdateWeeklyScheduleDto {
   @IsOptional()
   @IsUUID()
   roomId?: string;
+  @AdditionalClasses(
+    "Replaces the slot's additional classes ([] = a normal slot again); its upcoming lessons without attendance follow — a removed class gets no replacement lesson. The host class is not editable",
+  )
+  additionalGroupClassIds?: string[];
 }
 
 /** Calendar week view across classes (bounded by the number of weekly slots — not paginated). */
@@ -58,13 +96,16 @@ export class WeeklyScheduleQueryDto {
   @IsOptional()
   @IsUUID()
   groupId?: string;
-  @ApiPropertyOptional({ format: 'uuid' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Slots this class takes part in (host or additional class)',
+  })
   @IsOptional()
   @IsUUID()
   groupClassId?: string;
   @ApiPropertyOptional({
     format: 'uuid',
-    description: 'Supervisor or assistant',
+    description: 'Supervisor or assistant (of any participating class)',
   })
   @IsOptional()
   @IsUUID()
@@ -114,7 +155,18 @@ export class WeeklyScheduleDto {
   @ApiProperty({ example: '19:00' }) endTime!: string;
   @ApiProperty({ type: NamedRefDto, description: 'The room of this slot' })
   room!: NamedRefDto;
-  @ApiProperty({ type: ScheduleClassDto }) groupClass!: ScheduleClassDto;
+  @ApiProperty({
+    type: ScheduleClassDto,
+    description: 'The HOST class (whose slot it is)',
+  })
+  groupClass!: ScheduleClassDto;
+  @ApiProperty({
+    type: ScheduleClassDto,
+    isArray: true,
+    description:
+      '«حصة مشتركة»: the other participating classes (empty for a normal slot)',
+  })
+  additionalClasses!: ScheduleClassDto[];
 }
 
 /** 409 body: stable code + Arabic message + the colliding slots/sessions. */

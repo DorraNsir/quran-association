@@ -25,7 +25,7 @@ import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { weekdayOf } from "@/lib/dates"
-import { fullName, type Lookups, roomsLabel, schedulesOf, type TeacherAssignment } from "@/lib/domain"
+import { fullName, type Lookups, participatingSchedulesOf, roomsLabel, sessionIncludesClass, type TeacherAssignment } from "@/lib/domain"
 import { countLabels, formatShortDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
@@ -65,7 +65,8 @@ export function TeacherClasses({
       {classes.map((a) => {
         const id = a.groupClass.id
         const count = students.filter((s) => s.groupClassId === id && s.status === "ACTIVE").length
-        const next = rows.find((r) => r.session.groupClassId === id && r.session.date >= today && r.session.status !== "CANCELLED")
+        // A shared lesson is the next lesson of EVERY class taking part in it
+        const next = rows.find((r) => sessionIncludesClass(r.session, id) && r.session.date >= today && r.session.status !== "CANCELLED")
         return (
           <li key={id}>
             <Link href={`/teacher/classes/${id}`} className="block h-full rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
@@ -82,7 +83,7 @@ export function TeacherClasses({
                   <span className="inline-flex items-center gap-1.5"><DoorOpen className="size-4" aria-hidden />{roomsLabel(a.rooms)}</span>
                   <span className="inline-flex items-center gap-1.5"><GraduationCap className="size-4" aria-hidden />{countLabels.students(count)}</span>
                 </div>
-                <ScheduleSummary schedule={schedulesOf(id, lookups.schedules)} />
+                <ScheduleSummary schedule={participatingSchedulesOf(id, lookups.schedules)} />
                 <p className="mt-auto flex items-center gap-1.5 border-t pt-3 text-xs text-muted-foreground">
                   <CalendarClock className="size-3.5" aria-hidden />
                   {next ? (
@@ -123,7 +124,7 @@ export function TeacherClassDetails({
 }) {
   const academicYears = useAcademicYears()
   const { groupClass, group, branch, rooms, supervisor, assistants } = assignment
-  const sessionRows = useTeacherSessionRows(today).rows.filter((r) => r.session.groupClassId === groupClass.id)
+  const sessionRows = useTeacherSessionRows(today).rows.filter((r) => sessionIncludesClass(r.session, groupClass.id))
   const roster = students
     .filter((s) => s.groupClassId === groupClass.id && s.status === "ACTIVE")
     .sort((a, b) => fullName(a).localeCompare(fullName(b), "ar"))
@@ -225,7 +226,7 @@ export function TeacherClassDetails({
                 { label: "الفئة", value: group?.audience, icon: UsersRound },
                 { label: "الفرع", value: branch?.name, icon: MapPin },
                 { label: "القاعة", value: roomsLabel(rooms), icon: DoorOpen },
-                { label: "البرنامج الأسبوعي", value: <ScheduleSummary schedule={schedulesOf(groupClass.id, lookups.schedules)} />, icon: Repeat },
+                { label: "البرنامج الأسبوعي", value: <ScheduleSummary schedule={participatingSchedulesOf(groupClass.id, lookups.schedules)} />, icon: Repeat },
               ]}
             />
           </SectionCard>

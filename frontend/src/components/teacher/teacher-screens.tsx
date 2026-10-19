@@ -26,7 +26,7 @@ import { ProfileTabs } from "@/components/shared/profile-tabs"
 import { WeeklyScheduleGrid } from "@/components/shared/schedule"
 import { WithTeacherWorkspace } from "@/components/shared/with-workspace"
 import { todayInTunis, weekdayOf } from "@/lib/dates"
-import { ageOn, fullName, indexLookups, roomsLabel, studentClass, teacherWeeklySlots, weeklyMinutes } from "@/lib/domain"
+import { ageOn, fullName, indexLookups, roomsLabel, sharedSlotLabel, studentClass, teacherWeeklySlots, weeklyMinutes } from "@/lib/domain"
 import { formatDate, formatDuration } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { getTeacherGroupClasses } from "@/lib/teacher-access"
@@ -106,7 +106,8 @@ export function TeacherScheduleScreen() {
                   emptyLabel="لا توجد حصص مبرمجة لك"
                   entries={slots.map(({ slot, group, branch, room, groupClass, role }) => ({
                     slot,
-                    title: group?.name ?? "—",
+                    // A shared lesson (several of my classes) shows once, with all its programs
+                    title: sharedSlotLabel(slot) ? `حصة مشتركة — ${sharedSlotLabel(slot)}` : (group?.name ?? "—"),
                     subtitle: `${labels.teachingRole[role]} · ${branch?.name ?? ""} · ${room?.name ?? ""}`,
                     href: `/teacher/classes/${groupClass.id}`,
                     emphasis: role === "SUPERVISOR",

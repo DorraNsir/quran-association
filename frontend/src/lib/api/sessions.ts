@@ -32,7 +32,10 @@ export interface SessionDto {
   /** Created as a one-off extra lesson (stored; a deleted slot's sessions also lose weeklyScheduleId) */
   isExtra: boolean
   completion?: { completedAt: string; source: "ATTENDANCE" | "ADMIN_OVERRIDE"; completedBy: string | null } | null
+  /** The HOST class (whose weekly slot it is) */
   groupClass: { id: string; status: RecordStatus; group: { id: string; name: string; status: RecordStatus } }
+  /** «حصة مشتركة»: the other participating classes (empty for a normal lesson) */
+  additionalClasses?: { id: string; status: RecordStatus; group: { id: string; name: string; status: RecordStatus } }[]
   room: { id: string; name: string; status: ActivationStatus; branch: { id: string; name: string; status: ActivationStatus } }
   teachers: SessionTeacherDto[]
   attention?: string[]
@@ -53,11 +56,17 @@ export interface SessionRosterDto {
   editable: boolean
   /** May also CHANGE saved values (teachers: within the correction window; admins: always) */
   correctable: boolean
+  /** «حصة مشتركة»: the other participating classes */
+  additionalClasses?: { id: string; group: { id: string; name: string } }[]
+  /** The caller's students: all, or (an assistant of a shared lesson) only those of their classes */
+  scope?: { allStudents: boolean; groupClassIds: string[] }
   students: {
     studentId: string
     firstName: string
     lastName: string
     photoUrl: string | null
+    /** The student's own class and program ON the session date */
+    groupClass?: { id: string; group: { id: string; name: string } } | null
     expected: boolean
     recorded: boolean
     status: AttendanceStatus | null
@@ -121,8 +130,13 @@ export interface TeamMember {
  */
 export interface SessionRow {
   session: Session
+  /** The HOST class */
   groupClass: { id: string; groupId: string; status: RecordStatus }
+  /** The host's group — for a shared lesson its name is every program, e.g. «أركان + الماهر» */
   group: { id: string; name: string }
+  /** Every participating class with its group, host first (one entry for a normal lesson) */
+  classes: { id: string; group: { id: string; name: string } }[]
+  shared: boolean
   branch: { id: string; name: string }
   room: { id: string; name: string }
   supervisor?: TeamMember
@@ -139,6 +153,7 @@ export const toSession = (s: SessionDto): Session => ({
   groupClassId: s.groupClass.id,
   scheduleId: s.weeklyScheduleId ?? "",
   extra: s.isExtra,
+  additionalGroupClassIds: (s.additionalClasses ?? []).map((c) => c.id),
   roomId: s.room.id,
   date: s.date,
   start: s.startTime,
@@ -153,10 +168,14 @@ export function toSessionRow(s: SessionDto, today: ISODate): SessionRow {
   const member = (t: SessionTeacherDto): TeamMember => ({ id: t.id, firstName: t.firstName, lastName: t.lastName, status: t.status })
   const supervisor = s.teachers.find((t) => t.role === "SUPERVISOR")
   const eligible = recorded - excused
+  const classes = [s.groupClass, ...(s.additionalClasses ?? [])].map((c) => ({ id: c.id, group: { id: c.group.id, name: c.group.name } }))
+  const shared = classes.length > 1
   return {
     session,
     groupClass: { id: s.groupClass.id, groupId: s.groupClass.group.id, status: s.groupClass.status },
-    group: s.groupClass.group,
+    group: shared ? { id: s.groupClass.group.id, name: sharedLessonName(classes) } : s.groupClass.group,
+    classes,
+    shared,
     branch: s.room.branch,
     room: s.room,
     supervisor: supervisor && member(supervisor),
@@ -173,6 +192,11 @@ export function toSessionRow(s: SessionDto, today: ISODate): SessionRow {
     },
     attention: s.attention ?? [],
   }
+}
+
+/** «أركان + الماهر»: the programs of a shared lesson. */
+export function sharedLessonName(classes: { group: { name: string } }[]) {
+  return classes.map((c) => c.group.name).join(" + ")
 }
 
 /* ------------------------------ queries ------------------------------ */
@@ -266,7 +290,7 @@ export function useSetSessionStatus(id: string) {
  */
 export function useCreateExtraSession() {
   return useApiMutation(
-    (body: { groupClassId: string; roomId: string; date: ISODate; startTime: string; endTime: string }) =>
+    (body: { groupClassId: string; roomId: string; date: ISODate; startTime: string; endTime: string; additionalGroupClassIds?: string[] }) =>
       api<SessionDto>("/admin/sessions/extra", { method: "POST", body }),
     [keys.sessions, ["attendance"]]
   )

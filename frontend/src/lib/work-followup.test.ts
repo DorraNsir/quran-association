@@ -11,8 +11,12 @@ describe("«متابعة العمل» display rules", () => {
   it("only «منجز» counts as done; «ملغى» is left out of the active total", () => {
     const p = progressOf(items("COMPLETED", "PARTIAL", "POSTPONED", "NOT_EVALUATED", "CANCELLED"))
     expect(p).toEqual({ total: 5, active: 4, completed: 1, pending: 1, unfinished: 2, cancelled: 1, rate: 25 })
-    expect(progressLabel(p)).toBe("1 من 4 أعمال نشطة منجزة")
-    expect(progressLabel(progressOf(items("COMPLETED", "PARTIAL")))).toBe("1 من 2 أعمال منجزة")
+    expect(progressLabel(p)).toBe("تم إنجاز 1 من أصل 4 أعمال نشطة")
+    expect(progressLabel(progressOf(items("COMPLETED", "PARTIAL")))).toBe("تم إنجاز 1 من أصل 2 أعمال")
+    // Nothing done yet / everything done / no work at all
+    expect(progressLabel(progressOf(items("PARTIAL", "NOT_EVALUATED")))).toBe("2 أعمال بانتظار الإنجاز")
+    expect(progressLabel(progressOf(items("COMPLETED", "COMPLETED", "CANCELLED")))).toBe("تم إنجاز جميع الأعمال (2/2)")
+    expect(progressLabel(progressOf([]))).toBe("لا توجد أعمال")
     // No misleading percentage without active work
     const none = progressOf(items("CANCELLED"))
     expect([none.rate, progressLabel(none)]).toEqual([null, "لا توجد أعمال نشطة"])

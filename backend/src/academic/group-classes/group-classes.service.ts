@@ -229,6 +229,29 @@ export class GroupClassesService {
 
         if (branchId !== current.branchId)
           await this.assertBranch(tx, branchId, current.status);
+        const today = await platformToday(tx);
+        // «الحصص المشتركة»: a shared slot / lesson needs one supervisor and one
+        // branch — the admin first removes the class from them (history stays)
+        if (
+          supervisorId !== current.supervisorId ||
+          branchId !== current.branchId
+        ) {
+          const shared = await this.conflicts.sharedParticipation(
+            tx,
+            id,
+            today,
+          );
+          if (shared.schedules > 0 || shared.sessions > 0)
+            throw supervisorId !== current.supervisorId
+              ? conflict(
+                  'SHARED_SUPERVISOR_CHANGE_BLOCKED',
+                  'هذا القسم مشارك في مواعيد أو حصص مشتركة قادمة: أزله منها أو عدّلها أولًا، ثم غيّر المعلم المشرف',
+                )
+              : conflict(
+                  'SHARED_BRANCH_CHANGE_BLOCKED',
+                  'هذا القسم مشارك في مواعيد أو حصص مشتركة قادمة: أزله منها أو عدّلها أولًا، ثم غيّر الفرع',
+                );
+        }
         const rooms = await this.slotRooms(
           tx,
           id,
@@ -250,7 +273,6 @@ export class GroupClassesService {
           supervisorId !== current.supervisorId ||
           assistants.length !== currentAssistants.length ||
           assistants.some((t) => !currentAssistants.includes(t));
-        const today = await platformToday(tx);
         if (teamChanged || rooms.size > 0) {
           await this.conflicts.assertClassOccupancyFree(
             tx,

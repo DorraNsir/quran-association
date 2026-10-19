@@ -10,6 +10,7 @@ import {
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
+  ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -26,6 +27,8 @@ import {
   ClassMemorizationDto,
   MemorizationRecordDto,
   SemesterRefDto,
+  SessionMemorizationDto,
+  SessionMemorizationQueryDto,
   StudentMemorizationQueryDto,
   UpsertMemorizationDto,
 } from './memorization.dto.js';
@@ -103,6 +106,27 @@ export class AdminMemorizationController {
       userId: user.userId,
     });
   }
+
+  @Get('sessions/:sessionId/memorization')
+  @ApiOperation({
+    summary:
+      "A session's students with their last memorized surah — the combined list of a shared session (default period: the semester of the session date)",
+  })
+  @ApiOkResponse({ type: SessionMemorizationDto })
+  @ApiBadRequestResponse({ description: 'MEMORIZATION_PERIOD_INCOMPLETE' })
+  @ApiNotFoundResponse({
+    description: 'SESSION_NOT_FOUND, ACADEMIC_YEAR_NOT_FOUND',
+  })
+  forSession(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Query() query: SessionMemorizationQueryDto,
+  ): Promise<SessionMemorizationDto> {
+    return this.memorization.forSession(sessionId, query, {
+      kind: 'admin',
+      userId: user.userId,
+    });
+  }
 }
 
 @ApiTags('teacher / memorization')
@@ -165,6 +189,30 @@ export class TeacherMemorizationController {
     @Query() query: SemesterRefDto,
   ): Promise<ClassMemorizationDto> {
     return this.memorization.forClass(groupClassId, query, {
+      kind: 'teacher',
+      userId: user.userId,
+    });
+  }
+
+  @Get('sessions/:sessionId/memorization')
+  @ApiOperation({
+    summary:
+      'A session I teach: its students with their last memorized surah (shared session: the combined list — an assistant only sees the classes they are assigned to)',
+  })
+  @ApiOkResponse({ type: SessionMemorizationDto })
+  @ApiBadRequestResponse({ description: 'MEMORIZATION_PERIOD_INCOMPLETE' })
+  @ApiNotFoundResponse({
+    description: 'SESSION_NOT_FOUND, ACADEMIC_YEAR_NOT_FOUND',
+  })
+  @ApiForbiddenResponse({
+    description: 'Not in the session team (TEACHER_CLASS_ACCESS_DENIED)',
+  })
+  forSession(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Query() query: SessionMemorizationQueryDto,
+  ): Promise<SessionMemorizationDto> {
+    return this.memorization.forSession(sessionId, query, {
       kind: 'teacher',
       userId: user.userId,
     });

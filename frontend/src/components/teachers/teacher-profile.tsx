@@ -25,7 +25,7 @@ import { ScheduleSummary, WeeklyScheduleGrid } from "@/components/shared/schedul
 import { TeacherProfileActions } from "@/components/teachers/teacher-profile-actions"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { countActiveStudentsByClass, fullName, roomsLabel, schedulesOf, teacherAssignments, teacherWeeklySlots, weeklyMinutes } from "@/lib/domain"
+import { countActiveStudentsByClass, fullName, roomsLabel, participatingSchedulesOf, teacherAssignments, teacherWeeklySlots, weeklyMinutes } from "@/lib/domain"
 import { countLabels, formatDate, formatDuration } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -144,7 +144,7 @@ function TeacherProfileBody({
                         {groupClass.status !== "ACTIVE" && ` · ${labels.status[groupClass.status]}`}
                       </p>
                       <div className="flex items-end justify-between gap-2 border-t pt-3">
-                        <ScheduleSummary schedule={schedulesOf(groupClass.id, schedules)} />
+                        <ScheduleSummary schedule={participatingSchedulesOf(groupClass.id, schedules)} />
                         <span className="text-xs whitespace-nowrap text-muted-foreground">
                           {countLabels.students(studentCounts.get(groupClass.id) ?? 0)}
                         </span>

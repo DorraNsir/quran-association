@@ -11,6 +11,7 @@ import type {
   Student,
   Teacher,
   TeachingRole,
+  Session,
   WeeklySchedule,
 } from "@/types/domain"
 
@@ -67,6 +68,29 @@ export function schedulesOf(groupClassId: ID, schedules: WeeklySchedule[]) {
   return sortSlots(schedules.filter((s) => s.groupClassId === groupClassId))
 }
 
+/** «الحصص المشتركة»: the class meets in this slot — as its host or as an additional class. */
+export function participatesIn(slot: WeeklySchedule, groupClassId: ID) {
+  return slot.groupClassId === groupClassId || (slot.additionalGroupClassIds ?? []).includes(groupClassId)
+}
+
+/**
+ * Every slot a class MEETS in, in week order — its own and the shared ones it
+ * attends (display only: a slot is edited through its host class).
+ */
+export function participatingSchedulesOf(groupClassId: ID, schedules: WeeklySchedule[]) {
+  return sortSlots(schedules.filter((s) => participatesIn(s, groupClassId)))
+}
+
+/** «الحصص المشتركة»: the dated session involves the class — as its host or as an additional class. */
+export function sessionIncludesClass(session: Pick<Session, "groupClassId" | "additionalGroupClassIds">, groupClassId: ID) {
+  return session.groupClassId === groupClassId || (session.additionalGroupClassIds ?? []).includes(groupClassId)
+}
+
+/** A shared slot's programs, e.g. "أركان + الماهر" (null for a normal slot). */
+export function sharedSlotLabel(slot: WeeklySchedule) {
+  return slot.participants && slot.participants.length > 1 ? slot.participants.map((p) => p.group.name).join(" + ") : null
+}
+
 /** The classes of a pedagogical group. */
 export function classesOf(groupId: ID, groupClasses: GroupClass[]) {
   return groupClasses.filter((c) => c.groupId === groupId)
@@ -109,14 +133,23 @@ export interface Lookups {
 
 export function indexLookups({ branches, rooms, groups, groupClasses, teachers, schedules }: Lookups) {
   const roomsById = indexById(rooms)
-  // Rooms are chosen per weekly slot: a class uses the distinct rooms of its slots (in slot order)
+  // Rooms are chosen per weekly slot: a class uses the distinct rooms of the
+  // slots it meets in (in slot order) — its OWN slots first (its usual rooms),
+  // then the shared slots it attends as an additional class («حصة مشتركة»)
   const roomsByClass = new Map<ID, Room[]>()
-  for (const slot of sortSlots(schedules)) {
-    const room = roomsById.get(slot.roomId)
-    if (!room) continue
-    const list = roomsByClass.get(slot.groupClassId) ?? []
+  const addRoom = (groupClassId: ID, room: Room) => {
+    const list = roomsByClass.get(groupClassId) ?? []
     if (!list.some((r) => r.id === room.id)) list.push(room)
-    roomsByClass.set(slot.groupClassId, list)
+    roomsByClass.set(groupClassId, list)
+  }
+  const slots = sortSlots(schedules)
+  for (const slot of slots) {
+    const room = roomsById.get(slot.roomId)
+    if (room) addRoom(slot.groupClassId, room)
+  }
+  for (const slot of slots) {
+    const room = roomsById.get(slot.roomId)
+    if (room) for (const id of slot.additionalGroupClassIds ?? []) addRoom(id, room)
   }
   return {
     branchesById: indexById(branches),
@@ -177,18 +210,29 @@ export function teacherAssignments(teacherId: ID, lookups: Lookups): TeacherAssi
     .sort((a, b) => (a.role === b.role ? 0 : a.role === "SUPERVISOR" ? -1 : 1))
 }
 
-/** A teacher's weekly slots across all their running classes, for previews and workload. */
+/**
+ * A teacher's weekly slots across all their running classes, for previews and
+ * workload. A SHARED slot (several of their classes in one lesson) is listed
+ * once — under the first of their classes, supervisor roles first.
+ */
 export function teacherWeeklySlots(teacherId: ID, lookups: Lookups) {
   const { groupsById, roomsById } = indexLookups(lookups)
+  const seen = new Set<ID>()
   return teacherAssignments(teacherId, lookups)
     .filter((a) => isRunning(a.groupClass, groupsById))
     .flatMap((assignment) =>
-      schedulesOf(assignment.groupClass.id, lookups.schedules).map((slot) => ({
-        slot,
-        ...assignment,
-        // The room of THIS slot (a class may meet in different rooms)
-        room: roomsById.get(slot.roomId),
-      }))
+      participatingSchedulesOf(assignment.groupClass.id, lookups.schedules)
+        .filter((slot) => {
+          if (seen.has(slot.id)) return false
+          seen.add(slot.id)
+          return true
+        })
+        .map((slot) => ({
+          slot,
+          ...assignment,
+          // The room of THIS slot (a class may meet in different rooms)
+          room: roomsById.get(slot.roomId),
+        }))
     )
 }
 

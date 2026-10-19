@@ -37,6 +37,8 @@ export interface CandidateSlot extends ScheduleSlot {
   /** The room of this slot ("" while not chosen: no room conflict to report yet) */
   roomId: ID
   groupClass: Pick<GroupClass, "id" | "supervisorId" | "assistantIds">
+  /** «حصة مشتركة»: the other classes of the same lesson (same supervisor, same branch) */
+  additionalClasses?: Pick<GroupClass, "id" | "supervisorId" | "assistantIds">[]
 }
 
 export interface ConflictContext {
@@ -47,39 +49,53 @@ export interface ConflictContext {
   ignoreScheduleIds?: ID[]
 }
 
-/** Only slots of running classes occupy rooms and teachers. */
+/**
+ * Only slots of running classes occupy rooms and teachers. A shared slot
+ * occupies ALL its classes and the union of their teams (it is one lesson).
+ */
 function occupying({ schedules, groupClasses, groups, ignoreScheduleIds = [] }: ConflictContext) {
   const classesById = indexById(groupClasses)
   const groupsById = indexById(groups)
   return schedules.flatMap((s) => {
     const groupClass = classesById.get(s.groupClassId)
-    return !ignoreScheduleIds.includes(s.id) && groupClass && isRunning(groupClass, groupsById)
-      ? [{ schedule: s, groupClass }]
-      : []
+    if (ignoreScheduleIds.includes(s.id) || !groupClass || !isRunning(groupClass, groupsById)) return []
+    const extras = (s.additionalGroupClassIds ?? []).flatMap((id) => classesById.get(id) ?? [])
+    return [
+      {
+        schedule: s,
+        groupClass,
+        classIds: [s.groupClassId, ...(s.additionalGroupClassIds ?? [])],
+        teacherIds: [...new Set([groupClass, ...extras].flatMap(classTeacherIds))],
+      },
+    ]
   })
 }
 
 /**
  * Every reason the candidate slot cannot take place:
- * - ROOM: the slot's room hosts another class at an overlapping time
- * - TEACHER: one of its teachers teaches another class at that time
- * - CLASS: the same class already meets at an overlapping time
+ * - ROOM: the slot's room hosts another lesson at an overlapping time
+ * - TEACHER: one of its teachers teaches another lesson at that time
+ * - CLASS: one of its classes (host or additional) already meets then
+ * A shared lesson is ONE lesson: its classes never conflict with each other.
  */
 export function findConflicts(candidate: CandidateSlot, context: ConflictContext): ScheduleConflict[] {
   if (!isValidTimeRange(candidate.start, candidate.end)) return []
-  const teacherIds = classTeacherIds(candidate.groupClass)
+  const candidateClasses = [candidate.groupClass, ...(candidate.additionalClasses ?? [])]
+  const classIds = candidateClasses.map((c) => c.id)
+  const teacherIds = [...new Set(candidateClasses.flatMap(classTeacherIds))]
   const conflicts: ScheduleConflict[] = []
 
-  for (const { schedule, groupClass } of occupying(context)) {
+  for (const other of occupying(context)) {
+    const { schedule } = other
     if (schedule.id === candidate.id || !slotsOverlap(candidate, schedule)) continue
-    if (groupClass.id === candidate.groupClass.id) {
+    if (other.classIds.some((id) => classIds.includes(id))) {
       conflicts.push({ type: "CLASS", schedule, teacherIds: [] })
       continue
     }
     if (candidate.roomId && schedule.roomId === candidate.roomId) {
       conflicts.push({ type: "ROOM", schedule, teacherIds: [] })
     }
-    const shared = classTeacherIds(groupClass).filter((id) => teacherIds.includes(id))
+    const shared = other.teacherIds.filter((id) => teacherIds.includes(id))
     if (shared.length > 0) conflicts.push({ type: "TEACHER", schedule, teacherIds: shared })
   }
   return conflicts

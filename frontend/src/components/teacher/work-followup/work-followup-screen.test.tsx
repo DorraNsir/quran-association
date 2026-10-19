@@ -129,7 +129,7 @@ describe("«متابعة العمل» — list (API)", () => {
     const card = link.closest("[data-slot=card]") as HTMLElement
     expect(within(card).getAllByRole("listitem")).toHaveLength(2)
     expect(within(card).getByText("+ 2 أعمال أخرى")).toBeTruthy()
-    expect(within(card).getByText("1 من 3 أعمال نشطة منجزة")).toBeTruthy()
+    expect(within(card).getByText("تم إنجاز 1 من أصل 3 أعمال نشطة")).toBeTruthy()
     expect(within(card).getByText(/عمل ملغى واحد/)).toBeTruthy()
     const preview = within(card).getByText(/مراجعة من سورة الزمر/)
     expect(preview.className).toMatch(/line-clamp-2.*\[overflow-wrap:anywhere\]/)

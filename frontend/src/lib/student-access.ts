@@ -1,4 +1,4 @@
-import { describeClass, indexLookups, studentClass, type Lookups } from "@/lib/domain"
+import { describeClass, indexLookups, sessionIncludesClass, studentClass, type Lookups } from "@/lib/domain"
 import { getMemorizationProgress } from "@/lib/memorization"
 import type { ID, MemorizationProgress, Semester, Session, Student, StudentAttendance } from "@/types/domain"
 
@@ -17,10 +17,10 @@ export function getStudentGroupClass(student: Pick<Student, "groupClassId">, loo
   return studentClass(student, indexLookups(lookups))
 }
 
-/** Dated sessions of the student's own class, in date then time order. */
+/** Dated sessions of the student's own class (shared ones included), in date then time order. */
 export function getStudentSessions<S extends Session>(student: Pick<Student, "groupClassId">, sessions: S[]) {
   return sessions
-    .filter((s) => s.groupClassId === student.groupClassId)
+    .filter((s) => sessionIncludesClass(s, student.groupClassId))
     .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start))
 }
 

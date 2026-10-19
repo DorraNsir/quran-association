@@ -30,6 +30,18 @@ export interface CalendarEntry extends ClassView {
   detached?: boolean
   /** «حصة إضافية (مرة واحدة)» — from the API's stored flag */
   extra?: boolean
+  /**
+   * «حصة مشتركة»: every participating class's group (host first) when the
+   * lesson has several classes — `group.name` then reads «أركان + الماهر».
+   */
+  sharedGroups?: Group[]
+}
+
+/** The block title: «أركان + الماهر» for a shared lesson. */
+export function entryTitle(entry: Pick<CalendarEntry, "group" | "sharedGroups">) {
+  return entry.sharedGroups && entry.sharedGroups.length > 1
+    ? entry.sharedGroups.map((g) => shortGroupName(g.name)).join(" + ")
+    : shortGroupName(entry.group.name)
 }
 
 /** Restrained per-branch accents (border + soft background), brand green first. */
@@ -81,7 +93,7 @@ export function CalendarEvent({
             e.stopPropagation()
             onOpen(entry)
           }}
-          aria-label={`${group.name}${entry.extra ? "، حصة إضافية" : ""}، ${labels.weekday[schedule.day]} ${time}، ${room?.name ?? ""}، ${supervisor ? fullName(supervisor) : ""}${cancelled ? "، ملغاة" : ""}`}
+          aria-label={`${entry.sharedGroups ? "حصة مشتركة: " : ""}${group.name}${entry.extra ? "، حصة إضافية" : ""}، ${labels.weekday[schedule.day]} ${time}، ${room?.name ?? ""}، ${supervisor ? fullName(supervisor) : ""}${cancelled ? "، ملغاة" : ""}`}
           className={cn(
             "@container flex flex-col gap-0.5 overflow-hidden rounded-md border border-s-[3px] border-black/5 px-1.5 py-1 text-start text-xs leading-tight shadow-xs outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
             toneOf(entry.tone).block,
@@ -91,9 +103,10 @@ export function CalendarEvent({
           style={style}
         >
           <span className={cn("truncate font-semibold text-foreground", cancelled && "line-through")}>
-            {shortGroupName(group.name)}
+            {entryTitle(entry)}
           </span>
           {cancelled && <span className="text-[0.65rem] font-medium text-destructive">ملغاة</span>}
+          {entry.sharedGroups && !cancelled && <span className="text-[0.65rem] font-medium text-primary">مشتركة</span>}
           {entry.extra && !cancelled && <span className="text-[0.65rem] font-medium text-primary">إضافية</span>}
           <span className="truncate tabular-nums text-muted-foreground">
             {/* Narrow lanes show only the start time; the tooltip has the full range */}
@@ -117,6 +130,7 @@ export function CalendarEvent({
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-64 space-y-1 text-start">
         <p className="font-semibold">
+          {entry.sharedGroups && "حصة مشتركة — "}
           {group.name}
           {entry.extra && " · حصة إضافية"}
         </p>

@@ -11,6 +11,11 @@ import {
   SessionStatus,
 } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import {
+  participantIds,
+  sessionClassIdsSql,
+  sessionOfClass,
+} from './participants.js';
 import { expectedOnDate } from './roster.sql.js';
 import { ScheduleConflictService } from './schedule-conflicts.service.js';
 import { classNotFound, SLOT_CHANGE_REASONS } from './scheduling-errors.js';
@@ -41,6 +46,13 @@ import {
 
 type Tx = Prisma.TransactionClient;
 
+/** A participating class (host or additional) as the session responses show it. */
+const sessionClassSelect = {
+  id: true,
+  status: true,
+  group: { select: { id: true, name: true, status: true } },
+} satisfies Prisma.GroupClassSelect;
+
 const select = {
   id: true,
   date: true,
@@ -53,12 +65,13 @@ const select = {
   completedAt: true,
   completionSource: true,
   completedBy: { select: { username: true } },
-  groupClass: {
-    select: {
-      id: true,
-      status: true,
-      group: { select: { id: true, name: true, status: true } },
-    },
+  groupClass: { select: sessionClassSelect },
+  extraClasses: {
+    select: { groupClass: { select: sessionClassSelect } },
+    orderBy: [
+      { groupClass: { group: { name: 'asc' } } },
+      { groupClassId: 'asc' },
+    ],
   },
   room: {
     select: {
@@ -90,8 +103,11 @@ function attentionOf(s: Row, today: string): AttentionFlag[] {
   if (s.status !== SessionStatus.SCHEDULED || fromDbDate(s.date) < today)
     return [];
   const flags: AttentionFlag[] = [];
-  if (s.groupClass.status !== 'ACTIVE') flags.push('CLASS_INACTIVE');
-  if (s.groupClass.group.status !== 'ACTIVE') flags.push('GROUP_INACTIVE');
+  // Every participating class (host + additional classes of a shared lesson)
+  const classes = [s.groupClass, ...s.extraClasses.map((e) => e.groupClass)];
+  if (classes.some((c) => c.status !== 'ACTIVE')) flags.push('CLASS_INACTIVE');
+  if (classes.some((c) => c.group.status !== 'ACTIVE'))
+    flags.push('GROUP_INACTIVE');
   if (s.room.status !== 'ACTIVE') flags.push('ROOM_INACTIVE');
   if (s.room.branch.status !== 'ACTIVE') flags.push('BRANCH_INACTIVE');
   const supervisor = s.teachers.find((t) => t.role === 'SUPERVISOR');
@@ -138,6 +154,7 @@ const toDto = (
         }
       : null,
   groupClass: s.groupClass,
+  additionalClasses: s.extraClasses.map((e) => e.groupClass),
   room: s.room,
   teachers: s.teachers.map((t) => ({
     id: t.teacher.id,
@@ -158,6 +175,12 @@ export const needsAttentionWhere = (
   OR: [
     { groupClass: { status: { not: 'ACTIVE' } } },
     { groupClass: { group: { status: { not: 'ACTIVE' } } } },
+    { extraClasses: { some: { groupClass: { status: { not: 'ACTIVE' } } } } },
+    {
+      extraClasses: {
+        some: { groupClass: { group: { status: { not: 'ACTIVE' } } } },
+      },
+    },
     { room: { status: 'INACTIVE' } },
     { room: { branch: { status: 'INACTIVE' } } },
     { teachers: { some: { teacher: { status: 'INACTIVE' } } } },
@@ -244,7 +267,10 @@ export class SessionsService {
         take: pageSize,
       }),
     ]);
-    const counts = await this.attendanceCounts(rows.map((r) => r.id));
+    const counts = await this.attendanceCounts(
+      rows.map((r) => r.id),
+      query,
+    );
     return {
       data: rows.map((r) => toDto(r, today, counts.get(r.id))),
       meta: paginationMeta(query.page, pageSize, total),
@@ -260,7 +286,10 @@ export class SessionsService {
       select,
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }, { id: 'asc' }],
     });
-    const counts = await this.attendanceCounts(rows.map((r) => r.id));
+    const counts = await this.attendanceCounts(
+      rows.map((r) => r.id),
+      query,
+    );
     return rows.map((r) => toDto(r, today, counts.get(r.id)));
   }
 
@@ -309,6 +338,7 @@ export class SessionsService {
         startTime: dto.startTime,
         endTime: dto.endTime,
         status: SessionStatus.SCHEDULED,
+        additionalGroupClassIds: dto.additionalGroupClassIds,
       });
     });
     return this.get(id);
@@ -319,7 +349,12 @@ export class SessionsService {
     dto: CreateSessionDto,
     actorUserId?: string,
   ): Promise<string> {
-    const team = await this.conflicts.sessionTeamOf(tx, dto.groupClassId);
+    // Host + additional classes (a shared lesson: same supervisor, same branch, all active)
+    const team = await this.conflicts.sessionTeamOf(
+      tx,
+      dto.groupClassId,
+      dto.additionalGroupClassIds ?? [],
+    );
     if (!team) throw classNotFound();
     if (!team.classActive)
       throw conflict('GROUP_CLASS_INACTIVE', 'القسم غير نشط');
@@ -364,6 +399,7 @@ export class SessionsService {
       },
       select: { id: true },
     });
+    await this.conflicts.writeSessionExtras(tx, [created.id], team.extraIds);
     await this.conflicts.writeSessionTeams(tx, [created.id], team);
     return created.id;
   }
@@ -372,14 +408,17 @@ export class SessionsService {
    * Reschedule a SCHEDULED session (date, times and/or ROOM); it is excluded
    * from its own check. It keeps its own room unless a new one (of the
    * class's branch) is given. A session moved to today or later takes the
-   * class's active team; one kept in the past keeps its snapshot.
+   * active team of its participants; one kept in the past keeps its snapshot.
+   * «الحصص المشتركة»: the additional classes of an UPCOMING lesson can be
+   * replaced (an added class must fit: CLASS / TEACHER conflicts; a removed
+   * class gets no replacement lesson, and must have no work planned there).
    */
   async update(id: string, dto: UpdateSessionDto): Promise<SessionDto> {
     await this.prisma.$transaction(async (tx) => {
       await this.conflicts.lockScheduling(tx);
       const session = await tx.session.findUnique({
         where: { id },
-        include: { teachers: true },
+        include: { teachers: true, extraClasses: true },
       });
       if (!session) throw sessionNotFound();
       if (session.status !== SessionStatus.SCHEDULED) {
@@ -390,6 +429,11 @@ export class SessionsService {
       }
       // Attendance was taken for THIS date and roster: the lesson cannot move
       await this.assertNoAttendance(tx, id);
+      const currentExtras = session.extraClasses.map((e) => e.groupClassId);
+      const extraIds = dto.additionalGroupClassIds ?? currentExtras;
+      const participantsChanged =
+        extraIds.length !== currentExtras.length ||
+        extraIds.some((c) => !currentExtras.includes(c));
       const slot = {
         date: dto.date ?? fromDbDate(session.date),
         start: dto.startTime ?? fromDbTime(session.startTime),
@@ -397,6 +441,19 @@ export class SessionsService {
         roomId: dto.roomId ?? session.roomId,
       };
       assertTimeRange(slot.start, slot.end);
+      if (participantsChanged) {
+        const today = await platformToday(tx);
+        if (fromDbDate(session.date) < today || slot.date < today)
+          throw conflict(
+            'SHARED_EDIT_NOT_UPCOMING',
+            'لا تُعدَّل الأقسام المشاركة إلا في حصة قادمة',
+          );
+        await this.conflicts.assertNoWorkForRemovedClasses(
+          tx,
+          [id],
+          currentExtras.filter((c) => !extraIds.includes(c)),
+        );
+      }
       if (slot.roomId !== session.roomId) {
         const { branchId } = await tx.groupClass.findUniqueOrThrow({
           where: { id: session.groupClassId },
@@ -409,6 +466,7 @@ export class SessionsService {
       const refresh = await this.refreshSnapshotIfUpcoming(
         tx,
         session.groupClassId,
+        extraIds,
         slot.date,
       );
       const occupancy = refresh?.occupancy ?? this.snapshotOccupancy(session);
@@ -428,6 +486,8 @@ export class SessionsService {
           roomId: slot.roomId,
         },
       });
+      if (participantsChanged)
+        await this.conflicts.writeSessionExtras(tx, [id], extraIds);
       if (refresh) await this.conflicts.writeSessionTeams(tx, [id], refresh);
     });
     return this.get(id);
@@ -447,7 +507,7 @@ export class SessionsService {
       await this.conflicts.lockScheduling(tx);
       const session = await tx.session.findUnique({
         where: { id },
-        include: { teachers: true },
+        include: { teachers: true, extraClasses: true },
       });
       if (!session) throw sessionNotFound();
       const from = session.status;
@@ -498,9 +558,11 @@ export class SessionsService {
       if (from === SessionStatus.CANCELLED && to === SessionStatus.SCHEDULED) {
         // A cancelled session freed its slot: restoring must not double-book
         const date = fromDbDate(session.date);
+        // A shared lesson keeps its participants (re-validated if upcoming)
         refresh = await this.refreshSnapshotIfUpcoming(
           tx,
           session.groupClassId,
+          session.extraClasses.map((e) => e.groupClassId),
           date,
         );
         // An upcoming lesson of a weekly slot takes the slot's CURRENT room
@@ -639,6 +701,16 @@ export class SessionsService {
     ) {
       throw classNotFound();
     }
+    const teamSelect = {
+      id: true,
+      branchId: true,
+      status: true,
+      group: { select: { status: true } },
+      supervisor: { select: { id: true, status: true } },
+      assistants: {
+        select: { teacher: { select: { id: true, status: true } } },
+      },
+    } satisfies Prisma.GroupClassSelect;
     const classes = await tx.groupClass.findMany({
       where: {
         status: 'ACTIVE',
@@ -647,11 +719,7 @@ export class SessionsService {
         ...(dto.groupId ? { groupId: dto.groupId } : {}),
       },
       select: {
-        id: true,
-        supervisor: { select: { id: true, status: true } },
-        assistants: {
-          select: { teacher: { select: { id: true, status: true } } },
-        },
+        ...teamSelect,
         schedules: {
           select: {
             id: true,
@@ -659,6 +727,8 @@ export class SessionsService {
             startTime: true,
             endTime: true,
             roomId: true,
+            // «الحصص المشتركة»: the slot's additional classes
+            extraClasses: { select: { groupClass: { select: teamSelect } } },
           },
         },
       },
@@ -667,31 +737,53 @@ export class SessionsService {
       .filter((c) => c.supervisor.status !== 'ACTIVE' && c.schedules.length > 0)
       .map((c) => c.id);
     const plannable = classes.filter((c) => c.supervisor.status === 'ACTIVE');
-    const team = new Map(
-      plannable.map((c) => [
-        c.id,
-        {
+    const activeAssistants = (c: {
+      assistants: { teacher: { id: string; status: string } }[];
+    }) =>
+      c.assistants
+        .map((a) => a.teacher)
+        .filter((t) => t.status === 'ACTIVE')
+        .map((t) => t.id);
+    // Per weekly slot: its participants and its team (a shared slot: the
+    // common supervisor + the active assistants of every participant). An
+    // additional class that no longer runs, or no longer shares the host's
+    // supervisor / branch, does not take part in the new lessons.
+    const plan = new Map<
+      string,
+      { extraIds: string[]; supervisorId: string; assistantIds: string[] }
+    >();
+    for (const c of plannable)
+      for (const ws of c.schedules) {
+        const extras = ws.extraClasses
+          .map((e) => e.groupClass)
+          .filter(
+            (e) =>
+              e.status === 'ACTIVE' &&
+              e.group.status === 'ACTIVE' &&
+              e.supervisor.id === c.supervisor.id &&
+              e.branchId === c.branchId,
+          );
+        plan.set(ws.id, {
+          extraIds: extras.map((e) => e.id),
           supervisorId: c.supervisor.id,
-          assistantIds: c.assistants
-            .map((a) => a.teacher)
-            .filter((t) => t.status === 'ACTIVE')
-            .map((t) => t.id),
-        },
-      ]),
-    );
+          assistantIds: [
+            ...new Set([c, ...extras].flatMap(activeAssistants)),
+          ].filter((t) => t !== c.supervisor.id),
+        });
+      }
     const existing = await this.sessionsInRange(tx, dto.from, dto.to);
 
-    type Planned = Prisma.SessionCreateManyInput & { teamOf: string };
-    const planned: Planned[] = [];
+    const planned: Prisma.SessionCreateManyInput[] = [];
     const skippedConflicts: SkippedSessionDto[] = [];
     let skippedExisting = 0;
     for (const date of eachDate(dto.from, dto.to)) {
       const weekday = weekdayOf(date);
       const sameDay = existing.filter((s) => s.date === date);
       for (const c of plannable) {
-        const t = team.get(c.id)!;
-        const teachers = [t.supervisorId, ...t.assistantIds];
         for (const ws of c.schedules.filter((s) => s.dayOfWeek === weekday)) {
+          const p = plan.get(ws.id)!;
+          const participants = [c.id, ...p.extraIds];
+          const teachers = [p.supervisorId, ...p.assistantIds];
           const slot = {
             start: fromDbTime(ws.startTime),
             end: fromDbTime(ws.endTime),
@@ -716,14 +808,27 @@ export class SessionsService {
             skippedExisting++;
             continue;
           }
-          const blocking = sameDay.find(
+          const shares = (s: { participants: string[] }) =>
+            s.participants.some((id) => participants.includes(id));
+          // A participant already in another (non-cancelled) lesson then:
+          // e.g. an additional class's own lesson, or the host taking part
+          // in another class's shared lesson
+          const busyClass = sameDay.find(
             (s) =>
               s.status !== SessionStatus.CANCELLED &&
-              s.groupClassId !== c.id &&
               overlaps(s, slot) &&
-              (s.roomId === ws.roomId ||
-                s.teachers.some((x) => teachers.includes(x))),
+              shares(s),
           );
+          const blocking =
+            busyClass ??
+            sameDay.find(
+              (s) =>
+                s.status !== SessionStatus.CANCELLED &&
+                !shares(s) &&
+                overlaps(s, slot) &&
+                (s.roomId === ws.roomId ||
+                  s.teachers.some((x) => teachers.includes(x))),
+            );
           if (blocking) {
             skippedConflicts.push({
               groupClassId: c.id,
@@ -731,7 +836,11 @@ export class SessionsService {
               date,
               startTime: slot.start,
               endTime: slot.end,
-              reason: blocking.roomId === ws.roomId ? 'ROOM' : 'TEACHER',
+              reason: busyClass
+                ? 'CLASS'
+                : blocking.roomId === ws.roomId
+                  ? 'ROOM'
+                  : 'TEACHER',
               conflictingSessionId: blocking.id,
             });
             continue;
@@ -745,7 +854,6 @@ export class SessionsService {
             startTime: ws.startTime,
             endTime: ws.endTime,
             status: SessionStatus.SCHEDULED,
-            teamOf: c.id,
           });
           const added = {
             id: 'planned',
@@ -757,6 +865,7 @@ export class SessionsService {
             weeklyScheduleId: ws.id,
             roomId: ws.roomId,
             teachers,
+            participants,
           };
           existing.push(added);
           sameDay.push(added);
@@ -766,14 +875,25 @@ export class SessionsService {
     // skipDuplicates: the unique (weeklyScheduleId, date) index is the final idempotency guard
     const created = planned.length
       ? await tx.session.createManyAndReturn({
-          data: planned.map(({ teamOf: _teamOf, ...row }) => row),
+          data: planned,
           skipDuplicates: true,
-          select: { id: true, groupClassId: true },
+          select: { id: true, weeklyScheduleId: true },
         })
       : [];
+    const planOf = (s: { weeklyScheduleId: string | null }) =>
+      plan.get(s.weeklyScheduleId!)!;
+    // Snapshots: the additional classes and the team of each new lesson
+    await tx.sessionClass.createMany({
+      data: created.flatMap((s) =>
+        planOf(s).extraIds.map((groupClassId) => ({
+          sessionId: s.id,
+          groupClassId,
+        })),
+      ),
+    });
     await tx.sessionTeacher.createMany({
       data: created.flatMap((s) => {
-        const t = team.get(s.groupClassId)!;
+        const t = planOf(s);
         return [
           {
             sessionId: s.id,
@@ -808,26 +928,35 @@ export class SessionsService {
     };
   }
 
-  /** A session dated today or later takes the class's current active team (it keeps its own room). */
+  /**
+   * A session dated today or later takes the current active team of its
+   * participants (it keeps its own room); a shared lesson's participants are
+   * re-validated (same supervisor, same branch, all active).
+   */
   private async refreshSnapshotIfUpcoming(
     tx: Tx,
     groupClassId: string,
+    extraIds: string[],
     date: string,
   ) {
     if (date < (await platformToday(tx))) return undefined;
-    const team = (await this.conflicts.sessionTeamOf(tx, groupClassId))!;
+    const team = (await this.conflicts.sessionTeamOf(
+      tx,
+      groupClassId,
+      extraIds,
+    ))!;
     if (!team.supervisorActive) throw supervisorInactive();
     return team;
   }
 
+  /** Where and with whom a session takes place as planned: its participants and team snapshot. */
   private snapshotOccupancy(session: {
     groupClassId: string;
-    roomId: string;
+    extraClasses: { groupClassId: string }[];
     teachers: { teacherId: string }[];
   }) {
     return {
-      groupClassId: session.groupClassId,
-      roomId: session.roomId,
+      groupClassIds: participantIds(session),
       teacherIds: session.teachers.map((t) => t.teacherId),
     };
   }
@@ -837,8 +966,10 @@ export class SessionsService {
     today: string,
   ): Prisma.SessionWhereInput {
     const and: Prisma.SessionWhereInput[] = [];
-    if (query.groupClassId) and.push({ groupClassId: query.groupClassId });
-    if (query.groupId) and.push({ groupClass: { groupId: query.groupId } });
+    // A class's / group's sessions include the shared ones it takes part in
+    if (query.groupClassId)
+      and.push(sessionOfClass({ id: query.groupClassId }));
+    if (query.groupId) and.push(sessionOfClass({ groupId: query.groupId }));
     if (query.branchId) and.push({ room: { branchId: query.branchId } });
     if (query.roomId) and.push({ roomId: query.roomId });
     if (query.teacherId)
@@ -852,18 +983,31 @@ export class SessionsService {
 
   /**
    * Expected / recorded / per-status counts of many sessions in ONE query
-   * (the roster rule is shared with the attendance service).
+   * (the roster rule is shared with the attendance service). A shared
+   * session counts its whole combined roster — or, in a list filtered by a
+   * class / group, only that class's / group's students (their class on the
+   * session date); a normal session always counts all of its students.
    */
   private async attendanceCounts(
     ids: string[],
+    scope: { groupClassId?: string; groupId?: string } = {},
   ): Promise<Map<string, SessionAttendanceCountsDto>> {
     if (ids.length === 0) return new Map();
+    const scoped = Boolean(scope.groupClassId || scope.groupId);
+    const inScope = (classId: Prisma.Sql) =>
+      scoped
+        ? Prisma.sql`(cardinality(p.ids) = 1 OR EXISTS (
+            SELECT 1 FROM group_classes sg WHERE sg.id = ${classId}
+              ${scope.groupClassId ? Prisma.sql`AND sg.id = ${scope.groupClassId}::uuid` : Prisma.empty}
+              ${scope.groupId ? Prisma.sql`AND sg."groupId" = ${scope.groupId}::uuid` : Prisma.empty}))`
+        : Prisma.sql`TRUE`;
     const rows = await this.prisma.$queryRaw<
       (SessionAttendanceCountsDto & { sessionId: string })[]
     >`
       SELECT s.id AS "sessionId",
         (SELECT count(*) FROM student_enrollments e
-          WHERE e."groupClassId" = s."groupClassId"
+          WHERE e."groupClassId" = ANY(p.ids)
+            AND ${inScope(Prisma.sql`e."groupClassId"`)}
             AND ${expectedOnDate('e', Prisma.sql`s.date`)})::int AS expected,
         count(a.id)::int AS recorded,
         (count(a.id) FILTER (WHERE a.status = 'PRESENT'))::int AS present,
@@ -871,9 +1015,19 @@ export class SessionsService {
         (count(a.id) FILTER (WHERE a.status = 'LATE'))::int AS late,
         (count(a.id) FILTER (WHERE a.status = 'EXCUSED'))::int AS excused
       FROM sessions s
+      CROSS JOIN LATERAL (SELECT ARRAY${sessionClassIdsSql('s')} AS ids) p
       LEFT JOIN student_attendance a ON a."sessionId" = s.id
+        ${
+          scoped
+            ? Prisma.sql`AND ${inScope(
+                Prisma.sql`(SELECT re."groupClassId" FROM student_enrollments re
+                  WHERE re."studentId" = a."studentId" AND re."startDate" <= s.date
+                    AND (re."endDate" IS NULL OR re."endDate" > s.date) LIMIT 1)`,
+              )}`
+            : Prisma.empty
+        }
       WHERE s.id IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))})
-      GROUP BY s.id`;
+      GROUP BY s.id, p.ids`;
     return new Map(rows.map(({ sessionId, ...counts }) => [sessionId, counts]));
   }
 
@@ -892,6 +1046,7 @@ export class SessionsService {
         weeklyScheduleId: true,
         roomId: true,
         teachers: { select: { teacherId: true } },
+        extraClasses: { select: { groupClassId: true } },
       },
     });
     return rows.map((s) => ({
@@ -905,6 +1060,7 @@ export class SessionsService {
       weeklyScheduleId: s.weeklyScheduleId,
       roomId: s.roomId,
       teachers: s.teachers.map((t) => t.teacherId),
+      participants: participantIds(s),
     }));
   }
 

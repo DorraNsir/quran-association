@@ -507,6 +507,9 @@ model GroupClass {
   uploadedFiles         StoredFile[]
   onboardingLinks       OnboardingLink[]
   onboardingSubmissions OnboardingSubmission[]
+  /// «الحصص المشتركة»: weekly slots / sessions of ANOTHER class this class also attends
+  sharedSchedules       WeeklyScheduleClass[]
+  sharedSessions        SessionClass[]
 
   @@index([groupId])
   @@index([branchId])
@@ -542,9 +545,11 @@ model WeeklySchedule {
   createdAt    DateTime @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
-  groupClass GroupClass @relation(fields: [groupClassId], references: [id], onDelete: Cascade)
-  room       Room       @relation(fields: [roomId], references: [id], onDelete: Restrict)
-  sessions   Session[]
+  groupClass   GroupClass            @relation(fields: [groupClassId], references: [id], onDelete: Cascade)
+  room         Room                  @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  sessions     Session[]
+  /// Additional classes of a SHARED slot (the host is groupClassId); empty for a normal slot
+  extraClasses WeeklyScheduleClass[]
 
   @@index([groupClassId])
   @@index([dayOfWeek, startTime])
@@ -639,6 +644,8 @@ model Session {
   room           Room             @relation(fields: [roomId], references: [id], onDelete: Restrict)
   completedBy    User?            @relation(fields: [completedByUserId], references: [id], onDelete: SetNull)
   teachers       SessionTeacher[]
+  /// Additional classes of a SHARED session (the host is groupClassId); empty for a normal session
+  extraClasses   SessionClass[]
 
   studentAttendance StudentAttendance[]
   teacherAttendance TeacherAttendance[]
@@ -670,6 +677,39 @@ model SessionTeacher {
   @@unique([sessionId], map: "session_teachers_one_supervisor_key", where: raw("role = 'SUPERVISOR'"))
   @@index([teacherId])
   @@map("session_teachers")
+}
+
+/// «الحصص المشتركة»: an ADDITIONAL class taking part in a shared weekly slot.
+/// Participants of a slot = its host (WeeklySchedule.groupClassId) + these
+/// rows. Same supervisor, same branch, never the host itself — checked by the
+/// API under the scheduling lock. Goes with its slot; a class with shared
+/// participation cannot be deleted.
+model WeeklyScheduleClass {
+  weeklyScheduleId String @db.Uuid
+  groupClassId     String @db.Uuid
+
+  weeklySchedule WeeklySchedule @relation(fields: [weeklyScheduleId], references: [id], onDelete: Cascade)
+  groupClass     GroupClass     @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
+
+  @@id([weeklyScheduleId, groupClassId])
+  @@index([groupClassId])
+  @@map("weekly_schedule_classes")
+}
+
+/// «الحصص المشتركة»: an ADDITIONAL class taking part in one dated session —
+/// a snapshot (copied from the weekly slot when generated, or chosen for an
+/// ad-hoc session), like the session's room and team. Participants of a
+/// session = its host (Session.groupClassId) + these rows.
+model SessionClass {
+  sessionId    String @db.Uuid
+  groupClassId String @db.Uuid
+
+  session    Session    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  groupClass GroupClass @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
+
+  @@id([sessionId, groupClassId])
+  @@index([groupClassId])
+  @@map("session_classes")
 }
 
 model StudentAttendance {

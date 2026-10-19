@@ -100,3 +100,51 @@ export function useSaveMemorization(scope: "admin" | "teacher") {
     [memorizationKeyRoot]
   )
 }
+
+/** GET …/sessions/:id/memorization — one lesson's students (a shared lesson: the combined list). */
+export interface SessionMemorizationDto {
+  sessionId: string
+  date: string
+  classes: { id: string; group: { id: string; name: string } }[]
+  /** The caller's students: all, or (an assistant of a shared lesson) only those of their classes */
+  scope: { allStudents: boolean; groupClassIds: string[] }
+  academicYear: { id: string; label: string }
+  semester: "FIRST" | "SECOND"
+  period: { from: string; to: string }
+  students: {
+    studentId: string
+    firstName: string
+    lastName: string
+    photoUrl: string | null
+    studentStatus: "ACTIVE" | "INACTIVE" | "ARCHIVED"
+    groupClass: { id: string; group: { id: string; name: string } }
+    lastMemorizedSurahNumber: number | null
+    surahName: string | null
+    updatedAt: string | null
+  }[]
+}
+
+/**
+ * «متابعة الحفظ» of one lesson (default period: the semester of its date).
+ * Its values in the `MemorizationProgress` shape the dialog reads; updates
+ * still go through `useSaveMemorization` (which refreshes this query).
+ */
+export function useSessionMemorization(scope: "admin" | "teacher", sessionId: ID, period?: MemorizationPeriod) {
+  return useQuery({
+    queryKey: [...memorizationKeyRoot, scope, "session", sessionId, period?.academicYearId, period?.semester],
+    queryFn: ({ signal }) =>
+      api<SessionMemorizationDto>(`/${scope}/sessions/${sessionId}/memorization`, {
+        query: period?.academicYearId ? { academicYearId: period.academicYearId, semester: API_SEMESTER[period.semester] } : {},
+        signal,
+      }),
+    select: (dto) => ({
+      ...dto,
+      uiSemester: UI_SEMESTER[dto.semester] as Semester,
+      records: dto.students.flatMap((s) =>
+        s.lastMemorizedSurahNumber === null
+          ? []
+          : [record(s.studentId, dto.academicYear.id, UI_SEMESTER[dto.semester], s.lastMemorizedSurahNumber, s.updatedAt)]
+      ),
+    }),
+  })
+}
