@@ -31,7 +31,7 @@ export function monthRange(year: number, month: number): { from: ISODate; to: IS
   return { from: `${year}-${pad(month)}-01`, to: `${year}-${pad(month)}-${pad(last)}` }
 }
 
-function useTotals(subject: AttendanceSubjectRef, period: { from?: ISODate; to?: ISODate }, enabled: boolean) {
+function useTotals(subject: AttendanceSubjectRef, period: { from?: ISODate; to?: ISODate }, enabled: boolean, groupId?: string) {
   // Both hooks are always called (rules of hooks); only the subject's one fetches
   const student = useStudentAttendanceSummary(
     subject.kind === "student" ? subject.scope : "admin",
@@ -42,7 +42,7 @@ function useTotals(subject: AttendanceSubjectRef, period: { from?: ISODate; to?:
   const teacher = useTeacherAttendanceSummary(
     subject.kind === "teacher" ? subject.scope : "admin",
     subject.id,
-    period,
+    { ...period, groupId },
     enabled && subject.kind === "teacher"
   )
   return subject.kind === "student" ? student : teacher
@@ -54,18 +54,28 @@ function useTotals(subject: AttendanceSubjectRef, period: { from?: ISODate; to?:
  * attended, غائب counts against, غياب مبرر is shown apart and left out, and
  * unrecorded / cancelled / future sessions never count.
  */
-export function AttendancePeriodStats({ subject, className }: { subject: AttendanceSubjectRef; className?: string }) {
+export function AttendancePeriodStats({
+  subject,
+  className,
+  groupId,
+}: {
+  subject: AttendanceSubjectRef
+  className?: string
+  /** A teacher's totals over one group's sessions only (admin teacher profile) */
+  groupId?: string
+}) {
   const today = todayInTunis()
   const years = useAcademicYears()
   const [month, setMonth] = useState(() => ({ year: +today.slice(0, 4), month: +today.slice(5, 7) }))
   const [yearId, setYearId] = useState<string | undefined>(undefined)
   const academicYear = years.find((y) => y.id === yearId) ?? years.find((y) => y.isCurrent) ?? years[0]
 
-  const monthly = useTotals(subject, monthRange(month.year, month.month), true)
+  const monthly = useTotals(subject, monthRange(month.year, month.month), true, groupId)
   const yearly = useTotals(
     subject,
     academicYear ? { from: academicYear.startDate, to: academicYear.endDate } : {},
-    Boolean(academicYear)
+    Boolean(academicYear),
+    groupId
   )
 
   // Calendar years offered: those the academic years cover, plus the current one

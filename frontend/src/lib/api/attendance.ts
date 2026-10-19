@@ -69,7 +69,12 @@ export interface TeacherSummaryLine extends AttendanceTotals {
 /** A teacher's own record in one session (with their role in its team snapshot). */
 export interface TeacherAttendanceRecordDto extends StudentAttendanceRecordDto {
   role: TeachingRole | null
+  /** «حصة مشتركة»: the session's other classes (empty for a normal one) */
+  additionalClasses?: { id: string; group: { id: string; name: string } }[]
 }
+
+/** A teacher's own attendance, optionally narrowed to the sessions of one group (admin). */
+export type TeacherPeriodFilter = PeriodFilter & { groupId?: string }
 
 export function useTeachersAttendanceSummary(filters: SummaryFilters, enabled = true) {
   return useQuery({
@@ -126,7 +131,7 @@ const teacherBase = (scope: "admin" | "teacher", teacherId?: string) =>
 export function useTeacherAttendanceRecords(
   scope: "admin" | "teacher",
   teacherId: string | undefined,
-  period: PeriodFilter,
+  period: TeacherPeriodFilter,
   page: number,
   pageSize: number
 ) {
@@ -141,13 +146,22 @@ export function useTeacherAttendanceRecords(
 export function useTeacherAttendanceSummary(
   scope: "admin" | "teacher",
   teacherId: string | undefined,
-  period: PeriodFilter & { academicYearId?: string },
+  period: TeacherPeriodFilter & { academicYearId?: string },
   enabled = true
 ) {
   return useQuery({
     queryKey: [...attendanceKey, "teacher-own", scope, teacherId, "summary", clean({ ...period })],
     queryFn: ({ signal }) => api<AttendanceTotals>(`${teacherBase(scope, teacherId)}/summary`, { query: clean({ ...period }), signal }),
     enabled,
+  })
+}
+
+/** Admin: the groups of a teacher's group filter (groups with their records or assignments). */
+export function useTeacherAttendanceGroups(teacherId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: [...attendanceKey, "teacher-own", "admin", teacherId, "groups"],
+    queryFn: ({ signal }) => api<{ id: string; name: string }[]>(`/admin/teachers/${teacherId}/attendance/groups`, { signal }),
+    enabled: enabled && Boolean(teacherId),
   })
 }
 

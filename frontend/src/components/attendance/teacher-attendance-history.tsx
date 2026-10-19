@@ -6,12 +6,13 @@ import { useState } from "react"
 
 import { TeacherRoleBadge } from "@/components/shared/badges"
 import { EmptyState } from "@/components/shared/empty-state"
+import { ALL, FilterSelect } from "@/components/shared/filters"
 import { Pager } from "@/components/shared/pager"
 import { PeriodFilter, resolvePeriod, type Period } from "@/components/shared/period-filter"
 import { QueryState } from "@/components/shared/query-state"
 import { TimeRange } from "@/components/shared/time-range"
 import { Card } from "@/components/ui/card"
-import { useTeacherAttendanceRecords } from "@/lib/api/attendance"
+import { useTeacherAttendanceGroups, useTeacherAttendanceRecords } from "@/lib/api/attendance"
 import { todayInTunis, weekdayOf } from "@/lib/dates"
 import { countLabels, formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
@@ -25,20 +26,42 @@ import { AttendancePeriodStats } from "./attendance-period-stats"
  * A teacher's OWN attendance in the sessions they taught (team snapshot):
  * monthly / yearly totals, then session by session. The admin reads any
  * teacher; a teacher reads only themself (scope "teacher", no id).
+ *
+ * Admin: «المجموعة» narrows the SESSIONS counted — the cards and the history
+ * alike — to one group's (a shared session counts for each of its groups;
+ * «جميع المجموعات» = every session, each once).
  */
 export function TeacherAttendanceHistory({ teacherId, scope }: { teacherId?: string; scope: "admin" | "teacher" }) {
   const today = todayInTunis()
   const pageSize = usePlatformSettings().defaultPageSize
   const [period, setPeriod] = useState<Period>({ preset: "year" })
   const [page, setPage] = useState(1)
+  const [groupId, setGroupId] = useState(ALL)
+  const admin = scope === "admin"
+  const groups = useTeacherAttendanceGroups(teacherId, admin)
+  const group = groupId === ALL ? undefined : groupId
   const range = resolvePeriod(period, today, useCurrentAcademicYear())
-  const records = useTeacherAttendanceRecords(scope, teacherId, { from: range.from, to: range.to }, page, pageSize)
+  const records = useTeacherAttendanceRecords(scope, teacherId, { from: range.from, to: range.to, groupId: group }, page, pageSize)
   const entries = records.data?.data ?? []
   const paths = workspacePaths(scope)
 
   return (
     <div className="space-y-5">
-      <AttendancePeriodStats subject={{ kind: "teacher", scope, id: teacherId }} />
+      {admin && (
+        <div className="flex flex-wrap items-center gap-2">
+          <FilterSelect
+            label="المجموعة"
+            allLabel="جميع المجموعات"
+            value={groupId}
+            onValueChange={(v) => {
+              setGroupId(v)
+              setPage(1)
+            }}
+            options={(groups.data ?? []).map((g) => ({ value: g.id, label: g.name }))}
+          />
+        </div>
+      )}
+      <AttendancePeriodStats subject={{ kind: "teacher", scope, id: teacherId }} groupId={group} />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">سجل الحضور حسب الحصة</h3>
@@ -54,7 +77,11 @@ export function TeacherAttendanceHistory({ teacherId, scope }: { teacherId?: str
       <QueryState query={records}>
         <Card className="gap-0 p-0">
           {entries.length === 0 ? (
-            <EmptyState icon={ClipboardList} title="لم يُسجَّل حضور بعد" description="لا توجد سجلات حضور في الفترة المختارة." />
+            <EmptyState
+              icon={ClipboardList}
+              title="لم يُسجَّل حضور بعد"
+              description={group ? "لا توجد سجلات حضور لهذه المجموعة في الفترة المختارة." : "لا توجد سجلات حضور في الفترة المختارة."}
+            />
           ) : (
             <ol className="divide-y">
               {entries.map((record) => (
@@ -68,7 +95,7 @@ export function TeacherAttendanceHistory({ teacherId, scope }: { teacherId?: str
                         {labels.weekday[weekdayOf(record.date)]} {formatDate(record.date)}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {record.groupClass.group.name} ·{" "}
+                        {[record.groupClass, ...(record.additionalClasses ?? [])].map((c) => c.group.name).join(" + ")} ·{" "}
                         <TimeRange start={record.startTime} end={record.endTime} />
                         {record.sessionStatus === "CANCELLED" && " · حصة ملغاة (لا تُحتسب)"}
                       </p>

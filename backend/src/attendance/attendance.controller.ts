@@ -25,7 +25,10 @@ import { TeacherApi } from '../teaching/teacher-api.decorator.js';
 import { TeacherAccessService } from '../teaching/teacher-access.service.js';
 import {
   AttendanceChangeDto,
+  TeacherAttendanceGroupDto,
   TeacherAttendanceListDto,
+  TeacherAttendanceQueryDto,
+  TeacherSummaryQueryDto,
   TeachersSummaryQueryDto,
   TeacherSummaryLineDto,
   AttendanceSummaryDto,
@@ -127,9 +130,22 @@ export class AdminAttendanceController {
   })
   teacherRecords(
     @Param('teacherId', ParseUUIDPipe) teacherId: string,
-    @Query() query: StudentAttendanceQueryDto,
+    @Query() query: TeacherAttendanceQueryDto,
   ): Promise<TeacherAttendanceListDto> {
     return this.attendance.teacherRecords(teacherId, query);
+  }
+
+  @Get('teachers/:teacherId/attendance/groups')
+  @ApiOperation({
+    summary:
+      "The groups of a teacher's group filter: groups of the sessions they have attendance records in, and of their current assignments",
+  })
+  @ApiOkResponse({ type: TeacherAttendanceGroupDto, isArray: true })
+  @ApiNotFoundResponse({ description: 'TEACHER_NOT_FOUND' })
+  teacherGroups(
+    @Param('teacherId', ParseUUIDPipe) teacherId: string,
+  ): Promise<TeacherAttendanceGroupDto[]> {
+    return this.attendance.teacherGroups(teacherId);
   }
 
   @Get('teachers/:teacherId/attendance/summary')
@@ -142,7 +158,7 @@ export class AdminAttendanceController {
   })
   teacherSummary(
     @Param('teacherId', ParseUUIDPipe) teacherId: string,
-    @Query() query: SummaryQueryDto,
+    @Query() query: TeacherSummaryQueryDto,
   ): Promise<AttendanceSummaryDto> {
     return this.attendance.teacherSummary(teacherId, query);
   }

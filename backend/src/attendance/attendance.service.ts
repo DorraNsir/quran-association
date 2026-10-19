@@ -36,6 +36,7 @@ import {
 } from './attendance-rate.js';
 import type {
   AttendanceChangeDto,
+  TeacherAttendanceGroupDto,
   TeacherAttendanceListDto,
   TeachersSummaryQueryDto,
   TeacherSummaryLineDto,
@@ -691,14 +692,15 @@ export class AttendanceService {
   /** A teacher's own attendance records (sessions they taught), newest first. */
   async teacherRecords(
     teacherId: string,
-    query: StudentAttendanceQueryDto,
+    query: StudentAttendanceQueryDto & { groupId?: string },
   ): Promise<TeacherAttendanceListDto> {
     await this.assertTeacher(teacherId);
     const range = await this.range(query);
     const pageSize = await this.pageSizes.resolve(query.pageSize);
+    // A group narrows the SESSIONS (a shared session counts for each of its groups)
     const where: Prisma.TeacherAttendanceWhereInput = {
       teacherId,
-      session: this.sessionFilter(range, {}, false),
+      session: this.sessionFilter(range, { groupId: query.groupId }, false),
     };
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.teacherAttendance.count({ where }),
@@ -728,6 +730,9 @@ export class AttendanceService {
                 },
               },
               teachers: { where: { teacherId }, select: { role: true } },
+              extraClasses: {
+                select: { groupClass: { select: classLabelSelect } },
+              },
             },
           },
         },
@@ -742,6 +747,7 @@ export class AttendanceService {
         sessionStatus: r.session.status,
         groupClass: r.session.groupClass,
         role: r.session.teachers[0]?.role ?? null,
+        additionalClasses: r.session.extraClasses.map((e) => e.groupClass),
         status: r.status,
         note: r.note,
         updatedAt: r.updatedAt,
@@ -753,13 +759,17 @@ export class AttendanceService {
   /** A teacher's own totals (same rule as students; each session counted once). */
   async teacherSummary(
     teacherId: string,
-    query: SummaryQueryDto,
+    query: SummaryQueryDto & { groupId?: string },
   ): Promise<AttendanceSummaryDto> {
     await this.assertTeacher(teacherId);
     const range = await this.range(query);
+    // Filtered BEFORE counting: only the sessions of the group (if any)
     const groups = await this.prisma.teacherAttendance.groupBy({
       by: ['status'],
-      where: { teacherId, session: this.sessionFilter(range, {}) },
+      where: {
+        teacherId,
+        session: this.sessionFilter(range, { groupId: query.groupId }),
+      },
       _count: { _all: true },
     });
     const counts = emptyCounts();
@@ -769,6 +779,30 @@ export class AttendanceService {
       from: range.from ?? null,
       to: range.to ?? null,
     };
+  }
+
+  /**
+   * The groups offered by a teacher's group filter: those of the sessions the
+   * teacher has attendance records in (every participating class's group of
+   * a shared session) and those of their current assignments.
+   */
+  async teacherGroups(teacherId: string): Promise<TeacherAttendanceGroupDto[]> {
+    await this.assertTeacher(teacherId);
+    return this.prisma.$queryRaw<TeacherAttendanceGroupDto[]>`
+      SELECT g.id, g.name FROM groups g
+      WHERE g.id IN (
+        SELECT gc."groupId"
+        FROM teacher_attendance ta
+        JOIN sessions s ON s.id = ta."sessionId"
+        CROSS JOIN LATERAL unnest(ARRAY${sessionClassIdsSql('s')}) AS p(id)
+        JOIN group_classes gc ON gc.id = p.id
+        WHERE ta."teacherId" = ${teacherId}::uuid
+        UNION
+        SELECT gc."groupId" FROM group_classes gc
+        WHERE gc."supervisorId" = ${teacherId}::uuid
+           OR EXISTS (SELECT 1 FROM group_class_assistants a WHERE a."groupClassId" = gc.id AND a."teacherId" = ${teacherId}::uuid)
+      )
+      ORDER BY g.name`;
   }
 
   /** Per teacher, over the sessions matching the filters (one grouped query). */

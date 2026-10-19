@@ -300,6 +300,36 @@ export class SummaryQueryDto {
   @IsDateOnly({ optional: true }) to?: string;
 }
 
+/** A teacher's own records: the student query + an optional group. */
+export class TeacherAttendanceQueryDto extends StudentAttendanceQueryDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "Only sessions of this group (a shared session counts for each of its participating classes' groups)",
+  })
+  @IsOptional()
+  @IsUUID()
+  groupId?: string;
+}
+
+/** A teacher's own totals: the summary query + an optional group. */
+export class TeacherSummaryQueryDto extends SummaryQueryDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "Only sessions of this group (a shared session counts for each of its participating classes' groups)",
+  })
+  @IsOptional()
+  @IsUUID()
+  groupId?: string;
+}
+
+/** A group in which a teacher has attendance records or a current assignment. */
+export class TeacherAttendanceGroupDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() name!: string;
+}
+
 export class StudentAttendanceRecordDto {
   @ApiProperty() sessionId!: string;
   @ApiProperty({ format: 'date' }) date!: string;
@@ -329,6 +359,13 @@ export class TeacherAttendanceRecordDto extends StudentAttendanceRecordDto {
     description: 'Role in that session (team snapshot)',
   })
   role!: TeachingRole | null;
+  @ApiProperty({
+    type: AttendanceClassDto,
+    isArray: true,
+    description:
+      '«حصة مشتركة»: the other participating classes (empty for a normal session)',
+  })
+  additionalClasses!: AttendanceClassDto[];
 }
 
 export class TeacherAttendanceListDto {
