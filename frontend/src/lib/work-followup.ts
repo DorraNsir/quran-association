@@ -102,7 +102,7 @@ export function phaseOf(
  * left-to-right isolate so the RTL text never displays it as «18:00 – 16:00».
  */
 export function sessionLabel(session: Pick<WorkSession, "date" | "startTime" | "endTime">) {
-  return `${labels.weekday[weekdayOf(session.date)]} ${formatDate(session.date)} — ⁦${formatTimeRange(session.startTime, session.endTime)}⁩`
+  return `${labels.weekday[weekdayOf(session.date)]} ${formatDate(session.date)} — ${formatTimeRange(session.startTime, session.endTime)}`
 }
 
 const ORDINALS = ["الأولى", "الثانية", "الثالثة", "الرابعة", "الخامسة", "السادسة", "السابعة", "الثامنة", "التاسعة", "العاشرة"]

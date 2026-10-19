@@ -1,8 +1,9 @@
 import { CalendarOff } from "lucide-react"
 import Link from "next/link"
 
+import { TimeRange } from "@/components/shared/time-range"
 import { sortSlots } from "@/lib/domain"
-import { formatTimeRange } from "@/lib/format"
+
 import { labels, WEEK_ORDER } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import type { ScheduleSlot } from "@/types/domain"
@@ -26,9 +27,7 @@ export function ScheduleSummary<S extends ScheduleSlot>({
       {sortSlots(schedule).map((slot) => (
         <li key={`${slot.day}-${slot.start}`} className="flex gap-2 whitespace-nowrap">
           <span className="w-16 text-muted-foreground">{labels.weekday[slot.day]}</span>
-          <span dir="ltr" className="tabular-nums">
-            {formatTimeRange(slot.start, slot.end)}
-          </span>
+          <TimeRange start={slot.start} end={slot.end} />
           {detail && <span className="truncate text-muted-foreground">{detail(slot)}</span>}
         </li>
       ))}
@@ -111,7 +110,7 @@ function ScheduleBlock({ entry }: { entry: ScheduleEntry }) {
   const body = (
     <>
       <p className="text-xs tabular-nums text-muted-foreground">
-        <span dir="ltr" className="whitespace-nowrap">{formatTimeRange(entry.slot.start, entry.slot.end)}</span>
+        <TimeRange start={entry.slot.start} end={entry.slot.end} />
       </p>
       <p className="text-sm font-medium leading-snug">{entry.title}</p>
       {entry.subtitle && (

@@ -8,9 +8,10 @@ import { AttendanceAction } from "@/components/sessions/attendance-action"
 import { toSessionRow, type SessionRow } from "@/components/sessions/use-session-rows"
 import { EmptyState } from "@/components/shared/empty-state"
 import { QueryState } from "@/components/shared/query-state"
+import { TimeRange } from "@/components/shared/time-range"
 import { useSessionRange } from "@/lib/api/sessions"
 import { addDays, weekDates, weekdayOf } from "@/lib/dates"
-import { countLabels, formatShortDate, formatTimeRange } from "@/lib/format"
+import { countLabels, formatShortDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import type { ISODate } from "@/types/domain"
 
@@ -65,7 +66,7 @@ export function TeacherSessionList({
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
                     <DoorOpen className="size-3.5" aria-hidden />
-                    {row.room?.name} · <span dir="ltr" className="tabular-nums">{formatTimeRange(session.start, session.end)}</span>
+                    {row.room?.name} · <TimeRange start={session.start} end={session.end} />
                   </span>
                   <span className="inline-flex items-center gap-1">
                     <Users className="size-3.5" aria-hidden />

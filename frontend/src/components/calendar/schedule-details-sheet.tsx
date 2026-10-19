@@ -6,6 +6,7 @@ import Link from "next/link"
 import { SessionStatusBadge } from "@/components/attendance/attendance-badges"
 import { StatusBadge, TeacherRoleBadge } from "@/components/shared/badges"
 import { InfoList } from "@/components/shared/info-list"
+import { TimeRange } from "@/components/shared/time-range"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { useDirection } from "@/components/ui/direction"
@@ -18,7 +19,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { fullName } from "@/lib/domain"
-import { countLabels, formatDate, formatDuration, formatTimeRange } from "@/lib/format"
+import { countLabels, formatDate, formatDuration } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import type { ISODate } from "@/types/domain"
 
@@ -85,8 +86,7 @@ export function ScheduleDetailsSheet({
                 label: "التوقيت",
                 value: (
                   <>
-                  
-                    <span  className="tabular-nums">{formatTimeRange(schedule.start ,schedule.end)}</span>
+                    <TimeRange start={schedule.start} end={schedule.end} />
                     <span className="ms-2 text-xs font-normal text-muted-foreground">
                       ({formatDuration(toMinutes(schedule.end) - toMinutes(schedule.start))})
                     </span>

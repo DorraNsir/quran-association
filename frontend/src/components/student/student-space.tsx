@@ -26,6 +26,7 @@ import { AcademicYearSelect } from "@/components/memorization/period-selectors"
 import { EmptyState } from "@/components/shared/empty-state"
 import { SectionCard } from "@/components/shared/info-list"
 import { QueryState } from "@/components/shared/query-state"
+import { TimeRange } from "@/components/shared/time-range"
 import { Card } from "@/components/ui/card"
 import { useStudentAttendanceRecords, useStudentAttendanceSummary } from "@/lib/api/attendance"
 import { useStudentMemorization } from "@/lib/api/memorization"
@@ -33,7 +34,7 @@ import { toResourceView, useResources } from "@/lib/api/resources"
 import { toSession, useSessionRange } from "@/lib/api/sessions"
 import { addDays, weekdayOf } from "@/lib/dates"
 import { type ClassView, fullName, roomsLabel } from "@/lib/domain"
-import { countLabels, formatDate, formatRelativeDay, formatShortDate, formatTimeRange, formatWeekdayDate } from "@/lib/format"
+import { countLabels, formatDate, formatRelativeDay, formatShortDate, formatWeekdayDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { defaultPeriod, SEMESTERS } from "@/lib/memorization"
 import { getStudentMemorization } from "@/lib/student-access"
@@ -74,7 +75,7 @@ function NextSession({ session, view, today }: { session?: MySession; view?: Cla
       <div className="min-w-0 space-y-1">
         <p className="font-semibold">{formatWeekdayDate(session.date)}</p>
         <p className="text-sm tabular-nums text-muted-foreground">
-          <span dir="ltr" className="inline-block">{formatTimeRange(session.start, session.end)}</span> · {view?.group?.name}
+          <TimeRange start={session.start} end={session.end} /> · {view?.group?.name}
         </p>
         <p className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
           <span className="inline-flex items-center gap-1"><MapPin className="size-3.5" aria-hidden />{view?.branch?.name}</span>
@@ -231,7 +232,7 @@ export function MySessions({ view, today }: { view?: ClassView; today: ISODate }
                 {s.date === today && <span className="ms-1.5 text-xs text-primary">اليوم</span>}
               </p>
               <p className="text-xs text-muted-foreground">
-                <span dir="ltr" className="inline-block tabular-nums">{formatTimeRange(s.start, s.end)}</span> · {view?.branch?.name} · {s.roomName}
+                <TimeRange start={s.start} end={s.end} /> · {view?.branch?.name} · {s.roomName}
               </p>
             </div>
             {s.status !== "SCHEDULED" && <SessionStatusBadge status={s.status} />}

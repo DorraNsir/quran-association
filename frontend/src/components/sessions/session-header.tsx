@@ -2,8 +2,9 @@ import { BookOpen, CalendarDays, Clock, DoorOpen, MapPin, ShieldCheck } from "lu
 
 import { SessionStatusBadge } from "@/components/attendance/attendance-badges"
 import { MetaItem, ProfileHeader } from "@/components/shared/profile"
+import { TimeRange } from "@/components/shared/time-range"
 import { fullName } from "@/lib/domain"
-import { formatTimeRange, formatWeekdayDate } from "@/lib/format"
+import { formatWeekdayDate } from "@/lib/format"
 
 import type { SessionRow } from "./use-session-rows"
 
@@ -23,7 +24,7 @@ export function SessionHeader({ row, actions }: { row: SessionRow; actions?: Rea
         <>
           <MetaItem icon={CalendarDays}>{formatWeekdayDate(session.date)}</MetaItem>
           <MetaItem icon={Clock}>
-            <span dir="ltr" className="tabular-nums">{formatTimeRange(session.start, session.end)}</span>
+            <TimeRange start={session.start} end={session.end} />
           </MetaItem>
           <MetaItem icon={MapPin}>{branch?.name}</MetaItem>
           <MetaItem icon={DoorOpen}>{room?.name}</MetaItem>

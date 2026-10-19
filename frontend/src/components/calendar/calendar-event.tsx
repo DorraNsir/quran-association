@@ -110,9 +110,9 @@ export function CalendarEvent({
           {entry.extra && !cancelled && <span className="text-[0.65rem] font-medium text-primary">إضافية</span>}
           <span className="truncate tabular-nums text-muted-foreground">
             {/* Narrow lanes show only the start time; the tooltip has the full range */}
-            <span >
+            <span className="inline-block whitespace-nowrap">
               {schedule.start}
-              <span className="hidden @[5.5rem]:inline"> – {schedule.end} </span>
+              <span className="hidden @[5.5rem]:inline">{"\u00a0–\u00a0"}{schedule.end}</span>
             </span>
           </span>
           {minutes >= 60 && (
@@ -136,7 +136,7 @@ export function CalendarEvent({
         </p>
         <p>
           {labels.weekday[schedule.day]}{" "}
-          <span dir="ltr" className="tabular-nums">{time}</span>
+          <span className="whitespace-nowrap tabular-nums">{time}</span>
         </p>
         <p className="flex items-center gap-1">
           <DoorOpen className="size-3" aria-hidden />

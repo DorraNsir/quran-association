@@ -9,10 +9,11 @@ import { EmptyState } from "@/components/shared/empty-state"
 import { Pager } from "@/components/shared/pager"
 import { PeriodFilter, resolvePeriod, type Period } from "@/components/shared/period-filter"
 import { QueryState } from "@/components/shared/query-state"
+import { TimeRange } from "@/components/shared/time-range"
 import { Card } from "@/components/ui/card"
 import { useTeacherAttendanceRecords } from "@/lib/api/attendance"
 import { todayInTunis, weekdayOf } from "@/lib/dates"
-import { countLabels, formatDate, formatTimeRange } from "@/lib/format"
+import { countLabels, formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { useCurrentAcademicYear, usePlatformSettings } from "@/lib/store/settings"
 import { workspacePaths } from "@/lib/workspace"
@@ -68,7 +69,7 @@ export function TeacherAttendanceHistory({ teacherId, scope }: { teacherId?: str
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {record.groupClass.group.name} ·{" "}
-                        <span className="inline-block tabular-nums">{formatTimeRange(record.startTime, record.endTime)}</span>
+                        <TimeRange start={record.startTime} end={record.endTime} />
                         {record.sessionStatus === "CANCELLED" && " · حصة ملغاة (لا تُحتسب)"}
                       </p>
                     </div>

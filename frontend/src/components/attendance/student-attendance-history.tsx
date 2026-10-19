@@ -9,12 +9,13 @@ import { ALL, FilterSelect } from "@/components/shared/filters"
 import { Pager } from "@/components/shared/pager"
 import { PeriodFilter, resolvePeriod, type Period } from "@/components/shared/period-filter"
 import { QueryState } from "@/components/shared/query-state"
+import { TimeRange } from "@/components/shared/time-range"
 import { Card } from "@/components/ui/card"
 import { useStudentAttendanceRecords, useStudentAttendanceSummary } from "@/lib/api/attendance"
 import { MAX_PAGE } from "@/lib/api/sessions"
 import { ATTENDANCE_STATUSES } from "@/lib/attendance"
 import { todayInTunis, weekdayOf } from "@/lib/dates"
-import { countLabels, formatDate, formatTimeRange } from "@/lib/format"
+import { countLabels, formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { useCurrentAcademicYear } from "@/lib/store/settings"
 import { workspacePaths, type Workspace } from "@/lib/workspace"
@@ -86,7 +87,7 @@ export function StudentAttendanceHistory({ studentId, workspace = "admin" }: { s
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {record.groupClass.group.name} ·{" "}
-                        <span className="inline-block tabular-nums">{formatTimeRange(record.startTime, record.endTime)}</span>
+                        <TimeRange start={record.startTime} end={record.endTime} />
                       </p>
                     </div>
                     <div className="flex items-center gap-2">

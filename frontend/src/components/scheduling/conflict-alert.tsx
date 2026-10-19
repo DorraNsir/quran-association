@@ -2,10 +2,11 @@
 
 import { AlertTriangle, DoorOpen } from "lucide-react"
 
+import { TimeRange } from "@/components/shared/time-range"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { describeClass, fullName, indexLookups, type Lookups } from "@/lib/domain"
-import { formatTimeRange } from "@/lib/format"
+
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import type { ConflictType, ID, Room, ScheduleConflict } from "@/types/domain"
@@ -63,9 +64,7 @@ export function ConflictAlert({
                   const when = (
                     <span className="text-muted-foreground">
                       {labels.weekday[c.schedule.day]}{" "}
-                      <span  className="tabular-nums">
-                        {formatTimeRange(c.schedule.start, c.schedule.end)}
-                      </span>
+                      <TimeRange start={c.schedule.start} end={c.schedule.end} />
                     </span>
                   )
                   return (

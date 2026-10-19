@@ -24,6 +24,7 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { EmptyState } from "@/components/shared/empty-state"
 import { InfoList, SectionCard } from "@/components/shared/info-list"
 import { Breadcrumbs } from "@/components/shared/page-header"
+import { TimeRange } from "@/components/shared/time-range"
 import { PersonCell } from "@/components/shared/user-avatar"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -42,7 +43,7 @@ import { errorMessage } from "@/lib/api/errors"
 import { useSetSessionStatus, type SessionRosterDto } from "@/lib/api/sessions"
 import { weekdayOf } from "@/lib/dates"
 import { fullName } from "@/lib/domain"
-import { countLabels, formatDate, formatTimeRange } from "@/lib/format"
+import { countLabels, formatDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
 import type { ISODate } from "@/types/domain"
@@ -224,7 +225,7 @@ export function SessionDetails({
                   value: (
                     <>
                       كل {labels.weekday[weekdayOf(session.date)]}{" "}
-                      <span dir="ltr" className="tabular-nums">{formatTimeRange(session.start, session.end)}</span>
+                      <TimeRange start={session.start} end={session.end} />
                     </>
                   ),
                   icon: Repeat,

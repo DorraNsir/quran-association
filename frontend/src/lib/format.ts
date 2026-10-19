@@ -89,8 +89,13 @@ export function formatPhone(phone?: string) {
   return `${digits.slice(0, 2)} ${digits.slice(2, 5)} ${digits.slice(5)}`
 }
 
+/**
+ * «09:00 – 11:00» — in Arabic (RTL) text it reads right to left: the START
+ * time is drawn on the right (read first), the END on the left. Non-breaking
+ * spaces: it never wraps in the middle. Displayed ranges use <TimeRange>.
+ */
 export function formatTimeRange(start: TimeOfDay, end: TimeOfDay) {
-  return `${start} – ${end}`
+  return `${start}\u00a0–\u00a0${end}`
 }
 
 export function minutesBetween(start: TimeOfDay, end: TimeOfDay) {

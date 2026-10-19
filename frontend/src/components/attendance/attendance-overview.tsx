@@ -6,6 +6,7 @@ import { useState } from "react"
 
 import { AttendanceAction } from "@/components/sessions/attendance-action"
 import { WeeklySlotButton } from "@/components/calendar/scheduling-actions"
+import { TimeRange } from "@/components/shared/time-range"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { toSessionRow, type SessionRow } from "@/components/sessions/use-session-rows"
 import { Pager } from "@/components/shared/pager"
@@ -24,7 +25,7 @@ import { PersonCell } from "@/components/shared/user-avatar"
 import { ATTENDANCE_STATUSES, countOf } from "@/lib/attendance"
 import { todayInTunis, weekdayOf } from "@/lib/dates"
 import { fullName, indexLookups, studentClass, type Lookups } from "@/lib/domain"
-import { countLabels, formatShortDate, formatTimeRange } from "@/lib/format"
+import { countLabels, formatShortDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import type { AttendanceStatus } from "@/types/domain"
@@ -125,7 +126,7 @@ function AttendanceRecording({ lookups }: { lookups: Lookups }) {
           </p>
           <p className="text-xs text-muted-foreground">
             {labels.weekdayShort[weekdayOf(r.session.date)]} {formatShortDate(r.session.date)} ·{" "}
-            <span className="tabular-nums">{formatTimeRange(r.session.start, r.session.end)}</span>
+            <TimeRange start={r.session.start} end={r.session.end} />
           </p>
         </Link>
       ),

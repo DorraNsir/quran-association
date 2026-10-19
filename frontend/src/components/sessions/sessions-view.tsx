@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/shared/empty-state"
 import { ALL, FilterBar, FilterSelect } from "@/components/shared/filters"
 import { PageHeader } from "@/components/shared/page-header"
 import { PeriodFilter, resolvePeriod, type Period } from "@/components/shared/period-filter"
+import { TimeRange } from "@/components/shared/time-range"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,7 +22,7 @@ import { api, type Page } from "@/lib/api/client"
 import { useSessionPage, type SessionDto, type SessionFilters } from "@/lib/api/sessions"
 import { addDays, weekdayOf } from "@/lib/dates"
 import { describeClass, fullName, indexLookups, type Lookups } from "@/lib/domain"
-import { countLabels, formatShortDate, formatTimeRange } from "@/lib/format"
+import { countLabels, formatShortDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
@@ -145,7 +146,7 @@ export function SessionsView({
         {row.session.date === today && <span className="ms-1.5 text-xs text-primary">اليوم</span>}
       </p>
       <p className="text-xs tabular-nums text-muted-foreground">
-        <span dir="ltr">{formatTimeRange(row.session.start, row.session.end)}</span>
+        <TimeRange start={row.session.start} end={row.session.end} />
       </p>
     </div>
   )
