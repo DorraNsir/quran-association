@@ -111,7 +111,7 @@ function SubmissionsView({ lookups }: { lookups: Lookups }) {
     },
     { id: "branch", header: "الفرع", className: "hidden md:table-cell", cell: (s) => s.groupClass.branch.name },
     { id: "group", header: "المجموعة", cell: (s) => s.groupClass.group.name },
-    { id: "class", header: "الفوج", className: "hidden lg:table-cell", cell: (s) => (s.groupClass.supervisorName ? `فوج ${s.groupClass.supervisorName}` : "—") },
+    { id: "class", header: "القسم", className: "hidden lg:table-cell", cell: (s) => (s.groupClass.supervisorName ? `قسم ${s.groupClass.supervisorName}` : "—") },
     { id: "date", header: "تاريخ الإرسال", cell: (s) => <span dir="ltr" className="inline-block text-sm tabular-nums">{formatDateTime(s.createdAt)}</span> },
     { id: "status", header: "الحالة", cell: (s) => <StatusBadge status={s.status} /> },
     {
@@ -148,7 +148,7 @@ function SubmissionsView({ lookups }: { lookups: Lookups }) {
           options={lookups.branches.map((b) => ({ value: b.id, label: b.name }))} />
         <FilterSelect label="المجموعة" allLabel="كل المجموعات" value={groupId} onValueChange={(v) => (setGroupId(v), setClassId(ALL), setPage(1))}
           options={lookups.groups.map((g) => ({ value: g.id, label: g.name }))} />
-        <FilterSelect label="الفوج" allLabel="كل الأفواج" value={classId} onValueChange={reset(setClassId)}
+        <FilterSelect label="القسم" allLabel="كل الأقسام" value={classId} onValueChange={reset(setClassId)}
           options={classes.map((c) => {
             const v = describeClass(c, indexes)
             return { value: c.id, label: `${v.group?.name ?? ""} — ${v.supervisor ? fullName(v.supervisor) : ""}` }
@@ -185,7 +185,7 @@ export function ReviewSheet({ id, onClose }: { id: string | null; onClose: () =>
           {sub && (
             <SheetDescription>
               {sub.groupClass.group.name} — {sub.groupClass.branch.name}
-              {sub.groupClass.supervisorName ? ` (فوج ${sub.groupClass.supervisorName})` : ""}
+              {sub.groupClass.supervisorName ? ` (قسم ${sub.groupClass.supervisorName})` : ""}
             </SheetDescription>
           )}
         </SheetHeader>
@@ -261,7 +261,7 @@ function Review({ sub, onDone }: { sub: OnboardingSubmissionDetail; onDone: () =
                 <li key={m.studentId} className="rounded-lg border bg-background p-2 text-foreground">
                   <p className="font-medium">{m.firstName} {m.lastName}</p>
                   <p className="text-xs text-muted-foreground">
-                    {m.dateOfBirth ? formatDate(m.dateOfBirth) : "—"} · {m.groupClassLabel ?? "بدون فوج"}
+                    {m.dateOfBirth ? formatDate(m.dateOfBirth) : "—"} · {m.groupClassLabel ?? "بدون قسم"}
                     {m.guardianPhone ? <> · <span dir="ltr">{m.guardianPhone}</span></> : null}
                   </p>
                   <div className="mt-1 flex flex-wrap gap-1">
@@ -364,7 +364,7 @@ function Review({ sub, onDone }: { sub: OnboardingSubmissionDetail; onDone: () =
         open={confirmCreate}
         onOpenChange={setConfirmCreate}
         title="إنشاء طالب جديد رغم وجود تشابه؟"
-        description="تأكّد أن هذا الطلب لا يخص أحد الطلبة المعروضين أعلاه (قد يشترك الإخوة في هاتف الولي). سيُضاف طالب جديد في فوج الرابط."
+        description="تأكّد أن هذا الطلب لا يخص أحد الطلبة المعروضين أعلاه (قد يشترك الإخوة في هاتف الولي). سيُضاف طالب جديد في قسم الرابط."
         confirmLabel="إنشاء طالب جديد بعد التأكيد"
         onConfirm={() => approve(true)}
       />
@@ -372,7 +372,7 @@ function Review({ sub, onDone }: { sub: OnboardingSubmissionDetail; onDone: () =
         open={linkTo !== null}
         onOpenChange={(open) => !open && setLinkTo(null)}
         title={`ربط الطلب بـ ${linkTo?.name ?? ""}؟`}
-        description="يُعتبر الطلب خاصًا بهذا الطالب: يُلحق بفوج الرابط وفق قواعد النقل المعتادة، ولا تُستبدل بياناته الشخصية الحالية."
+        description="يُعتبر الطلب خاصًا بهذا الطالب: يُلحق بقسم الرابط وفق قواعد النقل المعتادة، ولا تُستبدل بياناته الشخصية الحالية."
         confirmLabel="ربط بالطالب الموجود"
         onConfirm={async () => linkTo && run({ kind: "link", id: sub.id, version: sub.version, studentId: linkTo.id }, "تم ربط الطلب بالطالب الموجود")}
       />

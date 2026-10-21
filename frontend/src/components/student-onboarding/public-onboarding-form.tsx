@@ -98,7 +98,7 @@ function OnboardingForm({
         <dl className="grid gap-3 rounded-lg bg-muted/50 p-3 text-sm sm:grid-cols-3">
           <Info2 label="الفرع" value={info.branchName} />
           <Info2 label="المجموعة" value={info.groupName} />
-          <Info2 label="الفوج" value={info.supervisorName ? `فوج ${info.supervisorName}` : "—"} />
+          <Info2 label="القسم" value={info.supervisorName ? `قسم ${info.supervisorName}` : "—"} />
         </dl>
       </Card>
 

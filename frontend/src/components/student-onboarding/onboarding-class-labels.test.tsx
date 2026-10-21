@@ -99,7 +99,7 @@ beforeEach(() => {
   setSession(authResponse("admin"))
 })
 
-describe("«إنشاء رابط استكمال» — الفوج", () => {
+describe("«إنشاء رابط استكمال» — القسم", () => {
   it("each class: its name and its own weekly schedule; the id is what is sent", async () => {
     const posts = routeFetch()
     renderWithClient(
@@ -112,14 +112,14 @@ describe("«إنشاء رابط استكمال» — الفوج", () => {
     fireEvent.click(await screen.findByRole("option", { name: "فرع المركز" }))
     fireEvent.click(within(sheet).getByRole("combobox", { name: /المجموعة/ }))
     fireEvent.click(await screen.findByRole("option", { name: "الماهر" }))
-    fireEvent.click(within(sheet).getByRole("combobox", { name: /الفوج/ }))
+    fireEvent.click(within(sheet).getByRole("combobox", { name: /القسم/ }))
     await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(4))
     const labels = screen.getAllByRole("option").map((o) => o.textContent)
     expect(labels).toEqual([
-      `فوج حمدي الشوك — الثلاثاء والخميس · ${range("08:30", "10:30")}`,
-      `فوج حمدي الشوك — السبت والأحد · ${range("14:00", "16:00")}`,
-      `فوج حمدي الشوك — الاثنين · ${range("09:00", "11:00")}، الأربعاء · ${range("15:00", "17:00")}`,
-      `فوج حمدي الشوك — الجمعة · ${range("10:00", "12:00")}`,
+      `قسم حمدي الشوك — الثلاثاء والخميس · ${range("08:30", "10:30")}`,
+      `قسم حمدي الشوك — السبت والأحد · ${range("14:00", "16:00")}`,
+      `قسم حمدي الشوك — الاثنين · ${range("09:00", "11:00")}، الأربعاء · ${range("15:00", "17:00")}`,
+      `قسم حمدي الشوك — الجمعة · ${range("10:00", "12:00")}`,
     ])
     expect(new Set(labels).size).toBe(4)
     // Pick the second one: its id is submitted, not its label
@@ -141,7 +141,7 @@ describe("«إنشاء رابط استكمال» — الفوج", () => {
     fireEvent.click(await screen.findByRole("option", { name: "فرع المركز" }))
     fireEvent.click(within(sheet).getByRole("combobox", { name: /المجموعة/ }))
     fireEvent.click(await screen.findByRole("option", { name: "الماهر" }))
-    fireEvent.click(within(sheet).getByRole("combobox", { name: /الفوج/ }))
-    expect((await screen.findByRole("option")).textContent).toBe("فوج حمدي الشوك — المواعيد غير محددة")
+    fireEvent.click(within(sheet).getByRole("combobox", { name: /القسم/ }))
+    expect((await screen.findByRole("option")).textContent).toBe("قسم حمدي الشوك — المواعيد غير محددة")
   })
 })

@@ -251,7 +251,7 @@ export class StudentOnboardingService {
       if (current)
         throw new ConflictException({
           code: 'ONBOARDING_LINK_EXISTS',
-          message: 'لهذا الفوج رابط قائم: مدّد صلاحيته أو أنشئ رابطًا بديلًا',
+          message: 'لهذا القسم رابط قائم: مدّد صلاحيته أو أنشئ رابطًا بديلًا',
           linkId: current.id,
         });
       return this.insertLink(tx, dto.groupClassId, expiresAt, actorUserId);
@@ -865,7 +865,7 @@ export class StudentOnboardingService {
   private async lockClass(tx: Tx, groupClassId: string) {
     const [row] = await tx.$queryRaw<{ id: string }[]>`
       SELECT id FROM group_classes WHERE id = ${groupClassId}::uuid FOR UPDATE`;
-    if (!row) throw notFound('GROUP_CLASS_NOT_FOUND', 'الفوج غير موجود');
+    if (!row) throw notFound('GROUP_CLASS_NOT_FOUND', 'القسم غير موجود');
   }
 
   private async lockLink(tx: Tx, id: string) {

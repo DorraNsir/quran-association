@@ -62,7 +62,7 @@ export function OnboardingShell({ children, actions }: { children: React.ReactNo
     <>
       <PageHeader
         title="استكمال بيانات الطلبة"
-        description="وحدة مؤقتة: رابط لكل فوج يملأ به الطلبة أو أولياؤهم بياناتهم، ثم تراجع الإدارة كل طلب قبل إضافة الطالب."
+        description="وحدة مؤقتة: رابط لكل قسم يملأ به الطلبة أو أولياؤهم بياناتهم، ثم تراجع الإدارة كل طلب قبل إضافة الطالب."
         actions={actions}
       />
       {status.data && !status.data.enabled && (
@@ -127,7 +127,7 @@ function LinksView({ lookups }: { lookups: Lookups }) {
   const columns: Column<OnboardingLink>[] = [
     { id: "branch", header: "الفرع", cell: (l) => l.groupClass.branch.name },
     { id: "group", header: "المجموعة", cell: (l) => <span className="font-medium">{l.groupClass.group.name}</span> },
-    { id: "class", header: "الفوج", cell: (l) => <span className="text-sm text-muted-foreground">{l.groupClass.supervisorName ? `فوج ${l.groupClass.supervisorName}` : "—"}</span> },
+    { id: "class", header: "القسم", cell: (l) => <span className="text-sm text-muted-foreground">{l.groupClass.supervisorName ? `قسم ${l.groupClass.supervisorName}` : "—"}</span> },
     {
       id: "status",
       header: "الحالة",
@@ -184,7 +184,7 @@ function LinksView({ lookups }: { lookups: Lookups }) {
           columns={columns}
           rows={links.data ?? []}
           getRowId={(l) => l.id}
-          emptyState={<EmptyState icon={Link2} title="لا توجد روابط بعد" description="أنشئ رابطًا لكل فوج ثم شاركه مع الطلبة أو أوليائهم." />}
+          emptyState={<EmptyState icon={Link2} title="لا توجد روابط بعد" description="أنشئ رابطًا لكل قسم ثم شاركه مع الطلبة أو أوليائهم." />}
         />
       </QueryState>
 
@@ -256,7 +256,7 @@ export function CreateLinkSheet({
       open={open}
       onOpenChange={onOpenChange}
       title="إنشاء رابط استكمال"
-      description="رابط واحد لكل فوج، صالح إلى غاية تاريخ انتهاء الصلاحية (بتوقيت تونس)."
+      description="رابط واحد لكل قسم، صالح إلى غاية تاريخ انتهاء الصلاحية (بتوقيت تونس)."
       submitLabel="إنشاء الرابط"
       pending={create.isPending}
       error={error}
@@ -276,7 +276,7 @@ export function CreateLinkSheet({
         }
       }}
     >
-      <FormSection title="الفوج">
+      <FormSection title="القسم">
         <FormField label="الفرع" required id="ob-branch" className="sm:col-span-2">
           <Select value={branchId} onValueChange={(v) => (setBranchId(v), setGroupId(""), setClassId(""))}>
             <SelectTrigger id="ob-branch" className="w-full"><SelectValue placeholder="اختر الفرع" /></SelectTrigger>
@@ -293,9 +293,9 @@ export function CreateLinkSheet({
             </SelectContent>
           </Select>
         </FormField>
-        <FormField label="الفوج" required id="ob-class" className="sm:col-span-2" error={tried && !classId ? "اختر الفوج" : undefined}>
+        <FormField label="القسم" required id="ob-class" className="sm:col-span-2" error={tried && !classId ? "اختر القسم" : undefined}>
           <Select value={classId} onValueChange={setClassId} disabled={!groupId}>
-            <SelectTrigger id="ob-class" className="w-full"><SelectValue placeholder="اختر الفوج" /></SelectTrigger>
+            <SelectTrigger id="ob-class" className="w-full"><SelectValue placeholder="اختر القسم" /></SelectTrigger>
             {/* As wide as the field: long labels (name + schedule) wrap instead of leaving the screen */}
             <SelectContent position="popper" className="max-w-(--radix-select-trigger-width)">
               {classes.map((c) => {
@@ -303,10 +303,10 @@ export function CreateLinkSheet({
                 const slots = participatingSchedulesOf(c.id, allSchedules.data ?? lookups.schedules)
                 return (
                   // Same supervisor, several classes: the schedule tells them apart
-                  // («فوج حمدي الشوك — الثلاثاء والخميس · 08:30 – 10:30»)
+                  // («قسم حمدي الشوك — الثلاثاء والخميس · 08:30 – 10:30»)
                   <SelectItem key={c.id} value={c.id}>
                     <span>
-                      {view.supervisor ? `فوج ${fullName(view.supervisor)}` : "فوج"} —{" "}
+                      {view.supervisor ? `قسم ${fullName(view.supervisor)}` : "قسم"} —{" "}
                       {slots.length === 0
                         ? NO_WEEKLY_SCHEDULE
                         : weeklyScheduleRanges(slots).map((r, i) => (
@@ -391,7 +391,7 @@ function ExpiryDialog({
           <DialogDescription>
             {title}.{" "}
             {mode === "replace"
-              ? "سيتوقف الرابط الحالي فورًا عن العمل ويُنشأ رابط جديد لنفس الفوج. تبقى الطلبات المرسلة سابقًا."
+              ? "سيتوقف الرابط الحالي فورًا عن العمل ويُنشأ رابط جديد لنفس القسم. تبقى الطلبات المرسلة سابقًا."
               : "يبقى الرابط نفسه صالحًا إلى غاية التاريخ الجديد."}
           </DialogDescription>
         </DialogHeader>

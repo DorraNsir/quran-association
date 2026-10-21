@@ -68,7 +68,7 @@ describe("public form /student-info/[token]", () => {
     expect(await screen.findByText("استكمال بيانات الطالب")).toBeTruthy()
     expect(screen.getByText("يرجى تعمير البيانات التالية لاستكمال تسجيلك في منظومة الجمعية.")).toBeTruthy()
     expect(screen.getByText("فرع المنزه")).toBeTruthy()
-    expect(screen.getByText("فوج سارة")).toBeTruthy()
+    expect(screen.getByText("قسم سارة")).toBeTruthy()
     expect(document.querySelector("input[type=password]")).toBeNull()
     expect(screen.queryByLabelText(/اسم المستخدم|كلمة المرور/)).toBeNull()
     expect(calls[0]).toMatchObject({ method: "POST", body: { token: TOKEN } })
