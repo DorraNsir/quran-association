@@ -1,6 +1,7 @@
 "use client"
 
-import { Archive, Eye, PauseCircle, Pencil, PlayCircle, Plus } from "lucide-react"
+import { Archive, ArrowRightLeft, Eye, PauseCircle, Pencil, PlayCircle, Plus } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { toast } from "sonner"
 
@@ -9,21 +10,24 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { classesOf, indexLookups, schedulesOf, type Lookups } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { errorMessage } from "@/lib/api/errors"
-import { useSaveClass, useSaveGroup, useSetClassStatus, useSetGroupStatus } from "@/lib/api/hooks/groups"
+import { useMoveClass, useSaveClass, useSaveGroup, useSetClassStatus, useSetGroupStatus } from "@/lib/api/hooks/groups"
 import { checkClassSlots } from "@/lib/scheduling"
 import type { Group, GroupClass, Student } from "@/types/domain"
 
+import { GROUP_CLASSES_ANCHOR } from "./anchors"
 import { ClassFormSheet } from "./class-form-sheet"
 import { GroupFormSheet } from "./group-form-sheet"
+import { MoveClassDialog } from "./move-class-dialog"
 
 export type GroupAction = "create" | "edit" | "deactivate" | "archive" | "activate" | "add-class"
-export type ClassAction = "edit-class" | "deactivate-class" | "archive-class" | "activate-class"
+export type ClassAction = "edit-class" | "move-class" | "deactivate-class" | "archive-class" | "activate-class"
 
 type DialogContent =
   | { kind: "group-form"; group?: Group }
   | { kind: "group-status"; group: Group; to: "INACTIVE" | "ARCHIVED" }
   | { kind: "class-form"; group: Group; groupClass?: GroupClass }
   | { kind: "class-status"; group: Group; groupClass: GroupClass; to: "INACTIVE" | "ARCHIVED" }
+  | { kind: "class-move"; group: Group; groupClass: GroupClass }
 
 type DialogState = DialogContent & { key: number; open: boolean }
 
@@ -37,6 +41,8 @@ export function useGroupDialogs({ lookups, students }: { lookups: Lookups; stude
   const setGroupStatus = useSetGroupStatus()
   const saveClass = useSaveClass()
   const setClassStatus = useSetClassStatus()
+  const moveClass = useMoveClass()
+  const router = useRouter()
   const { branchesById } = indexLookups(lookups)
 
   const close = (open: boolean) => {
@@ -89,6 +95,7 @@ export function useGroupDialogs({ lookups, students }: { lookups: Lookups; stude
 
   function runClass(action: ClassAction, group: Group, groupClass: GroupClass) {
     if (action === "edit-class") return openDialog({ kind: "class-form", group, groupClass })
+    if (action === "move-class") return openDialog({ kind: "class-move", group, groupClass })
     if (action === "deactivate-class" || action === "archive-class") {
       return openDialog({
         kind: "class-status",
@@ -191,6 +198,25 @@ export function useGroupDialogs({ lookups, students }: { lookups: Lookups; stude
           />
         )
       }
+      case "class-move":
+        return (
+          <MoveClassDialog
+            key={d.key}
+            open={d.open}
+            onOpenChange={close}
+            group={d.group}
+            groupClass={d.groupClass}
+            lookups={lookups}
+            students={students}
+            onConfirm={async (groupId) => {
+              await moveClass.mutateAsync({ id: d.groupClass.id, groupId })
+              toast.success(`تم نقل القسم إلى ${lookups.groups.find((g) => g.id === groupId)?.name ?? "المجموعة الجديدة"}`)
+              close(false)
+              // The class is now listed under its new group
+              router.push(`/admin/groups/${groupId}#${GROUP_CLASSES_ANCHOR}`)
+            }}
+          />
+        )
     }
   }
 
@@ -228,6 +254,7 @@ export function classActions(
 ): RowAction[] {
   const actions: RowAction[] = [
     { label: "تعديل القسم", icon: Pencil, onSelect: () => runClass("edit-class", group, groupClass) },
+    { label: "نقل القسم إلى مجموعة أخرى", icon: ArrowRightLeft, onSelect: () => runClass("move-class", group, groupClass) },
     groupClass.status === "ACTIVE"
       ? { label: "إيقاف القسم", icon: PauseCircle, separated: true, onSelect: () => runClass("deactivate-class", group, groupClass) }
       : { label: "إعادة التفعيل", icon: PlayCircle, separated: true, onSelect: () => runClass("activate-class", group, groupClass) },

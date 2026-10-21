@@ -284,6 +284,7 @@ model User {
   createdObligations        PaymentObligation[]    @relation("ObligationCreator")
   voidedObligations         PaymentObligation[]    @relation("ObligationVoider")
   obligationTransfers       ObligationTransfer[]
+  groupClassMoves           GroupClassMove[]
   graduateConsents          QuranGraduate[]        @relation("GraduateConsentRecorder")
   uploadedFiles             StoredFile[]           @relation("FileUploader")
   publishedResources        Resource[]
@@ -473,6 +474,8 @@ model Group {
 
   classes              GroupClass[]
   fees                 GroupFee[]
+  classesMovedOut      GroupClassMove[]      @relation("ClassMoveFrom")
+  classesMovedIn       GroupClassMove[]      @relation("ClassMoveTo")
   obligations          PaymentObligation[]
   resourceTargets      ResourceTarget[]
   publicListings       PublicGroupListing[]
@@ -499,6 +502,8 @@ model GroupClass {
   supervisor Teacher @relation("GroupClassSupervisor", fields: [supervisorId], references: [id], onDelete: Restrict)
 
   assistants            GroupClassAssistant[]
+  /// «نقل القسم إلى مجموعة أخرى»: every correction of its group (audit)
+  moves                 GroupClassMove[]
   students              Student[]
   enrollments           StudentEnrollment[]
   schedules             WeeklySchedule[]
@@ -521,6 +526,26 @@ model GroupClass {
 }
 
 /// Assistant teachers of a class (the supervisor is GroupClass.supervisorId).
+/// «نقل القسم إلى مجموعة أخرى»: a class created under the wrong group,
+/// corrected (only a class that never had a student nor recorded activity —
+/// see GroupClassesService.move). Append-only history.
+model GroupClassMove {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  groupClassId  String   @db.Uuid
+  fromGroupId   String   @db.Uuid
+  toGroupId     String   @db.Uuid
+  movedByUserId String   @db.Uuid
+  movedAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  groupClass GroupClass @relation(fields: [groupClassId], references: [id], onDelete: Restrict)
+  fromGroup  Group      @relation("ClassMoveFrom", fields: [fromGroupId], references: [id], onDelete: Restrict)
+  toGroup    Group      @relation("ClassMoveTo", fields: [toGroupId], references: [id], onDelete: Restrict)
+  movedBy    User       @relation(fields: [movedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([groupClassId, movedAt])
+  @@map("group_class_moves")
+}
+
 model GroupClassAssistant {
   groupClassId String   @db.Uuid
   teacherId    String   @db.Uuid

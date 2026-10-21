@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 
 import {
   badRequest,
@@ -31,6 +31,8 @@ import type {
   GroupClassDto,
   GroupClassListDto,
   GroupClassListQueryDto,
+  MoveBlockDto,
+  MoveGroupClassPreviewDto,
   UpdateGroupClassDto,
 } from './group-class.dto.js';
 
@@ -385,6 +387,201 @@ export class GroupClassesService {
       { timeout: 30_000 },
     );
     return this.get(id);
+  }
+
+  // ─────────────── «نقل القسم إلى مجموعة أخرى» ───────────────
+
+  /** What moving the class to `groupId` would do (read-only). */
+  async movePreview(
+    id: string,
+    groupId: string,
+  ): Promise<MoveGroupClassPreviewDto> {
+    return this.movePlan(this.prisma, id, groupId);
+  }
+
+  /**
+   * Corrects the group of a class created under the wrong one: only a class
+   * that never had a student nor any recorded activity, whose running state
+   * stays the same. Only `groupId` changes (same id, teachers, branch,
+   * weekly slots and planned sessions); the move is recorded. Everything is
+   * checked again here, under locks: the class row (FOR UPDATE — enrollment
+   * paths take it FOR SHARE first; FK inserts wait for it), the sessions it
+   * takes part in (attendance / completion / work writers lock them), both
+   * groups (their status), and the scheduling lock.
+   */
+  async move(
+    id: string,
+    groupId: string,
+    actorUserId: string,
+  ): Promise<GroupClassDetailDto> {
+    await this.prisma.$transaction(async (tx) => {
+      await this.lock(tx, id);
+      await tx.$queryRaw`SELECT s.id FROM sessions s
+        WHERE s."groupClassId" = ${id}::uuid
+           OR EXISTS (SELECT 1 FROM session_classes sc
+                      WHERE sc."sessionId" = s.id AND sc."groupClassId" = ${id}::uuid)
+        FOR UPDATE`;
+      const plan = await this.movePlan(tx, id, groupId, { lockGroups: true });
+      if (!plan.eligible)
+        throw new ConflictException({
+          code: 'GROUP_CLASS_MOVE_REFUSED',
+          message: `لا يمكن نقل هذا القسم: ${plan.blocks.map((b) => b.message).join('؛ ')}`,
+          blocks: plan.blocks,
+        });
+      await tx.groupClass.update({ where: { id }, data: { groupId } });
+      await tx.groupClassMove.create({
+        data: {
+          groupClassId: id,
+          fromGroupId: plan.from.id,
+          toGroupId: groupId,
+          movedByUserId: actorUserId,
+        },
+      });
+    });
+    return this.get(id);
+  }
+
+  private async movePlan(
+    db: Tx,
+    id: string,
+    groupId: string,
+    options: { lockGroups?: boolean } = {},
+  ): Promise<MoveGroupClassPreviewDto> {
+    const current = await db.groupClass.findUnique({
+      where: { id },
+      select: {
+        status: true,
+        groupId: true,
+        supervisorId: true,
+        _count: { select: { assistants: true, onboardingLinks: true } },
+      },
+    });
+    if (!current) throw classNotFound();
+    if (options.lockGroups)
+      await db.$queryRaw`SELECT id FROM groups
+        WHERE id IN (${current.groupId}::uuid, ${groupId}::uuid) FOR SHARE`;
+    const [from, to] = await Promise.all(
+      [current.groupId, groupId].map((g) =>
+        db.group.findUnique({
+          where: { id: g },
+          select: { id: true, name: true, status: true },
+        }),
+      ),
+    );
+    if (!to) throw groupNotFound();
+    const [counts] = await db.$queryRaw<
+      {
+        enrollments: bigint;
+        attendance: bigint;
+        completed: bigint;
+        work: bigint;
+        notes: bigint;
+        submissions: bigint;
+        planned: bigint;
+        slots: bigint;
+      }[]
+    >`
+      WITH s AS (
+        SELECT s.id, s.status FROM sessions s
+        WHERE s."groupClassId" = ${id}::uuid
+           OR EXISTS (SELECT 1 FROM session_classes sc
+                      WHERE sc."sessionId" = s.id AND sc."groupClassId" = ${id}::uuid))
+      SELECT
+        (SELECT COUNT(DISTINCT e."studentId") FROM student_enrollments e WHERE e."groupClassId" = ${id}::uuid)
+          + (SELECT COUNT(*) FROM students st WHERE st."groupClassId" = ${id}::uuid
+               AND NOT EXISTS (SELECT 1 FROM student_enrollments e
+                               WHERE e."studentId" = st.id AND e."groupClassId" = ${id}::uuid)) AS enrollments,
+        (SELECT COUNT(*) FROM s WHERE EXISTS (SELECT 1 FROM student_attendance a WHERE a."sessionId" = s.id)
+            OR EXISTS (SELECT 1 FROM teacher_attendance a WHERE a."sessionId" = s.id)
+            OR EXISTS (SELECT 1 FROM attendance_changes a WHERE a."sessionId" = s.id)) AS attendance,
+        (SELECT COUNT(*) FROM s WHERE s.status = 'COMPLETED') AS completed,
+        (SELECT COUNT(*) FROM work_programs w WHERE w."sessionId" IN (SELECT id FROM s)) AS work,
+        (SELECT COUNT(*) FROM teacher_notes n WHERE n."groupClassId" = ${id}::uuid) AS notes,
+        (SELECT COUNT(*) FROM onboarding_submissions o WHERE o."groupClassId" = ${id}::uuid) AS submissions,
+        (SELECT COUNT(*) FROM s WHERE s.status = 'SCHEDULED') AS planned,
+        (SELECT COUNT(*) FROM weekly_schedules w WHERE w."groupClassId" = ${id}::uuid
+            OR EXISTS (SELECT 1 FROM weekly_schedule_classes x
+                       WHERE x."weeklyScheduleId" = w.id AND x."groupClassId" = ${id}::uuid)) AS slots`;
+    const n = (v: bigint) => Number(v);
+    const blocks: MoveBlockDto[] = [];
+    const block = (
+      code: MoveBlockDto['code'],
+      count: number,
+      message: string,
+    ) => blocks.push({ code, count, message });
+    if (to.id === from!.id)
+      block('SAME_GROUP', 0, 'القسم ينتمي أصلًا إلى هذه المجموعة');
+    if (to.status === RecordStatus.ARCHIVED)
+      block('DESTINATION_ARCHIVED', 0, 'المجموعة المختارة مؤرشفة');
+    const running = (g: { status: RecordStatus }) =>
+      current.status === RecordStatus.ACTIVE &&
+      g.status === RecordStatus.ACTIVE;
+    if (to.status !== RecordStatus.ARCHIVED && running(from!) !== running(to))
+      block(
+        'RUNNING_STATE_CHANGES',
+        0,
+        running(from!)
+          ? 'المجموعة المختارة غير نشطة: سيتوقف القسم عن العمل. فعّل المجموعة أولًا أو اختر مجموعة نشطة'
+          : 'المجموعة المختارة نشطة بينما المجموعة الحالية غير نشطة: سيبدأ القسم في العمل دون مراجعة مواعيده. اختر مجموعة غير نشطة أو فعّل القسم بعد نقله',
+      );
+    if (n(counts.enrollments))
+      block(
+        'HAS_STUDENTS',
+        n(counts.enrollments),
+        `سُجّل في هذا القسم ${n(counts.enrollments)} طالب (حاليًا أو سابقًا). أنشئ القسم في المجموعة الصحيحة، ثم انقل الطلبة إليه عبر «تغيير المجموعة» (مع تسوية مستحقاتهم)`,
+      );
+    if (n(counts.attendance))
+      block(
+        'HAS_ATTENDANCE',
+        n(counts.attendance),
+        `سُجّل الحضور في ${n(counts.attendance)} حصة من حصصه`,
+      );
+    if (n(counts.completed))
+      block(
+        'HAS_COMPLETED_SESSIONS',
+        n(counts.completed),
+        `له ${n(counts.completed)} حصة منجزة`,
+      );
+    if (n(counts.work))
+      block('HAS_WORK', n(counts.work), 'سُجّلت أعمال «متابعة العمل» في حصصه');
+    if (n(counts.notes))
+      block(
+        'HAS_TEACHER_NOTES',
+        n(counts.notes),
+        'كُتبت ملاحظات معلمين مرتبطة به',
+      );
+    if (n(counts.submissions))
+      block(
+        'HAS_ONBOARDING_SUBMISSIONS',
+        n(counts.submissions),
+        `وصلته ${n(counts.submissions)} استمارة «استكمال بيانات الطلبة»`,
+      );
+    const year = await db.academicYear.findFirst({
+      where: { isCurrent: true },
+      select: { id: true },
+    });
+    const fee = year
+      ? await db.groupFee.findFirst({
+          where: { groupId: to.id, academicYearId: year.id, isActive: true },
+          select: { amount: true, numberOfPeriods: true },
+        })
+      : null;
+    return {
+      groupClassId: id,
+      from: from!,
+      to,
+      eligible: blocks.length === 0,
+      blocks,
+      keeps: {
+        weeklySchedules: n(counts.slots),
+        plannedSessions: n(counts.planned),
+        teachers: 1 + current._count.assistants,
+        onboardingLinks: current._count.onboardingLinks,
+      },
+      destinationFee: fee
+        ? fee.amount.times(fee.numberOfPeriods).toFixed(3)
+        : null,
+    };
   }
 
   // ───────────────────────── rules ─────────────────────────

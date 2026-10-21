@@ -648,6 +648,9 @@ export class StudentsService {
   }
 
   private async assertClassOpen(tx: Tx, groupClassId: string) {
+    // Shared lock: a move of the class to another group («نقل القسم») waits
+    // for this enrollment, or this enrollment for the move — never both at once
+    await tx.$queryRaw`SELECT id FROM group_classes WHERE id = ${groupClassId}::uuid FOR SHARE`;
     const groupClass = await tx.groupClass.findUnique({
       where: { id: groupClassId },
       select: { status: true },

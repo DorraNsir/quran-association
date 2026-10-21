@@ -167,3 +167,74 @@ export class GroupClassListDto {
   @ApiProperty({ type: GroupClassDto, isArray: true }) data!: GroupClassDto[];
   @ApiProperty({ type: PaginationMetaDto }) meta!: PaginationMetaDto;
 }
+
+/* ─────────────── «نقل القسم إلى مجموعة أخرى» ─────────────── */
+
+export class MoveGroupClassDto {
+  @ApiProperty({ format: 'uuid', description: 'The destination group' })
+  @IsUUID()
+  groupId!: string;
+}
+
+/** Why a class cannot be moved (it never had students nor activity, or it would stop / start running) */
+export const MOVE_BLOCKS = [
+  'SAME_GROUP',
+  'DESTINATION_ARCHIVED',
+  'RUNNING_STATE_CHANGES',
+  'HAS_STUDENTS',
+  'HAS_ATTENDANCE',
+  'HAS_COMPLETED_SESSIONS',
+  'HAS_WORK',
+  'HAS_TEACHER_NOTES',
+  'HAS_ONBOARDING_SUBMISSIONS',
+] as const;
+export type MoveBlock = (typeof MOVE_BLOCKS)[number];
+
+export class MoveBlockDto {
+  @ApiProperty({ enum: MOVE_BLOCKS }) code!: MoveBlock;
+  @ApiProperty({
+    description: 'How many records cause it (0 when not countable)',
+  })
+  count!: number;
+  @ApiProperty({ description: 'Arabic explanation' }) message!: string;
+}
+
+class MoveGroupRefDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty({ enum: RecordStatus, enumName: 'RecordStatus' })
+  status!: RecordStatus;
+}
+
+class MoveKeepsDto {
+  @ApiProperty({ description: 'Weekly slots it hosts or shares' })
+  weeklySchedules!: number;
+  @ApiProperty({
+    description: 'Planned sessions (no activity) it takes part in',
+  })
+  plannedSessions!: number;
+  @ApiProperty({ description: 'Supervisor + assistants' }) teachers!: number;
+  @ApiProperty({ description: 'Onboarding links of the class' })
+  onboardingLinks!: number;
+}
+
+/** What «نقل القسم إلى مجموعة أخرى» would do (read-only) */
+export class MoveGroupClassPreviewDto {
+  @ApiProperty() groupClassId!: string;
+  @ApiProperty({ type: MoveGroupRefDto }) from!: MoveGroupRefDto;
+  @ApiProperty({ type: MoveGroupRefDto }) to!: MoveGroupRefDto;
+  @ApiProperty() eligible!: boolean;
+  @ApiProperty({ type: MoveBlockDto, isArray: true }) blocks!: MoveBlockDto[];
+  @ApiProperty({
+    type: MoveKeepsDto,
+    description: 'What stays attached to the class (same id)',
+  })
+  keeps!: MoveKeepsDto;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'The destination group fee for the current academic year (charged to its future students)',
+  })
+  destinationFee!: string | null;
+}
