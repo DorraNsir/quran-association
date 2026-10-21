@@ -283,6 +283,7 @@ model User {
   deactivatedGroupFees      GroupFee[]             @relation("GroupFeeDeactivator")
   createdObligations        PaymentObligation[]    @relation("ObligationCreator")
   voidedObligations         PaymentObligation[]    @relation("ObligationVoider")
+  obligationTransfers       ObligationTransfer[]
   graduateConsents          QuranGraduate[]        @relation("GraduateConsentRecorder")
   uploadedFiles             StoredFile[]           @relation("FileUploader")
   publishedResources        Resource[]
@@ -370,6 +371,7 @@ model Student {
   /// TEMPORARY onboarding submissions approved as this student (optional back-link)
   onboardingSubmissions OnboardingSubmission[]
   paymentObligations    PaymentObligation[]
+  obligationTransfers   ObligationTransfer[]
   registrationRequest   RegistrationRequest?
   graduateEntries       QuranGraduate[]
 
@@ -927,37 +929,77 @@ model GroupFee {
 /// fee change never rewrites history. Status (UNPAID/PARTIAL/PAID) is derived
 /// from the sum of payments — not stored.
 model PaymentObligation {
-  id              String    @id @default(uuid(7)) @db.Uuid
-  studentId       String    @db.Uuid
-  groupFeeId      String    @db.Uuid
+  id                   String    @id @default(uuid(7)) @db.Uuid
+  studentId            String    @db.Uuid
+  groupFeeId           String    @db.Uuid
   /// Copied from the fee (composite FK guarantees they match)
-  groupId         String    @db.Uuid
-  academicYearId  String    @db.Uuid
+  groupId              String    @db.Uuid
+  academicYearId       String    @db.Uuid
   /// Frozen at creation: fee changes never rewrite it
-  expectedAmount  Decimal   @db.Decimal(10, 3)
-  note            String?
-  createdByUserId String?   @db.Uuid
+  expectedAmount       Decimal   @db.Decimal(10, 3)
+  note                 String?
+  createdByUserId      String?   @db.Uuid
   /// Correction: a mistaken obligation (without valid payments) is voided, never deleted
-  voidedAt        DateTime? @db.Timestamptz(3)
-  voidedByUserId  String?   @db.Uuid
-  voidReason      String?
-  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
+  voidedAt             DateTime? @db.Timestamptz(3)
+  voidedByUserId       String?   @db.Uuid
+  voidReason           String?
+  /// Set (once) when the student moved to another group: its settled amount
+  /// went to the new group's obligation (ObligationTransfer). Not live any more
+  closedAt             DateTime? @db.Timestamptz(3)
+  /// «تعديل المعلوم»: the voided obligation this one replaces (same student, group and year)
+  replacesObligationId String?   @unique @db.Uuid
+  createdAt            DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime  @updatedAt @db.Timestamptz(3)
 
-  student      Student      @relation(fields: [studentId], references: [id], onDelete: Restrict)
-  groupFee     GroupFee     @relation(fields: [groupFeeId, groupId, academicYearId], references: [id, groupId, academicYearId], onDelete: Restrict)
-  group        Group        @relation(fields: [groupId], references: [id], onDelete: Restrict)
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
-  createdBy    User?        @relation("ObligationCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  voidedBy     User?        @relation("ObligationVoider", fields: [voidedByUserId], references: [id], onDelete: Restrict)
+  student      Student              @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  groupFee     GroupFee             @relation(fields: [groupFeeId, groupId, academicYearId], references: [id, groupId, academicYearId], onDelete: Restrict)
+  group        Group                @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear         @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  createdBy    User?                @relation("ObligationCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  voidedBy     User?                @relation("ObligationVoider", fields: [voidedByUserId], references: [id], onDelete: Restrict)
   payments     Payment[]
+  replaces     PaymentObligation?   @relation("ObligationReplacement", fields: [replacesObligationId], references: [id], onDelete: Restrict)
+  replacedBy   PaymentObligation?   @relation("ObligationReplacement")
+  transfersOut ObligationTransfer[] @relation("TransferFrom")
+  transfersIn  ObligationTransfer[] @relation("TransferTo")
 
-  /// One live obligation per student, group and academic year (the billing period)
-  @@unique([studentId, groupId, academicYearId], map: "payment_obligations_one_live_key", where: raw("\"voidedAt\" IS NULL"))
+  /// One live obligation per student, group and academic year (the billing period); voided and closed ones are history
+  @@unique([studentId, groupId, academicYearId], map: "payment_obligations_one_live_key", where: raw("\"voidedAt\" IS NULL AND \"closedAt\" IS NULL"))
   @@index([studentId, academicYearId])
   @@index([groupId, academicYearId])
   @@index([groupFeeId])
   @@map("payment_obligations")
+}
+
+/// A student moved to another group in the same academic year («نقل مالي»):
+/// the old obligation is released in full and closed, and what was settled on
+/// it (cash + credit received) becomes credit on the new group's obligation.
+/// Payments are never moved or rewritten; cash reports count payments only.
+/// Immutable (trigger); at most one transfer out of an obligation.
+model ObligationTransfer {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  studentId        String   @db.Uuid
+  fromObligationId String   @unique @db.Uuid
+  toObligationId   String   @db.Uuid
+  /// What the old obligation no longer requires (full replacement: all of it)
+  releasedAmount   Decimal  @db.Decimal(10, 3)
+  /// Settled on the old obligation and counted on the new one
+  creditAmount     Decimal  @db.Decimal(10, 3)
+  /// Settled beyond what the new obligation requires: stays on the old one («رصيد زائد»)
+  excessAmount     Decimal  @db.Decimal(10, 3)
+  effectiveDate    DateTime @db.Date
+  reason           String
+  createdByUserId  String   @db.Uuid
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  student   Student           @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  from      PaymentObligation @relation("TransferFrom", fields: [fromObligationId], references: [id], onDelete: Restrict)
+  to        PaymentObligation @relation("TransferTo", fields: [toObligationId], references: [id], onDelete: Restrict)
+  createdBy User              @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([toObligationId])
+  @@index([studentId])
+  @@map("obligation_transfers")
 }
 
 /// One cash transaction. The student is derived from the obligation; the

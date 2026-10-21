@@ -12,9 +12,13 @@ import type {
 } from './finance.dto.js';
 import { CURRENCY, money, ZERO } from './money.js';
 import {
+  CREDIT_IN,
+  CREDIT_OUT,
   DERIVED_STATUS,
   LIVE_PAID,
   ObligationsService,
+  REQUIRED,
+  SETTLED,
 } from './obligations.service.js';
 
 /**
@@ -81,14 +85,25 @@ export class FinanceSummaryService {
       },
       _count: { _all: true },
     });
-    const sum = (key: 'expectedAmount' | 'totalPaid' | 'remainingAmount') =>
-      money(
-        obligations.reduce(
-          (total, o) => total.plus(o[key]),
-          new Prisma.Decimal(0),
-        ),
+    const sum = (
+      key:
+        | 'requiredAmount'
+        | 'totalPaid'
+        | 'remainingAmount'
+        | 'excessAmount'
+        | 'creditIn'
+        | 'creditOut',
+    ) =>
+      obligations.reduce(
+        (total, o) => total.plus(o[key]),
+        new Prisma.Decimal(0),
       );
-    const statusCounts: StatusCountsDto = { UNPAID: 0, PARTIAL: 0, PAID: 0 };
+    const statusCounts: StatusCountsDto = {
+      UNPAID: 0,
+      PARTIAL: 0,
+      PAID: 0,
+      CLOSED: 0,
+    };
     for (const o of obligations) statusCounts[o.status] += 1;
 
     const { person, groupClass, ...rest } = student;
@@ -98,9 +113,11 @@ export class FinanceSummaryService {
       currency: CURRENCY,
       obligations,
       totals: {
-        expectedAmount: sum('expectedAmount'),
-        totalPaid: sum('totalPaid'),
-        remainingAmount: sum('remainingAmount'),
+        expectedAmount: money(sum('requiredAmount')),
+        totalPaid: money(sum('totalPaid')),
+        creditAmount: money(sum('creditIn').minus(sum('creditOut'))),
+        remainingAmount: money(sum('remainingAmount')),
+        excessAmount: money(sum('excessAmount')),
       },
       statusCounts,
       receipts: {
@@ -147,22 +164,31 @@ export class FinanceSummaryService {
     const [balances] = await this.prisma.$queryRaw<
       {
         count: bigint;
-        expected: Prisma.Decimal | null;
-        paid: Prisma.Decimal | null;
+        required: Prisma.Decimal | null;
+        cash: Prisma.Decimal | null;
+        credit: Prisma.Decimal | null;
+        remaining: Prisma.Decimal | null;
+        excess: Prisma.Decimal | null;
         unpaid_count: bigint;
         partial_count: bigint;
         paid_count: bigint;
+        closed_count: bigint;
       }[]
     >`
       WITH b AS (
-        SELECT o."expectedAmount" AS expected, ${LIVE_PAID} AS paid,
+        SELECT ${REQUIRED} AS required, ${LIVE_PAID} AS cash,
+               ${CREDIT_IN} - ${CREDIT_OUT} AS credit, ${SETTLED} AS settled,
                ${DERIVED_STATUS} AS status
         FROM payment_obligations o WHERE ${where}
       )
-      SELECT COUNT(*) AS count, SUM(expected) AS expected, SUM(paid) AS paid,
+      SELECT COUNT(*) AS count, SUM(required) AS required, SUM(cash) AS cash,
+             SUM(credit) AS credit,
+             SUM(GREATEST(required - settled, 0)) AS remaining,
+             SUM(GREATEST(settled - required, 0)) AS excess,
              COUNT(*) FILTER (WHERE status = 'UNPAID') AS unpaid_count,
              COUNT(*) FILTER (WHERE status = 'PARTIAL') AS partial_count,
-             COUNT(*) FILTER (WHERE status = 'PAID') AS paid_count
+             COUNT(*) FILTER (WHERE status = 'PAID') AS paid_count,
+             COUNT(*) FILTER (WHERE status = 'CLOSED') AS closed_count
       FROM b`;
     const [collected] = await this.prisma.$queryRaw<
       {
@@ -179,21 +205,23 @@ export class FinanceSummaryService {
       FROM payments p JOIN payment_obligations o ON o.id = p."obligationId"
       WHERE ${where} AND ${paidRange}`;
 
-    const expected = new Prisma.Decimal(balances.expected ?? ZERO);
-    const paid = new Prisma.Decimal(balances.paid ?? ZERO);
     return {
       currency: CURRENCY,
       obligationsCount: Number(balances.count),
+      // Cash and credit are separate: credit carried between groups is never
+      // counted as money received (it nets to 0 association-wide)
       totals: {
-        expectedAmount: money(expected),
-        totalPaid: money(paid),
-        // Live payments never exceed an obligation, so this is Σ remaining
-        remainingAmount: money(expected.minus(paid)),
+        expectedAmount: money(balances.required ?? ZERO),
+        totalPaid: money(balances.cash ?? ZERO),
+        creditAmount: money(balances.credit ?? ZERO),
+        remainingAmount: money(balances.remaining ?? ZERO),
+        excessAmount: money(balances.excess ?? ZERO),
       },
       statusCounts: {
         UNPAID: Number(balances.unpaid_count),
         PARTIAL: Number(balances.partial_count),
         PAID: Number(balances.paid_count),
+        CLOSED: Number(balances.closed_count),
       },
       collected: {
         paymentsCount: Number(collected.count),

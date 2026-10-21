@@ -39,7 +39,12 @@ import type { GroupFee, Payment } from "@/types/domain"
 
 /** Informational only — never a student or access status. */
 export function PaymentStatusBadge({ status, className }: { status: PaymentStatus; className?: string }) {
-  const tone = { PAID: "bg-brand-soft text-brand-soft-foreground", PARTIAL: "bg-muted text-foreground", UNPAID: "bg-muted text-muted-foreground" }[status]
+  const tone = {
+    PAID: "bg-brand-soft text-brand-soft-foreground",
+    PARTIAL: "bg-muted text-foreground",
+    UNPAID: "bg-muted text-muted-foreground",
+    CLOSED: "border border-dashed bg-transparent text-muted-foreground",
+  }[status]
   return <Badge className={cn("font-normal", tone, className)}>{PAYMENT_STATUS_LABEL[status]}</Badge>
 }
 
@@ -58,22 +63,41 @@ export function ReceiptBadge({ issued }: { issued: boolean }) {
   )
 }
 
-/** Expected / paid / remaining for one obligation. */
+/**
+ * Required / paid (cash) / remaining for one obligation, with the credit
+ * carried between groups (never cash) and any «رصيد زائد» stated apart.
+ */
 export function ObligationFigures({ summary, className }: { summary: ObligationSummary; className?: string }) {
   const items = [
     ["المبلغ المطلوب", summary.expected],
     ["المدفوع", summary.paid],
     ["المتبقي", summary.remaining],
   ] as const
+  const notes = [
+    ...(summary.creditsFrom ?? []).map((c) => `رصيد محوّل من مجموعة «${c.groupName}»: ${formatMoney(c.amount)}`),
+    ...(summary.closedToGroup
+      ? [`أُغلق بنقل الطالب إلى مجموعة «${summary.closedToGroup}»${summary.creditOut ? ` — حُوِّل ${formatMoney(summary.creditOut)} رصيدًا` : ""}`]
+      : []),
+    ...(summary.excess ? [`رصيد زائد: ${formatMoney(summary.excess)} (يُعالج من الإدارة)`] : []),
+  ]
   return (
-    <dl className={cn("grid grid-cols-3 gap-2", className)}>
-      {items.map(([label, value]) => (
-        <div key={label} className="rounded-lg border bg-card p-2.5">
-          <dt className="text-xs text-muted-foreground">{label}</dt>
-          <dd className="font-semibold tabular-nums">{formatMoney(value)}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className={cn("space-y-2", className)}>
+      <dl className="grid grid-cols-3 gap-2">
+        {items.map(([label, value]) => (
+          <div key={label} className="rounded-lg border bg-card p-2.5">
+            <dt className="text-xs text-muted-foreground">{label}</dt>
+            <dd className="font-semibold tabular-nums">{formatMoney(value)}</dd>
+          </div>
+        ))}
+      </dl>
+      {notes.length > 0 && (
+        <ul className="space-y-1 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          {notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 

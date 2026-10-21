@@ -140,6 +140,35 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
   const pay = (obligationId: string, amount: string | number, extra = {}) =>
     admin.post('payments', { obligationId, amount, ...extra });
 
+  /** «تعديل المعلوم»: a new version, with the reprice preview's obligations confirmed */
+  const setFee = async (
+    groupKey: string,
+    body: Record<string, unknown>,
+    status = 200,
+  ) => {
+    const preview = await admin
+      .get(
+        `groups/${id[groupKey]}/fees/reprice-preview`,
+        Object.fromEntries(
+          Object.entries({
+            academicYearId: body.academicYearId,
+            amount: String(body.amount),
+            billingType: body.billingType,
+            numberOfPeriods: body.numberOfPeriods,
+          }).filter(([, v]) => v !== undefined),
+        ),
+      )
+      .expect(200);
+    return admin
+      .put(`groups/${id[groupKey]}/fees`, {
+        ...body,
+        repriceObligationIds: (
+          preview.body.toUpdate as { obligationId: string }[]
+        ).map((o) => o.obligationId),
+      })
+      .expect(status);
+  };
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -260,6 +289,10 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
     const groups = { name: { endsWith: RUN } };
     await prisma.payment.deleteMany({
       where: { obligation: { group: groups } },
+    });
+    // Replacements («تعديل المعلوم») before the obligations they replace (RESTRICT)
+    await prisma.paymentObligation.deleteMany({
+      where: { group: groups, replacesObligationId: { not: null } },
     });
     await prisma.paymentObligation.deleteMany({ where: { group: groups } });
     await prisma.groupFee.deleteMany({ where: { group: groups } });
@@ -946,14 +979,13 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
       ).body.data;
       expect(first).toHaveLength(1);
       id.feeG1v1 = first[0].id;
-      const v2 = await admin
-        .put(`groups/${id.G1}/fees`, {
-          academicYearId: id.year,
-          label: 'معلوم سنوي',
-          billingType: 'YEARLY',
-          amount: 60.5,
-        })
-        .expect(200);
+      // Members never paid: confirmed and repriced to the new version (below)
+      const v2 = await setFee('G1', {
+        academicYearId: id.year,
+        label: 'معلوم سنوي',
+        billingType: 'YEARLY',
+        amount: 60.5,
+      });
       expect(v2.body.amount).toBe('60.500');
       id.feeG1v2 = v2.body.id;
       const history = (await admin.get(`groups/${id.G1}/fees`)).body.data;
@@ -1024,9 +1056,9 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
       ]);
 
     it('bills students automatically: fee set, new student, reactivation — once, amount frozen', async () => {
-      // Members when the G1 fee (60) was set; the later version (60.5) adds nothing and changes nothing
+      // Members when the G1 fee (60) was set, never paid: repriced to the later version (60.5)
       for (const s of ['S1', 'S2', 'S4'])
-        expect(await amounts(id[s])).toEqual([[id.G1, '60.000']]);
+        expect(await amounts(id[s])).toEqual([[id.G1, '60.500']]);
       expect(await amounts(id.S3)).toEqual([[id.G2, '40.000']]);
 
       // A new student joins a group with a fee: charged the CURRENT fee at once
@@ -1124,8 +1156,8 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
             },
             select: { studentId: true, groupFeeId: true, expectedAmount: true },
           });
-          // G1 members: charged the ACTIVE fee (their voided charge was another fee version);
-          // S3's charge for feeG2 was voided: not recreated
+          // Every voided charge was for the ACTIVE fee version (the G1 members'
+          // repriced charges, S3's feeG2 charge): none is recreated
           expect(
             rows
               .map((r) => [
@@ -1134,11 +1166,7 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
                 r.expectedAmount.toFixed(3),
               ])
               .sort(byFirst),
-          ).toEqual(
-            ['S1', 'S2', 'S4']
-              .map((k) => [id[k], id.feeG1v2, '60.500'])
-              .sort(byFirst),
-          );
+          ).toEqual([]);
           // Running it again adds nothing
           expect(await tx.$executeRawUnsafe(sql)).toBe(0);
           throw ROLLBACK;
@@ -1217,15 +1245,34 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
         .expect(400);
     });
 
-    it('a later fee change never alters existing obligations', async () => {
-      const v3 = await admin
-        .put(`groups/${id.G1}/fees`, {
+    it('a later fee change keeps an obligation with payment history (here: a reversed payment)', async () => {
+      // A payment recorded then voided: S1's obligation has payment history
+      id.p0 = (await pay(id.oS1, '1').expect(201)).body.id;
+      await admin
+        .post(`payments/${id.p0}/void`, { reason: 'دفعة مسجّلة خطأ' })
+        .expect(200);
+      const preview = await admin
+        .get(`groups/${id.G1}/fees/reprice-preview`, {
           academicYearId: id.year,
-          label: 'معلوم سنوي',
-          billingType: 'YEARLY',
           amount: '80',
         })
         .expect(200);
+      expect(preview.body).toMatchObject({
+        newTotalAmount: '80.000',
+        toUpdate: [],
+        protected: [
+          expect.objectContaining({
+            obligationId: id.oS1,
+            reasons: ['HAS_VOIDED_PAYMENTS'],
+          }),
+        ],
+      });
+      const v3 = await setFee('G1', {
+        academicYearId: id.year,
+        label: 'معلوم سنوي',
+        billingType: 'YEARLY',
+        amount: '80',
+      });
       id.feeG1v3 = v3.body.id;
       expect(
         (await admin.get(`payment-obligations/${id.oS1}`)).body.expectedAmount,
@@ -1263,7 +1310,7 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
       ).rejects.toThrow(/payment_obligations_amount_matches_fee/);
     });
 
-    it('a transfer to another group charges that group once; existing charges never change', async () => {
+    it('a class change in the same group changes nothing; another group needs the financial transfer confirmed', async () => {
       const before = await prisma.paymentObligation.count({
         where: { studentId: id.S1 },
       });
@@ -1273,52 +1320,45 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
           effectiveDate: addDays(TODAY, -10),
         })
         .expect(200);
-      await admin
+      // C2 is G2: refused until the transfer is confirmed (see schedule of
+      // «نقل مالي» in fee-repricing-transfers.e2e-spec.ts); nothing changes
+      const refused = await admin
         .patch(`students/${id.S1}/group-class`, { groupClassId: id.C2 })
-        .expect(200);
-      // C1b is the same group (nothing new); C2 is G2: charged its fee once
+        .expect(409);
+      expect(refused.body.code).toBe('FINANCIAL_TRANSFER_REQUIRED');
+      expect(
+        (await admin.get(`students/${id.S1}`).expect(200)).body.groupClass.id,
+      ).toBe(id.C1b);
       expect(
         await prisma.paymentObligation.count({ where: { studentId: id.S1 } }),
-      ).toBe(before + 1);
+      ).toBe(before);
       expect(
-        (await admin.get(`payment-obligations/${id.oS1}`)).body.expectedAmount,
-      ).toBe('60.500');
-      const g2 = (await live(id.S1)).find((o) => o.groupId === id.G2)!;
-      expect(g2.expectedAmount.toFixed(3)).toBe('40.000');
-      id.oS1g2 = g2.id;
-      expect(
-        (
-          await admin
-            .post('payment-obligations', {
-              studentId: id.S1,
-              groupFeeId: id.feeG2,
-            })
-            .expect(409)
-        ).body.code,
-      ).toBe('OBLIGATION_EXISTS');
+        (await admin.get(`payment-obligations/${id.oS1}`)).body,
+      ).toMatchObject({ expectedAmount: '60.500', closed: null });
     });
 
     it('lists with filters and per student', async () => {
       const list = (q: object) =>
         admin.get('payment-obligations', { academicYearId: id.year, ...q });
       const all = (await list({ pageSize: 100 }).expect(200)).body;
-      expect(all.meta.total).toBe(5);
+      expect(all.meta.total).toBe(4);
       expect(
-        (await list({ groupId: id.G2 })).body.data
-          .map((o: { id: string }) => o.id)
-          .sort(),
-      ).toEqual([id.oS1g2, id.oS3].sort());
-      expect((await list({ studentId: id.S1 })).body.meta.total).toBe(2);
-      expect((await list({ status: 'UNPAID' })).body.meta.total).toBe(5);
+        (await list({ groupId: id.G2 })).body.data.map(
+          (o: { id: string }) => o.id,
+        ),
+      ).toEqual([id.oS3]);
+      expect((await list({ studentId: id.S1 })).body.meta.total).toBe(1);
+      expect((await list({ status: 'UNPAID' })).body.meta.total).toBe(4);
       expect((await list({ status: 'PAID' })).body.meta.total).toBe(0);
       expect((await list({ search: 'S3' })).body.data[0].id).toBe(id.oS3);
-      const page = (await list({ pageSize: 2, page: 3 })).body;
-      expect(page.meta).toMatchObject({ total: 5, totalPages: 3 });
+      const page = (await list({ pageSize: 3, page: 2 })).body;
+      expect(page.meta).toMatchObject({ total: 4, totalPages: 2 });
       expect(page.data).toHaveLength(1);
       const s1 = (await admin.get(`students/${id.S1}/payment-obligations`))
         .body as { voided: unknown }[];
-      // Two live ones (+ the automatic charge voided by the fixture reset, flagged)
-      expect(s1.filter((o) => !o.voided)).toHaveLength(2);
+      // One live (+ the first charge voided «تعديل المعلوم» and its
+      // replacement voided by the fixture reset, flagged)
+      expect(s1.filter((o) => !o.voided)).toHaveLength(1);
       expect(s1).toHaveLength(3);
       expect(
         (
@@ -1487,8 +1527,13 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
       const history = (
         await admin.get(`payment-obligations/${id.oS1}/payments`)
       ).body;
-      expect(history.map((p: { id: string }) => p.id)).toEqual([id.p2, id.p1]);
-      expect(history[1].voided).not.toBeNull();
+      // Oldest first: p2 (two days ago), then today's p0 and p1
+      expect(history.map((p: { id: string }) => p.id)).toEqual([
+        id.p2,
+        id.p0,
+        id.p1,
+      ]);
+      expect(history[2].voided).not.toBeNull();
       // Lists exclude voided payments unless asked
       const live = (await admin.get('payments', { obligationId: id.oS1 })).body;
       expect(live.data.map((p: { id: string }) => p.id)).toEqual([id.p2]);
@@ -1498,7 +1543,7 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
           includeVoided: true,
         })
       ).body;
-      expect(withVoided.meta.total).toBe(2);
+      expect(withVoided.meta.total).toBe(3);
       await expect(
         prisma.payment.update({
           where: { id: id.p1 },
@@ -1577,13 +1622,13 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
             includeVoided: true,
           })
         ).body.meta.total,
-      ).toBe(2); // this one + the automatic charge voided by the fixture reset
+      ).toBe(3); // this one + the first charge (repriced) + its replacement voided by the fixture reset
       id.oS4b = (await obligation('S4', 'feeG1v3')).id;
     });
 
     it('lists payments with filters, per student and per obligation', async () => {
       const byStudent = (await admin.get(`students/${id.S1}/payments`)).body;
-      expect(byStudent).toHaveLength(2); // the voided one stays visible, flagged
+      expect(byStudent).toHaveLength(3); // the voided ones stay visible, flagged
       const list = (q: object) =>
         admin.get('payments', { academicYearId: id.year, ...q });
       expect((await list({ studentId: id.S1 })).body.meta.total).toBe(1);
@@ -1619,19 +1664,21 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
           id: id.S1,
           firstName: 'S1',
           status: 'ACTIVE',
-          currentClass: { id: id.C2, group: { id: id.G2 } },
+          currentClass: { id: id.C1b, group: { id: id.G1 } },
         },
         academicYear: { id: id.year },
         currency: 'TND',
         totals: {
-          expectedAmount: '100.500',
+          expectedAmount: '60.500',
           totalPaid: '45.000',
-          remainingAmount: '55.500',
+          creditAmount: '0.000',
+          remainingAmount: '15.500',
+          excessAmount: '0.000',
         },
-        statusCounts: { UNPAID: 1, PARTIAL: 1, PAID: 0 },
+        statusCounts: { UNPAID: 0, PARTIAL: 1, PAID: 0, CLOSED: 0 },
         receipts: { issued: 1, notIssued: 0 },
       });
-      expect(res.body.obligations).toHaveLength(2);
+      expect(res.body.obligations).toHaveLength(1);
       const empty = await admin
         .get(`students/${id.S1}/finance/summary`, {
           academicYearId: id.prevYear,
@@ -1640,7 +1687,9 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
       expect(empty.body.totals).toEqual({
         expectedAmount: '0.000',
         totalPaid: '0.000',
+        creditAmount: '0.000',
         remainingAmount: '0.000',
+        excessAmount: '0.000',
       });
       await admin
         .get(`students/${id.S1}/finance/summary`, {
@@ -1654,30 +1703,31 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
       const summary = (q: object = {}) =>
         admin.get('finance/summary', { academicYearId: id.year, ...q });
       const all = (await summary().expect(200)).body;
-      // S1/G1 60.5, S1/G2 40, S2 80, S3 40, S4b 80 (S4 voided)
+      // S1/G1 60.5, S2 80, S3 40, S4b 80 (S4 voided)
       expect(all).toMatchObject({
         currency: 'TND',
-        obligationsCount: 5,
+        obligationsCount: 4,
         totals: {
-          expectedAmount: '300.500',
+          expectedAmount: '260.500',
           totalPaid: '125.300',
-          remainingAmount: '175.200',
+          creditAmount: '0.000',
+          remainingAmount: '135.200',
+          excessAmount: '0.000',
         },
-        statusCounts: { UNPAID: 2, PARTIAL: 2, PAID: 1 },
+        statusCounts: { UNPAID: 1, PARTIAL: 2, PAID: 1, CLOSED: 0 },
         collected: {
           paymentsCount: 7,
           amount: '125.300',
           receiptsNotIssued: 6,
-          voidedPaymentsCount: 1,
+          voidedPaymentsCount: 2,
         },
       });
       const g2 = (await summary({ groupId: id.G2 })).body;
-      expect(g2.obligationsCount).toBe(2);
-      expect(g2.totals.expectedAmount).toBe('80.000');
-      // Branch B2: S4 (C1b, G1) and S3 (C2, G2) and S1's G2 obligation (C2 in B2)
-      // and S1's G1 obligation (C1b in B2 for a moment)
+      expect(g2.obligationsCount).toBe(1);
+      expect(g2.totals.expectedAmount).toBe('40.000');
+      // Branch B2: S4b (C1b, G1), S3 (C2, G2) and S1's G1 obligation (C1b in B2)
       const b2 = (await summary({ branchId: id.B2 })).body;
-      expect(b2.obligationsCount).toBe(4);
+      expect(b2.obligationsCount).toBe(3);
       const b1 = (await summary({ branchId: id.B1 })).body;
       expect(b1.obligationsCount).toBe(2); // S1/G1 and S2 (C1)
       // Dates filter payments only: the obligations/balances stay the same
@@ -1706,6 +1756,8 @@ describe('Registration requests, fees & cash payments (e2e)', () => {
     const routes: [string, string, object?][] = [
       ['get', `/api/admin/groups/${id.G1}/fees`],
       ['put', `/api/admin/groups/${id.G1}/fees`, {}],
+      ['get', `/api/admin/groups/${id.G1}/fees/reprice-preview`],
+      ['get', `/api/admin/students/${id.S1}/group-class/preview`],
       ['get', `/api/admin/group-fees/${id.feeG1v3}`],
       ['post', `/api/admin/group-fees/${id.feeG1v3}/deactivate`],
       ['get', `/api/admin/group-classes/${id.C1}/fee`],

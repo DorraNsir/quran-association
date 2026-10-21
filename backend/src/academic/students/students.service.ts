@@ -12,6 +12,15 @@ import { PageSizeService } from '../../common/page-size.service.js';
 import { paginationMeta } from '../../common/pagination.js';
 import { type Prisma, RecordStatus } from '../../generated/prisma/client.js';
 import { billStudents } from '../../finance/auto-billing.js';
+import type {
+  FinancialTransferConfirmDto,
+  TransferPlanDto,
+} from '../../finance/finance.dto.js';
+import {
+  applyTransfers,
+  assertTransfersConfirmed,
+  transferPlan,
+} from '../../finance/transfers.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { classNotFound } from '../group-classes/group-classes.service.js';
 import {
@@ -397,14 +406,15 @@ export class StudentsService {
    * enrollment (endDate = effective date, exclusive), open the new one and
    * move the current-class pointer. Nothing historical is rewritten: sessions,
    * attendance, notes and memorization keep their own references, and past
-   * enrollments stay as they were. No payment obligation is created here
-   * (finance rules: Part 10.7).
+   * enrollments stay as they were. To another group: «نقل مالي» (see
+   * finance/transfers.ts), confirmed by the administrator.
    */
   async assignGroupClass(
     id: string,
     groupClassId: string,
     effectiveDate?: string,
     actorUserId?: string,
+    financialTransfers?: FinancialTransferConfirmDto[],
   ): Promise<StudentDto> {
     await this.prisma.$transaction((tx) =>
       this.assignGroupClassInTx(
@@ -413,9 +423,23 @@ export class StudentsService {
         groupClassId,
         effectiveDate,
         actorUserId,
+        financialTransfers,
       ),
     );
     return this.get(id);
+  }
+
+  /** What a move would do financially (read-only preview of «نقل مالي»). */
+  async groupClassPreview(
+    id: string,
+    groupClassId: string,
+  ): Promise<TransferPlanDto> {
+    const student = await this.prisma.student.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!student) throw studentNotFound();
+    return transferPlan(this.prisma, id, groupClassId);
   }
 
   /**
@@ -428,6 +452,7 @@ export class StudentsService {
     groupClassId: string,
     effectiveDate?: string,
     actorUserId?: string,
+    financialTransfers?: FinancialTransferConfirmDto[],
   ): Promise<void> {
     await tx.$queryRaw`SELECT id FROM students WHERE id = ${id}::uuid FOR UPDATE`;
     const student = await tx.student.findUnique({
@@ -436,6 +461,10 @@ export class StudentsService {
     });
     if (!student) throw studentNotFound();
     await this.assertClassOpen(tx, groupClassId);
+    // «نقل مالي»: computed under lock and checked against the confirmation
+    // before anything is written (a refusal changes nothing)
+    const plan = await transferPlan(tx, id, groupClassId, { lock: true });
+    assertTransfersConfirmed(plan, financialTransfers);
 
     const today = await platformToday(tx);
     const effective = effectiveDate ?? today;
@@ -482,7 +511,12 @@ export class StudentsService {
       });
     }
     await tx.student.update({ where: { id }, data: { groupClassId } });
-    // Charged automatically with the new group's current fee (the previous group's stays as history)
+    // The previous group's obligations closed, their settled amount carried as credit
+    await applyTransfers(tx, id, plan, {
+      effectiveDate: effective,
+      actorUserId,
+    });
+    // Charged automatically with the new group's current fee (if not yet)
     await billStudents(tx, { studentId: id }, actorUserId);
   }
 

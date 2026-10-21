@@ -16,6 +16,7 @@ import {
 import { OptionalEmail, OptionalPhone } from '../../common/contact-fields.js';
 import { PaginationMetaDto } from '../../common/pagination.js';
 import { Gender, RecordStatus } from '../../generated/prisma/enums.js';
+import { FinancialTransfersDto } from '../../finance/finance.dto.js';
 import { AccountSummaryDto, ClassRefDto } from '../teachers/teacher.dto.js';
 import {
   IsDateOnly,
@@ -114,7 +115,7 @@ export class UpdateStudentDto {
   @OptionalCin() cin?: string | null;
 }
 
-export class AssignStudentGroupClassDto {
+export class AssignStudentGroupClassDto extends FinancialTransfersDto {
   @ApiProperty({
     format: 'uuid',
     description: 'Target ACTIVE class — replaces the current one',
@@ -128,6 +129,15 @@ export class AssignStudentGroupClassDto {
       'First day in the new class (default: today, platform timezone; not in the future)',
   })
   effectiveDate?: string;
+}
+
+export class GroupClassPreviewQueryDto {
+  @ApiProperty({
+    format: 'uuid',
+    description: 'The class the student would move to',
+  })
+  @IsUUID()
+  groupClassId!: string;
 }
 
 export class StudentListQueryDto extends SearchQueryDto {

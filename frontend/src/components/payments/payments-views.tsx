@@ -1,10 +1,11 @@
 "use client"
 
-import { Banknote, CircleDashed, History, Pencil, Plus, ReceiptText, SearchX, Users, Wallet } from "lucide-react"
+import { Banknote, CircleDashed, History, Loader2, Pencil, Plus, ReceiptText, SearchX, Users, Wallet } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 import { toast } from "sonner"
 
+import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { DataTable, type Column } from "@/components/shared/data-table"
 import { EmptyState } from "@/components/shared/empty-state"
 import { ALL, FilterBar, FilterSelect, SearchInput } from "@/components/shared/filters"
@@ -27,7 +28,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { Lookups } from "@/lib/domain"
 import { labels } from "@/lib/i18n"
 import { defaultPeriod } from "@/lib/memorization"
@@ -42,7 +42,10 @@ import { Pager } from "@/components/shared/pager"
 import { QueryState } from "@/components/shared/query-state"
 import { errorMessage } from "@/lib/api/errors"
 import {
+  fetchRepricePreview,
   money,
+  type RepricePreviewDto,
+  type RepriceProtection,
   toObligationRow,
   toPayment,
   useDeactivateGroupFee,
@@ -55,7 +58,8 @@ import {
   type ObligationRow,
 } from "@/lib/api/finance"
 import { todayInTunis } from "@/lib/dates"
-import type { BillingType, Group, GroupFee, ID, ISODate } from "@/types/domain"
+import { formatDate } from "@/lib/format"
+import type { AcademicYear, Group, GroupFee, ID, ISODate } from "@/types/domain"
 
 import { ObligationFigures, PaymentHistory, PaymentStatusBadge, ReceiptBadge, useRecordPayment } from "./payment-parts"
 import { useAcademicYears, usePlatformSettings } from "@/lib/store/settings"
@@ -94,7 +98,12 @@ export function StudentPayments({ studentId, mode }: { studentId?: ID; mode: "ad
   return (
     <div className="space-y-4">
       {rows.map(({ summary, fee: rowFee, dto }) => (
-        <SectionCard key={summary.obligation.id} title={rowFee.label} icon={Wallet} action={<PaymentStatusBadge status={summary.status} />}>
+        <SectionCard
+          key={summary.obligation.id}
+          title={`${rowFee.label } — ${dto.group.name}`}
+          icon={Wallet}
+          action={<PaymentStatusBadge status={summary.status} />}
+        >
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               <span dir="ltr">{dto.academicYear.label}</span> · {feeDescription(rowFee)}
@@ -200,7 +209,18 @@ export function PaymentsOverview({ lookups }: { lookups: Lookups }) {
     },
     { id: "group", header: "المجموعة", cell: (r) => <span className="whitespace-nowrap">{r.dto.group.name}</span> },
     { id: "expected", header: "المطلوب", cell: (r) => <span className="tabular-nums whitespace-nowrap">{formatMoney(r.summary.expected)}</span> },
-    { id: "paid", header: "المدفوع", cell: (r) => <span className="tabular-nums whitespace-nowrap">{formatMoney(r.summary.paid)}</span> },
+    {
+      id: "paid",
+      header: "المدفوع",
+      cell: (r) => (
+        <span className="tabular-nums whitespace-nowrap">
+          {formatMoney(r.summary.paid)}
+          {Boolean(r.summary.creditIn) && (
+            <span className="block text-xs text-muted-foreground">+ رصيد محوّل {formatMoney(r.summary.creditIn!)}</span>
+          )}
+        </span>
+      ),
+    },
     { id: "remaining", header: "المتبقي", cell: (r) => <span className="tabular-nums whitespace-nowrap">{formatMoney(r.summary.remaining)}</span> },
     { id: "status", header: "حالة الدفع", cell: (r) => <PaymentStatusBadge status={r.summary.status} /> },
     { id: "payments", header: "الدفعات", className: "hidden lg:table-cell", cell: paymentsCell },
@@ -233,9 +253,17 @@ export function PaymentsOverview({ lookups }: { lookups: Lookups }) {
         <>
           <section aria-label="ملخص" className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
             <StatCard label="المبلغ المطلوب" value={<span className="whitespace-nowrap">{totals ? formatMoney(money(totals.totals.expectedAmount)) : "…"}</span>} icon={Wallet} />
-            <StatCard label="المبلغ المدفوع" value={<span className="whitespace-nowrap">{totals ? formatMoney(money(totals.totals.totalPaid)) : "…"}</span>} icon={Banknote} />
+            <StatCard label="المبلغ المدفوع" value={<span className="whitespace-nowrap">{totals ? formatMoney(money(totals.totals.totalPaid)) : "…"}</span>} icon={Banknote}
+              hint={totals && Number(totals.totals.creditAmount ?? 0) !== 0
+                ? `نقدًا؛ رصيد محوّل بين المجموعات: ${formatMoney(money(totals.totals.creditAmount!))}`
+                : "نقدًا"} />
             <StatCard label="المبلغ المتبقي" value={<span className="whitespace-nowrap">{totals ? formatMoney(money(totals.totals.remainingAmount)) : "…"}</span>} icon={CircleDashed}
-              hint={totals ? `${totals.statusCounts.UNPAID + totals.statusCounts.PARTIAL} طالب لم يكتمل دفعهم` : undefined} />
+              hint={totals
+                ? [
+                    `${totals.statusCounts.UNPAID + totals.statusCounts.PARTIAL} طالب لم يكتمل دفعهم`,
+                    ...(Number(totals.totals.excessAmount ?? 0) > 0 ? [`رصيد زائد: ${formatMoney(money(totals.totals.excessAmount!))}`] : []),
+                  ].join(" · ")
+                : undefined} />
             <StatCard label="وصولات لم يتم تسليمها" value={totals?.collected.receiptsNotIssued ?? "…"} icon={ReceiptText}
               className={totals && totals.collected.receiptsNotIssued > 0 ? "border-warning/40" : undefined} />
           </section>
@@ -254,7 +282,7 @@ export function PaymentsOverview({ lookups }: { lookups: Lookups }) {
             <FilterSelect label="المجموعة" allLabel="كل المجموعات" value={groupId} onValueChange={reset(setGroupId)}
               options={lookups.groups.filter((g) => g.status !== "ARCHIVED").map((g) => ({ value: g.id, label: g.name }))} />
             <FilterSelect label="حالة الدفع" allLabel="كل الحالات" value={status} onValueChange={reset(setStatus)}
-              options={(["PAID", "PARTIAL", "UNPAID"] as PaymentStatus[]).map((s) => ({ value: s, label: PAYMENT_STATUS_LABEL[s] }))} />
+              options={(["PAID", "PARTIAL", "UNPAID", "CLOSED"] as PaymentStatus[]).map((s) => ({ value: s, label: PAYMENT_STATUS_LABEL[s] }))} />
           </FilterBar>
 
           <QueryState query={list}>
@@ -319,25 +347,40 @@ export function PaymentsOverview({ lookups }: { lookups: Lookups }) {
   )
 }
 
-/** "معلوم المجموعة": the group's pricing rules, one per academic year. */
+/** «سجل التعديلات»: why a version is no longer the current one */
+const FEE_STATUS_LABEL = { REPLACED: "استُبدل", STOPPED: "موقوف" } as const
+
+/**
+ * "معلوم المجموعة": ONE current fee per academic year — the total required
+ * from each student — with its earlier versions under «سجل التعديلات».
+ */
 export function GroupFees({ group, today }: { group: Group; today: ISODate }) {
   const academicYears = useAcademicYears()
   const query = useGroupFees(group.id)
   const deactivate = useDeactivateGroupFee()
-  const [editor, setEditor] = useState<{ fee?: GroupFee; key: number; open: boolean }>({ key: 0, open: false })
+  const [editor, setEditor] = useState<{ fee?: GroupFee; academicYearId?: ID; key: number; open: boolean }>({ key: 0, open: false })
+  const [stopping, setStopping] = useState<GroupFee | null>(null)
+  const open = (fee?: GroupFee, academicYearId?: ID) => setEditor((p) => ({ fee, academicYearId, key: p.key + 1, open: true }))
   // Newest version first (the API keeps the history of each year's fee)
   const fees = query.data ?? []
-  const yearLabel = (id?: ID) => academicYears.find((y) => y.id === id)?.label
+  const yearOf = (id?: ID) => academicYears.find((y) => y.id === id)
+  const years = [...new Set(fees.map((f) => f.academicYearId))].sort((a, b) =>
+    (yearOf(b)?.startDate ?? "").localeCompare(yearOf(a)?.startDate ?? "")
+  )
+  // A year can get a fee only when it has no current one
+  const freeYears = academicYears.filter((y) => !fees.some((f) => f.academicYearId === y.id && f.isActive))
 
   return (
     <SectionCard
       title="معلوم المجموعة"
       icon={Wallet}
       action={
-        <Button size="sm" variant="outline" onClick={() => setEditor((p) => ({ key: p.key + 1, open: true }))}>
-          <Plus />
-          إضافة معلوم
-        </Button>
+        freeYears.length > 0 ? (
+          <Button size="sm" variant="outline" onClick={() => open()}>
+            <Plus />
+            تحديد المعلوم
+          </Button>
+        ) : undefined
       }
     >
       {!query.data ? (
@@ -345,49 +388,83 @@ export function GroupFees({ group, today }: { group: Group; today: ISODate }) {
       ) : fees.length === 0 ? (
         <p className="text-sm text-muted-foreground">لم يُحدَّد معلوم لهذه المجموعة بعد.</p>
       ) : (
-        <ul className="divide-y">
-          {fees.map((fee) => (
-            <li key={fee.id} className="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
-              <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
-                <div><dt className="text-xs text-muted-foreground">السنة الدراسية</dt><dd className="font-medium" dir="ltr">{yearLabel(fee.academicYearId) ?? "—"}</dd></div>
-                <div><dt className="text-xs text-muted-foreground">طريقة الدفع</dt><dd className="font-medium">{labels.billingType[fee.billingType]}</dd></div>
-                <div>
-                  <dt className="text-xs text-muted-foreground">{fee.billingType === "MONTHLY" ? "المبلغ الشهري" : "المبلغ"}</dt>
-                  <dd className="font-medium tabular-nums">{formatMoney(fee.amount)}</dd>
-                </div>
-                {fee.billingType === "MONTHLY" ? (
-                  <div><dt className="text-xs text-muted-foreground">عدد الأشهر · المجموع</dt><dd className="font-medium tabular-nums">{feePeriods(fee)} · {formatMoney(feeTotal(fee))}</dd></div>
+        <div className="space-y-5">
+          {years.map((yearId) => {
+            const versions = fees.filter((f) => f.academicYearId === yearId)
+            const active = versions.find((f) => f.isActive)
+            const history = versions.filter((f) => !f.isActive)
+            return (
+              <section key={yearId ?? "none"} className="space-y-3" aria-label={`معلوم السنة ${yearOf(yearId)?.label ?? ""}`}>
+                <p className="text-xs font-medium text-muted-foreground">
+                  السنة الدراسية <span dir="ltr">{yearOf(yearId)?.label ?? "—"}</span>
+                </p>
+                {active ? (
+                  <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border bg-card p-3">
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">{active.label}</p>
+                      <p className="text-lg font-semibold tabular-nums">
+                        {formatMoney(feeTotal(active))}
+                        <span className="ms-2 text-xs font-normal text-muted-foreground">     لكل طالب</span>
+                      </p>
+                      {active.billingType === "MONTHLY" && <p className="text-xs text-muted-foreground">{feeDescription(active)}</p>}
+                      <p className="text-xs text-muted-foreground">ساري منذ {formatDate(active.createdAt)}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button size="sm" variant="outline" onClick={() => open(active)}>
+                        <Pencil />
+                        تعديل المعلوم
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setStopping(active)}>
+                        إيقاف
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
-                  <div><dt className="text-xs text-muted-foreground">المجموع</dt><dd className="font-medium tabular-nums">{formatMoney(feeTotal(fee))}</dd></div>
-                )}
-              </dl>
-              <div className="flex items-center gap-2">
-                {!fee.isActive && <Badge variant="outline" className="font-normal">غير مفعّل</Badge>}
-                {fee.isActive && (
-                  <>
-                    <Button size="icon" variant="ghost" aria-label={`تعديل ${fee.label}`} onClick={() => setEditor((p) => ({ fee, key: p.key + 1, open: true }))}>
-                      <Pencil />
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed p-3">
+                    <p className="text-sm text-muted-foreground">لا يوجد معلوم ساري لهذه السنة.</p>
+                    <Button size="sm" variant="outline" onClick={() => open(undefined, yearId)}>
+                      <Plus />
+                      تحديد المعلوم
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-muted-foreground"
-                      disabled={deactivate.isPending}
-                      onClick={() =>
-                        deactivate.mutate(fee.id, {
-                          onSuccess: () => toast.success("أُوقف المعلوم", { description: "المبالغ المسجّلة للطلبة تبقى كما هي، ولا يُضاف المعلوم إلى الطلبة الجدد." }),
-                          onError: (error) => toast.error(errorMessage(error)),
-                        })
-                      }
-                    >
-                      إيقاف
-                    </Button>
-                  </>
+                  </div>
                 )}
-              </div>
-            </li>
-          ))}
-        </ul>
+                {history.length > 0 && (
+                  <details className="group rounded-lg border bg-muted/20 px-3 py-2 text-sm">
+                    <summary className="cursor-pointer select-none font-medium">سجل التعديلات ({history.length})</summary>
+                    <ol className="mt-2 divide-y">
+                      {history.map((fee) => {
+                        // The version that took over (the next newer one of the year)
+                        const next = versions[versions.indexOf(fee) - 1]
+                        return (
+                          <li key={fee.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                            <div>
+                              <p className="tabular-nums">
+                                {formatMoney(feeTotal(fee))}
+                                {fee.status === "REPLACED" && next && (
+                                  <span className="text-muted-foreground"> ← {formatMoney(feeTotal(next))}</span>
+                                )}
+                                <span className="ms-2 text-xs text-muted-foreground">{fee.label}</span>
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                من {formatDate(fee.createdAt)}
+                                {fee.deactivatedAt && <> إلى {formatDate(fee.deactivatedAt)}</>}
+                              </p>
+                            </div>
+                            {fee.status && fee.status !== "ACTIVE" && (
+                              <Badge variant="outline" className="font-normal">
+                                {FEE_STATUS_LABEL[fee.status]}
+                              </Badge>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ol>
+                  </details>
+                )}
+              </section>
+            )
+          })}
+        </div>
       )}
       <GroupFeeDialog
         key={editor.key}
@@ -395,112 +472,237 @@ export function GroupFees({ group, today }: { group: Group; today: ISODate }) {
         onOpenChange={(open) => setEditor((p) => ({ ...p, open }))}
         group={group}
         fee={editor.fee}
+        academicYearId={editor.academicYearId}
+        freeYears={freeYears}
         today={today}
       />
+      {stopping && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => !open && setStopping(null)}
+          title="إيقاف المعلوم؟"
+          description={`يتوقّف إضافة معلوم «${stopping.label}» (${formatMoney(feeTotal(stopping))}) تلقائيًا إلى الطلبة الذين ينضمّون إلى المجموعة في هذه السنة. المبالغ المسجّلة للطلبة الحاليين ودفعاتهم لا تتغيّر. لا يمكن إعادة تفعيل المعلوم الموقوف، ويمكن تحديد معلوم جديد لاحقًا.`}
+          confirmLabel="إيقاف المعلوم"
+          destructive
+          onConfirm={() =>
+            deactivate.mutateAsync(stopping.id).then(() => {
+              toast.success("أُوقف المعلوم", { description: "المبالغ المسجّلة للطلبة والدفعات تبقى كما هي." })
+              setStopping(null)
+            })
+          }
+        />
+      )}
     </SectionCard>
   )
 }
 
+/** Why an obligation keeps its amount when the fee changes («سيتم تحديث…، بينما ستبقى…») */
+const REPRICE_PROTECTION_LABEL: Record<RepriceProtection, string> = {
+  HAS_PAYMENTS: "لوجود دفعات مسجّلة",
+  HAS_VOIDED_PAYMENTS: "لوجود دفعات ملغاة في سجلها",
+  HAS_TRANSFER_CREDIT: "لارتباطها بنقل من مجموعة أخرى",
+  STUDENT_INACTIVE: "لأن الطالب غير نشط",
+  LEFT_GROUP: "لأن الطالب غادر المجموعة",
+}
+const studentsCount = (n: number) => (n === 1 ? "طالب واحد" : n === 2 ? "طالبين" : `${n} طلبة`)
+
+/** «سيتم تحديث المبلغ المطلوب لـ 8 طلبة، بينما ستبقى مستحقات 3 طلبة دون تغيير لوجود دفعات مسجّلة.» */
+export function repriceSentence(preview: Pick<RepricePreviewDto, "toUpdate" | "protected">) {
+  const byReason = new Map<RepriceProtection, number>()
+  for (const p of preview.protected) byReason.set(p.reasons[0], (byReason.get(p.reasons[0]) ?? 0) + 1)
+  const why = [...byReason].map(([reason, n]) =>
+    byReason.size === 1 ? REPRICE_PROTECTION_LABEL[reason] : `${studentsCount(n)} ${REPRICE_PROTECTION_LABEL[reason]}`
+  )
+  const kept = preview.protected.length
+    ? `ستبقى مستحقات ${studentsCount(preview.protected.length)} دون تغيير ${byReason.size === 1 ? why[0] : `(${why.join("، ")})`}`
+    : ""
+  if (!preview.toUpdate.length) return `لن يتغيّر المبلغ المطلوب من أي طالب: ${kept}.`
+  const n = preview.toUpdate.length
+  const updated = `سيتم تحديث المبلغ المطلوب ${n === 1 ? "لطالب واحد" : n === 2 ? "لطالبين" : `لـ ${n} طلبة`}`
+  return kept ? `${updated}، بينما ${kept}.` : `${updated}.`
+}
+
+/**
+ * «تحديد المعلوم» / «تعديل المعلوم»: the TOTAL required from each student for
+ * the year (free partial payments). Saving shows the financial impact first
+ * (never-paid obligations updated, the others kept) and asks to confirm it.
+ */
 function GroupFeeDialog({
   open,
   onOpenChange,
   group,
   fee,
+  academicYearId: presetYearId,
+  freeYears,
   today,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   group: Group
+  /** Editing the current fee (its academic year is locked) */
   fee?: GroupFee
+  academicYearId?: ID
+  /** Years without a current fee (setting one) */
+  freeYears: AcademicYear[]
   today: ISODate
 }) {
   const academicYears = useAcademicYears()
   const save = useSetGroupFee(group.id)
   const current = defaultPeriod(academicYears, today).academicYearId
-  const [label, setLabel] = useState(fee?.label ?? `معلوم السنة ${academicYears.find((y) => y.id === current)?.label ?? ""}`)
   const [pickedYearId, setAcademicYearId] = useState<string>()
-  const academicYearId = pickedYearId ?? fee?.academicYearId ?? current
-  const [billingType, setBillingType] = useState<BillingType>(fee?.billingType ?? "YEARLY")
-  const [amount, setAmount] = useState(fee ? String(fee.amount) : "")
-  const [periods, setPeriods] = useState(String(fee?.numberOfPeriods ?? 2))
+  const academicYearId =
+    fee?.academicYearId ??
+    pickedYearId ??
+    presetYearId ??
+    (freeYears.some((y) => y.id === current) ? current : freeYears[0]?.id)
+  const yearLabel = academicYears.find((y) => y.id === academicYearId)?.label ?? ""
+  const [label, setLabel] = useState(fee?.label ?? `معلوم السنة ${yearLabel}`)
+  const [amount, setAmount] = useState(fee ? String(feeTotal(fee)) : "")
   const [submitted, setSubmitted] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [review, setReview] = useState<RepricePreviewDto | null>(null)
   const errors = {
     label: !label.trim() ? "التسمية مطلوبة" : undefined,
     amount: !(Number(amount) > 0) ? "أدخل مبلغًا أكبر من صفر" : undefined,
-    periods: billingType === "MONTHLY" && !(Number.isInteger(Number(periods)) && Number(periods) >= 1 && Number(periods) <= 12) ? "عدد الأشهر بين 1 و12" : undefined,
     year: !academicYearId ? "اختر السنة الدراسية" : undefined,
   }
-  const preview = Number(amount) > 0 ? feeTotal({ amount: Number(amount), billingType, numberOfPeriods: Number(periods) || 1 }) : 0
+
+  const body = (repriceObligationIds: string[]) => ({
+    academicYearId: academicYearId!,
+    label: label.trim(),
+    amount: Number(amount),
+    repriceObligationIds,
+  })
+  const done = () => {
+    setReview(null)
+    onOpenChange(false)
+    toast.success(fee ? "تم تعديل المعلوم" : "تم تحديد المعلوم", {
+      description: "يُضاف المعلوم تلقائيًا إلى طلبة المجموعة؛ المبالغ التي سُجّلت عليها دفعات لا تتغيّر.",
+    })
+  }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !save.isPending && onOpenChange(next)}>
+    <Dialog open={open} onOpenChange={(next) => !save.isPending && !checking && onOpenChange(next)}>
       <DialogContent className="sm:max-w-md">
         <form
           noValidate
           className="grid gap-4"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault()
             setSubmitted(true)
-            if (save.isPending || Object.values(errors).some(Boolean)) return
-            save.mutate(
-              {
-                academicYearId,
-                label: label.trim(),
-                billingType,
-                amount: Number(amount),
-                numberOfPeriods: billingType === "MONTHLY" ? Number(periods) : 1,
-              },
-              {
-                onSuccess: () => {
-                  onOpenChange(false)
-                  toast.success(fee ? "تم تعديل المعلوم" : "تمت إضافة المعلوم", {
-                    description: "يُضاف المعلوم تلقائيًا إلى طلبة المجموعة الحاليين والجدد؛ المبالغ المسجّلة سابقًا لا تتغيّر.",
-                  })
-                },
+            if (save.isPending || checking || Object.values(errors).some(Boolean)) return
+            setError(null)
+            setChecking(true)
+            try {
+              // The financial impact first: confirmed when it touches students
+              const preview = await fetchRepricePreview(group.id, academicYearId!, Number(amount))
+              if (preview.toUpdate.length || preview.protected.length) setReview(preview)
+              else {
+                await save.mutateAsync(body([]))
+                done()
               }
-            )
+            } catch (e) {
+              setError(errorMessage(e))
+            } finally {
+              setChecking(false)
+            }
           }}
         >
           <DialogHeader>
-            <DialogTitle>{fee ? "تعديل معلوم المجموعة" : "معلوم جديد"}</DialogTitle>
-            <DialogDescription>{group.name} — يسري على كل فصول المجموعة.</DialogDescription>
+            <DialogTitle>{fee ? "تعديل المعلوم" : "تحديد المعلوم"}</DialogTitle>
+            <DialogDescription>{group.name} — يسري على كل أقسام المجموعة.</DialogDescription>
           </DialogHeader>
           <FormField id="fee-label" label="التسمية" required error={submitted ? errors.label : undefined}>
             <Input id="fee-label" value={label} onChange={(e) => setLabel(e.target.value)} />
           </FormField>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField id="fee-year" label="السنة الدراسية" required error={submitted ? errors.year : undefined}>
-              <AcademicYearSelect value={academicYearId} onChange={setAcademicYearId} years={academicYears} className="sm:w-full" />
-            </FormField>
-            <FormField id="fee-billing" label="طريقة الدفع" required>
-              <Select value={billingType} onValueChange={(v) => setBillingType(v as BillingType)}>
-                <SelectTrigger id="fee-billing" className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent position="popper">
-                  <SelectItem value="YEARLY">{labels.billingType.YEARLY}</SelectItem>
-                  <SelectItem value="MONTHLY">{labels.billingType.MONTHLY}</SelectItem>
-                </SelectContent>
-              </Select>
-            </FormField>
-            <FormField id="fee-amount" label={billingType === "MONTHLY" ? "المبلغ الشهري (د.ت)" : "المبلغ (د.ت)"} required error={submitted ? errors.amount : undefined}>
-              <Input id="fee-amount" type="number" min={0} step="0.5" dir="ltr" value={amount} onChange={(e) => setAmount(e.target.value)} />
-            </FormField>
-            {billingType === "MONTHLY" && (
-              <FormField id="fee-periods" label="عدد الأشهر" required error={submitted ? errors.periods : undefined}>
-                <Input id="fee-periods" type="number" min={1} max={12} dir="ltr" value={periods} onChange={(e) => setPeriods(e.target.value)} />
-              </FormField>
+          <FormField
+            id="fee-year"
+            label="السنة الدراسية"
+            required
+            description={fee ? "لا يمكن تغيير السنة الدراسية عند تعديل المعلوم." : undefined}
+            error={submitted ? errors.year : undefined}
+          >
+            {fee ? (
+              <p id="fee-year" className="flex h-9 items-center rounded-lg border bg-muted/40 px-2.5 text-sm" dir="ltr">
+                {yearLabel}
+              </p>
+            ) : (
+              <AcademicYearSelect value={academicYearId ?? ""} onChange={setAcademicYearId} years={freeYears} className="sm:w-full" />
             )}
-          </div>
-          <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
-            المجموع المطلوب من كل طالب: <span className="font-semibold tabular-nums">{formatMoney(preview)}</span>
-          </p>
-          {fee && <p className="text-xs text-muted-foreground">يُحفظ التعديل كإصدار جديد للمعلوم؛ المبالغ المسجّلة سابقًا للطلبة لا تتغيّر.</p>}
-          {save.isError && <FormErrorAlert message={errorMessage(save.error)} />}
+          </FormField>
+          <FormField
+            id="fee-amount"
+            label="المبلغ المطلوب لكل طالب (د.ت)"
+            required
+            description="المبلغ الإجمالي للسنة الدراسية؛ يدفعه الطالب على دفعات حرّة، متى شاء."
+            error={submitted ? errors.amount : undefined}
+          >
+            <Input id="fee-amount" type="number" min={0} step="0.5" dir="ltr" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </FormField>
+          {fee?.billingType === "MONTHLY" && (
+            <p className="text-xs text-muted-foreground">
+              المعلوم الحالي شهري ({feeDescription(fee)}): يُحفظ التعديل كمبلغ إجمالي واحد للسنة.
+            </p>
+          )}
+          <FormErrorAlert message={error} />
           <DialogFooter>
-            <Button type="button" variant="outline" disabled={save.isPending} onClick={() => onOpenChange(false)}>{labels.common.cancel}</Button>
-            <Button type="submit" className="min-w-24" disabled={save.isPending}>{labels.common.save}</Button>
+            <Button type="button" variant="outline" disabled={save.isPending || checking} onClick={() => onOpenChange(false)}>
+              {labels.common.cancel}
+            </Button>
+            <Button type="submit" className="min-w-24" disabled={save.isPending || checking}>
+              {(save.isPending || checking) && <Loader2 className="animate-spin" />}
+              {labels.common.save}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
+      {review && (
+        <ConfirmDialog
+          open
+          onOpenChange={(next) => !next && setReview(null)}
+          title="تأكيد تعديل المعلوم"
+          description={repriceSentence(review)}
+          confirmLabel="تأكيد وحفظ المعلوم"
+          onConfirm={() => save.mutateAsync(body(review.toUpdate.map((o) => o.obligationId))).then(done)}
+        >
+          <div className="space-y-2 text-sm">
+            <p className="rounded-lg bg-muted/50 px-3 py-2 tabular-nums">
+              {review.currentFee ? (
+                <>
+                  المعلوم الحالي: {formatMoney(money(review.currentFee.totalAmount))} ← المعلوم الجديد:{" "}
+                  <span className="font-semibold">{formatMoney(money(review.newTotalAmount))}</span>
+                </>
+              ) : (
+                <>
+                  المعلوم الجديد: <span className="font-semibold">{formatMoney(money(review.newTotalAmount))}</span>
+                </>
+              )}
+            </p>
+            <details className="rounded-lg border px-3 py-2">
+              <summary className="cursor-pointer select-none text-xs font-medium">تفاصيل الطلبة</summary>
+              <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs">
+                {review.toUpdate.map((o) => (
+                  <li key={o.obligationId} className="flex justify-between gap-2">
+                    <span>{o.student.firstName} {o.student.lastName}</span>
+                    <span className="tabular-nums">
+                      {formatMoney(money(o.currentAmount))} ← {formatMoney(money(o.newAmount))}
+                    </span>
+                  </li>
+                ))}
+                {review.protected.map((o) => (
+                  <li key={o.obligationId} className="flex justify-between gap-2 text-muted-foreground">
+                    <span>{o.student.firstName} {o.student.lastName}</span>
+                    <span>
+                      يبقى {formatMoney(money(o.currentAmount))} — {o.reasons.map((r) => REPRICE_PROTECTION_LABEL[r]).join("، ")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </div>
+        </ConfirmDialog>
+      )}
     </Dialog>
   )
 }

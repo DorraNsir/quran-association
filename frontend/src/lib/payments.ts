@@ -9,12 +9,13 @@ import type { GroupClass, GroupFee, ID, Payment, PaymentObligation, Student } fr
  * and never affects the student, their class, sessions or access.
  */
 
-export type PaymentStatus = "UNPAID" | "PARTIAL" | "PAID"
+export type PaymentStatus = "UNPAID" | "PARTIAL" | "PAID" | "CLOSED"
 
 export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
   UNPAID: "لم يدفع",
   PARTIAL: "دفع جزئي",
   PAID: "مدفوع بالكامل",
+  CLOSED: "أُغلق بالنقل",
 }
 
 /** Total of a fee: amount × number of periods (yearly = 1 period; summer = 20 × 2 = 40). */
@@ -88,12 +89,22 @@ export function getPaymentStatus(expected: number, paid: number): PaymentStatus 
 export interface ObligationSummary {
   obligation: PaymentObligation
   payments: Payment[]
+  /** What is still required (released to 0 once closed by a transfer) */
   expected: number
+  /** Cash paid on it */
   paid: number
+  /** Credit carried from / to another group (never cash) */
+  creditIn?: number
+  creditOut?: number
+  /** «رصيد زائد» */
+  excess?: number
   remaining: number
   status: PaymentStatus
   lastPayment?: Payment
   undeliveredReceipts: number
+  /** Closed by a transfer: the group the student moved to */
+  closedToGroup?: string
+  creditsFrom?: { groupName: string; amount: number }[]
 }
 
 export function getObligationSummary(obligation: PaymentObligation, payments: Payment[]): ObligationSummary {

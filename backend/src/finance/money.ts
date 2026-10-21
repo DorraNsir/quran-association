@@ -45,25 +45,66 @@ export const toDecimal = (value: string | Decimal) => new Prisma.Decimal(value);
 export const money = (value: Decimal | string | null | undefined) =>
   new Prisma.Decimal(value ?? 0).toFixed(3);
 
-export type PaymentStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
-export const PAYMENT_STATUSES: PaymentStatus[] = ['UNPAID', 'PARTIAL', 'PAID'];
+export type PaymentStatus = 'UNPAID' | 'PARTIAL' | 'PAID' | 'CLOSED';
+export const PAYMENT_STATUSES: PaymentStatus[] = [
+  'UNPAID',
+  'PARTIAL',
+  'PAID',
+  'CLOSED',
+];
 
 /**
- * Derived, never stored: nothing paid → UNPAID, part → PARTIAL, all → PAID.
- * Obligations are always > 0 (DB CHECK), so there is no zero-amount case.
+ * Derived, never stored: nothing settled → UNPAID, part → PARTIAL, all →
+ * PAID; CLOSED once the student moved to another group (transfer).
  */
-export function paymentStatus(expected: Decimal, paid: Decimal): PaymentStatus {
-  if (paid.lte(0)) return 'UNPAID';
-  return paid.gte(expected) ? 'PAID' : 'PARTIAL';
+export function paymentStatus(
+  required: Decimal,
+  settled: Decimal,
+  closed = false,
+): PaymentStatus {
+  if (closed) return 'CLOSED';
+  if (settled.lte(0)) return 'UNPAID';
+  return settled.gte(required) ? 'PAID' : 'PARTIAL';
 }
 
-/** Balance of one obligation from its live (non-voided) payments. */
-export function balance(expected: Decimal, paid: Decimal) {
-  const remaining = Prisma.Decimal.max(expected.minus(paid), ZERO);
+/**
+ * Balance of one obligation. Cash = its live payments; credit in / out =
+ * amounts carried by transfers between groups (never cash); released = what
+ * a transfer discharged (full replacement).
+ *   required  = expected − released
+ *   settled   = cash + credit in − credit out
+ *   remaining = max(0, required − settled)
+ *   excess    = max(0, settled − required)   («رصيد زائد»)
+ */
+export function obligationBalance(o: {
+  expected: Decimal;
+  cash: Decimal;
+  creditIn?: Decimal;
+  creditOut?: Decimal;
+  released?: Decimal;
+  closed?: boolean;
+}) {
+  const required = o.expected.minus(o.released ?? ZERO);
+  const creditIn = o.creditIn ?? ZERO;
+  const creditOut = o.creditOut ?? ZERO;
+  const settled = o.cash.plus(creditIn).minus(creditOut);
   return {
-    expectedAmount: money(expected),
-    totalPaid: money(paid),
-    remainingAmount: money(remaining),
-    status: paymentStatus(expected, paid),
+    expectedAmount: money(o.expected),
+    requiredAmount: money(required),
+    totalPaid: money(o.cash),
+    creditIn: money(creditIn),
+    creditOut: money(creditOut),
+    releasedAmount: money(o.released),
+    settledAmount: money(settled),
+    remainingAmount: money(Prisma.Decimal.max(required.minus(settled), ZERO)),
+    excessAmount: money(Prisma.Decimal.max(settled.minus(required), ZERO)),
+    status: paymentStatus(required, settled, o.closed),
   };
+}
+
+/** Balance of an obligation without transfers (cash payments only). */
+export function balance(expected: Decimal, paid: Decimal) {
+  const { expectedAmount, totalPaid, remainingAmount, status } =
+    obligationBalance({ expected, cash: paid });
+  return { expectedAmount, totalPaid, remainingAmount, status };
 }

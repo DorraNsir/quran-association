@@ -82,9 +82,9 @@ export function useStudentDialogs({ lookups }: { lookups: Lookups }) {
           onOpenChange={close}
           student={student}
           lookups={lookups}
-          onConfirm={async (groupClassId) => {
+          onConfirm={async (groupClassId, financialTransfers) => {
             const target = studentClass({ groupClassId }, indexLookups(lookups))
-            await transfer.mutateAsync({ id: student.id, groupClassId })
+            await transfer.mutateAsync({ id: student.id, groupClassId, financialTransfers })
             toast.success(`تم نقل ${fullName(student)} إلى ${target?.group?.name ?? ""} — ${target?.branch?.name ?? ""}`)
             close(false)
           }}

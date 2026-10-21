@@ -2,6 +2,8 @@ import { applyDecorators } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsIn,
@@ -10,9 +12,11 @@ import {
   IsString,
   IsUUID,
   Max,
+  Matches,
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 
 import { trim } from '../academic/shared.dto.js';
@@ -81,16 +85,18 @@ export class SetGroupFeeDto {
   @MaxLength(120)
   label!: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     enum: BillingType,
     enumName: 'BillingType',
+    default: BillingType.YEARLY,
     description:
-      'YEARLY: one amount for the year (also used for one-time fees). MONTHLY: `amount` per month × numberOfPeriods months.',
+      'YEARLY (default): `amount` is the total required from each student for the year. MONTHLY (kept for existing clients): `amount` per month × numberOfPeriods months.',
   })
+  @IsOptional()
   @IsEnum(BillingType)
-  billingType!: BillingType;
+  billingType?: BillingType;
 
-  @IsMoney('Per period (TND): the yearly amount, or the monthly amount')
+  @IsMoney('YEARLY: total per student for the year (TND); MONTHLY: per month')
   amount!: string;
 
   @ApiPropertyOptional({
@@ -110,6 +116,61 @@ export class SetGroupFeeDto {
   startDate?: string;
   @IsDateOnly({ optional: true, description: 'Informational, within the year' })
   endDate?: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    isArray: true,
+    description:
+      '«تعديل المعلوم»: EXACTLY the obligations of the reprice preview `toUpdate` list, confirmed by the administrator (re-checked under lock; any difference → 409 FEE_REPRICE_STALE). Required when the preview lists some',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5000)
+  @IsUUID('all', { each: true })
+  repriceObligationIds?: string[];
+}
+
+export class RepricePreviewQueryDto {
+  @ApiProperty({ format: 'uuid' }) @IsUUID() academicYearId!: string;
+  @IsMoney('The new amount (as in SetGroupFeeDto)')
+  amount!: string;
+  @ApiPropertyOptional({ enum: BillingType, enumName: 'BillingType' })
+  @IsOptional()
+  @IsEnum(BillingType)
+  billingType?: BillingType;
+  @ApiPropertyOptional({ minimum: 1, maximum: 12 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  numberOfPeriods?: number;
+}
+
+/** Why an obligation keeps its amount when the fee changes */
+export const REPRICE_PROTECTIONS = [
+  'HAS_PAYMENTS',
+  'HAS_VOIDED_PAYMENTS',
+  'HAS_TRANSFER_CREDIT',
+  'STUDENT_INACTIVE',
+  'LEFT_GROUP',
+] as const;
+export type RepriceProtection = (typeof REPRICE_PROTECTIONS)[number];
+
+export class RepriceItemDto {
+  @ApiProperty() obligationId!: string;
+  @ApiProperty({ type: StudentRefDto }) student!: StudentRefDto;
+  @ApiProperty({ example: '120.000' }) currentAmount!: string;
+  @ApiProperty({ example: '200.000' }) newAmount!: string;
+}
+
+export class RepriceProtectedDto {
+  @ApiProperty() obligationId!: string;
+  @ApiProperty({ type: StudentRefDto }) student!: StudentRefDto;
+  @ApiProperty({ example: '120.000' }) currentAmount!: string;
+  @ApiProperty({ enum: REPRICE_PROTECTIONS, isArray: true })
+  reasons!: RepriceProtection[];
 }
 
 export class GroupFeeQueryDto {
@@ -153,6 +214,12 @@ export class GroupFeeDto {
     description: 'false once replaced by a newer version or stopped',
   })
   isActive!: boolean;
+  @ApiProperty({
+    enum: ['ACTIVE', 'REPLACED', 'STOPPED'],
+    description:
+      'REPLACED: a newer version took over («استُبدل»); STOPPED: deactivated without a replacement («موقوف»)',
+  })
+  status!: 'ACTIVE' | 'REPLACED' | 'STOPPED';
   @ApiProperty() createdAt!: Date;
   @ApiPropertyOptional({ type: UserRefDto, nullable: true })
   createdBy!: UserRefDto | null;
@@ -171,6 +238,29 @@ export class GroupFeeListDto {
     description: 'Newest first',
   })
   data!: GroupFeeDto[];
+}
+
+export class RepricePreviewDto {
+  @ApiProperty({ type: YearRefDto }) academicYear!: YearRefDto;
+  @ApiPropertyOptional({ type: GroupFeeDto, nullable: true })
+  currentFee!: GroupFeeDto | null;
+  @ApiProperty({ example: '200.000', description: 'New total per student' })
+  newTotalAmount!: string;
+  @ApiProperty({
+    type: RepriceItemDto,
+    isArray: true,
+    description:
+      'Live, never-paid obligations of active current members: voided and replaced at the new total',
+  })
+  toUpdate!: RepriceItemDto[];
+  @ApiProperty({
+    type: RepriceProtectedDto,
+    isArray: true,
+    description: 'Kept unchanged, with the reasons',
+  })
+  protected!: RepriceProtectedDto[];
+  @ApiProperty({ description: 'Live obligations already at the new amount' })
+  unchangedCount!: number;
 }
 
 export class ApplicableFeeDto {
@@ -266,9 +356,43 @@ export class ObligationDto {
     description: 'Frozen at creation (fee changes never rewrite it)',
   })
   expectedAmount!: string;
-  @ApiProperty({ example: '15.000', description: 'Live (non-voided) payments' })
+  @ApiProperty({
+    example: '40.000',
+    description:
+      'What is still required: expectedAmount − releasedAmount (a transfer to another group releases it)',
+  })
+  requiredAmount!: string;
+  @ApiProperty({
+    example: '15.000',
+    description: 'CASH: live (non-voided) payments only',
+  })
   totalPaid!: string;
-  @ApiProperty({ example: '25.000' }) remainingAmount!: string;
+  @ApiProperty({
+    example: '0.000',
+    description: 'Credit received from a previous group (not cash)',
+  })
+  creditIn!: string;
+  @ApiProperty({
+    example: '0.000',
+    description: 'Credit carried to the next group',
+  })
+  creditOut!: string;
+  @ApiProperty({ example: '0.000' }) releasedAmount!: string;
+  @ApiProperty({
+    example: '15.000',
+    description: 'cash + creditIn − creditOut',
+  })
+  settledAmount!: string;
+  @ApiProperty({
+    example: '25.000',
+    description: 'max(0, required − settled)',
+  })
+  remainingAmount!: string;
+  @ApiProperty({
+    example: '0.000',
+    description: 'max(0, settled − required): «رصيد زائد»',
+  })
+  excessAmount!: string;
   @ApiProperty({
     enum: PAYMENT_STATUSES,
     description: 'Derived: UNPAID / PARTIAL / PAID (informational only)',
@@ -283,6 +407,34 @@ export class ObligationDto {
   createdBy!: UserRefDto | null;
   @ApiPropertyOptional({ type: VoidInfoDto, nullable: true })
   voided!: VoidInfoDto | null;
+  @ApiPropertyOptional({
+    type: () => ClosedInfoDto,
+    nullable: true,
+    description: 'Closed by a transfer to another group',
+  })
+  closed!: ClosedInfoDto | null;
+  @ApiProperty({ type: () => CreditInfoDto, isArray: true })
+  creditsReceived!: CreditInfoDto[];
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: '«تعديل المعلوم»: the voided obligation this one replaces',
+  })
+  replacesObligationId!: string | null;
+}
+
+export class ClosedInfoDto {
+  @ApiProperty() at!: Date;
+  @ApiProperty({ type: RefDto }) toGroup!: RefDto;
+  @ApiProperty() creditAmount!: string;
+  @ApiProperty() excessAmount!: string;
+  @ApiProperty({ format: 'date' }) effectiveDate!: string;
+}
+
+export class CreditInfoDto {
+  @ApiProperty({ type: RefDto }) fromGroup!: RefDto;
+  @ApiProperty() amount!: string;
+  @ApiProperty() at!: Date;
 }
 
 export class ObligationListDto {
@@ -398,15 +550,31 @@ export class PaymentListDto {
 /* ------------------------------ summaries ------------------------------ */
 
 export class TotalsDto {
-  @ApiProperty({ example: '120.000' }) expectedAmount!: string;
-  @ApiProperty({ example: '45.000' }) totalPaid!: string;
-  @ApiProperty({ example: '75.000' }) remainingAmount!: string;
+  @ApiProperty({ example: '120.000', description: 'Σ required amounts' })
+  expectedAmount!: string;
+  @ApiProperty({
+    example: '45.000',
+    description: 'Σ CASH payments (credit carried between groups is not cash)',
+  })
+  totalPaid!: string;
+  @ApiProperty({
+    example: '0.000',
+    description:
+      'Net credit carried INTO these obligations from others (0 association-wide)',
+  })
+  creditAmount!: string;
+  @ApiProperty({ example: '75.000', description: 'Σ remaining' })
+  remainingAmount!: string;
+  @ApiProperty({ example: '0.000', description: 'Σ excess («رصيد زائد»)' })
+  excessAmount!: string;
 }
 
 export class StatusCountsDto {
   @ApiProperty() UNPAID!: number;
   @ApiProperty() PARTIAL!: number;
   @ApiProperty() PAID!: number;
+  @ApiProperty({ description: 'Closed by a transfer to another group' })
+  CLOSED!: number;
 }
 
 export class ReceiptCountsDto {
@@ -504,4 +672,81 @@ export class FinanceSummaryDto {
       'Cash received for those obligations within the payment-date range',
   })
   collected!: CollectedDto;
+}
+
+/* ------------------------- transfers between groups ------------------------- */
+
+/** A confirmed «نقل مالي» (as shown by the preview): checked again under lock. */
+export class FinancialTransferConfirmDto {
+  @ApiProperty({ format: 'uuid' }) @IsUUID() fromObligationId!: string;
+  @ApiProperty({
+    example: '60.000',
+    description: 'The credit shown by the preview (may be 0)',
+  })
+  @IsString()
+  @Matches(/^\d{1,7}(?:\.\d{1,3})?$/, { message: 'مبلغ غير صالح' })
+  creditAmount!: string;
+}
+
+export class FinancialTransfersDto {
+  @ApiPropertyOptional({
+    type: FinancialTransferConfirmDto,
+    isArray: true,
+    description:
+      'Moving to ANOTHER group: the transfers of the preview, confirmed (required when it lists some)',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => FinancialTransferConfirmDto)
+  financialTransfers?: FinancialTransferConfirmDto[];
+}
+
+class TransferSourceDto {
+  @ApiProperty() obligationId!: string;
+  @ApiProperty({ type: RefDto }) group!: RefDto;
+  @ApiProperty() requiredAmount!: string;
+  @ApiProperty({ description: 'Cash paid on it' }) cashPaid!: string;
+  @ApiProperty() creditIn!: string;
+  @ApiProperty() settledAmount!: string;
+}
+
+class TransferTargetDto {
+  @ApiProperty({ type: RefDto }) group!: RefDto;
+  @ApiPropertyOptional({ type: String, nullable: true })
+  feeId!: string | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'What the new group requires (null: no active fee)',
+  })
+  requiredAmount!: string | null;
+}
+
+export class TransferItemDto {
+  @ApiProperty({ type: YearRefDto }) academicYear!: YearRefDto;
+  @ApiProperty({ type: TransferSourceDto }) from!: TransferSourceDto;
+  @ApiProperty({ type: TransferTargetDto }) to!: TransferTargetDto;
+  @ApiProperty() creditAmount!: string;
+  @ApiProperty({ description: 'Stays on the old obligation («رصيد زائد»)' })
+  excessAmount!: string;
+  @ApiPropertyOptional({ type: String, nullable: true })
+  remainingAfter!: string | null;
+  @ApiPropertyOptional({
+    enum: ['NO_TARGET_FEE'],
+    nullable: true,
+    description: 'Why this transfer cannot be applied',
+  })
+  blocked!: 'NO_TARGET_FEE' | null;
+}
+
+export class TransferPlanDto {
+  @ApiProperty({
+    description: 'A class of the same group: no financial change',
+  })
+  sameGroup!: boolean;
+  @ApiProperty({ type: RefDto }) targetGroup!: RefDto;
+  @ApiProperty({ type: TransferItemDto, isArray: true })
+  transfers!: TransferItemDto[];
 }

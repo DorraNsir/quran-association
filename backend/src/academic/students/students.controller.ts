@@ -20,10 +20,12 @@ import {
 
 import type { AuthPrincipal } from '../../auth/auth.types.js';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator.js';
+import { TransferPlanDto } from '../../finance/finance.dto.js';
 import { AdminApi } from '../admin-api.decorator.js';
 import {
   AssignStudentGroupClassDto,
   CreateStudentDto,
+  GroupClassPreviewQueryDto,
   StudentDto,
   SetStudentStatusDto,
   StudentEnrollmentDto,
@@ -93,10 +95,28 @@ export class StudentsController {
     return this.students.update(id, dto);
   }
 
+  @Get(':id/group-class/preview')
+  @ApiOperation({
+    summary:
+      "«نقل مالي» preview of a move (read-only): the old group's obligations and the credit carried to the new group",
+  })
+  @ApiOkResponse({ type: TransferPlanDto })
+  @ApiNotFoundResponse({
+    description: 'STUDENT_NOT_FOUND, GROUP_CLASS_NOT_FOUND',
+  })
+  groupClassPreview(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: GroupClassPreviewQueryDto,
+  ): Promise<TransferPlanDto> {
+    return this.students.groupClassPreview(id, query.groupClassId);
+  }
+
   @Patch(':id/group-class')
   @ApiOperation({
     summary:
-      'Assign / move to another ACTIVE class at an effective date (closes the open enrollment, opens a new one; no payment created)',
+      'Assign / move to another ACTIVE class at an effective date (closes the open enrollment, opens a new one)',
+    description:
+      "To ANOTHER group: the student is charged the new group's fee, and the obligations of the previous group (academic years not over) are closed with their settled amount carried as credit — exactly the preview's transfers, confirmed in `financialTransfers`.",
   })
   @ApiOkResponse({ type: StudentDto })
   @ApiNotFoundResponse({
@@ -104,7 +124,8 @@ export class StudentsController {
   })
   @ApiBadRequestResponse({ description: 'FUTURE_EFFECTIVE_DATE' })
   @ApiConflictResponse({
-    description: 'GROUP_CLASS_INACTIVE, EFFECTIVE_DATE_BEFORE_CURRENT',
+    description:
+      'GROUP_CLASS_INACTIVE, EFFECTIVE_DATE_BEFORE_CURRENT, FINANCIAL_TRANSFER_REQUIRED, FINANCIAL_TRANSFER_STALE, TRANSFER_TARGET_HAS_NO_FEE',
   })
   assignGroupClass(
     @CurrentUser() actor: AuthPrincipal,
@@ -116,6 +137,7 @@ export class StudentsController {
       dto.groupClassId,
       dto.effectiveDate,
       actor.userId,
+      dto.financialTransfers,
     );
   }
 

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { studentNotFound } from '../academic/students/students.service.js';
+import { fromDbDate } from '../common/dates.js';
 import { conflict, isUniqueViolation, notFound } from '../common/errors.js';
 import { PageSizeService } from '../common/page-size.service.js';
 import { paginationMeta } from '../common/pagination.js';
@@ -14,7 +15,7 @@ import type {
   VoidDto,
 } from './finance.dto.js';
 import { feeNotFound } from './group-fees.service.js';
-import { balance, CURRENCY, ZERO } from './money.js';
+import { CURRENCY, money, obligationBalance, ZERO } from './money.js';
 
 const userRef = { select: { id: true, username: true } } as const;
 
@@ -45,6 +46,8 @@ const select = {
   voidedAt: true,
   voidedBy: userRef,
   voidReason: true,
+  closedAt: true,
+  replacesObligationId: true,
 } satisfies Prisma.PaymentObligationSelect;
 
 type Row = Prisma.PaymentObligationGetPayload<{ select: typeof select }>;
@@ -52,23 +55,36 @@ type Row = Prisma.PaymentObligationGetPayload<{ select: typeof select }>;
 export const obligationNotFound = () =>
   notFound('OBLIGATION_NOT_FOUND', 'الالتزام المالي غير موجود');
 
-/** SQL: live total paid of the obligation aliased `o`. */
+/** SQL: live CASH paid on the obligation aliased `o`. */
 export const LIVE_PAID = Prisma.sql`COALESCE((SELECT SUM(p.amount) FROM payments p
   WHERE p."obligationId" = o.id AND p."voidedAt" IS NULL), 0)`;
+/** SQL: credit received by `o` from a previous group (not cash). */
+export const CREDIT_IN = Prisma.sql`COALESCE((SELECT SUM(t."creditAmount") FROM obligation_transfers t
+  WHERE t."toObligationId" = o.id), 0)`;
+/** SQL: credit carried from `o` to the next group. */
+export const CREDIT_OUT = Prisma.sql`COALESCE((SELECT SUM(t."creditAmount") FROM obligation_transfers t
+  WHERE t."fromObligationId" = o.id), 0)`;
+/** SQL: what `o` still requires (a transfer releases it). */
+export const REQUIRED = Prisma.sql`(o."expectedAmount" - COALESCE((SELECT SUM(t."releasedAmount")
+  FROM obligation_transfers t WHERE t."fromObligationId" = o.id), 0))`;
+/** SQL: cash + credit in − credit out (mirrors obligationBalance()). */
+export const SETTLED = Prisma.sql`(${LIVE_PAID} + ${CREDIT_IN} - ${CREDIT_OUT})`;
 
 /** SQL: derived status of the obligation aliased `o` (mirrors paymentStatus()). */
 export const DERIVED_STATUS = Prisma.sql`CASE
-  WHEN ${LIVE_PAID} <= 0 THEN 'UNPAID'
-  WHEN ${LIVE_PAID} >= o."expectedAmount" THEN 'PAID'
+  WHEN o."closedAt" IS NOT NULL THEN 'CLOSED'
+  WHEN ${SETTLED} <= 0 THEN 'UNPAID'
+  WHEN ${SETTLED} >= ${REQUIRED} THEN 'PAID'
   ELSE 'PARTIAL' END`;
 
 /**
- * Payment obligations (ما يجب على الطالب دفعه): created explicitly by an
- * admin from an active group fee — never automatically (not on acceptance,
- * not on transfer, no monthly generation). The amount is the fee total at
- * creation and is frozen. One live obligation per student, group and
- * academic year (the billing period). Totals and status are derived from
- * live payments, never stored.
+ * Payment obligations (ما يجب على الطالب دفعه): created automatically from
+ * the group's active fee (auto-billing.ts), or by an admin. The amount is the
+ * fee total at creation and is frozen; «تعديل المعلوم» replaces a never-paid
+ * one (void + replacement), a transfer to another group closes it and carries
+ * what was settled as credit (ObligationTransfer). One live obligation per
+ * student, group and academic year. Balances and status are derived from
+ * live payments and transfers, never stored.
  */
 @Injectable()
 export class ObligationsService {
@@ -216,6 +232,15 @@ export class ObligationsService {
           'لا يمكن إلغاء التزام عليه دفعات: ألغِ الدفعات أولًا',
         );
       }
+      const transfers = await tx.obligationTransfer.count({
+        where: { OR: [{ fromObligationId: id }, { toObligationId: id }] },
+      });
+      if (transfers) {
+        throw conflict(
+          'OBLIGATION_HAS_TRANSFER',
+          'لا يمكن إلغاء التزام مرتبط بنقل الطالب بين المجموعات: الرصيد المحوّل جزء من سجله المالي',
+        );
+      }
       await tx.paymentObligation.update({
         where: { id },
         data: {
@@ -239,7 +264,7 @@ export class ObligationsService {
   /** Obligation DTOs with derived balances, in the order of `ids`. */
   async hydrate(ids: string[]): Promise<ObligationDto[]> {
     if (!ids.length) return [];
-    const [rows, paid, notIssued] = await Promise.all([
+    const [rows, paid, notIssued, transfers] = await Promise.all([
       this.prisma.paymentObligation.findMany({
         where: { id: { in: ids } },
         select,
@@ -259,6 +284,25 @@ export class ObligationsService {
         },
         _count: { _all: true },
       }),
+      this.prisma.obligationTransfer.findMany({
+        where: {
+          OR: [
+            { fromObligationId: { in: ids } },
+            { toObligationId: { in: ids } },
+          ],
+        },
+        select: {
+          fromObligationId: true,
+          toObligationId: true,
+          releasedAmount: true,
+          creditAmount: true,
+          excessAmount: true,
+          effectiveDate: true,
+          createdAt: true,
+          from: { select: { group: { select: { id: true, name: true } } } },
+          to: { select: { group: { select: { id: true, name: true } } } },
+        },
+      }),
     ]);
     const byId = new Map(rows.map((r) => [r.id, r]));
     const paidBy = new Map(paid.map((p) => [p.obligationId, p]));
@@ -270,19 +314,54 @@ export class ObligationsService {
       .filter((r): r is Row => Boolean(r))
       .map((r) => {
         const sums = paidBy.get(r.id);
-        const { student, groupFee, voidedAt, voidedBy, voidReason, ...rest } =
-          r;
+        const {
+          student,
+          groupFee,
+          voidedAt,
+          voidedBy,
+          voidReason,
+          closedAt,
+          ...rest
+        } = r;
+        const out = transfers.find((t) => t.fromObligationId === r.id);
+        const received = transfers.filter((t) => t.toObligationId === r.id);
+        const creditIn = received.reduce(
+          (sum, t) => sum.plus(t.creditAmount),
+          ZERO,
+        );
         return {
           ...rest,
           student: { id: student.id, ...student.person },
           fee: { ...groupFee, amount: groupFee.amount.toFixed(3) },
           currency: CURRENCY,
-          ...balance(r.expectedAmount, sums?._sum.amount ?? ZERO),
+          ...obligationBalance({
+            expected: r.expectedAmount,
+            cash: sums?._sum.amount ?? ZERO,
+            creditIn,
+            creditOut: out?.creditAmount ?? ZERO,
+            released: out?.releasedAmount ?? ZERO,
+            closed: Boolean(closedAt),
+          }),
           paymentsCount: sums?._count._all ?? 0,
           receiptsNotIssued: notIssuedBy.get(r.id) ?? 0,
           voided: voidedAt
             ? { at: voidedAt, by: voidedBy, reason: voidReason ?? '' }
             : null,
+          closed:
+            closedAt && out
+              ? {
+                  at: closedAt,
+                  toGroup: out.to.group,
+                  creditAmount: money(out.creditAmount),
+                  excessAmount: money(out.excessAmount),
+                  effectiveDate: fromDbDate(out.effectiveDate),
+                }
+              : null,
+          creditsReceived: received.map((t) => ({
+            fromGroup: t.from.group,
+            amount: money(t.creditAmount),
+            at: t.createdAt,
+          })),
         };
       });
   }

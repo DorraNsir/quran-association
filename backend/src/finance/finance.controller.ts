@@ -43,6 +43,8 @@ import {
   PaymentDto,
   PaymentListDto,
   PaymentListQueryDto,
+  RepricePreviewDto,
+  RepricePreviewQueryDto,
   SetGroupFeeDto,
   SetReceiptDto,
   StudentFinanceSummaryDto,
@@ -72,11 +74,27 @@ export class GroupFeesController {
     return this.fees.listForGroup(groupId, query);
   }
 
+  @Get('groups/:groupId/fees/reprice-preview')
+  @ApiOperation({
+    summary:
+      '«تعديل المعلوم»: obligations a new amount would update or keep (read-only)',
+  })
+  @ApiOkResponse({ type: RepricePreviewDto })
+  @ApiNotFoundResponse({
+    description: 'GROUP_NOT_FOUND, ACADEMIC_YEAR_NOT_FOUND',
+  })
+  repricePreview(
+    @Param('groupId', ParseUUIDPipe) groupId: string,
+    @Query() query: RepricePreviewQueryDto,
+  ): Promise<RepricePreviewDto> {
+    return this.fees.repricePreview(groupId, query);
+  }
+
   @Put('groups/:groupId/fees')
   @ApiOperation({
     summary: 'Set the fee of a group for an academic year (new version)',
     description:
-      'Creates a new active version and deactivates the previous one (kept as history). Existing obligations keep the amount they were charged; no obligation is created automatically.',
+      'Creates a new active version and deactivates the previous one (kept as history). The never-paid obligations of active current members (exactly `repriceObligationIds`, from the reprice preview) are voided and replaced at the new total; every other obligation keeps its amount. Current members without an obligation are charged automatically.',
   })
   @ApiOkResponse({ type: GroupFeeDto })
   @ApiBadRequestResponse({
@@ -87,7 +105,8 @@ export class GroupFeesController {
     description: 'GROUP_NOT_FOUND, ACADEMIC_YEAR_NOT_FOUND',
   })
   @ApiConflictResponse({
-    description: 'GROUP_ARCHIVED, GROUP_FEE_CONCURRENT_UPDATE',
+    description:
+      'GROUP_ARCHIVED, GROUP_FEE_CONCURRENT_UPDATE, FEE_REPRICE_CONFIRMATION_REQUIRED, FEE_REPRICE_STALE',
   })
   set(
     @Param('groupId', ParseUUIDPipe) groupId: string,

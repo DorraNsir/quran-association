@@ -88,6 +88,11 @@ function toDto(p: Row): PaymentDto {
   };
 }
 
+const creditTransferred = () =>
+  conflict(
+    'PAYMENT_CREDIT_TRANSFERRED',
+    'لا يمكن إلغاء هذه الدفعة: حُوِّل مبلغها رصيدًا إلى مجموعة الطالب الجديدة عند نقله. إلغاؤها يُبطل ذلك الرصيد؛ يبقى السجل كما هو.',
+  );
 const paymentNotFound = () =>
   notFound('PAYMENT_NOT_FOUND', 'الدفعة غير موجودة');
 const exceeds = (remaining?: string) =>
@@ -129,6 +134,7 @@ export class PaymentsService {
           select: {
             expectedAmount: true,
             voidedAt: true,
+            closedAt: true,
             groupFee: { select: { billingType: true, numberOfPeriods: true } },
           },
         });
@@ -136,6 +142,12 @@ export class PaymentsService {
           throw conflict(
             'OBLIGATION_VOIDED',
             'هذا الالتزام ملغى: لا يمكن تسجيل دفعة عليه',
+          );
+        }
+        if (obligation.closedAt) {
+          throw conflict(
+            'OBLIGATION_CLOSED',
+            'أُغلق هذا الالتزام بنقل الطالب إلى مجموعة أخرى: سجّل الدفعة على التزام المجموعة الحالية',
           );
         }
         const { billingType, numberOfPeriods } = obligation.groupFee;
@@ -165,9 +177,14 @@ export class PaymentsService {
           where: { obligationId: dto.obligationId, voidedAt: null },
           _sum: { amount: true },
         });
-        const remaining = obligation.expectedAmount.minus(
-          paid._sum.amount ?? 0,
-        );
+        // Credit carried from a previous group settles part of it too
+        const credit = await tx.obligationTransfer.aggregate({
+          where: { toObligationId: dto.obligationId },
+          _sum: { creditAmount: true },
+        });
+        const remaining = obligation.expectedAmount
+          .minus(paid._sum.amount ?? 0)
+          .minus(credit._sum.creditAmount ?? 0);
         if (remaining.lte(0)) {
           throw conflict(
             'OBLIGATION_FULLY_PAID',
@@ -200,6 +217,11 @@ export class PaymentsService {
     } catch (error) {
       // Database backstop (trigger) — same answer as the service check
       if (violatesConstraint(error, 'payments_no_overpayment')) throw exceeds();
+      if (violatesConstraint(error, 'payments_closed_obligation'))
+        throw conflict(
+          'OBLIGATION_CLOSED',
+          'أُغلق هذا الالتزام بنقل الطالب إلى مجموعة أخرى: سجّل الدفعة على التزام المجموعة الحالية',
+        );
       throw error;
     }
   }
@@ -282,21 +304,35 @@ export class PaymentsService {
     dto: VoidDto,
     adminUserId: string,
   ): Promise<PaymentDto> {
-    await this.prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<{ voidedAt: Date | null }[]>`
-        SELECT "voidedAt" FROM payments WHERE id = ${id}::uuid FOR UPDATE`;
-      if (!locked.length) throw paymentNotFound();
-      if (locked[0].voidedAt)
-        throw conflict('PAYMENT_ALREADY_VOIDED', 'هذه الدفعة ملغاة بالفعل');
-      await tx.payment.update({
-        where: { id },
-        data: {
-          voidedAt: new Date(),
-          voidedByUserId: adminUserId,
-          voidReason: dto.reason,
-        },
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const locked = await tx.$queryRaw<
+          { voidedAt: Date | null; obligationId: string }[]
+        >`
+        SELECT "voidedAt", "obligationId" FROM payments WHERE id = ${id}::uuid FOR UPDATE`;
+        if (!locked.length) throw paymentNotFound();
+        if (locked[0].voidedAt)
+          throw conflict('PAYMENT_ALREADY_VOIDED', 'هذه الدفعة ملغاة بالفعل');
+        // Same lock as a transfer of the obligation: one waits for the other
+        const [obligation] = await tx.$queryRaw<{ closedAt: Date | null }[]>`
+        SELECT "closedAt" FROM payment_obligations
+        WHERE id = ${locked[0].obligationId}::uuid FOR UPDATE`;
+        if (obligation.closedAt) throw creditTransferred();
+        await tx.payment.update({
+          where: { id },
+          data: {
+            voidedAt: new Date(),
+            voidedByUserId: adminUserId,
+            voidReason: dto.reason,
+          },
+        });
       });
-    });
+    } catch (error) {
+      // Database backstop (trigger) — same answer as the service check
+      if (violatesConstraint(error, 'payments_credit_transferred'))
+        throw creditTransferred();
+      throw error;
+    }
     return this.get(id);
   }
 

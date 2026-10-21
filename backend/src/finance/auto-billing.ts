@@ -14,6 +14,8 @@ type Tx = Prisma.TransactionClient;
  * Safe to repeat: a student who already has a live obligation for the group
  * and year is skipped (also guaranteed by the one-live-obligation unique
  * index), and an obligation an admin voided for that fee is not recreated.
+ * An obligation CLOSED by a transfer is history: a student back in that
+ * group is billed again (their credit, if any, follows through the transfer).
  * The amount is the fee total at that moment, then frozen (later fee
  * changes never rewrite it). Returns how many obligations were created.
  */
@@ -48,8 +50,9 @@ export async function billStudents(
       AND NOT EXISTS (
         SELECT 1 FROM payment_obligations o
         WHERE o."studentId" = s.id
-          AND ((o."groupId" = f."groupId" AND o."academicYearId" = f."academicYearId" AND o."voidedAt" IS NULL)
-            OR o."groupFeeId" = f.id)
+          AND ((o."groupId" = f."groupId" AND o."academicYearId" = f."academicYearId"
+                AND o."voidedAt" IS NULL AND o."closedAt" IS NULL)
+            OR (o."groupFeeId" = f.id AND o."voidedAt" IS NOT NULL))
       )`;
   if (rows.length === 0) return 0;
   const { count } = await tx.paymentObligation.createMany({

@@ -428,6 +428,9 @@ export interface GroupFee {
   startDate?: ISODate
   endDate?: ISODate
   isActive: boolean
+  /** ACTIVE; REPLACED by a newer version («استُبدل»); STOPPED without replacement («موقوف») */
+  status?: "ACTIVE" | "REPLACED" | "STOPPED"
+  deactivatedAt?: ISODate
   createdAt: ISODate
   updatedAt: ISODate
 }

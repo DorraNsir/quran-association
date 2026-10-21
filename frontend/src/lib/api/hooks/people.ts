@@ -119,8 +119,16 @@ export function useSetStudentStatus() {
 /** Transfer: closes the current enrollment and opens one in the target class (history kept). */
 export function useTransferStudent() {
   return useApiMutation(
-    ({ id, groupClassId }: { id: string; groupClassId: string }) =>
-      api(`/admin/students/${id}/group-class`, { method: "PATCH", body: { groupClassId } }),
+    ({
+      id,
+      groupClassId,
+      financialTransfers,
+    }: {
+      id: string
+      groupClassId: string
+      /** «نقل مالي» confirmed from the preview (moving to another group) */
+      financialTransfers?: { fromObligationId: string; creditAmount: string }[]
+    }) => api(`/admin/students/${id}/group-class`, { method: "PATCH", body: { groupClassId, financialTransfers } }),
     affected
   )
 }

@@ -2,7 +2,13 @@ import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 
 import { Prisma } from '../generated/prisma/client.js';
-import { balance, IsMoney, money, paymentStatus } from './money.js';
+import {
+  balance,
+  IsMoney,
+  money,
+  obligationBalance,
+  paymentStatus,
+} from './money.js';
 
 const d = (v: string) => new Prisma.Decimal(v);
 
@@ -53,5 +59,50 @@ describe('money', () => {
       status: 'PARTIAL',
     });
     expect(balance(d('10'), d('12')).remainingAmount).toBe('0.000');
+  });
+
+  it('transfers: credit settles, release discharges, excess is never negative remaining', () => {
+    // New group: 200 required, 60 credit carried from the old one
+    expect(
+      obligationBalance({
+        expected: d('200'),
+        cash: d('0'),
+        creditIn: d('60'),
+      }),
+    ).toMatchObject({
+      requiredAmount: '200.000',
+      totalPaid: '0.000',
+      settledAmount: '60.000',
+      remainingAmount: '140.000',
+      excessAmount: '0.000',
+      status: 'PARTIAL',
+    });
+    // Old group: 120 released, 60 cash carried away → nothing left, closed
+    expect(
+      obligationBalance({
+        expected: d('120'),
+        cash: d('60'),
+        creditOut: d('60'),
+        released: d('120'),
+        closed: true,
+      }),
+    ).toMatchObject({
+      requiredAmount: '0.000',
+      totalPaid: '60.000',
+      settledAmount: '0.000',
+      remainingAmount: '0.000',
+      excessAmount: '0.000',
+      status: 'CLOSED',
+    });
+    // Paid 120, new fee 100: 100 carried, 20 stays as excess on the old one
+    expect(
+      obligationBalance({
+        expected: d('120'),
+        cash: d('120'),
+        creditOut: d('100'),
+        released: d('120'),
+        closed: true,
+      }),
+    ).toMatchObject({ remainingAmount: '0.000', excessAmount: '20.000' });
   });
 });
