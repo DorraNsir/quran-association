@@ -689,7 +689,7 @@ export class SessionsService {
   /** generate() inside an existing transaction (takes the scheduling lock, re-entrant). */
   async generateInTx(
     tx: Tx,
-    dto: GenerateSessionsDto & { groupId?: string },
+    dto: GenerateSessionsDto & { groupId?: string; weeklyScheduleId?: string },
   ): Promise<GenerateSessionsResultDto> {
     await this.conflicts.lockScheduling(tx);
     if (
@@ -721,12 +721,17 @@ export class SessionsService {
       select: {
         ...teamSelect,
         schedules: {
+          // One slot only (its past lessons, at creation) — or every slot
+          ...(dto.weeklyScheduleId
+            ? { where: { id: dto.weeklyScheduleId } }
+            : {}),
           select: {
             id: true,
             dayOfWeek: true,
             startTime: true,
             endTime: true,
             roomId: true,
+            startDate: true,
             // «الحصص المشتركة»: the slot's additional classes
             extraClasses: { select: { groupClass: { select: teamSelect } } },
           },
@@ -737,6 +742,8 @@ export class SessionsService {
       .filter((c) => c.supervisor.status !== 'ACTIVE' && c.schedules.length > 0)
       .map((c) => c.id);
     const plannable = classes.filter((c) => c.supervisor.status === 'ACTIVE');
+    // The CURRENT team, past lessons included («تاريخ بداية الحصص»): an
+    // assistant's assignedAt is when it was entered, not when it began teaching
     const activeAssistants = (c: {
       assistants: { teacher: { id: string; status: string } }[];
     }) =>
@@ -750,7 +757,13 @@ export class SessionsService {
     // supervisor / branch, does not take part in the new lessons.
     const plan = new Map<
       string,
-      { extraIds: string[]; supervisorId: string; assistantIds: string[] }
+      {
+        extraIds: string[];
+        supervisorId: string;
+        assistantIds: string[];
+        /** «تاريخ بداية الحصص»: no lesson before it (null: an older slot) */
+        startDate: string | null;
+      }
     >();
     for (const c of plannable)
       for (const ws of c.schedules) {
@@ -769,6 +782,7 @@ export class SessionsService {
           assistantIds: [
             ...new Set([c, ...extras].flatMap(activeAssistants)),
           ].filter((t) => t !== c.supervisor.id),
+          startDate: ws.startDate ? fromDbDate(ws.startDate) : null,
         });
       }
     const existing = await this.sessionsInRange(tx, dto.from, dto.to);
@@ -782,6 +796,8 @@ export class SessionsService {
       for (const c of plannable) {
         for (const ws of c.schedules.filter((s) => s.dayOfWeek === weekday)) {
           const p = plan.get(ws.id)!;
+          // Not before the slot's «تاريخ بداية الحصص»
+          if (p.startDate && date < p.startDate) continue;
           const participants = [c.id, ...p.extraIds];
           const teachers = [p.supervisorId, ...p.assistantIds];
           const slot = {

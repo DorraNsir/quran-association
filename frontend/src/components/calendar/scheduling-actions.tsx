@@ -20,7 +20,7 @@ import { describeClass, fullName, indexLookups, roomsOfBranch, type Lookups } fr
 import { formatDate, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { isValidTimeRange } from "@/lib/scheduling"
-import type { ISODate, Student, WeeklySchedule } from "@/types/domain"
+import type { ISODate, Student, WeeklySlotSave } from "@/types/domain"
 
 import { ScheduleFormSheet } from "./schedule-form-sheet"
 import { SharedClassesField } from "./shared-classes-field"
@@ -34,7 +34,7 @@ import { SharedClassesField } from "./shared-classes-field"
 export function useSaveWeeklySlot(lookups: Lookups) {
   const indexes = indexLookups(lookups)
   const mutation = useApiMutation(
-    (saved: WeeklySchedule) => {
+    (saved: WeeklySlotSave) => {
       const body = {
         dayOfWeek: saved.day,
         startTime: saved.start,
@@ -43,6 +43,11 @@ export function useSaveWeeklySlot(lookups: Lookups) {
         // «حصة مشتركة»: the other classes of the lesson (full list; [] = back to a
         // normal slot) — omitted for a normal slot, so its request is unchanged
         ...(saved.additionalGroupClassIds ? { additionalGroupClassIds: saved.additionalGroupClassIds } : {}),
+        // «تاريخ بداية الحصص»: always at creation; when editing, only a change
+        // (the form leaves it out otherwise, so other edits never touch it)
+        ...(saved.startDate ? { startDate: saved.startDate } : {}),
+        // A later start date: exactly the unused lessons the administrator confirmed
+        ...(saved.removeSessionIds ? { removeSessionIds: saved.removeSessionIds } : {}),
       }
       return saved.id
         ? api<WeeklySlotWrite>(`/admin/group-classes/${saved.groupClassId}/schedules/${saved.id}`, { method: "PATCH", body })
@@ -50,7 +55,7 @@ export function useSaveWeeklySlot(lookups: Lookups) {
     },
     [keys.schedules, keys.sessions, keys.rooms]
   )
-  return async (saved: WeeklySchedule) => {
+  return async (saved: WeeklySlotSave) => {
     const exists = Boolean(saved.id)
     const result = await mutation.mutateAsync(saved)
     const names = [saved.groupClassId, ...(saved.additionalGroupClassIds ?? [])]

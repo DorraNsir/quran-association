@@ -128,6 +128,10 @@ export interface ScheduleDto {
   /** «حصة مشتركة»: the other participating classes */
   additionalClasses?: { id: string; group: { id: string; name: string } }[]
   room: Ref
+  /** «تاريخ بداية الحصص» (YYYY-MM-DD): no lesson before it */
+  startDate?: string
+  /** false: a slot created before «تاريخ بداية الحصص» existed (startDate = its creation day) */
+  startDateSet?: boolean
 }
 export interface AcademicYearDto {
   id: string
@@ -206,6 +210,7 @@ export const toSchedule = (s: ScheduleDto): WeeklySchedule => ({
   start: s.startTime,
   end: s.endTime,
   roomId: s.room.id,
+  ...(s.startDate ? { startDate: s.startDate, startDateSet: s.startDateSet ?? true } : {}),
   ...(s.additionalClasses?.length
     ? {
         additionalGroupClassIds: s.additionalClasses.map((c) => c.id),
@@ -216,6 +221,31 @@ export const toSchedule = (s: ScheduleDto): WeeklySchedule => ({
       }
     : {}),
 })
+/** Why a lesson before a later «تاريخ بداية الحصص» is kept */
+export type StartDateProtection =
+  | "COMPLETED"
+  | "CANCELLED"
+  | "STUDENT_ATTENDANCE"
+  | "TEACHER_ATTENDANCE"
+  | "WORK"
+  | "ATTENDANCE_HISTORY"
+  | "NOTIFICATIONS"
+  | "MODIFIED"
+export interface StartDateImpactDto {
+  startDate: string
+  previousStartDate: string
+  /** Unused lessons before the new date: removed only once confirmed (their ids are sent back) */
+  removable: { id: string; date: string; reasons: [] }[]
+  /** Lessons with activity: the new date is refused while they exist */
+  protected: { id: string; date: string; reasons: StartDateProtection[] }[]
+}
+
+/** «تعديل الموعد الأسبوعي»: what a new start date would do to the slot's existing lessons (read-only). */
+export const fetchStartDateImpact = (groupClassId: string, scheduleId: string, startDate: string) =>
+  api<StartDateImpactDto>(`/admin/group-classes/${groupClassId}/schedules/${scheduleId}/start-date-impact`, {
+    query: { startDate },
+  })
+
 export const toAcademicYear = (y: AcademicYearDto): AcademicYear => ({
   id: y.id,
   label: y.label,

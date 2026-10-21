@@ -27,7 +27,7 @@ import { labels } from "@/lib/i18n"
 import { keys, useApiMutation } from "@/lib/api/academic"
 import { api } from "@/lib/api/client"
 import { toSession, useSessionRange } from "@/lib/api/sessions"
-import type { Group, ID, ISODate, Student, WeeklySchedule } from "@/types/domain"
+import type { Group, ID, ISODate, Student, WeeklySchedule, WeeklySlotSave } from "@/types/domain"
 
 import { toneOf, type CalendarEntry } from "./calendar-event"
 import { CalendarToolbar, type CalendarView as View } from "./calendar-toolbar"
@@ -170,20 +170,32 @@ export function CalendarView({
   const entriesOn = (d: ISODate) =>
     visible
       .filter((e) => e.schedule.day === weekdayOf(d))
-      .map((e): CalendarEntry => {
+      .flatMap((e): CalendarEntry[] => {
         const occurrence = occurrences.get(`${e.schedule.id}|${d}`)
-        // A session keeps its own room (moved for one date, or planned before a slot's room change)
-        const room = occurrence ? (roomsById.get(occurrence.roomId) ?? e.room) : e.room
-        return { ...e, occurrence, room }
+        // No real session: the weekly plan is drawn only from today on, never
+        // before the slot's «تاريخ بداية الحصص» (a real session always shows)
+        if (!occurrence) return d < today || (e.schedule.startDate && d < e.schedule.startDate) ? [] : [e]
+        // A session keeps its own time and room (moved for one date, or planned
+        // before a change of the slot)
+        return [
+          {
+            ...e,
+            schedule: { ...e.schedule, start: occurrence.start, end: occurrence.end },
+            occurrence,
+            room: roomsById.get(occurrence.roomId) ?? e.room,
+          },
+        ]
       })
       .concat(visibleExtras.filter((e) => e.occurrence?.date === d))
       .filter((e) => filters.room === ALL || e.room?.id === filters.room)
       .sort((a, b) => a.schedule.start.localeCompare(b.schedule.start))
 
-  const hours = visibleHours([...lookups.schedules, ...extras.map((e) => e.schedule)])
+  const hours = visibleHours([...lookups.schedules, ...occurrences.values(), ...extras.map((e) => e.schedule)])
 
   const setFilter = (key: keyof CalendarFilters) => (value: string) =>
     setFilters((prev) => ({ ...prev, [key]: value, ...(key === "branch" ? { room: ALL } : {}) }))
+  /** The weekly slot itself (an entry shows its dated session's own time) */
+  const weeklySlotOf = (entry: CalendarEntry) => schedules.find((s) => s.id === entry.schedule.id) ?? entry.schedule
   const hasActiveFilters = Object.values(filters).some((v) => v !== ALL)
 
   // ── Actions ──
@@ -216,7 +228,7 @@ export function CalendarView({
     [keys.schedules, keys.sessions]
   )
 
-  async function saveSchedule(saved: WeeklySchedule) {
+  async function saveSchedule(saved: WeeklySlotSave) {
     await saveWeeklySlot(saved)
     setFormState((s) => (s ? { ...s, open: false } : s))
     setDetails(null)
@@ -395,7 +407,7 @@ export function CalendarView({
         open={Boolean(details?.open)}
         onOpenChange={(open) => !open && setDetails((d) => (d ? { ...d, open: false } : d))}
         onEdit={(entry) =>
-          setFormState((prev) => ({ key: (prev?.key ?? 0) + 1, open: true, schedule: entry.schedule }))
+          setFormState((prev) => ({ key: (prev?.key ?? 0) + 1, open: true, schedule: weeklySlotOf(entry) }))
         }
         onRemove={(entry) => setRemoving({ entry, open: true })}
         onCancelSession={(entry) => {
@@ -423,7 +435,7 @@ export function CalendarView({
           onOpenChange={(open) => !open && setRemoving((r) => (r ? { ...r, open: false } : r))}
           destructive
           title="حذف هذا الموعد الأسبوعي؟"
-          description={`سيُحذف موعد ${removing.entry.group.name} كل ${labels.weekday[removing.entry.schedule.day]} (${formatTimeRange(removing.entry.schedule.start, removing.entry.schedule.end)}) من البرنامج الأسبوعي، وتصبح ${removing.entry.room?.name ?? "القاعة"} متاحة في هذا الوقت. تُلغى حصصه القادمة التي لم يُسجَّل حضورها، وتبقى الحصص السابقة وسجلات الحضور كما هي.`}
+          description={`سيُحذف موعد ${removing.entry.group.name} كل ${labels.weekday[removing.entry.schedule.day]} (${formatTimeRange(weeklySlotOf(removing.entry).start, weeklySlotOf(removing.entry).end)}) من البرنامج الأسبوعي، وتصبح ${removing.entry.room?.name ?? "القاعة"} متاحة في هذا الوقت. تُلغى حصصه القادمة التي لم يُسجَّل حضورها، وتبقى الحصص السابقة وسجلات الحضور كما هي.`}
           confirmLabel="حذف الموعد الأسبوعي"
           onConfirm={async () => {
             const { schedule, group } = removing.entry

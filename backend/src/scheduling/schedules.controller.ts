@@ -26,6 +26,8 @@ import { AdminApi } from '../academic/admin-api.decorator.js';
 import {
   CreateWeeklyScheduleDto,
   SchedulingConflictDto,
+  StartDateImpactDto,
+  StartDateImpactQueryDto,
   UpdateWeeklyScheduleDto,
   WeeklyScheduleDto,
   WeeklyScheduleQueryDto,
@@ -78,6 +80,27 @@ export class SchedulesController {
     return this.schedules.create(groupClassId, dto);
   }
 
+  @Get('group-classes/:groupClassId/schedules/:scheduleId/start-date-impact')
+  @ApiOperation({
+    summary:
+      '«تاريخ بداية الحصص»: the lessons a new start date would remove (unused) or that prevent it (protected) — read-only',
+  })
+  @ApiOkResponse({ type: StartDateImpactDto })
+  @ApiBadRequestResponse({ description: 'SCHEDULE_START_OUTSIDE_YEAR' })
+  @ApiNotFoundResponse({ description: 'SCHEDULE_NOT_FOUND' })
+  @ApiConflictResponse({ description: 'SCHEDULE_START_NO_ACADEMIC_YEAR' })
+  startDateImpact(
+    @Param('groupClassId', ParseUUIDPipe) groupClassId: string,
+    @Param('scheduleId', ParseUUIDPipe) scheduleId: string,
+    @Query() query: StartDateImpactQueryDto,
+  ): Promise<StartDateImpactDto> {
+    return this.schedules.startDateImpact(
+      groupClassId,
+      scheduleId,
+      query.startDate,
+    );
+  }
+
   @Patch('group-classes/:groupClassId/schedules/:scheduleId')
   @ApiOperation({
     summary: 'Edit a weekly slot (sessions already generated are not changed)',
@@ -85,7 +108,10 @@ export class SchedulesController {
   @ApiOkResponse({ type: WeeklyScheduleWriteDto })
   @ApiBadRequestResponse({ description: 'SCHEDULE_TIME_INVALID' })
   @ApiNotFoundResponse({ description: 'SCHEDULE_NOT_FOUND' })
-  @ApiConflictResponse({ type: SchedulingConflictDto, description: CONFLICTS })
+  @ApiConflictResponse({
+    type: SchedulingConflictDto,
+    description: `${CONFLICTS}, SCHEDULE_START_HAS_SESSIONS, SCHEDULE_START_PROTECTED_SESSIONS, SCHEDULE_START_CONFIRMATION_STALE, SCHEDULE_START_NO_ACADEMIC_YEAR`,
+  })
   update(
     @Param('groupClassId', ParseUUIDPipe) groupClassId: string,
     @Param('scheduleId', ParseUUIDPipe) scheduleId: string,

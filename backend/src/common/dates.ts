@@ -19,6 +19,16 @@ export const todayIn = (timeZone: string) =>
     month: '2-digit',
     day: '2-digit',
   }).format(new Date());
+/** "15 أكتوبر 2026" — the frontend's locale (date-only, no timezone shift). */
+const arabicDate = new Intl.DateTimeFormat('ar-TN-u-nu-latn', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+export const formatDateAr = (date: string) =>
+  arabicDate.format(new Date(`${date}T00:00:00Z`));
+
 export const fromDbDateOrNull = (value: Date | null) =>
   value ? fromDbDate(value) : null;
 

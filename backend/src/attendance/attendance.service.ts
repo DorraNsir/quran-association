@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { fromDbDate, toDbDate } from '../common/dates.js';
+import { formatDateAr, fromDbDate, toDbDate } from '../common/dates.js';
 import { badRequest, conflict, notFound } from '../common/errors.js';
 import type { EnvironmentVariables } from '../config/env.validation.js';
 import { PageSizeService } from '../common/page-size.service.js';
@@ -68,16 +68,6 @@ function pluralAr(
   if (count >= 3 && count <= 10) return `${count} ${forms.few}`;
   return `${count} ${forms.many}`;
 }
-
-/** "15 أكتوبر 2026" — the frontend's locale (date-only, no timezone shift). */
-const arabicDate = new Intl.DateTimeFormat('ar-TN-u-nu-latn', {
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
-const formatDateAr = (date: string) =>
-  arabicDate.format(new Date(`${date}T00:00:00Z`));
 
 const addDays = (date: string, n: number) => {
   const d = new Date(`${date}T00:00:00Z`);

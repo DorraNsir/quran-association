@@ -109,7 +109,14 @@ export interface WeeklySchedule extends ScheduleSlot {
   additionalGroupClassIds?: ID[]
   /** Every participating class with its group name, host first (when known) */
   participants?: { groupClassId: ID; group: { id: ID; name: string } }[]
+  /** «تاريخ بداية الحصص» (YYYY-MM-DD): the slot has no lesson before it */
+  startDate?: string
+  /** false: a slot created before «تاريخ بداية الحصص» existed — startDate is its creation day, not a stored value */
+  startDateSet?: boolean
 }
+
+/** A slot as saved: a later «تاريخ بداية الحصص» also carries the unused lessons the administrator confirmed removing */
+export type WeeklySlotSave = WeeklySchedule & { removeSessionIds?: ID[] }
 
 /** CLASS: the same class already meets at an overlapping time */
 export type ConflictType = "ROOM" | "TEACHER" | "CLASS"

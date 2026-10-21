@@ -18,7 +18,7 @@ export function fromMinutes(total: number): TimeOfDay {
 }
 
 /** Visible hours: at least 08:00–21:00, widened to fit every session. */
-export function visibleHours(schedules: WeeklySchedule[]) {
+export function visibleHours(schedules: Pick<WeeklySchedule, "start" | "end">[]) {
   const first = Math.min(8, ...schedules.map((s) => Math.floor(toMinutes(s.start) / 60)))
   const last = Math.max(21, ...schedules.map((s) => Math.ceil(toMinutes(s.end) / 60)))
   return { first, last }

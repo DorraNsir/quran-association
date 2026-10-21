@@ -11,6 +11,7 @@ import { PasswordService } from '../src/auth/password.service.js';
 import { todayIn } from '../src/common/dates.js';
 import { Role } from '../src/generated/prisma/enums.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { oneOf } from './cleanup-ids.js';
 
 const RUN = randomUUID().slice(0, 8);
 const PASSWORD = 'initial-pass-123';
@@ -190,6 +191,12 @@ describe('Weekly schedule → sessions → attendance workflow (e2e)', () => {
           roomId: id[room],
         }).expect(201)
       ).body.id;
+    // No current academic year here: a new slot starts today. These slots
+    // need lessons in the past week too («تاريخ بداية الحصص» = FROM)
+    await prisma.weeklySchedule.updateMany({
+      where: { groupClassId: oneOf(id.cls) },
+      data: { startDate: new Date(`${FROM}T00:00:00Z`) },
+    });
     const slots = (await get(`group-classes/${id.cls}/schedules`).expect(200))
       .body;
     expect(slots).toHaveLength(3);

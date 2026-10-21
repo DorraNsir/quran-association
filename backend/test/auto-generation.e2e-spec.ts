@@ -11,6 +11,7 @@ import { PasswordService } from '../src/auth/password.service.js';
 import { todayIn } from '../src/common/dates.js';
 import { Role } from '../src/generated/prisma/enums.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { onlyId } from './cleanup-ids.js';
 
 const RUN = randomUUID().slice(0, 8);
 const PASSWORD = 'initial-pass-123';
@@ -165,7 +166,7 @@ describe('Automatic session generation (e2e)', () => {
     await prisma.groupClass.deleteMany({ where: classes });
     // Put the platform's current year back as it was
     await prisma.academicYear.updateMany({
-      where: { id: id.year },
+      where: onlyId(id.year),
       data: { isCurrent: false },
     });
     if (previousCurrent)
@@ -173,7 +174,7 @@ describe('Automatic session generation (e2e)', () => {
         where: { id: previousCurrent },
         data: { isCurrent: true },
       });
-    await prisma.academicYear.deleteMany({ where: { id: id.year } });
+    await prisma.academicYear.deleteMany({ where: onlyId(id.year) });
     const persons = (
       await prisma.person.findMany({
         where: { lastName: { endsWith: RUN } },
