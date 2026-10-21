@@ -4,6 +4,7 @@ import { CircleCheck, Clock, Info, Link2Off, Loader2, ShieldCheck } from "lucide
 import { useState } from "react"
 
 import { FormSection, PhotoInput } from "@/components/shared/form"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -167,9 +168,7 @@ function OnboardingForm({
         </div>
 
         {form.serverError && (
-          <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {form.serverError}
-          </p>
+          <FormErrorAlert message={form.serverError} />
         )}
         <Button type="submit" size="lg" className="w-full sm:w-auto" disabled={form.pending}>
           {form.pending && <Loader2 className="animate-spin" />}

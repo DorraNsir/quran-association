@@ -1,10 +1,10 @@
 "use client"
 
 import { DoorOpen, ShieldCheck } from "lucide-react"
-import { AlertCircle, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { useState } from "react"
 
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { errorMessage } from "@/lib/api/errors"
 
 import { ClassPicker } from "@/components/groups/class-picker"
@@ -99,12 +99,7 @@ export function ChangeGroupDialog({
           </div>
         </div>
 
-        {error && (
-          <Alert variant="destructive" role="alert">
-            <AlertCircle aria-hidden />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        <FormErrorAlert message={error} />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {labels.common.cancel}

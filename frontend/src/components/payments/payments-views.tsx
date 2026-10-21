@@ -9,6 +9,7 @@ import { DataTable, type Column } from "@/components/shared/data-table"
 import { EmptyState } from "@/components/shared/empty-state"
 import { ALL, FilterBar, FilterSelect, SearchInput } from "@/components/shared/filters"
 import { FormField } from "@/components/shared/form"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { SectionCard } from "@/components/shared/info-list"
 import { PageHeader } from "@/components/shared/page-header"
 import { StatCard } from "@/components/shared/stat-card"
@@ -493,7 +494,7 @@ function GroupFeeDialog({
             المجموع المطلوب من كل طالب: <span className="font-semibold tabular-nums">{formatMoney(preview)}</span>
           </p>
           {fee && <p className="text-xs text-muted-foreground">يُحفظ التعديل كإصدار جديد للمعلوم؛ المبالغ المسجّلة سابقًا للطلبة لا تتغيّر.</p>}
-          {save.isError && <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{errorMessage(save.error)}</p>}
+          {save.isError && <FormErrorAlert message={errorMessage(save.error)} />}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={save.isPending} onClick={() => onOpenChange(false)}>{labels.common.cancel}</Button>
             <Button type="submit" className="min-w-24" disabled={save.isPending}>{labels.common.save}</Button>

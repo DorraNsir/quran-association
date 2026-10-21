@@ -10,6 +10,7 @@ import { ActionsMenu, type RowAction } from "@/components/shared/actions-menu"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { EmptyState } from "@/components/shared/empty-state"
 import { ALL, FilterBar, FilterSelect, SearchInput } from "@/components/shared/filters"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { NotFoundState } from "@/components/shared/not-found-state"
 import { Breadcrumbs, PageHeader } from "@/components/shared/page-header"
 import { Pager } from "@/components/shared/pager"
@@ -138,7 +139,7 @@ function ScheduleDialog({ announcement, onDone }: { announcement: AnnouncementDt
             </div>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          {action.isError && <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{errorMessage(action.error)}</p>}
+          {action.isError && <FormErrorAlert message={errorMessage(action.error)} />}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={action.isPending} onClick={onDone}>{labels.common.cancel}</Button>
             <Button type="submit" disabled={action.isPending}>

@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertCircle, Eye, EyeOff, KeyRound, Loader2, LogOut, ShieldAlert } from "lucide-react"
+import { Eye, EyeOff, KeyRound, Loader2, LogOut, ShieldAlert } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -8,6 +8,7 @@ import { toast } from "sonner"
 
 import { AssociationLogo } from "@/components/layout/brand"
 import { FormField } from "@/components/shared/form"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -108,12 +109,6 @@ export function ChangePasswordForm() {
                   </AlertDescription>
                 </Alert>
               )}
-              {error && (
-                <Alert variant="destructive" role="alert">
-                  <AlertCircle aria-hidden />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
               {field("current", "pw-current", "كلمة المرور الحالية", "current-password")}
               {field("next", "pw-new", "كلمة المرور الجديدة", "new-password")}
               {field("confirm", "pw-confirm", "تأكيد كلمة المرور الجديدة", "new-password")}
@@ -121,6 +116,8 @@ export function ChangePasswordForm() {
                 {show ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
                 {show ? "إخفاء كلمات المرور" : "إظهار كلمات المرور"}
               </Button>
+              {/* Next to the button, where the user just clicked */}
+              <FormErrorAlert message={error} />
               <Button type="submit" size="lg" disabled={pending}>
                 {pending ? <Loader2 className="animate-spin" aria-hidden /> : <KeyRound aria-hidden />}
                 حفظ كلمة المرور

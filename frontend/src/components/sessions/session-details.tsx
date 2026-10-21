@@ -22,6 +22,7 @@ import { ActionsMenu, type RowAction } from "@/components/shared/actions-menu"
 import { TeacherRoleBadge } from "@/components/shared/badges"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { EmptyState } from "@/components/shared/empty-state"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { InfoList, SectionCard } from "@/components/shared/info-list"
 import { Breadcrumbs } from "@/components/shared/page-header"
 import { TimeRange } from "@/components/shared/time-range"
@@ -268,7 +269,7 @@ export function SessionDetails({
             />
           </div>
           {setStatus.isError && dialog === "cancel" && (
-            <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{errorMessage(setStatus.error)}</p>
+            <FormErrorAlert message={errorMessage(setStatus.error)} />
           )}
           <DialogFooter>
             <Button variant="outline" disabled={setStatus.isPending} onClick={() => setDialog(null)}>

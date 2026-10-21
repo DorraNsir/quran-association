@@ -1,10 +1,10 @@
 "use client"
 
-import { AlertCircle, Camera, Loader2, Trash2 } from "lucide-react"
+import { Camera, Loader2, Trash2 } from "lucide-react"
 import { useRef, useState } from "react"
 
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { UserAvatar } from "@/components/shared/user-avatar"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { useDirection } from "@/components/ui/direction"
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
@@ -62,27 +62,40 @@ export function FormSheet({
             <SheetTitle className="text-lg font-semibold">{title}</SheetTitle>
             {description && <SheetDescription>{description}</SheetDescription>}
           </SheetHeader>
-          <div className="flex-1 space-y-8 overflow-y-auto px-6 py-6">
-            {error && (
-              <Alert variant="destructive" role="alert">
-                <AlertCircle aria-hidden />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            {children}
+          <div className="flex-1 space-y-8 overflow-y-auto px-6 py-6">{children}</div>
+          {/* Fixed below the scrolling body: the form-level error sits right above
+              the buttons, visible wherever the form is scrolled */}
+          <div className="border-t bg-muted/30">
+            {error && <FormErrorAlert message={error} className="mx-6 mt-3 w-auto" />}
+            <SheetFooter className="flex-row justify-end gap-2 px-6 py-4">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                {labels.common.cancel}
+              </Button>
+              <Button type="submit" disabled={pending || submitDisabled} className="min-w-24">
+                {pending && <Loader2 className="animate-spin" />}
+                {submitLabel}
+              </Button>
+            </SheetFooter>
           </div>
-          <SheetFooter className="flex-row justify-end gap-2 border-t bg-muted/30 px-6 py-4">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              {labels.common.cancel}
-            </Button>
-            <Button type="submit" disabled={pending || submitDisabled} className="min-w-24">
-              {pending && <Loader2 className="animate-spin" />}
-              {submitLabel}
-            </Button>
-          </SheetFooter>
         </form>
       </SheetContent>
     </Sheet>
+  )
+}
+
+/**
+ * Forms that validate without useFormState (which already focuses the first
+ * invalid field): after a refused submit, focus — and so scroll to — the first
+ * field marked invalid, so its error is seen even from the bottom of a long page.
+ */
+export function focusFirstInvalid(form: HTMLFormElement | null) {
+  // The errors render on the next frame (they follow the «submitted» state)
+  requestAnimationFrame(() =>
+    form
+      ?.querySelector<HTMLElement>(
+        "[data-invalid] input:not([type=hidden]), [data-invalid] textarea, [data-invalid] select, [data-invalid] button, [aria-invalid=true]"
+      )
+      ?.focus()
   )
 }
 

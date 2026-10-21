@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
+import { focusFirstInvalid } from "@/components/shared/form"
 import { toRequestBody } from "@/lib/api/hooks/registration"
 
 import { useRegistrationForm } from "./registration-form"
@@ -76,5 +77,41 @@ describe("registration form — «الجنس»", () => {
       expect(onCollect.mock.lastCall?.[0]).toMatchObject({ hasStudiedQuranBefore: false })
       expect(onCollect.mock.lastCall?.[0]).not.toHaveProperty("previousExperience", expect.anything())
     })
+  })
+})
+
+describe("registration form — a refused submit on a long page", () => {
+  /** As the public page and the admin dialog submit it */
+  function SubmitHarness({ onCollect }: { onCollect: (fields: unknown) => void }) {
+    const form = useRegistrationForm("2026-10-15")
+    return (
+      <form
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault()
+          const fields = form.collect()
+          if (!fields) return focusFirstInvalid(e.currentTarget)
+          onCollect(fields)
+        }}
+      >
+        {form.fields("reg", "self")}
+        <button type="submit">إرسال</button>
+      </form>
+    )
+  }
+
+  it("focuses the first field to correct (its error stays under it)", () => {
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame"] })
+    const onCollect = vi.fn()
+    render(<SubmitHarness onCollect={onCollect} />)
+    fireEvent.change(screen.getByLabelText(/^الاسم/), { target: { value: "سارة" } })
+    fireEvent.change(screen.getByLabelText(/^اللقب/), { target: { value: "بن علي" } })
+    fireEvent.click(screen.getByRole("button", { name: "إرسال" }))
+    act(() => vi.advanceTimersToNextFrame())
+    expect(onCollect).not.toHaveBeenCalled()
+    // «الجنس» is the first field left empty
+    expect(screen.getByRole("radiogroup", { name: "الجنس" }).contains(document.activeElement)).toBe(true)
+    expect(screen.getByText("اختر الجنس")).toBeTruthy()
+    vi.useRealTimers()
   })
 })

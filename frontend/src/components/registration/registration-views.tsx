@@ -6,6 +6,8 @@ import Link from "next/link"
 import { useDeferredValue, useState } from "react"
 import { toast } from "sonner"
 
+import { focusFirstInvalid } from "@/components/shared/form"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { StudentFormSheet } from "@/components/students/student-form-sheet"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { DataTable, type Column } from "@/components/shared/data-table"
@@ -130,7 +132,8 @@ export function PublicRegistrationForm({ interestId }: { interestId?: string }) 
               e.preventDefault()
               if (submit.isPending) return
               const fields = form.collect()
-              if (!fields) return
+              // Long page: the first field to correct comes into view
+              if (!fields) return focusFirstInvalid(e.currentTarget)
               submit.mutate(
                 { ...fields, interestedGroupId: interest?.groupId ?? undefined, interestedProgramLabel: interest?.title },
                 { onSuccess: () => setSent(true) }
@@ -139,7 +142,7 @@ export function PublicRegistrationForm({ interestId }: { interestId?: string }) 
           >
             {form.fields("public", "self")}
             {submit.isError && (
-              <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{errorMessage(submit.error)}</p>
+              <FormErrorAlert message={errorMessage(submit.error)} />
             )}
             <Button type="submit" size="lg" className="h-12 w-full rounded-full text-base" disabled={submit.isPending}>
               {submit.isPending && <Loader2 className="animate-spin" />}
@@ -166,7 +169,7 @@ function AddRequestDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
             e.preventDefault()
             if (add.isPending) return
             const fields = form.collect()
-            if (!fields) return
+            if (!fields) return focusFirstInvalid(e.currentTarget)
             add.mutate(fields, {
               onSuccess: () => {
                 onOpenChange(false)
@@ -181,7 +184,7 @@ function AddRequestDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           </DialogHeader>
           {form.fields("admin-req", "applicant")}
           {add.isError && (
-            <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{errorMessage(add.error)}</p>
+            <FormErrorAlert message={errorMessage(add.error)} />
           )}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={add.isPending} onClick={() => onOpenChange(false)}>{labels.common.cancel}</Button>
@@ -360,7 +363,7 @@ function DuplicateDialog({
             </li>
           ))}
         </ul>
-        {error && <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+        {error && <FormErrorAlert message={error} />}
         <DialogFooter>
           <Button variant="outline" disabled={pending} onClick={onCancel}>{labels.common.cancel}</Button>
           <Button disabled={pending} onClick={onCreateNew}>

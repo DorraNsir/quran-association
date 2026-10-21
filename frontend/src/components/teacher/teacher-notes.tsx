@@ -4,6 +4,7 @@ import { Lock, NotebookPen, Pencil, Plus, SearchX, Trash2 } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { AutoTextarea } from "@/components/teacher/work-followup/auto-textarea"
 import { ActionsMenu } from "@/components/shared/actions-menu"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
@@ -204,7 +205,7 @@ function NoteDialog({
             </div>
           </div>
 
-          {error && <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+          {error && <FormErrorAlert message={error} />}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>
               {labels.common.cancel}

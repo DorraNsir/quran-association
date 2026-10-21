@@ -6,9 +6,9 @@ import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { ChoiceGroup } from "@/components/shared/choice-group"
-import { FormField, FormSection } from "@/components/shared/form"
+import { focusFirstInvalid, FormField, FormSection } from "@/components/shared/form"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { QueryState } from "@/components/shared/query-state"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -29,11 +29,7 @@ import { SettingsShell } from "./settings-shell"
 function SaveBar({ dirty, pending, error, onReset }: { dirty: boolean; pending: boolean; error?: string | null; onReset: () => void }) {
   return (
     <div className="sticky bottom-3 z-10 space-y-2 rounded-xl border bg-background/95 p-3 shadow-sm backdrop-blur">
-      {error && (
-        <Alert variant="destructive" role="alert">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
+      <FormErrorAlert message={error} />
       <div className="flex flex-wrap items-center justify-end gap-2">
         <p className="me-auto text-xs text-muted-foreground" aria-live="polite">
           {pending ? "جارٍ الحفظ…" : dirty ? "لديك تغييرات غير محفوظة" : "لا توجد تغييرات"}
@@ -134,7 +130,7 @@ function AssociationForm({ settings }: { settings: AdminSettingsDto }) {
         e.preventDefault()
         if (pending) return
         setSubmitted(true)
-        if (Object.values(errors).some(Boolean)) return
+        if (Object.values(errors).some(Boolean)) return focusFirstInvalid(e.currentTarget)
         setSaveError(null)
         save().catch((error: unknown) => setSaveError(errorMessage(error)))
       }}

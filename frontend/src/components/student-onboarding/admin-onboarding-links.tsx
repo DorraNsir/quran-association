@@ -13,6 +13,7 @@ import { DataTable, type Column } from "@/components/shared/data-table"
 import { EmptyState } from "@/components/shared/empty-state"
 import { ALL, FilterSelect } from "@/components/shared/filters"
 import { FormField, FormSection, FormSheet } from "@/components/shared/form"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { PageHeader } from "@/components/shared/page-header"
 import { QueryState } from "@/components/shared/query-state"
 import { WithLookups } from "@/components/shared/with-lookups"
@@ -379,7 +380,7 @@ function ExpiryDialog({
         <div className="grid gap-3 sm:grid-cols-2">
           <ExpiryFields date={expiry.date} time={expiry.time} onChange={setExpiry} />
         </div>
-        {error && <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+        <FormErrorAlert message={error} />
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>إلغاء</Button>
           <Button variant={mode === "replace" ? "destructive" : "default"} disabled={pending} onClick={confirm}>

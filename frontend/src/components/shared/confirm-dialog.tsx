@@ -1,9 +1,9 @@
 "use client"
 
-import { AlertCircle, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { useState } from "react"
 
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -71,12 +71,7 @@ export function ConfirmDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         {children}
-        {error && (
-          <Alert variant="destructive" role="alert">
-            <AlertCircle aria-hidden />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        <FormErrorAlert message={error} />
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>{labels.common.cancel}</AlertDialogCancel>
           <AlertDialogAction variant={destructive ? "destructive" : "default"} onClick={confirm} disabled={pending}>

@@ -1,9 +1,9 @@
 "use client"
 
-import { AlertCircle, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 
 import { FormField } from "@/components/shared/form"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -79,12 +79,6 @@ export function RoomDialog({
             <DialogTitle>{room ? `تعديل ${room.name}` : "إضافة قاعة"}</DialogTitle>
             <DialogDescription>القاعات تُستعمل في برمجة حصص المجموعات.</DialogDescription>
           </DialogHeader>
-          {form.serverError && (
-            <Alert variant="destructive" role="alert">
-              <AlertCircle aria-hidden />
-              <AlertDescription>{form.serverError}</AlertDescription>
-            </Alert>
-          )}
           <FormField label="اسم القاعة" required {...form.field("name")}>
             <Input placeholder="مثال: القاعة 4" {...form.inputProps("name")} />
           </FormField>
@@ -119,6 +113,7 @@ export function RoomDialog({
               </Select>
             </FormField>
           </div>
+          <FormErrorAlert message={form.serverError} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {labels.common.cancel}

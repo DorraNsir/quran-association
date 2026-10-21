@@ -129,6 +129,12 @@ describe("session attendance page — teachers and students, one save", () => {
     expect(await screen.findByText(message)).toBeTruthy()
     expect(screen.getByRole("button", { name: "تحميل آخر القيم" })).toBeTruthy()
     expect(push).not.toHaveBeenCalled()
+    // Shown once, in the sticky save bar, just above «حفظ الحضور» (not at the top of the page)
+    const alert = screen.getByText(message).closest("[data-form-error]")!
+    const save = screen.getByRole("button", { name: "حفظ الحضور" })
+    expect(save.closest(".sticky")!.contains(alert)).toBe(true)
+    expect(alert.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(document.querySelectorAll("[data-form-error]")).toHaveLength(1)
   })
 
   it("correction window closed (teacher): saved rows are locked and shown read-only, unrecorded rows can still be recorded", async () => {

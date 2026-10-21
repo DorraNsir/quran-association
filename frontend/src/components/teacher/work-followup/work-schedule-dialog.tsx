@@ -4,7 +4,7 @@ import { ArrowLeftRight, Loader2, Mic } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -130,15 +130,13 @@ export function WorkScheduleDialog({
             )}
           </div>
 
-          {(already || serverError) && (
-            <Alert variant="destructive">
-              <AlertDescription>
-                {already
-                  ? `${mode === "carry" ? "سبق نقل هذا العمل إلى هذه الحصة." : "هذه العرضة مبرمجة مسبقًا في هذه الحصة."} اختر حصة أخرى.`
-                  : serverError}
-              </AlertDescription>
-            </Alert>
-          )}
+          <FormErrorAlert
+            message={
+              already
+                ? `${mode === "carry" ? "سبق نقل هذا العمل إلى هذه الحصة." : "هذه العرضة مبرمجة مسبقًا في هذه الحصة."} اختر حصة أخرى.`
+                : serverError
+            }
+          />
         </div>
 
         <DialogFooter>

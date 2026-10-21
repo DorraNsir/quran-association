@@ -1,7 +1,7 @@
 "use client"
 
 import { useQueryClient } from "@tanstack/react-query"
-import { CalendarX2, CheckCheck, Loader2, Lock, RefreshCw, Save, SearchX, TriangleAlert, UsersRound } from "lucide-react"
+import { CalendarX2, CheckCheck, Loader2, Lock, RefreshCw, Save, SearchX, UsersRound } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { toast } from "sonner"
@@ -11,6 +11,7 @@ import type { SessionRow } from "@/components/sessions/use-session-rows"
 import { TeacherRoleBadge } from "@/components/shared/badges"
 import { EmptyState } from "@/components/shared/empty-state"
 import { matchesText, SearchInput } from "@/components/shared/filters"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { Breadcrumbs } from "@/components/shared/page-header"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
@@ -208,19 +209,6 @@ export function AttendanceTaker({ row, roster: saved, workspace = "admin" }: { r
         </Alert>
       )}
 
-      {conflict && (
-        <Alert variant="destructive" className="mb-6">
-          <TriangleAlert />
-          <AlertTitle>تعذّر الحفظ: تغيّر الحضور في الأثناء</AlertTitle>
-          <AlertDescription>
-            <p>{conflict}</p>
-            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={reload}>
-              <RefreshCw />
-              تحميل آخر القيم
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
 
       <section aria-labelledby="teachers-heading" className="mb-8 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -302,19 +290,30 @@ export function AttendanceTaker({ row, roster: saved, workspace = "admin" }: { r
       </section>
 
       {editable && (roster.length > 0 || team.length > 0) && (
-        <div className="sticky bottom-3 z-10 mt-4 flex flex-col gap-3 rounded-xl border bg-card/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:gap-6 sm:p-4">
-          <AttendanceProgress recorded={expectedCount - unmarked.length} expected={expectedCount} className="flex-1" />
-          <div className="flex items-center gap-3">
-            {dirty && <span className="text-xs text-warning">تغييرات غير محفوظة</span>}
-            <Button
-              size="lg"
-              className="flex-1 sm:min-w-40 sm:flex-none"
-              disabled={save.isPending || !dirty}
-              onClick={() => (studentChanges.length > 0 && unmarked.length > 0 ? setConfirmOpen(true) : submit())}
-            >
-              {save.isPending ? <Loader2 className="animate-spin" /> : <Save />}
-              حفظ الحضور
-            </Button>
+        <div className="sticky bottom-3 z-10 mt-4 flex flex-col gap-3 rounded-xl border bg-card/95 p-3 shadow-lg backdrop-blur sm:p-4">
+          {/* In the sticky bar: seen right where «حفظ الحضور» was clicked */}
+          {conflict && (
+            <FormErrorAlert title="تعذّر الحفظ: تغيّر الحضور في الأثناء" message={<p>{conflict}</p>}>
+              <Button type="button" variant="outline" size="sm" className="mt-2" onClick={reload}>
+                <RefreshCw />
+                تحميل آخر القيم
+              </Button>
+            </FormErrorAlert>
+          )}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+            <AttendanceProgress recorded={expectedCount - unmarked.length} expected={expectedCount} className="flex-1" />
+            <div className="flex items-center gap-3">
+              {dirty && <span className="text-xs text-warning">تغييرات غير محفوظة</span>}
+              <Button
+                size="lg"
+                className="flex-1 sm:min-w-40 sm:flex-none"
+                disabled={save.isPending || !dirty}
+                onClick={() => (studentChanges.length > 0 && unmarked.length > 0 ? setConfirmOpen(true) : submit())}
+              >
+                {save.isPending ? <Loader2 className="animate-spin" /> : <Save />}
+                حفظ الحضور
+              </Button>
+            </div>
           </div>
         </div>
       )}

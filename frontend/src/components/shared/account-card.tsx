@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { passwordPolicyError } from "@/components/auth/change-password-form"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { SectionCard } from "@/components/shared/info-list"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -217,7 +218,7 @@ function PasswordDialog({
             </div>
             {submitted && errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
           </div>
-          {save.isError && <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{errorMessage(save.error)}</p>}
+          {save.isError && <FormErrorAlert message={errorMessage(save.error)} />}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={save.isPending} onClick={onClose}>{labels.common.cancel}</Button>
             <Button type="submit" disabled={save.isPending}>

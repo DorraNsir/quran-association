@@ -5,6 +5,7 @@ import { useState } from "react"
 import { toast } from "sonner"
 
 import { ChoiceGroup } from "@/components/shared/choice-group"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -239,7 +240,7 @@ export function RecordPaymentDialog({
             <Textarea id="pay-note" rows={2} maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
 
-          {record.isError && <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{errorMessage(record.error)}</p>}
+          {record.isError && <FormErrorAlert message={errorMessage(record.error)} />}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={record.isPending} onClick={() => onOpenChange(false)}>
               {labels.common.cancel}

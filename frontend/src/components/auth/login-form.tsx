@@ -1,12 +1,13 @@
 "use client"
 
-import { AlertCircle, Eye, EyeOff, Info, Loader2, Lock, LogIn, UserRound } from "lucide-react"
+import { Eye, EyeOff, Info, Loader2, Lock, LogIn, UserRound } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
 
 import { AssociationLogo } from "@/components/layout/brand"
 import { FormField } from "@/components/shared/form"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -108,12 +109,6 @@ export function LoginForm() {
                   <AlertDescription>{notice}</AlertDescription>
                 </Alert>
               )}
-              {error && (
-                <Alert variant="destructive" role="alert">
-                  <AlertCircle aria-hidden />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
               {/* Right-to-left fields (caret starts on the right, like the rest of the page); Latin usernames still type normally */}
               <FormField id="login-username" label="اسم المستخدم" required error={shown("username")}>
                 <div className="relative">
@@ -158,6 +153,8 @@ export function LoginForm() {
                   </Button>
                 </div>
               </FormField>
+              {/* Next to the button, where the user just clicked */}
+              <FormErrorAlert message={error} />
               <Button type="submit" size="lg" disabled={pending} className="mt-1 h-11 text-base">
                 {pending ? <Loader2 className="animate-spin" aria-hidden /> : <LogIn aria-hidden />}
                 تسجيل الدخول

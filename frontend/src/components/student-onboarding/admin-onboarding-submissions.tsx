@@ -11,6 +11,7 @@ import { DataTable, type Column } from "@/components/shared/data-table"
 import { EmptyState } from "@/components/shared/empty-state"
 import { ALL, FilterBar, FilterSelect, SearchInput } from "@/components/shared/filters"
 import { FormSection } from "@/components/shared/form"
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { Pager } from "@/components/shared/pager"
 import { QueryState } from "@/components/shared/query-state"
 import { WithLookups } from "@/components/shared/with-lookups"
@@ -443,7 +444,7 @@ function EditForm({ sub, onCancel, onSaved }: { sub: OnboardingSubmissionDetail;
       <FormSection title="تعديل البيانات" description="تبقى البيانات المرسلة أصلًا محفوظة للاطلاع.">
         <StudentFields form={form} />
       </FormSection>
-      {form.serverError && <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.serverError}</p>}
+      {form.serverError && <FormErrorAlert message={form.serverError} />}
       <div className="flex gap-2">
         <Button type="submit" disabled={form.pending}>
           <Check />

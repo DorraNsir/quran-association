@@ -24,16 +24,16 @@ import Link from "next/link"
 import { useState } from "react"
 import { toast } from "sonner"
 
+import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { DEFAULT_HERO_THEME, HERO_THEMES } from "@/components/website/hero-background"
 import { WEBSITE_ICONS } from "@/components/website/icons"
-import { FormField, FormSection } from "@/components/shared/form"
+import { focusFirstInvalid, FormField, FormSection } from "@/components/shared/form"
 import { Breadcrumbs, PageHeader } from "@/components/shared/page-header"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { QueryState } from "@/components/shared/query-state"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { errorMessage } from "@/lib/api/errors"
 import { useAdminSettings, useUpdateSettings, type AdminSettingsDto, type SettingsPatch } from "@/lib/api/hooks/settings"
 import { todayInTunis, tunisDateOf } from "@/lib/dates"
@@ -391,7 +391,8 @@ function SiteSettingsFields({ website }: { website: AdminSettingsDto["website"] 
         onSubmit={(e) => {
           e.preventDefault()
           setSubmitted(true)
-          if (update.isPending || Object.values(errors).some(Boolean)) return
+          if (update.isPending) return
+          if (Object.values(errors).some(Boolean)) return focusFirstInvalid(e.currentTarget)
           const patch = Object.fromEntries(
             Object.entries(values).map(([k, v]) => [k, typeof v === "string" ? v.trim() || null : v])
           ) as SettingsPatch["website"]
@@ -424,12 +425,9 @@ function SiteSettingsFields({ website }: { website: AdminSettingsDto["website"] 
             </label>
           </FormSection>
         </Card>
-        {update.isError && (
-          <Alert variant="destructive" role="alert">
-            <AlertDescription>{errorMessage(update.error)}</AlertDescription>
-          </Alert>
-        )}
-        <div className="sticky bottom-3 flex justify-end">
+        {/* Sticky with the button: the error stays in view wherever the page is scrolled */}
+        <div className="sticky bottom-3 z-10 flex flex-col items-end gap-2">
+          {update.isError && <FormErrorAlert message={errorMessage(update.error)} className="bg-card shadow-lg" />}
           <Button type="submit" size="lg" className="shadow-lg" disabled={update.isPending}>
             {update.isPending && <Loader2 className="animate-spin" />}
             حفظ الإعدادات
