@@ -1,6 +1,6 @@
 "use client"
 
-import { DoorOpen, LayoutGrid, List, Plus, SearchX, ShieldCheck, Users } from "lucide-react"
+import { ChevronLeft, DoorOpen, LayoutGrid, List, Plus, SearchX, ShieldCheck, Users } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 
@@ -19,9 +19,13 @@ import { labels } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import type { Group, Student } from "@/types/domain"
 
+import { GROUP_CLASSES_ANCHOR } from "./anchors"
 import { groupActions, useGroupDialogs } from "./use-group-dialogs"
 
 type ViewMode = "cards" | "table"
+
+/** A group card previews its first classes; the details page lists them all */
+const CLASS_PREVIEW_LIMIT = 4
 
 export function GroupsView({ lookups, students }: { lookups: Lookups; students: Student[] }) {
   const { groups, groupClasses, schedules } = lookups
@@ -190,7 +194,10 @@ function GroupCard({
   actions: React.ReactNode
 }) {
   const total = classes.reduce((n, v) => n + (counts.get(v.groupClass.id) ?? 0), 0)
+  // Same order as everywhere else (the group's classes as listed by classesOf)
+  const preview = classes.slice(0, CLASS_PREVIEW_LIMIT)
   return (
+    // Same height as the tallest card of its row; the classes stay right under the header
     <Card className="h-full gap-0 p-0">
       <div className="flex items-start justify-between gap-2 p-4 pb-3">
         <div className="min-w-0 space-y-1">
@@ -207,9 +214,9 @@ function GroupCard({
         {actions}
       </div>
 
-      <ul className="mt-auto divide-y border-t">
+      <ul className="divide-y border-t">
         {classes.length === 0 && <li className="px-4 py-3 text-xs text-muted-foreground">لا توجد أقسام بعد</li>}
-        {classes.map((v) => (
+        {preview.map((v) => (
           <li key={v.groupClass.id} className={cn("space-y-1.5 px-4 py-3", v.groupClass.status !== "ACTIVE" && "opacity-60")}>
             <div className="flex items-center justify-between gap-2 text-sm">
               <span className="inline-flex items-center gap-1.5 font-medium">
@@ -233,6 +240,15 @@ function GroupCard({
           </li>
         ))}
       </ul>
+      {classes.length > CLASS_PREVIEW_LIMIT && (
+        <Link
+          href={`/admin/groups/${group.id}#${GROUP_CLASSES_ANCHOR}`}
+          className="flex items-center justify-between gap-2 border-t px-4 py-2.5 text-sm font-medium text-primary hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          عرض جميع الأقسام ({classes.length})
+          <ChevronLeft className="size-4 ltr:rotate-180" aria-hidden />
+        </Link>
+      )}
     </Card>
   )
 }

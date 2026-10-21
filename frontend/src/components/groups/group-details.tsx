@@ -24,6 +24,8 @@ import { PhoneLink, SectionCard } from "@/components/shared/info-list"
 import { Breadcrumbs } from "@/components/shared/page-header"
 import { MetaItem, ProfileHeader } from "@/components/shared/profile"
 import { ProfileTabs } from "@/components/shared/profile-tabs"
+import { ScrollToHash } from "@/components/shared/scroll-to-hash"
+import { GROUP_CLASSES_ANCHOR } from "./anchors"
 import { WeeklyScheduleGrid } from "@/components/shared/schedule"
 import { StatCard } from "@/components/shared/stat-card"
 import { PersonCell } from "@/components/shared/user-avatar"
@@ -124,7 +126,8 @@ function GroupDetailsBody({ id, lookups, students }: { id: string; lookups: Look
 
                 <GroupFees group={group} today={today} />
 
-                <section aria-labelledby="classes-heading" className="space-y-3">
+                <section id={GROUP_CLASSES_ANCHOR} aria-labelledby="classes-heading" className="scroll-mt-20 space-y-3">
+                  <ScrollToHash id={GROUP_CLASSES_ANCHOR} />
                   <h2 id="classes-heading" className="flex items-center gap-2 text-sm font-semibold">
                     <DoorOpen className="size-4 text-primary" aria-hidden />
                     أقسام المجموعة
