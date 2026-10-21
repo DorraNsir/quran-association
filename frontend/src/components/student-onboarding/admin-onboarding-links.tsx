@@ -4,7 +4,7 @@ import { Ban, CalendarClock, Copy, Link2, Plus, QrCode, RefreshCw, Download } fr
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import QRCode from "qrcode"
-import { useEffect, useState } from "react"
+import { Fragment, useEffect, useState } from "react"
 import { toast } from "sonner"
 
 import { ActionsMenu } from "@/components/shared/actions-menu"
@@ -37,7 +37,9 @@ import {
   type OnboardingLink,
 } from "@/lib/api/student-onboarding"
 import { addDays, todayInTunis } from "@/lib/dates"
-import { describeClass, fullName, indexLookups, type Lookups } from "@/lib/domain"
+import { describeClass, fullName, indexLookups, type Lookups, NO_WEEKLY_SCHEDULE, participatingSchedulesOf, weeklyScheduleRanges } from "@/lib/domain"
+import { useAllSchedules } from "@/lib/api/academic"
+import { TimeRange } from "@/components/shared/time-range"
 import { formatDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -224,7 +226,7 @@ function LinksView({ lookups }: { lookups: Lookups }) {
   )
 }
 
-function CreateLinkSheet({
+export function CreateLinkSheet({
   open,
   onOpenChange,
   lookups,
@@ -237,6 +239,8 @@ function CreateLinkSheet({
 }) {
   const create = useCreateOnboardingLink()
   const indexes = indexLookups(lookups)
+  // The classes listed include inactive ones: their slots too
+  const allSchedules = useAllSchedules()
   const [branchId, setBranchId] = useState("")
   const [groupId, setGroupId] = useState("")
   const [classId, setClassId] = useState("")
@@ -292,12 +296,26 @@ function CreateLinkSheet({
         <FormField label="الفوج" required id="ob-class" className="sm:col-span-2" error={tried && !classId ? "اختر الفوج" : undefined}>
           <Select value={classId} onValueChange={setClassId} disabled={!groupId}>
             <SelectTrigger id="ob-class" className="w-full"><SelectValue placeholder="اختر الفوج" /></SelectTrigger>
-            <SelectContent position="popper">
+            {/* As wide as the field: long labels (name + schedule) wrap instead of leaving the screen */}
+            <SelectContent position="popper" className="max-w-(--radix-select-trigger-width)">
               {classes.map((c) => {
                 const view = describeClass(c, indexes)
+                const slots = participatingSchedulesOf(c.id, allSchedules.data ?? lookups.schedules)
                 return (
+                  // Same supervisor, several classes: the schedule tells them apart
+                  // («فوج حمدي الشوك — الثلاثاء والخميس · 08:30 – 10:30»)
                   <SelectItem key={c.id} value={c.id}>
-                    {view.supervisor ? `فوج ${fullName(view.supervisor)}` : "فوج"}
+                    <span>
+                      {view.supervisor ? `فوج ${fullName(view.supervisor)}` : "فوج"} —{" "}
+                      {slots.length === 0
+                        ? NO_WEEKLY_SCHEDULE
+                        : weeklyScheduleRanges(slots).map((r, i) => (
+                            <Fragment key={`${r.start}-${r.end}`}>
+                              {i > 0 && "، "}
+                              {r.days} · <TimeRange start={r.start} end={r.end} />
+                            </Fragment>
+                          ))}
+                    </span>
                   </SelectItem>
                 )
               })}

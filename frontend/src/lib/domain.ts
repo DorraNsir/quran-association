@@ -1,5 +1,5 @@
-import { WEEK_ORDER } from "@/lib/i18n"
-import { minutesBetween } from "@/lib/format"
+import { labels, WEEK_ORDER } from "@/lib/i18n"
+import { formatTimeRange, minutesBetween } from "@/lib/format"
 import type {
   Branch,
   Group,
@@ -79,6 +79,31 @@ export function participatesIn(slot: WeeklySchedule, groupClassId: ID) {
  */
 export function participatingSchedulesOf(groupClassId: ID, schedules: WeeklySchedule[]) {
   return sortSlots(schedules.filter((s) => participatesIn(s, groupClassId)))
+}
+
+/**
+ * A class's weekly schedule in one line, to tell classes apart: the days
+ * sharing a time range together («الثلاثاء والخميس · 08:30 – 10:30»), each
+ * other range after a comma («السبت · 09:00 – 11:00، الأحد · 14:00 – 16:00»).
+ * Times are the slots' own local times (Africa/Tunis). None: «المواعيد غير محددة».
+ */
+export function weeklyScheduleLabel(schedule: ScheduleSlot[]) {
+  if (schedule.length === 0) return NO_WEEKLY_SCHEDULE
+  return weeklyScheduleRanges(schedule)
+    .map((r) => `${r.days} · ${formatTimeRange(r.start, r.end)}`)
+    .join("، ")
+}
+export const NO_WEEKLY_SCHEDULE = "المواعيد غير محددة"
+
+/** The ranges of weeklyScheduleLabel: «الثلاثاء والخميس» with its start and end, in week order. */
+export function weeklyScheduleRanges(schedule: ScheduleSlot[]) {
+  const ranges = new Map<string, { start: ScheduleSlot["start"]; end: ScheduleSlot["end"]; days: ScheduleSlot["day"][] }>()
+  for (const slot of sortSlots(schedule)) {
+    const range = ranges.get(`${slot.start}-${slot.end}`) ?? { start: slot.start, end: slot.end, days: [] }
+    if (!range.days.includes(slot.day)) range.days.push(slot.day)
+    ranges.set(`${slot.start}-${slot.end}`, range)
+  }
+  return [...ranges.values()].map((r) => ({ ...r, days: r.days.map((d) => labels.weekday[d]).join(" و") }))
 }
 
 /** «الحصص المشتركة»: the dated session involves the class — as its host or as an additional class. */

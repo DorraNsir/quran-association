@@ -296,6 +296,13 @@ export const useGroupClasses = () => useQuery(queries.groupClasses())
 export const useTeachers = () => useQuery(queries.teachers())
 export const useStudents = () => useQuery(queries.students())
 export const useSchedules = () => useQuery(queries.schedules())
+/** Every weekly slot, those of inactive classes too (the list above has running classes only) */
+export const useAllSchedules = () =>
+  useQuery({
+    queryKey: [...keys.schedules, "all", { includeInactive: true }],
+    queryFn: async ({ signal }) =>
+      (await api<ScheduleDto[]>("/admin/schedules", { query: { includeInactive: "true" }, signal })).map(toSchedule),
+  })
 
 /** Raw DTO lists (counts computed by the API) for list pages. */
 export const useBranchDtos = () =>
