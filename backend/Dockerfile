@@ -3,7 +3,7 @@ WORKDIR /app
 RUN apt-get update -y && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN npm install -g npm@11
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --include=dev
 COPY . .
 RUN npx prisma generate --config prisma7.config.ts && npm run build
 
