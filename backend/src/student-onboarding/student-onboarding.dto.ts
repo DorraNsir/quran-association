@@ -24,6 +24,7 @@ import {
   Gender,
   OnboardingSubmissionStatus,
   OnboardingSubmitter,
+  Weekday,
 } from '../generated/prisma/enums.js';
 import { TOKEN_PATTERN } from './onboarding-token.js';
 
@@ -115,6 +116,13 @@ export class OnboardingSubmitDto extends OnboardingStudentFieldsDto {
   website?: string;
 }
 
+/** One weekly meeting of the class (its room is not public) */
+export class OnboardingLinkSlotDto {
+  @ApiProperty({ enum: Weekday, enumName: 'Weekday' }) day!: Weekday;
+  @ApiProperty({ example: '09:00' }) start!: string;
+  @ApiProperty({ example: '11:00' }) end!: string;
+}
+
 export class OnboardingLinkInfoDto {
   @ApiProperty() branchName!: string;
   @ApiProperty() groupName!: string;
@@ -124,6 +132,13 @@ export class OnboardingLinkInfoDto {
     description: 'Supervising teacher (identifies the class)',
   })
   supervisorName!: string | null;
+  @ApiProperty({
+    type: OnboardingLinkSlotDto,
+    isArray: true,
+    description:
+      'Weekly schedule of the class (its own slots and the shared ones it takes part in)',
+  })
+  schedule!: OnboardingLinkSlotDto[];
 }
 
 export class OnboardingSubmitAckDto {

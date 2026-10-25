@@ -40,6 +40,7 @@ import {
   type StorageDriver,
 } from '../files/storage/storage-driver.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { fromDbTime } from '../scheduling/time.js';
 import {
   hashToken,
   newToken,
@@ -347,10 +348,26 @@ export class StudentOnboardingService {
     if (!link || link.revokedAt) throw linkInvalid();
     if (link.expiresAt <= new Date()) throw linkExpired();
     const c = toClass(link.groupClass);
+    // Its own slots and the shared slots it takes part in
+    const slots = await this.prisma.weeklySchedule.findMany({
+      where: {
+        OR: [
+          { groupClassId: c.id },
+          { extraClasses: { some: { groupClassId: c.id } } },
+        ],
+      },
+      select: { dayOfWeek: true, startTime: true, endTime: true },
+      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+    });
     return {
       branchName: c.branch.name,
       groupName: c.group.name,
       supervisorName: c.supervisorName,
+      schedule: slots.map((s) => ({
+        day: s.dayOfWeek,
+        start: fromDbTime(s.startTime),
+        end: fromDbTime(s.endTime),
+      })),
     };
   }
 

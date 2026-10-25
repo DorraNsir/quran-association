@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 
-import type { Gender } from "@/types/domain"
+import type { Gender, ScheduleSlot } from "@/types/domain"
 
 import { api, useApiMutation } from "./academic"
 import type { Page, Query } from "./client"
@@ -208,6 +208,8 @@ export interface OnboardingLinkInfo {
   branchName: string
   groupName: string
   supervisorName: string | null
+  /** The class's weekly meetings (its own slots and the shared ones); absent from an API older than this field */
+  schedule?: ScheduleSlot[]
 }
 
 /** The token travels in the request BODY (never in a URL the API logs). */

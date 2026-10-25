@@ -61,7 +61,16 @@ describe("public form /student-info/[token]", () => {
 
   it("shows the class read-only, no account fields; the token goes in the body and no class is sent", async () => {
     const calls = routeFetch(({ path }) => {
-      if (path === "/public/student-onboarding/resolve") return json(200, { branchName: "فرع المنزه", groupName: "مجموعة الأمل", supervisorName: "سارة" })
+      if (path === "/public/student-onboarding/resolve") return json(200, {
+          branchName: "فرع المنزه",
+          groupName: "مجموعة الأمل",
+          supervisorName: "سارة",
+          schedule: [
+            { day: "TUE", start: "08:30", end: "10:30" },
+            { day: "SUN", start: "09:00", end: "11:00" },
+            { day: "THU", start: "08:30", end: "10:30" },
+          ],
+        })
       if (path === "/public/student-onboarding/submissions") return json(201, { received: true })
     })
     rtl(<PublicOnboardingForm token={TOKEN} />)
@@ -69,6 +78,9 @@ describe("public form /student-info/[token]", () => {
     expect(screen.getByText("يرجى تعمير البيانات التالية لاستكمال تسجيلك في منظومة الجمعية.")).toBeTruthy()
     expect(screen.getByText("فرع المنزه")).toBeTruthy()
     expect(screen.getByText("قسم سارة")).toBeTruthy()
+    // The class's weekly schedule, after the class (same days and times grouped)
+    const schedule = screen.getByText("المواعيد").parentElement!
+    expect([...schedule.querySelectorAll("dd")].map((d) => d.textContent!.replace(/\u00a0/g, " "))).toEqual(["الثلاثاء والخميس · 08:30 – 10:30", "الأحد · 09:00 – 11:00"])
     expect(document.querySelector("input[type=password]")).toBeNull()
     expect(screen.queryByLabelText(/اسم المستخدم|كلمة المرور/)).toBeNull()
     expect(calls[0]).toMatchObject({ method: "POST", body: { token: TOKEN } })
@@ -97,10 +109,20 @@ describe("public form /student-info/[token]", () => {
   })
 })
 
+describe("public form — schedule", () => {
+  it("a class without weekly slots says so", async () => {
+    routeFetch(({ path }) => {
+      if (path === "/public/student-onboarding/resolve") return json(200, { branchName: "ف", groupName: "م", supervisorName: "سارة", schedule: [] })
+    })
+    rtl(<PublicOnboardingForm token={TOKEN} />)
+    expect((await screen.findByText("المواعيد")).parentElement!.textContent).toContain("المواعيد غير محددة")
+  })
+})
+
 describe("public form — photo", () => {
   it("an optional photo is sent with the form (multipart: data + photo)", async () => {
     const calls = routeFetch(({ path }) => {
-      if (path === "/public/student-onboarding/resolve") return json(200, { branchName: "ف", groupName: "م", supervisorName: null })
+      if (path === "/public/student-onboarding/resolve") return json(200, { branchName: "ف", groupName: "م", supervisorName: null, schedule: [] })
       if (path === "/public/student-onboarding/submissions") return json(201, { received: true })
     })
     rtl(<PublicOnboardingForm token={TOKEN} />)

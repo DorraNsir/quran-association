@@ -237,6 +237,11 @@ describe('Student onboarding — temporary module (e2e)', () => {
     await prisma.groupClassAssistant.deleteMany({
       where: { groupClass: classes },
     });
+    await prisma.session.deleteMany({ where: { groupClass: classes } });
+    await prisma.weeklySchedule.deleteMany({ where: { groupClass: classes } });
+    await prisma.room.deleteMany({
+      where: { branch: { name: { endsWith: RUN } } },
+    });
     await prisma.groupClass.deleteMany({ where: classes });
     await prisma.groupFee
       .deleteMany({ where: { group: { name: { endsWith: RUN } } } })
@@ -341,12 +346,43 @@ describe('Student onboarding — temporary module (e2e)', () => {
   // ───────────────────────── public form ─────────────────────────
 
   describe('public form', () => {
-    it('shows the link’s class (read-only), without any id', async () => {
+    it('shows the link’s class (read-only) with its weekly schedule, without any id', async () => {
+      expect((await resolve(token.link).expect(200)).body.schedule).toEqual([]);
+      const room = (
+        await academic('rooms', { branchId: id.branch, name: tag('قاعة') })
+      ).body.id;
+      const slot = (classId: string, body: object) =>
+        academic(`group-classes/${classId}/schedules`, {
+          roomId: room,
+          ...body,
+        }).expect(201);
+      // Its own slot, a shared slot hosted by another class, another class's slot
+      await slot(id.C, {
+        dayOfWeek: 'SUN',
+        startTime: '09:00',
+        endTime: '11:00',
+      });
+      await slot(id.C2, {
+        dayOfWeek: 'TUE',
+        startTime: '17:00',
+        endTime: '18:30',
+        additionalGroupClassIds: [id.C],
+      });
+      await slot(id.D, {
+        dayOfWeek: 'WED',
+        startTime: '15:00',
+        endTime: '16:00',
+      });
       const info = (await resolve(token.link).expect(200)).body;
       expect(info).toEqual({
         branchName: tag('فرع'),
         groupName: tag('مجموعة الماهر'),
         supervisorName: `sup ${tag('حساب')}`,
+        // In week order (MON…SUN); never its room nor any id
+        schedule: [
+          { day: 'TUE', start: '17:00', end: '18:30' },
+          { day: 'SUN', start: '09:00', end: '11:00' },
+        ],
       });
       expect((await resolve('A'.repeat(43)).expect(404)).body.code).toBe(
         'ONBOARDING_LINK_INVALID',

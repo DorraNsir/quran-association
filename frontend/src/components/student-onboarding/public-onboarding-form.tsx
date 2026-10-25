@@ -5,13 +5,15 @@ import { useState } from "react"
 
 import { FormSection, PhotoInput } from "@/components/shared/form"
 import { FormErrorAlert } from "@/components/shared/form-error-alert"
+import { TimeRange } from "@/components/shared/time-range"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { useFormState } from "@/hooks/use-form-state"
 import { ApiError, errorMessage } from "@/lib/api/errors"
-import { submitOnboarding, useResolveOnboardingLink, type Submitter } from "@/lib/api/student-onboarding"
+import { submitOnboarding, useResolveOnboardingLink, type OnboardingLinkInfo, type Submitter } from "@/lib/api/student-onboarding"
+import { NO_WEEKLY_SCHEDULE, weeklyScheduleRanges } from "@/lib/domain"
 import { cn } from "@/lib/utils"
 
 import { StudentFields, toFieldValues, toPayload, validateFields } from "./onboarding-fields"
@@ -65,7 +67,7 @@ function OnboardingForm({
   onDone,
 }: {
   token: string
-  info: { branchName: string; groupName: string; supervisorName: string | null }
+  info: OnboardingLinkInfo
   onDone: () => void
 }) {
   const form = useFormState("onboarding", toFieldValues(), validateFields)
@@ -95,10 +97,22 @@ function OnboardingForm({
           <p className="mt-1 text-sm text-muted-foreground">يرجى تعمير البيانات التالية لاستكمال تسجيلك في منظومة الجمعية.</p>
         </div>
         {/* The class comes from the link — never chosen here */}
-        <dl className="grid gap-3 rounded-lg bg-muted/50 p-3 text-sm sm:grid-cols-3">
+        <dl className="grid gap-3 rounded-lg bg-muted/50 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <Info2 label="الفرع" value={info.branchName} />
           <Info2 label="المجموعة" value={info.groupName} />
           <Info2 label="القسم" value={info.supervisorName ? `قسم ${info.supervisorName}` : "—"} />
+          <div className="min-w-0">
+            <dt className="text-xs text-muted-foreground">المواعيد</dt>
+            {!info.schedule?.length ? (
+              <dd className="font-medium">{NO_WEEKLY_SCHEDULE}</dd>
+            ) : (
+              weeklyScheduleRanges(info.schedule).map((r) => (
+                <dd key={`${r.start}-${r.end}`} className="font-medium">
+                  {r.days} · <TimeRange start={r.start} end={r.end} />
+                </dd>
+              ))
+            )}
+          </div>
         </dl>
       </Card>
 
