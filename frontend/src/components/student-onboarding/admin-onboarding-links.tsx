@@ -133,7 +133,7 @@ function LinksView({ lookups }: { lookups: Lookups }) {
       header: "الحالة",
       cell: (l) => <Badge variant="outline" className={cn("border-transparent", LINK_STATUS_STYLE[l.status])}>{LINK_STATUS_LABEL[l.status]}</Badge>,
     },
-    { id: "expires", header: "انتهاء الصلاحية", cell: (l) => <span dir="ltr" className="inline-block text-sm tabular-nums">{formatDateTime(l.expiresAt)}</span> },
+    { id: "expires", header: "انتهاء الصلاحية", cell: (l) => <span className="inline-block text-sm tabular-nums">{formatDateTime(l.expiresAt)}</span> },
     { id: "total", header: "الطلبات", className: "text-center", cell: (l) => <span className="tabular-nums">{l.submissions.total}</span> },
     { id: "pending", header: "بانتظار المراجعة", className: "hidden text-center md:table-cell", cell: (l) => <span className={cn("tabular-nums", l.submissions.pending > 0 && "font-medium text-warning")}>{l.submissions.pending}</span> },
     { id: "approved", header: "مقبولة", className: "hidden text-center md:table-cell", cell: (l) => <span className="tabular-nums">{l.submissions.approved}</span> },

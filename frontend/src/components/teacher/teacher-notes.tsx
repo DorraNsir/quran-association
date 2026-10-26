@@ -83,7 +83,7 @@ export function TeacherNotes() {
                 <Card className="gap-3 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <p className="text-xs text-muted-foreground">
-                      <span dir="ltr" className="inline-block">{formatDateTime(note.createdAt)}</span>
+                      <span className="inline-block">{formatDateTime(note.createdAt)}</span>
                     </p>
                     <ActionsMenu
                       label="إجراءات الملاحظة"
@@ -96,7 +96,7 @@ export function TeacherNotes() {
                   <p className={`text-sm leading-relaxed ${WRAP}`}>{note.content}</p>
                   {note.updatedAt !== note.createdAt && (
                     <p className="text-xs text-muted-foreground">
-                      آخر تعديل: <span dir="ltr" className="inline-block">{formatDateTime(note.updatedAt)}</span>
+                      آخر تعديل: <span className="inline-block">{formatDateTime(note.updatedAt)}</span>
                     </p>
                   )}
                 </Card>

@@ -112,7 +112,7 @@ function SubmissionsView({ lookups }: { lookups: Lookups }) {
     { id: "branch", header: "الفرع", className: "hidden md:table-cell", cell: (s) => s.groupClass.branch.name },
     { id: "group", header: "المجموعة", cell: (s) => s.groupClass.group.name },
     { id: "class", header: "القسم", className: "hidden lg:table-cell", cell: (s) => (s.groupClass.supervisorName ? `قسم ${s.groupClass.supervisorName}` : "—") },
-    { id: "date", header: "تاريخ الإرسال", cell: (s) => <span dir="ltr" className="inline-block text-sm tabular-nums">{formatDateTime(s.createdAt)}</span> },
+    { id: "date", header: "تاريخ الإرسال", cell: (s) => <span className="inline-block text-sm tabular-nums">{formatDateTime(s.createdAt)}</span> },
     { id: "status", header: "الحالة", cell: (s) => <StatusBadge status={s.status} /> },
     {
       id: "action",
@@ -237,7 +237,7 @@ function Review({ sub, onDone }: { sub: OnboardingSubmissionDetail; onDone: () =
     ["هاتف الولي", sub.guardianPhone ? <span dir="ltr">{sub.guardianPhone}</span> : "—"],
     ["العنوان", sub.address],
     ["أرسلها", sub.submittedBy === "GUARDIAN" ? "الولي" : "الطالب"],
-    ["تاريخ الإرسال", <span key="d" dir="ltr">{formatDateTime(sub.createdAt)}</span>],
+    ["تاريخ الإرسال", <span key="d">{formatDateTime(sub.createdAt)}</span>],
   ]
 
   return (
