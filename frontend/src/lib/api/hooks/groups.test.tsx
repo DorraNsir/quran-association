@@ -36,8 +36,6 @@ describe("saving a class with one room per weekly slot", () => {
     const calls = await save(
       {
         groupClass: { ...team, branchId: "b1" },
-        studentIds: [],
-        currentMemberIds: [],
         previousSlots: [],
         slots: [
           { day: "MON", start: "09:00", end: "11:00", roomId: "r1" },
@@ -58,8 +56,6 @@ describe("saving a class with one room per weekly slot", () => {
     const calls = await save(
       {
         groupClass: { ...team, id: "c1", branchId: "b1" },
-        studentIds: [],
-        currentMemberIds: [],
         previousSlots,
         previousBranchId: "b1",
         slots: [{ ...previousSlots[0], roomId: "r2" }, previousSlots[1], previousSlots[2]],
@@ -74,8 +70,6 @@ describe("saving a class with one room per weekly slot", () => {
     const calls = await save(
       {
         groupClass: { ...team, id: "c1", branchId: "b2" },
-        studentIds: [],
-        currentMemberIds: [],
         previousSlots,
         previousBranchId: "b1",
         slots: [

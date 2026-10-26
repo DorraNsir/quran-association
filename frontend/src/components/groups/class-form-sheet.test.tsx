@@ -5,7 +5,7 @@ import { DirectionProvider } from "@/components/ui/direction"
 import type { ClassSaveInput } from "@/lib/api/hooks/groups"
 import type { Lookups } from "@/lib/domain"
 import { checkClassSlots, keepRoomsOfBranch } from "@/lib/scheduling"
-import type { Group, GroupClass } from "@/types/domain"
+import type { Group, GroupClass, Student } from "@/types/domain"
 
 import { ClassFormSheet } from "./class-form-sheet"
 
@@ -32,10 +32,13 @@ const lookups: Lookups = {
   ],
 }
 
-function renderForm(onSave = vi.fn<(input: ClassSaveInput) => Promise<void>>(async () => {})) {
+function renderForm(
+  onSave = vi.fn<(input: ClassSaveInput) => Promise<void>>(async () => {}),
+  { students = [], editing = groupClass }: { students?: Student[]; editing?: GroupClass | null } = {}
+) {
   render(
     <DirectionProvider dir="rtl">
-      <ClassFormSheet open onOpenChange={() => {}} group={group} groupClass={groupClass} lookups={lookups} students={[]} onSave={onSave} />
+      <ClassFormSheet open onOpenChange={() => {}} group={group} groupClass={editing ?? undefined} lookups={lookups} students={students} onSave={onSave} />
     </DirectionProvider>
   )
   return onSave
@@ -104,5 +107,31 @@ describe("slot rooms and branches", () => {
     // Monday 09–11 holds room 1 (c1's slot s1); Wednesday's c1 slot is in room 2
     expect(checks.get("same")?.conflicts.map((c) => c.type)).toEqual(["ROOM"])
     expect(checks.get("different")?.conflicts).toEqual([])
+  })
+})
+
+const student = (id: string, groupClassId: string, status: Student["status"] = "ACTIVE") =>
+  ({ id, firstName: "طالب", lastName: id, groupClassId, status }) as unknown as Student
+
+describe("class form: students are not chosen here", () => {
+  it("shows the class's active students as a read-only count, without any student picker", () => {
+    renderForm(undefined, {
+      students: [student("a", "c1"), student("b", "c1"), student("c", "c1", "ARCHIVED"), student("d", "other")],
+    })
+    expect(screen.getByText(/طلبة القسم النشطون: طالبان\./)).toBeTruthy()
+    expect(screen.queryByText("طلبة القسم")).toBeNull()
+    expect(screen.queryByPlaceholderText("ابحث باسم الطالب…")).toBeNull()
+    expect(screen.getByText(/عبر «تغيير المجموعة أو القسم»/)).toBeTruthy()
+  })
+
+  it("an edited class without active students says so", () => {
+    renderForm(undefined, { students: [student("d", "other")] })
+    expect(screen.getByText(/لا يضم القسم أي طالب نشط\./)).toBeTruthy()
+  })
+
+  it("a new class has no count, only where students join it", () => {
+    renderForm(undefined, { editing: null })
+    expect(screen.queryByText(/طلبة القسم النشطون|لا يضم القسم/)).toBeNull()
+    expect(screen.getByText(/يُسجَّل الطالب في القسم من استمارة الطالب/)).toBeTruthy()
   })
 })

@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useFormState } from "@/hooks/use-form-state"
-import { fullName, indexLookups, roomsOfBranch, schedulesOf, studentClass, type Lookups } from "@/lib/domain"
+import { countActiveStudentsByClass, fullName, indexLookups, roomsOfBranch, schedulesOf, type Lookups } from "@/lib/domain"
 import { countLabels } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import type { ClassSaveInput } from "@/lib/api/hooks/groups"
@@ -25,7 +25,6 @@ interface ClassFormValues {
   branchId: string
   supervisorId: string
   assistantIds: string[]
-  studentIds: string[]
   slots: SlotDraft[]
   status: GroupClassStatus
 }
@@ -79,8 +78,8 @@ function SimpleSelect({
 }
 
 /**
- * One actual class of a group: where it meets, who teaches it, who studies
- * in it and when. Several classes of the same group can coexist.
+ * One actual class of a group: where it meets, who teaches it and when. Its
+ * students join it from the student form or «تغيير المجموعة أو القسم». Several classes of the same group can coexist.
  */
 export function ClassFormSheet({
   open,
@@ -97,11 +96,11 @@ export function ClassFormSheet({
   groupClass?: GroupClass
   lookups: Lookups
   students: Student[]
-  /** Saves through the API (class, slots, transfers); a rejection is shown in the form */
+  /** Saves through the API (class and slots); a rejection is shown in the form */
   onSave: (input: ClassSaveInput) => Promise<void>
 }) {
   const indexes = indexLookups(lookups)
-  const currentMembers = groupClass ? students.filter((s) => s.groupClassId === groupClass.id).map((s) => s.id) : []
+  const members = groupClass ? (countActiveStudentsByClass(students).get(groupClass.id) ?? 0) : 0
   const slotChecks = (v: ClassFormValues) =>
     checkClassSlots(v.slots, toDraftClass(v, group, groupClass), lookups)
 
@@ -111,7 +110,6 @@ export function ClassFormSheet({
       branchId: groupClass?.branchId ?? "",
       supervisorId: groupClass?.supervisorId ?? "",
       assistantIds: groupClass?.assistantIds ?? [],
-      studentIds: currentMembers,
       slots: groupClass
         ? schedulesOf(groupClass.id, lookups.schedules).map((s) => ({ key: `saved:${s.id}`, id: s.id, day: s.day, start: s.start, end: s.end, roomId: s.roomId }))
         : [],
@@ -132,7 +130,6 @@ export function ClassFormSheet({
   const teachers = lookups.teachers.filter(
     (t) => t.status === "ACTIVE" || t.id === values.supervisorId || values.assistantIds.includes(t.id)
   )
-  const moving = values.studentIds.filter((id) => !currentMembers.includes(id)).length
   const isRunning = values.status === "ACTIVE" && group.status === "ACTIVE"
 
   const submit = form.handleSubmit((v) => {
@@ -140,8 +137,6 @@ export function ClassFormSheet({
     void _draft
     return onSave({
       groupClass: { ...draft, id: groupClass?.id },
-      studentIds: v.studentIds,
-      currentMemberIds: currentMembers,
       slots: v.slots.map(({ id, day, start, end, roomId }) => ({ id, day, start, end, roomId })),
       previousSlots: groupClass ? schedulesOf(groupClass.id, lookups.schedules) : [],
       previousBranchId: groupClass?.branchId,
@@ -153,7 +148,7 @@ export function ClassFormSheet({
       open={open}
       onOpenChange={onOpenChange}
       title={groupClass ? `تعديل قسم ${indexes.branchesById.get(groupClass.branchId)?.name ?? ""}` : `قسم جديد — ${group.name}`}
-      description={`${group.name}: لكل قسم فرعه ومدرسه المشرف وطلبته ومواعيده، ولكل موعد قاعته.`}
+      description={`${group.name}: لكل قسم فرعه ومدرسه المشرف ومواعيده، ولكل موعد قاعته.`}
       onSubmit={submit}
       submitLabel={groupClass ? "حفظ التعديلات" : "إنشاء القسم"}
       pending={form.pending}
@@ -220,37 +215,16 @@ export function ClassFormSheet({
         </FormField>
       </FormSection>
 
-      <FormSection title="الطلبة" description="يدرس كل طالب في قسم واحد.">
-        <FormField label="طلبة القسم" optional className="sm:col-span-2" {...form.field("studentIds")}>
-          <MultiSelect
-            id={form.field("studentIds").id}
-            placeholder="لم يُضَف أي طالب"
-            searchPlaceholder="ابحث باسم الطالب…"
-            countLabel={countLabels.students}
-            selected={values.studentIds}
-            onChange={(ids) => setField("studentIds", ids)}
-            options={students
-              .filter((s) => s.status !== "ARCHIVED")
-              .map((s) => {
-                const isMember = currentMembers.includes(s.id)
-                const current = studentClass(s, indexes)
-                return {
-                  value: s.id,
-                  label: fullName(s),
-                  section: isMember ? "طلبة القسم حاليًا" : "طلبة في أقسام أخرى",
-                  description: isMember ? undefined : `حاليًا في ${current?.group?.name ?? "—"} · ${current?.branch?.name ?? ""}`,
-                  locked: isMember,
-                }
-              })}
-          />
-        </FormField>
+      <FormSection title="الطلبة">
         <div className="flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground sm:col-span-2">
           <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <p>
-            {moving > 0 && (
-              <strong className="font-medium text-foreground">سيُنقل {countLabels.students(moving)} من أقسامهم الحالية. </strong>
+            {groupClass && (
+              <strong className="font-medium text-foreground">
+                {members > 0 ? `طلبة القسم النشطون: ${countLabels.students(members)}. ` : "لا يضم القسم أي طالب نشط. "}
+              </strong>
             )}
-            لإخراج طالب من هذا القسم استعمل «تغيير المجموعة أو القسم» من صفحة الطلبة، حتى لا يبقى بدون قسم.
+            يُسجَّل الطالب في القسم من استمارة الطالب، ويُنقل إليه أو منه عبر «تغيير المجموعة أو القسم» من صفحة الطلبة.
           </p>
         </div>
       </FormSection>

@@ -45,9 +45,6 @@ export function useSetClassStatus() {
 
 export interface ClassSaveInput {
   groupClass: Omit<GroupClass, "id"> & { id?: string }
-  /** Students who must be in this class after saving (added ones are transferred) */
-  studentIds: string[]
-  currentMemberIds: string[]
   /** The class's weekly slots after saving (id = existing slot) */
   slots: (Pick<WeeklySchedule, "day" | "start" | "end" | "roomId"> & { id?: string })[]
   previousSlots: WeeklySchedule[]
@@ -58,7 +55,7 @@ export interface ClassSaveInput {
 /**
  * Saves a class as the API models it: the class (branch + team), its status,
  * its weekly slots, each in its own room (deleted first so freed times can be
- * reused, then updated, then created) and the students transferred into it.
+ * reused, then updated, then created).
  * A branch change sends the new room of every kept slot with the class itself
  * (the API applies both atomically). The API
  * checks every conflict and rule; on a refusal the error is shown and the
@@ -109,8 +106,6 @@ export function useSaveClass() {
         body: { dayOfWeek: slot.day, startTime: slot.start, endTime: slot.end, roomId: slot.roomId },
       })
 
-    for (const studentId of input.studentIds.filter((id) => !input.currentMemberIds.includes(id)))
-      await api(`/admin/students/${studentId}/group-class`, { method: "PATCH", body: { groupClassId: saved.id } })
     return saved
   }, affected)
 }
