@@ -32,6 +32,6 @@ import { TeachingModule } from '../teaching/teaching.module.js';
     SessionsService,
     PageSizeService,
   ],
-  exports: [ScheduleConflictService, SessionsService],
+  exports: [ScheduleConflictService, SessionsService, SchedulesService],
 })
 export class SchedulingModule {}

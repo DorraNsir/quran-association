@@ -3,6 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, Check, ExternalLink, Inbox, Link2, Pencil, UserPlus, X } from "lucide-react"
 import Link from "next/link"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
@@ -80,7 +81,21 @@ function SubmissionsView({ lookups }: { lookups: Lookups }) {
   const [from, setFrom] = useState("")
   const [to, setTo] = useState("")
   const [page, setPage] = useState(1)
-  const [openId, setOpenId] = useState<string | null>(null)
+  // A notification opens one submission (?id=…), also when this page is already shown
+  const router = useRouter()
+  const pathname = usePathname()
+  const requested = useSearchParams().get("id")
+  const [openId, setOpenId] = useState<string | null>(requested)
+  const [shownRequest, setShownRequest] = useState(requested)
+  if (requested !== shownRequest) {
+    setShownRequest(requested)
+    if (requested) setOpenId(requested)
+  }
+  const closeReview = () => {
+    setOpenId(null)
+    // Closed: the address no longer reopens it (reload, back)
+    if (requested) router.replace(pathname, { scroll: false })
+  }
   const reset = <T,>(set: (v: T) => void) => (v: T) => (set(v), setPage(1))
 
   const list = useOnboardingSubmissions(
@@ -168,7 +183,7 @@ function SubmissionsView({ lookups }: { lookups: Lookups }) {
         <Pager page={page} totalPages={list.data?.meta.totalPages ?? 1} onPage={setPage} />
       </QueryState>
 
-      <ReviewSheet id={openId} onClose={() => setOpenId(null)} />
+      <ReviewSheet id={openId} onClose={closeReview} />
     </OnboardingShell>
   )
 }

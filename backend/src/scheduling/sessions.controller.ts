@@ -129,8 +129,11 @@ export class SessionsController {
     type: SchedulingConflictDto,
     description: `GROUP_CLASS_INACTIVE, SUPERVISOR_INACTIVE, ${CONFLICTS}`,
   })
-  createExtra(@Body() dto: CreateExtraSessionDto): Promise<SessionDto> {
-    return this.sessions.createExtra(dto);
+  createExtra(
+    @CurrentUser() actor: AuthPrincipal,
+    @Body() dto: CreateExtraSessionDto,
+  ): Promise<SessionDto> {
+    return this.sessions.createExtra(dto, actor.userId);
   }
 
   @Patch(':id')
@@ -142,10 +145,11 @@ export class SessionsController {
     description: `SESSION_NOT_EDITABLE, ${CONFLICTS}`,
   })
   update(
+    @CurrentUser() actor: AuthPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateSessionDto,
   ): Promise<SessionDto> {
-    return this.sessions.update(id, dto);
+    return this.sessions.update(id, dto, actor.userId);
   }
 
   @Patch(':id/status')

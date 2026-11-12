@@ -15,9 +15,13 @@ import { badRequest, conflict, notFound } from '../common/errors.js';
 import { PageSizeService } from '../common/page-size.service.js';
 import { paginationMeta } from '../common/pagination.js';
 import { platformDayBounds, platformToday } from '../common/platform-clock.js';
+import { registrationRequestMessage } from '../communication/notification-text.js';
+import { NotificationsService } from '../communication/notifications.service.js';
 import {
   ActivationStatus,
   type Gender,
+  NotificationEntity,
+  NotificationType,
   type Prisma,
   RecordStatus,
   RegistrationRequestSource,
@@ -114,19 +118,47 @@ export class RegistrationService {
     private readonly prisma: PrismaService,
     private readonly pageSizes: PageSizeService,
     private readonly students: StudentsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
-  /** Public submission: always PUBLIC_WEBSITE + PENDING, minimal acknowledgment. */
+  /**
+   * Public submission: always PUBLIC_WEBSITE + PENDING, minimal acknowledgment.
+   * The admins are told in the same transaction (no request without its
+   * notification, no notification for a request that was not stored).
+   */
   async submitPublic(
     dto: RegistrationFieldsDto,
   ): Promise<PublicRegistrationAckDto> {
     await this.assertApplicant(dto, { publicForm: true });
-    const created = await this.prisma.registrationRequest.create({
-      data: {
-        ...this.fieldsData(dto),
-        source: RegistrationRequestSource.PUBLIC_WEBSITE,
-      },
-      select: { submittedAt: true },
+    const created = await this.prisma.$transaction(async (tx) => {
+      const request = await tx.registrationRequest.create({
+        data: {
+          ...this.fieldsData(dto),
+          source: RegistrationRequestSource.PUBLIC_WEBSITE,
+        },
+        select: {
+          id: true,
+          submittedAt: true,
+          firstName: true,
+          lastName: true,
+          interestedGroup: { select: { name: true } },
+          interestedProgramLabel: true,
+        },
+      });
+      await this.notifications.notifyAdmins(tx, {
+        type: NotificationType.REGISTRATION_REQUEST_SUBMITTED,
+        entityType: NotificationEntity.REGISTRATION_REQUEST,
+        entityId: request.id,
+        title: 'طلب تسجيل جديد',
+        message: registrationRequestMessage({
+          firstName: request.firstName,
+          lastName: request.lastName,
+          group:
+            request.interestedGroup?.name ?? request.interestedProgramLabel,
+        }),
+        actorUserId: null,
+      });
+      return request;
     });
     return {
       message: 'تم استلام طلب التسجيل، وستتواصل معك الإدارة قريبًا',
@@ -313,6 +345,7 @@ export class RegistrationService {
               tx,
               { ...base, personId: dto.personId },
               reviewerUserId,
+              'REGISTRATION',
             )
           : await this.students.createInTx(
               tx,
@@ -321,6 +354,7 @@ export class RegistrationService {
                 person: await this.newPerson(tx, request, dto),
               },
               reviewerUserId,
+              'REGISTRATION',
             );
         await tx.registrationRequest.update({
           where: { id },

@@ -268,16 +268,90 @@ export function buildNotifications(
     }))
 }
 
-/** Where a notification opens, inside the workspace the user is currently in. */
-export function notificationHref(notification: UserNotification, workspace: Workspace) {
-  if (!notification.entityId) return undefined
-  // Attendance changes open the session's attendance page (with its history)
-  if (notification.entityType === "SESSION")
-    return workspace === "student" ? undefined : `/${workspace}/sessions/${notification.entityId}/attendance`
-  return `/${workspace}/${notificationSection(notification)}/${notification.entityId}`
+/** What opening a notification reads first, and where it then goes. */
+export interface NotificationTarget {
+  /** The page, or how to find it from what was read (a class: the page of its group) */
+  href: string | ((data: unknown) => string)
+  apiPath: string
+  queryKey: readonly unknown[]
+  /** When what is read is a list (a teacher's workspace): whether the subject is still in it */
+  contains?: (data: unknown) => boolean
 }
 
-/** The API section a notification's entity lives in. */
-export function notificationSection(notification: Pick<UserNotification, "entityType">) {
-  return notification.entityType === "RESOURCE" ? "resources" : notification.entityType === "SESSION" ? "sessions" : "announcements"
+/** A teacher's (or student's) own groups, classes and students: what their pages are built from. */
+const inWorkspace = (list: "students" | "groupClasses" | "groups", id: string) => (data: unknown) =>
+  ((data as Partial<Record<typeof list, { id: string }[]>>)[list] ?? []).some((x) => x.id === id)
+
+/**
+ * Where a notification opens, inside the workspace the user is currently in:
+ * the page (`href`), and the API path of its content (`apiPath`), read first
+ * because a notification grants no access. Nothing once its content was
+ * deleted, nor for a subject this version does not know (a newer API), nor
+ * outside the workspace that may open it (requests: admin space only).
+ */
+export function notificationTarget(notification: UserNotification, workspace: Workspace): NotificationTarget | undefined {
+  const id = notification.entityId
+  if (!id || notification.available === false) return undefined
+  switch (notification.entityType) {
+    case "RESOURCE":
+    case "ANNOUNCEMENT": {
+      const section = notification.entityType === "RESOURCE" ? "resources" : "announcements"
+      return { href: `/${workspace}/${section}/${id}`, apiPath: `/${workspace}/${section}/${id}`, queryKey: [section, workspace, "detail", id] }
+    }
+    case "SESSION":
+      // Attendance changes open the session's attendance page (with its history)
+      if (notification.type === "ATTENDANCE_MODIFIED")
+        return workspace === "student"
+          ? undefined
+          : { href: `/${workspace}/sessions/${id}/attendance`, apiPath: `/${workspace}/sessions/${id}`, queryKey: ["sessions", workspace, "detail", id] }
+      // A lesson rescheduled, cancelled or added: the lesson (a student: their schedule)
+      return workspace === "student"
+        ? { href: "/student/schedule", apiPath: "/student/workspace", queryKey: ["student-workspace"] }
+        : { href: `/${workspace}/sessions/${id}`, apiPath: `/${workspace}/sessions/${id}`, queryKey: ["sessions", workspace, "detail", id] }
+    case "GROUP":
+      if (workspace === "admin") return { href: `/admin/groups/${id}`, apiPath: `/admin/groups/${id}`, queryKey: ["notification-target", "group", id] }
+      // A teacher: their classes, while the group still has one of theirs
+      return workspace === "teacher"
+        ? { href: "/teacher/classes", apiPath: "/teacher/workspace", queryKey: ["teacher-workspace"], contains: inWorkspace("groups", id) }
+        : undefined
+    case "REGISTRATION_REQUEST":
+      return workspace === "admin"
+        ? { href: `/admin/registration-requests/${id}`, apiPath: `/admin/registration-requests/${id}`, queryKey: ["registration-requests", "detail", id] }
+        : undefined
+    case "ONBOARDING_SUBMISSION":
+      return workspace === "admin"
+        ? {
+            href: `/admin/student-onboarding/submissions?id=${id}`,
+            apiPath: `/admin/student-onboarding/submissions/${id}`,
+            queryKey: ["student-onboarding", "submission", id],
+          }
+        : undefined
+    case "STUDENT":
+      if (workspace === "admin")
+        return { href: `/admin/students/${id}`, apiPath: `/admin/students/${id}`, queryKey: ["notification-target", "student", id] }
+      // A teacher opens only a student of their classes today (a student moved away is no longer theirs)
+      return workspace === "teacher"
+        ? { href: `/teacher/students/${id}`, apiPath: "/teacher/workspace", queryKey: ["teacher-workspace"], contains: inWorkspace("students", id) }
+        : undefined
+    case "GROUP_CLASS":
+      // An admin who also teaches, in the admin space: the class on its group's page (admin access checked by the API)
+      if (workspace === "admin")
+        return {
+          href: (data) => `/admin/groups/${(data as { group: { id: string } }).group.id}#group-classes`,
+          apiPath: `/admin/group-classes/${id}`,
+          queryKey: ["notification-target", "group-class", id],
+        }
+      if (workspace === "teacher")
+        return { href: `/teacher/classes/${id}`, apiPath: "/teacher/workspace", queryKey: ["teacher-workspace"], contains: inWorkspace("groupClasses", id) }
+      // A student: the schedule of their class (still theirs)
+      return { href: "/student/schedule", apiPath: "/student/workspace", queryKey: ["student-workspace"], contains: inWorkspace("groupClasses", id) }
+    default:
+      return undefined
+  }
+}
+
+/** The page a notification opens in this workspace when it is known before reading (see notificationTarget). */
+export function notificationHref(notification: UserNotification, workspace: Workspace) {
+  const href = notificationTarget(notification, workspace)?.href
+  return typeof href === "string" ? href : undefined
 }

@@ -45,6 +45,7 @@ import {
   studentAnnouncementWhere,
   teacherAnnouncementWhere,
 } from './audience.js';
+import { loadActor, requireActor } from './notification-text.js';
 import { NotificationsService } from './notifications.service.js';
 
 type Tx = Prisma.TransactionClient;
@@ -431,8 +432,10 @@ export class AnnouncementsService {
     const published: string[] = [];
     while (published.length < limit) {
       const id = await this.prisma.$transaction(async (tx) => {
-        const [due] = await tx.$queryRaw<{ id: string; title: string }[]>`
-          SELECT id, title FROM announcements
+        const [due] = await tx.$queryRaw<
+          { id: string; title: string; publishedByUserId: string }[]
+        >`
+          SELECT id, title, "publishedByUserId" FROM announcements
           WHERE status = 'SCHEDULED' AND "scheduledFor" <= now()
           ORDER BY "scheduledFor", id
           LIMIT 1
@@ -443,6 +446,7 @@ export class AnnouncementsService {
           tx,
           due.id,
           due.title,
+          { scheduledBy: await loadActor(tx, due.publishedByUserId) },
         );
         this.logger.log(
           `Scheduled announcement ${due.id} published (${notified} notified)`,
@@ -545,6 +549,15 @@ export class AnnouncementsService {
       WHERE id = ${id}::uuid`;
   }
 
+  /** Who publishes now, as the notifications name them. */
+  private async publisher(tx: Tx, actor: Actor) {
+    return {
+      actor: await requireActor(tx, actor.userId),
+      capacity:
+        actor.kind === 'admin' ? ('ADMIN' as const) : ('TEACHER' as const),
+    };
+  }
+
   /** Checks, then publish + notify (caller holds the row lock). */
   private async publishNow(tx: Tx, actor: Actor, current: Row, clock: Clock) {
     if (current.expiresAt && fromDbDate(current.expiresAt) < clock.today) {
@@ -559,7 +572,12 @@ export class AnnouncementsService {
     await this.assertTargets(tx, targets);
     // Published early: the pending schedule no longer applies
     await this.markPublished(tx, current.id, true);
-    return this.notifications.notifyAnnouncement(tx, current.id, current.title);
+    return this.notifications.notifyAnnouncement(
+      tx,
+      current.id,
+      current.title,
+      await this.publisher(tx, actor),
+    );
   }
 
   /**
@@ -704,6 +722,7 @@ export class AnnouncementsService {
           tx,
           created.id,
           dto.title,
+          await this.publisher(tx, actor),
         ),
       };
     });

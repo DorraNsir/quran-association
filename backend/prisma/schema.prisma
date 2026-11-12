@@ -147,6 +147,34 @@ enum NotificationType {
   ANNOUNCEMENT_PUBLISHED
   /// An assistant changed saved attendance of a session: its supervisor is told
   ATTENDANCE_MODIFIED
+  /// A registration request arrived from the public website: the admins are told
+  REGISTRATION_REQUEST_SUBMITTED
+  /// A student (or guardian) sent their data through an onboarding link: the admins are told
+  ONBOARDING_SUBMITTED
+  /// A student joined a class (added, accepted request, approved submission): its teachers are told
+  STUDENT_JOINED_CLASS
+  /// A student moved between classes: the teachers of the new class (and of both) are told
+  STUDENT_TRANSFERRED
+  /// A student left a class (moved out, made inactive or archived): its teachers are told
+  STUDENT_LEFT_CLASS
+  /// A group created, renamed or (de)activated: the other admins (and its classes' teachers) are told
+  GROUP_CHANGED
+  /// One save of a class (created, moved, re-staffed, its weekly slots): one notification per person concerned
+  CLASS_CHANGED
+  /// An upcoming lesson rescheduled, cancelled, restored, or added by hand: its teachers and students are told
+  SESSION_CHANGED
+}
+
+/// What a notification is about (kept when that content is deleted)
+enum NotificationEntity {
+  RESOURCE
+  ANNOUNCEMENT
+  SESSION
+  REGISTRATION_REQUEST
+  ONBOARDING_SUBMISSION
+  STUDENT
+  GROUP_CLASS
+  GROUP
 }
 
 /// Whose attendance an audit entry is about
@@ -289,7 +317,8 @@ model User {
   uploadedFiles             StoredFile[]           @relation("FileUploader")
   publishedResources        Resource[]
   publishedAnnouncements    Announcement[]
-  notifications             Notification[]
+  notifications             Notification[]         @relation("NotificationRecipient")
+  actedNotifications        Notification[]         @relation("NotificationActor")
   recordedAttendance        StudentAttendance[]
   recordedTeacherAttendance TeacherAttendance[]    @relation("TeacherAttendanceRecorder")
   attendanceChanges         AttendanceChange[]
@@ -494,6 +523,10 @@ model GroupClass {
   branchId     String       @db.Uuid
   supervisorId String       @db.Uuid
   status       RecordStatus @default(ACTIVE)
+  /// Optimistic concurrency of the class form: bumped by database triggers on
+  /// any change of the class, its assistants or the weekly slots it takes part
+  /// in, whatever the write path
+  version      Int          @default(1)
   createdAt    DateTime     @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime     @updatedAt @db.Timestamptz(3)
 
@@ -1175,20 +1208,30 @@ model Notification {
   announcementId String?          @db.Uuid
   /// ATTENDANCE_MODIFIED: the session whose attendance was changed
   sessionId      String?          @db.Uuid
+  /// What it is about, kept when the content is deleted (its link column above
+  /// is then cleared, and the notification no longer opens anything)
+  entityType     NotificationEntity?
+  entityId       String?          @db.Uuid
+  /// Who did it (null: no account, e.g. a public submission, or a deleted one); never notified of it
+  actorUserId    String?          @db.Uuid
   /// null = unread
   readAt         DateTime?        @db.Timestamptz(3)
   createdAt      DateTime         @default(now()) @db.Timestamptz(3)
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  resource     Resource?     @relation(fields: [resourceId], references: [id], onDelete: Cascade)
-  announcement Announcement? @relation(fields: [announcementId], references: [id], onDelete: Cascade)
-  session      Session?      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user         User          @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  actor        User?         @relation("NotificationActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  resource     Resource?     @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+  announcement Announcement? @relation(fields: [announcementId], references: [id], onDelete: SetNull)
+  session      Session?      @relation(fields: [sessionId], references: [id], onDelete: SetNull)
 
   /// One delivery per user and content item (NULLs are distinct)
   @@unique([userId, resourceId])
   @@unique([userId, announcementId])
   @@index([userId, createdAt])
   @@index([sessionId])
+  @@index([actorUserId])
+  /// A request reaches each admin once (the condition as PostgreSQL stores it, so no drift is reported)
+  @@unique([userId, type, entityId], map: "notifications_one_per_request_key", where: raw("(\"entityType\" = ANY (ARRAY['REGISTRATION_REQUEST'::\"NotificationEntity\", 'ONBOARDING_SUBMISSION'::\"NotificationEntity\"]))"))
   @@map("notifications")
 }
 

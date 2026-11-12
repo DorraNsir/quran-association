@@ -14,9 +14,19 @@ import {
   RecordStatus,
 } from '../../generated/prisma/client.js';
 import { platformToday } from '../../common/platform-clock.js';
+import {
+  classesConcerned,
+  notifyClassChanges,
+  snapshotClasses,
+} from '../../communication/structure-notifications.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { ScheduleConflictService } from '../../scheduling/schedule-conflicts.service.js';
+import {
+  scheduleNotFound,
+  SchedulesService,
+} from '../../scheduling/schedules.service.js';
 import { SessionsService } from '../../scheduling/sessions.service.js';
+import { fromDbTime } from '../../scheduling/time.js';
 import { branchNotFound } from '../branches/branches.service.js';
 import { groupNotFound } from '../groups/groups.service.js';
 import {
@@ -26,6 +36,7 @@ import {
   personNameSelect,
 } from '../teacher-assignments.js';
 import type {
+  ClassSlotDto,
   CreateGroupClassDto,
   GroupClassDetailDto,
   GroupClassDto,
@@ -33,10 +44,59 @@ import type {
   GroupClassListQueryDto,
   MoveBlockDto,
   MoveGroupClassPreviewDto,
+  SaveGroupClassDto,
   UpdateGroupClassDto,
 } from './group-class.dto.js';
 
 type Tx = Prisma.TransactionClient;
+
+/** A save rebuilds weekly slots and their sessions: longer than the default 5 s. */
+const SAVE_TX = { timeout: 60_000 };
+
+/** What the class form shows of a class (compared with what it asks for). */
+interface ClassState {
+  version: number;
+  branchId: string;
+  status: RecordStatus;
+  supervisorId: string;
+  assistantTeacherIds: string[];
+  slots: Required<ClassSlotDto>[];
+}
+
+const slotKey = (s: Omit<ClassSlotDto, 'id'>) =>
+  `${s.dayOfWeek}|${s.startTime}|${s.endTime}|${s.roomId}`;
+
+/**
+ * Whether the class already is as asked: same branch, status and team, every
+ * listed slot as it is, and the slots it hosts without one in the list
+ * exactly the new ones asked for (a save that was applied, then sent again).
+ */
+function alreadySaved(current: ClassState, desired: SaveGroupClassDto) {
+  const sameTeam =
+    current.supervisorId === desired.supervisorId &&
+    current.assistantTeacherIds.length === desired.assistantTeacherIds.length &&
+    desired.assistantTeacherIds.every((t) =>
+      current.assistantTeacherIds.includes(t),
+    );
+  if (
+    current.branchId !== desired.branchId ||
+    current.status !== desired.status ||
+    !sameTeam
+  )
+    return false;
+  const byId = new Map(current.slots.map((s) => [s.id, s]));
+  for (const s of desired.slots.filter((x) => x.id)) {
+    const now = byId.get(s.id!);
+    if (!now || slotKey(now) !== slotKey(s)) return false;
+    byId.delete(s.id!);
+  }
+  const rest = [...byId.values()].map(slotKey).sort();
+  const added = desired.slots
+    .filter((x) => !x.id)
+    .map(slotKey)
+    .sort();
+  return rest.join() === added.join();
+}
 
 const teacherSelect = {
   id: true,
@@ -52,6 +112,7 @@ const select = {
     orderBy: { assignedAt: 'asc' },
   },
   _count: { select: { students: { where: { status: 'ACTIVE' } } } },
+  version: true,
 } satisfies Prisma.GroupClassSelect;
 
 type Row = Prisma.GroupClassGetPayload<{ select: typeof select }>;
@@ -75,6 +136,7 @@ function toDto(c: Row): GroupClassDto {
     supervisor: teacherRef(c.supervisor),
     assistants: c.assistants.map((a) => teacherRef(a.teacher)),
     activeStudentsCount: c._count.students,
+    version: c.version,
   };
 }
 
@@ -102,6 +164,7 @@ export class GroupClassesService {
     private readonly pageSizes: PageSizeService,
     private readonly conflicts: ScheduleConflictService,
     private readonly sessions: SessionsService,
+    private readonly schedules: SchedulesService,
   ) {}
 
   async list(query: GroupClassListQueryDto): Promise<GroupClassListDto> {
@@ -167,48 +230,237 @@ export class GroupClassesService {
     });
   }
 
-  async create(dto: CreateGroupClassDto): Promise<GroupClassDetailDto> {
-    const assistants = dto.assistantTeacherIds ?? [];
-    const status = dto.status ?? RecordStatus.ACTIVE;
+  /** The class, and its weekly slots when given, in one transaction (all or nothing). */
+  async create(
+    dto: CreateGroupClassDto,
+    actorUserId?: string,
+  ): Promise<GroupClassDetailDto> {
     const id = await this.write(() =>
       this.prisma.$transaction(async (tx) => {
-        const group = await tx.group.findUnique({
-          where: { id: dto.groupId },
-          select: { status: true },
-        });
-        if (!group) throw groupNotFound();
-        if (
-          group.status === RecordStatus.ARCHIVED ||
-          (status === RecordStatus.ACTIVE &&
-            group.status !== RecordStatus.ACTIVE)
-        ) {
-          throw conflict(
-            'GROUP_INACTIVE',
-            'لا يمكن فتح قسم نشط في مجموعة غير مفعّلة',
-          );
+        const created = await this.createInTx(tx, dto);
+        for (const slot of dto.slots ?? []) {
+          if (slot.id) throw scheduleNotFound();
+          await this.schedules.createInTx(tx, created, slot);
         }
-        await this.assertBranch(tx, dto.branchId, status);
-        this.assertStaffShape(dto.supervisorId, assistants);
-        await this.assertTeachersAssignable(tx, [
-          dto.supervisorId,
-          ...assistants,
-        ]);
-        const created = await tx.groupClass.create({
-          data: {
-            groupId: dto.groupId,
-            branchId: dto.branchId,
-            supervisorId: dto.supervisorId,
-            status,
-            assistants: {
-              create: assistants.map((teacherId) => ({ teacherId })),
-            },
-          },
-          select: { id: true },
+        // Other admins and its teachers are told (a new class: nothing before)
+        await notifyClassChanges(tx, {
+          actorUserId,
+          before: new Map(),
+          after: await snapshotClasses(tx, [created]),
         });
-        return created.id;
-      }),
+        return created;
+      }, SAVE_TX),
     );
     return this.get(id);
+  }
+
+  /**
+   * One operation on a class, its people told what changed: the class locked,
+   * the classes it can touch (its shared slots' classes too) read before and
+   * after, at most one notification per person, in the same transaction.
+   * Used by each public operation once — never by the shared `…InTx` steps.
+   */
+  private async notifying<T>(
+    tx: Tx,
+    id: string,
+    actorUserId: string | undefined,
+    op: () => Promise<T>,
+  ): Promise<T> {
+    await this.lock(tx, id);
+    const concerned = await classesConcerned(tx, id);
+    const before = await snapshotClasses(tx, concerned);
+    const result = await op();
+    await notifyClassChanges(tx, {
+      actorUserId,
+      before,
+      after: await snapshotClasses(tx, concerned),
+    });
+    return result;
+  }
+
+  /**
+   * «حفظ القسم»: the class form's whole desired state in ONE transaction —
+   * every step is the same checked operation as its own endpoint (no rule is
+   * duplicated), so any refusal undoes all of them. Locks are taken in the
+   * order every class / slot write uses: the scheduling lock, then the class
+   * row. A class already as asked (a double click, a retried request) changes
+   * nothing, whatever version is sent; otherwise a version other than the
+   * current one is refused (another save meanwhile), nothing written.
+   */
+  async save(
+    id: string,
+    dto: SaveGroupClassDto,
+    actorUserId?: string,
+  ): Promise<GroupClassDetailDto> {
+    await this.write(() =>
+      this.prisma.$transaction(
+        (tx) => this.saveInTx(tx, id, dto, actorUserId),
+        SAVE_TX,
+      ),
+    );
+    return this.get(id);
+  }
+
+  private async saveInTx(
+    tx: Tx,
+    id: string,
+    dto: SaveGroupClassDto,
+    actorUserId?: string,
+  ) {
+    await this.lock(tx, id);
+    const current = await this.stateOf(tx, id);
+    // Already as asked (a repeated request): nothing written, nobody notified
+    if (alreadySaved(current, dto)) return;
+    if (dto.version !== current.version)
+      throw conflict(
+        'GROUP_CLASS_CHANGED',
+        'عدّل مستخدم آخر هذا القسم منذ فتح النموذج: لم يُحفظ شيء. أغلق النموذج وأعد فتحه لرؤية آخر التعديلات، ثم أعد التعديل.',
+      );
+    // The whole save, then ONE notification per person about all of it
+    await this.notifying(tx, id, actorUserId, () =>
+      this.applySave(tx, id, dto, current),
+    );
+  }
+
+  /** The steps of a save (checked above): each refusal undoes them all. */
+  private async applySave(
+    tx: Tx,
+    id: string,
+    dto: SaveGroupClassDto,
+    current: ClassState,
+  ) {
+    const hosted = new Map(current.slots.map((s) => [s.id, s]));
+    if (dto.slots.some((s) => s.id && !hosted.has(s.id)))
+      throw scheduleNotFound();
+    const kept = dto.slots.filter((s) => s.id);
+    const keptIds = new Set(kept.map((s) => s.id));
+
+    // The order the form always used: removed slots first (their times are
+    // free again), the class (branch + team; on a branch change every kept
+    // slot's room of the new branch with it), its status, then the kept and
+    // new slots
+    for (const slot of current.slots.filter((s) => !keptIds.has(s.id)))
+      await this.schedules.removeInTx(tx, id, slot.id);
+    const branchChanged = dto.branchId !== current.branchId;
+    const teamChanged =
+      dto.supervisorId !== current.supervisorId ||
+      dto.assistantTeacherIds.length !== current.assistantTeacherIds.length ||
+      dto.assistantTeacherIds.some(
+        (t) => !current.assistantTeacherIds.includes(t),
+      );
+    if (branchChanged || teamChanged)
+      await this.updateInTx(tx, id, {
+        branchId: dto.branchId,
+        supervisorId: dto.supervisorId,
+        assistantTeacherIds: dto.assistantTeacherIds,
+        ...(branchChanged && {
+          scheduleRooms: kept.map((s) => ({
+            scheduleId: s.id!,
+            roomId: s.roomId,
+          })),
+        }),
+      });
+    if (dto.status !== current.status)
+      await this.setStatusInTx(tx, id, dto.status);
+    for (const slot of kept) {
+      const before = hosted.get(slot.id!)!;
+      const moved =
+        slot.dayOfWeek !== before.dayOfWeek ||
+        slot.startTime !== before.startTime ||
+        slot.endTime !== before.endTime;
+      const newRoom = !branchChanged && slot.roomId !== before.roomId;
+      if (moved || newRoom)
+        await this.schedules.updateInTx(tx, id, slot.id!, {
+          ...(moved && {
+            dayOfWeek: slot.dayOfWeek,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+          }),
+          ...(newRoom && { roomId: slot.roomId }),
+        });
+    }
+    for (const slot of dto.slots.filter((s) => !s.id))
+      await this.schedules.createInTx(tx, id, slot);
+
+    // The result must be exactly what was asked (else nothing is kept)
+    if (!alreadySaved(await this.stateOf(tx, id), dto))
+      throw conflict(
+        'GROUP_CLASS_SAVE_MISMATCH',
+        'تعذّر حفظ القسم كما طُلب: لم يُحفظ شيء. أعد فتح النموذج وحاول مجددًا.',
+      );
+  }
+
+  /** The class as its form shows it: team, status, branch and the slots it hosts. */
+  private async stateOf(tx: Tx, id: string): Promise<ClassState> {
+    const c = await tx.groupClass.findUniqueOrThrow({
+      where: { id },
+      select: {
+        version: true,
+        branchId: true,
+        status: true,
+        supervisorId: true,
+        assistants: { select: { teacherId: true } },
+        schedules: {
+          select: {
+            id: true,
+            dayOfWeek: true,
+            startTime: true,
+            endTime: true,
+            roomId: true,
+          },
+        },
+      },
+    });
+    return {
+      version: c.version,
+      branchId: c.branchId,
+      status: c.status,
+      supervisorId: c.supervisorId,
+      assistantTeacherIds: c.assistants.map((a) => a.teacherId),
+      slots: c.schedules.map((s) => ({
+        id: s.id,
+        dayOfWeek: s.dayOfWeek,
+        startTime: fromDbTime(s.startTime),
+        endTime: fromDbTime(s.endTime),
+        roomId: s.roomId,
+      })),
+    };
+  }
+
+  /** create() inside a caller's transaction; returns the new class's id. */
+  async createInTx(tx: Tx, dto: CreateGroupClassDto): Promise<string> {
+    const assistants = dto.assistantTeacherIds ?? [];
+    const status = dto.status ?? RecordStatus.ACTIVE;
+    const group = await tx.group.findUnique({
+      where: { id: dto.groupId },
+      select: { status: true },
+    });
+    if (!group) throw groupNotFound();
+    if (
+      group.status === RecordStatus.ARCHIVED ||
+      (status === RecordStatus.ACTIVE && group.status !== RecordStatus.ACTIVE)
+    ) {
+      throw conflict(
+        'GROUP_INACTIVE',
+        'لا يمكن فتح قسم نشط في مجموعة غير مفعّلة',
+      );
+    }
+    await this.assertBranch(tx, dto.branchId, status);
+    this.assertStaffShape(dto.supervisorId, assistants);
+    await this.assertTeachersAssignable(tx, [dto.supervisorId, ...assistants]);
+    const created = await tx.groupClass.create({
+      data: {
+        groupId: dto.groupId,
+        branchId: dto.branchId,
+        supervisorId: dto.supervisorId,
+        status,
+        assistants: {
+          create: assistants.map((teacherId) => ({ teacherId })),
+        },
+      },
+      select: { id: true },
+    });
+    return created.id;
   }
 
   /**
@@ -220,173 +472,184 @@ export class GroupClassesService {
   async update(
     id: string,
     dto: UpdateGroupClassDto,
+    actorUserId?: string,
   ): Promise<GroupClassDetailDto> {
     await this.write(() =>
-      this.prisma.$transaction(async (tx) => {
-        const current = await this.lock(tx, id);
-        const branchId = dto.branchId ?? current.branchId;
-        const supervisorId = dto.supervisorId ?? current.supervisorId;
-        const currentAssistants = current.assistants.map((a) => a.teacherId);
-        const assistants = dto.assistantTeacherIds ?? currentAssistants;
-
-        if (branchId !== current.branchId)
-          await this.assertBranch(tx, branchId, current.status);
-        const today = await platformToday(tx);
-        // «الحصص المشتركة»: a shared slot / lesson needs one supervisor and one
-        // branch — the admin first removes the class from them (history stays)
-        if (
-          supervisorId !== current.supervisorId ||
-          branchId !== current.branchId
-        ) {
-          const shared = await this.conflicts.sharedParticipation(
-            tx,
-            id,
-            today,
-          );
-          if (shared.schedules > 0 || shared.sessions > 0)
-            throw supervisorId !== current.supervisorId
-              ? conflict(
-                  'SHARED_SUPERVISOR_CHANGE_BLOCKED',
-                  'هذا القسم مشارك في مواعيد أو حصص مشتركة قادمة: أزله منها أو عدّلها أولًا، ثم غيّر المعلم المشرف',
-                )
-              : conflict(
-                  'SHARED_BRANCH_CHANGE_BLOCKED',
-                  'هذا القسم مشارك في مواعيد أو حصص مشتركة قادمة: أزله منها أو عدّلها أولًا، ثم غيّر الفرع',
-                );
-        }
-        const rooms = await this.slotRooms(
-          tx,
-          id,
-          branchId,
-          branchId !== current.branchId,
-          dto.scheduleRooms ?? [],
-          current.status === RecordStatus.ACTIVE,
-        );
-        this.assertStaffShape(supervisorId, assistants);
-        // Only NEW assignments must be active teachers (existing ones are kept as they are)
-        const added = [
-          ...(supervisorId !== current.supervisorId ? [supervisorId] : []),
-          ...assistants.filter((t) => !currentAssistants.includes(t)),
-        ];
-        await this.assertTeachersAssignable(tx, added);
-
-        // Same weekly slots / upcoming sessions, new rooms or team: must not create conflicts
-        const teamChanged =
-          supervisorId !== current.supervisorId ||
-          assistants.length !== currentAssistants.length ||
-          assistants.some((t) => !currentAssistants.includes(t));
-        if (teamChanged || rooms.size > 0) {
-          await this.conflicts.assertClassOccupancyFree(
-            tx,
-            { groupClassId: id, teacherIds: [supervisorId, ...assistants] },
-            today,
-            {
-              checkWeekly:
-                current.status === RecordStatus.ACTIVE &&
-                current.group.status === RecordStatus.ACTIVE,
-              roomOverrides: rooms,
-            },
-          );
-        }
-
-        if (dto.assistantTeacherIds) {
-          await tx.groupClassAssistant.deleteMany({
-            where: { groupClassId: id, teacherId: { notIn: assistants } },
-          });
-        }
-        await tx.groupClass.update({
-          where: { id },
-          data: { branchId, supervisorId },
-        });
-        for (const [scheduleId, roomId] of rooms)
-          await tx.weeklySchedule.update({
-            where: { id: scheduleId },
-            data: { roomId },
-          });
-        if (dto.assistantTeacherIds) {
-          await tx.groupClassAssistant.createMany({
-            data: assistants.map((teacherId) => ({
-              groupClassId: id,
-              teacherId,
-            })),
-            skipDuplicates: true,
-          });
-        }
-        // Upcoming SCHEDULED sessions follow (history keeps its snapshot)
-        if (rooms.size > 0)
-          await this.conflicts.syncSlotRooms(tx, rooms, today);
-        if (teamChanged)
-          await this.conflicts.syncUpcomingSessions(tx, id, today);
-        // A class skipped by an earlier generation (its supervisor was
-        // inactive then) gets its missing sessions from its new supervisor
-        if (supervisorId !== current.supervisorId)
-          await this.sessions.generateForCurrentYear(tx, { groupClassId: id });
-        return id;
-      }),
+      this.prisma.$transaction((tx) =>
+        this.notifying(tx, id, actorUserId, () => this.updateInTx(tx, id, dto)),
+      ),
     );
     return this.get(id);
+  }
+
+  /** update() inside a caller's transaction (which may already hold the class lock). */
+  async updateInTx(
+    tx: Tx,
+    id: string,
+    dto: UpdateGroupClassDto,
+  ): Promise<string> {
+    const current = await this.lock(tx, id);
+    const branchId = dto.branchId ?? current.branchId;
+    const supervisorId = dto.supervisorId ?? current.supervisorId;
+    const currentAssistants = current.assistants.map((a) => a.teacherId);
+    const assistants = dto.assistantTeacherIds ?? currentAssistants;
+
+    if (branchId !== current.branchId)
+      await this.assertBranch(tx, branchId, current.status);
+    const today = await platformToday(tx);
+    // «الحصص المشتركة»: a shared slot / lesson needs one supervisor and one
+    // branch — the admin first removes the class from them (history stays)
+    if (
+      supervisorId !== current.supervisorId ||
+      branchId !== current.branchId
+    ) {
+      const shared = await this.conflicts.sharedParticipation(tx, id, today);
+      if (shared.schedules > 0 || shared.sessions > 0)
+        throw supervisorId !== current.supervisorId
+          ? conflict(
+              'SHARED_SUPERVISOR_CHANGE_BLOCKED',
+              'هذا القسم مشارك في مواعيد أو حصص مشتركة قادمة: أزله منها أو عدّلها أولًا، ثم غيّر المعلم المشرف',
+            )
+          : conflict(
+              'SHARED_BRANCH_CHANGE_BLOCKED',
+              'هذا القسم مشارك في مواعيد أو حصص مشتركة قادمة: أزله منها أو عدّلها أولًا، ثم غيّر الفرع',
+            );
+    }
+    const rooms = await this.slotRooms(
+      tx,
+      id,
+      branchId,
+      branchId !== current.branchId,
+      dto.scheduleRooms ?? [],
+      current.status === RecordStatus.ACTIVE,
+    );
+    this.assertStaffShape(supervisorId, assistants);
+    // Only NEW assignments must be active teachers (existing ones are kept as they are)
+    const added = [
+      ...(supervisorId !== current.supervisorId ? [supervisorId] : []),
+      ...assistants.filter((t) => !currentAssistants.includes(t)),
+    ];
+    await this.assertTeachersAssignable(tx, added);
+
+    // Same weekly slots / upcoming sessions, new rooms or team: must not create conflicts
+    const teamChanged =
+      supervisorId !== current.supervisorId ||
+      assistants.length !== currentAssistants.length ||
+      assistants.some((t) => !currentAssistants.includes(t));
+    if (teamChanged || rooms.size > 0) {
+      await this.conflicts.assertClassOccupancyFree(
+        tx,
+        { groupClassId: id, teacherIds: [supervisorId, ...assistants] },
+        today,
+        {
+          checkWeekly:
+            current.status === RecordStatus.ACTIVE &&
+            current.group.status === RecordStatus.ACTIVE,
+          roomOverrides: rooms,
+        },
+      );
+    }
+
+    if (dto.assistantTeacherIds) {
+      await tx.groupClassAssistant.deleteMany({
+        where: { groupClassId: id, teacherId: { notIn: assistants } },
+      });
+    }
+    await tx.groupClass.update({
+      where: { id },
+      data: { branchId, supervisorId },
+    });
+    for (const [scheduleId, roomId] of rooms)
+      await tx.weeklySchedule.update({
+        where: { id: scheduleId },
+        data: { roomId },
+      });
+    if (dto.assistantTeacherIds) {
+      await tx.groupClassAssistant.createMany({
+        data: assistants.map((teacherId) => ({
+          groupClassId: id,
+          teacherId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+    // Upcoming SCHEDULED sessions follow (history keeps its snapshot)
+    if (rooms.size > 0) await this.conflicts.syncSlotRooms(tx, rooms, today);
+    if (teamChanged) await this.conflicts.syncUpcomingSessions(tx, id, today);
+    // A class skipped by an earlier generation (its supervisor was
+    // inactive then) gets its missing sessions from its new supervisor
+    if (supervisorId !== current.supervisorId)
+      await this.sessions.generateForCurrentYear(tx, { groupClassId: id });
+    return id;
   }
 
   /** (Re)activation re-checks group, branch, the rooms of its weekly slots and supervisor. Students stay assigned. */
   async setStatus(
     id: string,
     status: RecordStatus,
+    actorUserId?: string,
   ): Promise<GroupClassDetailDto> {
     await this.prisma.$transaction(
-      async (tx) => {
-        const current = await this.lock(tx, id);
-        if (
-          status === RecordStatus.ACTIVE &&
-          current.status !== RecordStatus.ACTIVE
-        ) {
-          const group = await tx.group.findUniqueOrThrow({
-            where: { id: current.groupId },
-            select: { status: true },
-          });
-          if (group.status !== RecordStatus.ACTIVE)
-            throw conflict(
-              'GROUP_INACTIVE',
-              'لا يمكن تفعيل قسم في مجموعة غير مفعّلة',
-            );
-          await this.assertBranch(tx, current.branchId, status);
-          const inactiveRoom = await tx.weeklySchedule.findFirst({
-            where: {
-              groupClassId: id,
-              room: { status: { not: ActivationStatus.ACTIVE } },
-            },
-            select: { id: true },
-          });
-          if (inactiveRoom)
-            throw conflict(
-              'ROOM_INACTIVE',
-              'إحدى قاعات المواعيد الأسبوعية غير مفعّلة: غيّر قاعة الموعد أولًا',
-            );
-          await this.assertTeachersAssignable(tx, [current.supervisorId]);
-          // Its weekly slots start occupying their rooms and the teachers again
-          await this.conflicts.assertClassOccupancyFree(
-            tx,
-            {
-              groupClassId: id,
-              teacherIds: [
-                current.supervisorId,
-                ...current.assistants.map((a) => a.teacherId),
-              ],
-            },
-            await platformToday(tx),
-            { checkWeekly: true },
-          );
-        }
-        await tx.groupClass.update({ where: { id }, data: { status } });
-        // (Re)activated: its sessions until the end of the current academic year
-        if (
-          status === RecordStatus.ACTIVE &&
-          current.status !== RecordStatus.ACTIVE
-        )
-          await this.sessions.generateForCurrentYear(tx, { groupClassId: id });
-      },
+      (tx) =>
+        this.notifying(tx, id, actorUserId, () =>
+          this.setStatusInTx(tx, id, status),
+        ),
       { timeout: 30_000 },
     );
     return this.get(id);
+  }
+
+  /** setStatus() inside a caller's transaction (which may already hold the class lock). */
+  async setStatusInTx(tx: Tx, id: string, status: RecordStatus) {
+    const current = await this.lock(tx, id);
+    if (
+      status === RecordStatus.ACTIVE &&
+      current.status !== RecordStatus.ACTIVE
+    ) {
+      const group = await tx.group.findUniqueOrThrow({
+        where: { id: current.groupId },
+        select: { status: true },
+      });
+      if (group.status !== RecordStatus.ACTIVE)
+        throw conflict(
+          'GROUP_INACTIVE',
+          'لا يمكن تفعيل قسم في مجموعة غير مفعّلة',
+        );
+      await this.assertBranch(tx, current.branchId, status);
+      const inactiveRoom = await tx.weeklySchedule.findFirst({
+        where: {
+          groupClassId: id,
+          room: { status: { not: ActivationStatus.ACTIVE } },
+        },
+        select: { id: true },
+      });
+      if (inactiveRoom)
+        throw conflict(
+          'ROOM_INACTIVE',
+          'إحدى قاعات المواعيد الأسبوعية غير مفعّلة: غيّر قاعة الموعد أولًا',
+        );
+      await this.assertTeachersAssignable(tx, [current.supervisorId]);
+      // Its weekly slots start occupying their rooms and the teachers again
+      await this.conflicts.assertClassOccupancyFree(
+        tx,
+        {
+          groupClassId: id,
+          teacherIds: [
+            current.supervisorId,
+            ...current.assistants.map((a) => a.teacherId),
+          ],
+        },
+        await platformToday(tx),
+        { checkWeekly: true },
+      );
+    }
+    await tx.groupClass.update({ where: { id }, data: { status } });
+    // (Re)activated: its sessions until the end of the current academic year
+    if (
+      status === RecordStatus.ACTIVE &&
+      current.status !== RecordStatus.ACTIVE
+    )
+      await this.sessions.generateForCurrentYear(tx, { groupClassId: id });
   }
 
   // ─────────────── «نقل القسم إلى مجموعة أخرى» ───────────────
@@ -416,6 +679,9 @@ export class GroupClassesService {
   ): Promise<GroupClassDetailDto> {
     await this.prisma.$transaction(async (tx) => {
       await this.lock(tx, id);
+      // Its people told the new group (other admins, its teachers)
+      const concerned = await classesConcerned(tx, id);
+      const before = await snapshotClasses(tx, concerned);
       await tx.$queryRaw`SELECT s.id FROM sessions s
         WHERE s."groupClassId" = ${id}::uuid
            OR EXISTS (SELECT 1 FROM session_classes sc
@@ -436,6 +702,11 @@ export class GroupClassesService {
           toGroupId: groupId,
           movedByUserId: actorUserId,
         },
+      });
+      await notifyClassChanges(tx, {
+        actorUserId,
+        before,
+        after: await snapshotClasses(tx, concerned),
       });
     });
     return this.get(id);

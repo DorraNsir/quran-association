@@ -893,9 +893,20 @@ describe('Settings & file storage (e2e)', () => {
         url: `/api/files/${id.supPdf}`,
       });
       id.res = res.body.id;
+      // Its student once (and its assistant, and the admins: a teacher published); not s2
       expect(
-        await prisma.notification.count({ where: { resourceId: id.res } }),
+        await prisma.notification.count({
+          where: { resourceId: id.res, userId: uid.s1 },
+        }),
       ).toBe(1);
+      expect(
+        await prisma.notification.count({
+          where: { resourceId: id.res, userId: uid.s2 },
+        }),
+      ).toBe(0);
+      id.resNotified = String(
+        await prisma.notification.count({ where: { resourceId: id.res } }),
+      );
       await fetchFile('s1', id.supPdf).expect(200);
       await fetchFile('asst', id.supPdf).expect(200);
       await fetchFile('s2', id.supPdf).expect(404);
@@ -989,7 +1000,7 @@ describe('Settings & file storage (e2e)', () => {
       expect(res.body.file.id).toBe(pdf2);
       expect(
         await prisma.notification.count({ where: { resourceId: id.res } }),
-      ).toBe(1);
+      ).toBe(Number(id.resNotified));
       // The old file is no longer reachable by students, but still stored (until cleanup)
       await fetchFile('s1', id.supPdf).expect(404);
       await fetchFile('s1', pdf2).expect(200);

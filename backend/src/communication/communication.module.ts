@@ -38,5 +38,6 @@ import { ResourcesService } from './resources.service.js';
     AnnouncementsService,
     AnnouncementScheduler,
   ],
+  exports: [NotificationsService],
 })
 export class CommunicationModule {}

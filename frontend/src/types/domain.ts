@@ -161,6 +161,8 @@ export interface GroupClass {
   supervisorId: ID
   assistantIds: ID[]
   status: GroupClassStatus
+  /** Optimistic concurrency of the class form (absent from an API older than it) */
+  version?: number
 }
 
 export interface Student {
@@ -361,18 +363,40 @@ export interface AnnouncementTarget {
   groupClassId: ID
 }
 
-export type NotificationType = "RESOURCE_PUBLISHED" | "ANNOUNCEMENT_PUBLISHED" | "ATTENDANCE_MODIFIED"
-export type NotificationEntityType = "RESOURCE" | "ANNOUNCEMENT" | "SESSION"
+export type NotificationType =
+  | "RESOURCE_PUBLISHED"
+  | "ANNOUNCEMENT_PUBLISHED"
+  | "ATTENDANCE_MODIFIED"
+  | "REGISTRATION_REQUEST_SUBMITTED"
+  | "ONBOARDING_SUBMITTED"
+  | "STUDENT_JOINED_CLASS"
+  | "STUDENT_TRANSFERRED"
+  | "STUDENT_LEFT_CLASS"
+  | "GROUP_CHANGED"
+  | "CLASS_CHANGED"
+  | "SESSION_CHANGED"
+export type NotificationEntityType =
+  | "RESOURCE"
+  | "ANNOUNCEMENT"
+  | "SESSION"
+  | "REGISTRATION_REQUEST"
+  | "ONBOARDING_SUBMISSION"
+  | "STUDENT"
+  | "GROUP_CLASS"
+  | "GROUP"
 
 /** An in-app alert for ONE user (named to avoid the DOM's global `Notification`). */
 export interface UserNotification {
   id: ID
   userId: ID
-  type: NotificationType
+  /** A type this version does not know yet (newer API) is kept as is and shown without a link */
+  type: NotificationType | (string & {})
   title: string
   message: string
-  entityType?: NotificationEntityType
+  entityType?: NotificationEntityType | (string & {})
   entityId?: ID
+  /** false: its content was deleted (the notification stays in the history, opening nothing) */
+  available?: boolean
   isRead: boolean
   createdAt: ISODate
 }

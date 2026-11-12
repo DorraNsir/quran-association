@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { formatDateAr, fromDbDate, toDbDate } from '../common/dates.js';
+import { fromDbDate, toDbDate } from '../common/dates.js';
 import { badRequest, conflict, notFound } from '../common/errors.js';
 import type { EnvironmentVariables } from '../config/env.validation.js';
 import { PageSizeService } from '../common/page-size.service.js';
@@ -15,10 +15,19 @@ import {
   Prisma,
   AttendanceChangeKind,
   AttendanceStatus,
+  NotificationEntity,
   NotificationType,
   SessionStatus,
   TeachingRole,
 } from '../generated/prisma/client.js';
+import {
+  actorSentence,
+  pluralAr,
+  requireActor,
+  sessionClassesAr,
+  sessionWhenAr,
+  studentNamesAr,
+} from '../communication/notification-text.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   participantIds,
@@ -54,20 +63,15 @@ import type {
 
 type Tx = Prisma.TransactionClient;
 
+/** A class as notifications name it: its group and branch. */
+const classNames = {
+  group: { select: { name: true } },
+  branch: { select: { name: true } },
+} satisfies Prisma.GroupClassSelect;
+
 /** Who is calling: an admin (any session) or a teacher (assignment-checked). */
 export type AttendanceActor =
   { kind: 'admin'; userId: string } | { kind: 'teacher'; userId: string };
-
-/** Arabic count agreement (same forms as the frontend's pluralize). */
-function pluralAr(
-  count: number,
-  forms: { one: string; two: string; few: string; many: string },
-) {
-  if (count === 1) return forms.one;
-  if (count === 2) return forms.two;
-  if (count >= 3 && count <= 10) return `${count} ${forms.few}`;
-  return `${count} ${forms.many}`;
-}
 
 const addDays = (date: string, n: number) => {
   const d = new Date(`${date}T00:00:00Z`);
@@ -201,12 +205,10 @@ export class AttendanceService {
         select: {
           status: true,
           date: true,
-          groupClass: { select: { group: { select: { name: true } } } },
-          extraClasses: {
-            select: {
-              groupClass: { select: { group: { select: { name: true } } } },
-            },
-          },
+          startTime: true,
+          endTime: true,
+          groupClass: { select: classNames },
+          extraClasses: { select: { groupClass: { select: classNames } } },
         },
       });
       if (!session) throw notFound('SESSION_NOT_FOUND', 'الحصة غير موجودة');
@@ -303,6 +305,8 @@ export class AttendanceService {
       const actorName = await this.displayName(tx, actor.userId);
       const changes: Prisma.AttendanceChangeCreateManyInput[] = [];
       const changed = { students: 0, teachers: 0 };
+      // Students whose saved status changed (not a first recording, not a note)
+      const changedStudentIds: string[] = [];
       const audit = (
         subject: 'STUDENT' | 'TEACHER',
         subjectId: string,
@@ -353,7 +357,10 @@ export class AttendanceService {
             },
           });
           audit('STUDENT', record.studentId, current, record.status, note);
-          if (current.status !== record.status) changed.students++;
+          if (current.status !== record.status) {
+            changed.students++;
+            changedStudentIds.push(record.studentId);
+          }
         }
       }
       for (const record of teacherInputs) {
@@ -419,12 +426,15 @@ export class AttendanceService {
             (t) => t.role === TeachingRole.SUPERVISOR,
           )?.teacherId,
           actorUserId: actor.userId,
-          groupName: [
-            session.groupClass.group.name,
-            ...session.extraClasses.map((e) => e.groupClass.group.name),
-          ].join(' + '),
+          classes: [
+            session.groupClass,
+            ...session.extraClasses.map((e) => e.groupClass),
+          ].map((c) => ({ group: c.group.name, branch: c.branch.name })),
           date,
+          start: fromDbTime(session.startTime),
+          end: fromDbTime(session.endTime),
           changed,
+          changedStudentIds,
         });
       }
       return this.build(tx, sessionId, actor);
@@ -965,6 +975,10 @@ export class AttendanceService {
    * historical one) when an assistant changed saved statuses. No recipient
    * (no supervisor, no active account, or the actor itself) → nothing, and
    * the save goes on: the audit trail keeps the change either way.
+   *
+   * It names the assistant, the class(es), branch, date and time, and up to
+   * three students whose status changed: the session's supervisor manages
+   * every class of the session (managesClassInSession), so may see them all.
    */
   private async notifySupervisor(
     tx: Tx,
@@ -972,9 +986,12 @@ export class AttendanceService {
       sessionId: string;
       supervisorId?: string;
       actorUserId: string;
-      groupName: string;
+      classes: { group: string; branch: string }[];
       date: string;
+      start: string;
+      end: string;
       changed: { students: number; teachers: number };
+      changedStudentIds: string[];
     },
   ) {
     if (!input.supervisorId) return;
@@ -986,16 +1003,7 @@ export class AttendanceService {
     });
     const recipient = supervisor?.person.user;
     if (!recipient?.isActive || recipient.id === input.actorUserId) return;
-    const actor = await tx.user.findUnique({
-      where: { id: input.actorUserId },
-      select: {
-        username: true,
-        person: { select: { firstName: true, lastName: true, gender: true } },
-      },
-    });
-    const name = actor?.person
-      ? `${actor.person.firstName} ${actor.person.lastName}`
-      : (actor?.username ?? '—');
+    const actor = await requireActor(tx, input.actorUserId);
     const what = [
       input.changed.students &&
         pluralAr(input.changed.students, {
@@ -1014,14 +1022,29 @@ export class AttendanceService {
     ]
       .filter(Boolean)
       .join(' و');
-    const where = `في حصة ${input.groupName} بتاريخ ${formatDateAr(input.date)}`;
-    const gender = actor?.person?.gender;
-    const message =
-      gender === 'FEMALE'
-        ? `قامت المعلمة ${name} بتعديل حضور ${what} ${where}.`
-        : gender === 'MALE'
-          ? `قام المعلم ${name} بتعديل حضور ${what} ${where}.`
-          : `عُدِّل حضور ${what} ${where} من طرف ${name}.`;
+    const where = `في حصة ${sessionClassesAr(input.classes)}، ${sessionWhenAr(input.date, input.start, input.end)}`;
+    const students = await tx.student.findMany({
+      where: { id: { in: input.changedStudentIds } },
+      select: {
+        id: true,
+        person: { select: { firstName: true, lastName: true } },
+      },
+    });
+    const nameOf = new Map(
+      students.map((st) => [
+        st.id,
+        `${st.person.firstName} ${st.person.lastName}`.trim(),
+      ]),
+    );
+    const names = input.changedStudentIds
+      .map((id) => nameOf.get(id))
+      .filter((n): n is string => !!n);
+    const who = names.length ? `: ${studentNamesAr(names)}` : '';
+    const message = actorSentence(actor, 'TEACHER', {
+      male: (t) => `قام ${t} بتعديل حضور ${what} ${where}${who}.`,
+      female: (t) => `قامت ${t} بتعديل حضور ${what} ${where}${who}.`,
+      passive: (by) => `عُدِّل حضور ${what} ${where} ${by}${who}.`,
+    });
     await tx.notification.create({
       data: {
         userId: recipient.id,
@@ -1029,6 +1052,9 @@ export class AttendanceService {
         title: 'تعديل على سجل الحضور',
         message,
         sessionId: input.sessionId,
+        entityType: NotificationEntity.SESSION,
+        entityId: input.sessionId,
+        actorUserId: actor.userId,
       },
     });
   }

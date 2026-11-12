@@ -20,6 +20,7 @@ import {
   privateFileUrl,
 } from '../files/files.service.js';
 import { FilePurpose } from '../generated/prisma/enums.js';
+import { requireActor } from './notification-text.js';
 import { NotificationsService } from './notifications.service.js';
 import type {
   AdminResourceDto,
@@ -503,7 +504,10 @@ export class ResourcesService {
         },
         select: { id: true },
       });
-      await this.notifications.notifyResource(tx, created.id, dto.title);
+      await this.notifications.notifyResource(tx, created.id, dto.title, {
+        actor: await requireActor(tx, actor.userId),
+        capacity: actor.isAdmin ? 'ADMIN' : 'TEACHER',
+      });
       return created.id;
     });
     return toDto(await this.find({ id }), true);

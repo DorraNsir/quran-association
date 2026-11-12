@@ -142,12 +142,8 @@ export function useGroupDialogs({ lookups, students }: { lookups: Lookups; stude
             lookups={lookups}
             students={students}
             onSave={async (input) => {
-              try {
-                await saveClass.mutateAsync(input)
-              } catch (error) {
-                // Some steps may have been applied: the screens reload the real state
-                throw error
-              }
+              // All or nothing: a refusal changes nothing and stays in the form with its values
+              await saveClass.mutateAsync(input)
               toast.success(
                 `${d.groupClass ? "تم حفظ قسم" : "تم إنشاء قسم"} ${branchesById.get(input.groupClass.branchId)?.name ?? ""} — ${d.group.name}`
               )

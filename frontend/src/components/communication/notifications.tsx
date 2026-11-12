@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, CheckCheck, ClipboardCheck, FolderOpen, Megaphone } from "lucide-react"
+import { Bell, BookOpen, CalendarDays, CheckCheck, ClipboardCheck, ClipboardList, FolderOpen, GraduationCap, Link2, Megaphone, Users } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
@@ -24,7 +24,7 @@ import {
   useUnreadCount,
 } from "@/lib/api/notifications"
 import { useAuth } from "@/lib/auth/auth-provider"
-import { notificationHref, notificationSection } from "@/lib/communication"
+import { notificationTarget } from "@/lib/communication"
 import { todayInTunis } from "@/lib/dates"
 import { formatRelativeDay } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -40,6 +40,18 @@ function useMyNotifications(pageSize: number) {
   return { mine, unread: unread.data ?? 0, list, total: list.data?.meta.total ?? 0 }
 }
 
+/** Same icons as the pages they open (unknown subjects: the bell) */
+const iconOf: Record<string, typeof Bell> = {
+  RESOURCE: FolderOpen,
+  SESSION: ClipboardCheck,
+  ANNOUNCEMENT: Megaphone,
+  REGISTRATION_REQUEST: ClipboardList,
+  ONBOARDING_SUBMISSION: Link2,
+  STUDENT: GraduationCap,
+  GROUP_CLASS: BookOpen,
+  GROUP: Users,
+}
+
 function NotificationItem({
   notification,
   today,
@@ -51,7 +63,8 @@ function NotificationItem({
   onOpen: () => void
   onMarkRead?: () => void
 }) {
-  const Icon = notification.entityType === "RESOURCE" ? FolderOpen : notification.entityType === "SESSION" ? ClipboardCheck : Megaphone
+  // A lesson's change (not its attendance) shows the calendar
+  const Icon = notification.type === "SESSION_CHANGED" ? CalendarDays : (iconOf[notification.entityType ?? ""] ?? Bell)
   return (
     <div className={cn("flex items-start gap-1 rounded-lg transition-colors hover:bg-muted", !notification.isRead && "bg-brand-soft/30")}>
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 p-2.5 text-start outline-none focus-visible:ring-3 focus-visible:ring-ring/50 rounded-lg">
@@ -61,6 +74,7 @@ function NotificationItem({
         <span className="min-w-0 flex-1">
           <span className={cn("block text-sm", !notification.isRead && "font-semibold")}>{notification.title}</span>
           <span className="block text-sm text-muted-foreground">{notification.message}</span>
+          {notification.available === false && <span className="block text-xs text-muted-foreground">لم يعد هذا المحتوى متاحًا</span>}
           <span className="block text-xs text-muted-foreground">{formatRelativeDay(notification.createdAt, today)}</span>
         </span>
         {!notification.isRead && <span className="mt-2 size-2 shrink-0 rounded-full bg-primary" aria-label="غير مقروء" />}
@@ -86,17 +100,27 @@ function useOpenNotification(workspace: Workspace, after?: () => void) {
   return async (n: UserNotification) => {
     if (!n.isRead) markRead.mutate(n.id)
     after?.()
-    const href = notificationHref(n, workspace)
-    if (!href || !n.entityId) return
-    const section = notificationSection(n)
+    // Its content was deleted: it stays in the history, opening nothing
+    if (n.available === false) {
+      toast.error("لم يعد هذا المحتوى متاحًا.")
+      return
+    }
+    const target = notificationTarget(n, workspace)
+    if (!target) return
     try {
-      await queryClient.fetchQuery({
-        queryKey: [section, workspace, "detail", n.entityId],
-        queryFn: ({ signal }) => api(`/${workspace}/${section}/${n.entityId}`, { signal }),
+      const data = await queryClient.fetchQuery({
+        queryKey: target.queryKey,
+        queryFn: ({ signal }) => api(target.apiPath, { signal }),
       })
-      router.push(href)
+      if (target.contains && !target.contains(data)) {
+        toast.error("لم يعد هذا المحتوى متاحًا لحسابك.")
+        return
+      }
+      router.push(typeof target.href === "string" ? target.href : target.href(data))
     } catch (error) {
-      toast.error(error instanceof ApiError && error.isNotFound ? "لم يعد هذا المحتوى متاحًا لحسابك." : errorMessage(error))
+      // Gone (404) or no longer this account's (403): one message
+      const gone = error instanceof ApiError && (error.isNotFound || error.status === 403)
+      toast.error(gone ? "لم يعد هذا المحتوى متاحًا لحسابك." : errorMessage(error))
     }
   }
 }

@@ -9,6 +9,7 @@ import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
 import { PasswordService } from '../src/auth/password.service.js';
 import { todayIn } from '../src/common/dates.js';
+import { sessionWhenAr } from '../src/communication/notification-text.js';
 import { Role } from '../src/generated/prisma/enums.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 
@@ -425,6 +426,28 @@ describe('Attendance — teachers, audit, notifications, statistics (e2e)', () =
       expect(n.message).toContain('قام المعلم a2');
       expect(n.message).toContain('طالبين ومعلم واحد');
       expect(n.message).toContain(tag('مجموعة الماهر'));
+      // Who, which class (group — branch), when, and the students whose status changed
+      expect(n.message).toBe(
+        `قام المعلم a2 ${tag('حساب')} بتعديل حضور طالبين ومعلم واحد في حصة ${tag('مجموعة الماهر')} — ${tag('فرع')}، ${sessionWhenAr(addDays(TODAY, -2), '17:00', '18:00')}: s1 ${tag('طالب')}، s2 ${tag('طالب')}.`,
+      );
+      expect(n.message).toContain('من 17:00 إلى 18:00');
+      const row = await prisma.notification.findFirstOrThrow({
+        where: { sessionId: id.d2, type: 'ATTENDANCE_MODIFIED' },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(row).toMatchObject({
+        actorUserId: expect.any(String),
+        entityType: 'SESSION',
+        entityId: id.d2,
+      });
+      expect(
+        (
+          await prisma.user.findUniqueOrThrow({
+            where: { id: row.actorUserId! },
+            select: { personId: true },
+          })
+        ).personId,
+      ).toBe(id['person:a2']);
       // Nothing for the assistants, nothing for the actor
       expect(
         (await notificationsOf('a2')).filter(
@@ -474,6 +497,33 @@ describe('Attendance — teachers, audit, notifications, statistics (e2e)', () =
       }).expect(200);
       expect(await changesOf(id.d2)).toBe(changesBefore);
       expect((await notificationsOf('sup')).length).toBe(supBefore);
+    });
+
+    it('a note-only correction notifies nobody; a teacher-only change names no student', async () => {
+      const supBefore = (await notificationsOf('sup')).length;
+      // s1 keeps EXCUSED, only its note changes: audited, nobody notified
+      const changesBefore = await changesOf(id.d2);
+      await teacherSave('a1', id.d2, {
+        records: [{ studentId: id.s1, status: 'EXCUSED', note: 'شهادة طبية' }],
+      }).expect(200);
+      expect(await changesOf(id.d2)).toBe(changesBefore + 1);
+      expect((await notificationsOf('sup')).length).toBe(supBefore);
+      // The supervisor's own attendance (ABSENT → LATE), by a female assistant
+      await teacherSave('a1', id.d2, {
+        teachers: [{ teacherId: id.sup, status: 'LATE' }],
+      }).expect(200);
+      const after = await notificationsOf('sup');
+      expect(after.length).toBe(supBefore + 1);
+      expect(after[0].message).toBe(
+        `قامت المعلمة a1 ${tag('حساب')} بتعديل حضور معلم واحد في حصة ${tag('مجموعة الماهر')} — ${tag('فرع')}، ${sessionWhenAr(addDays(TODAY, -2), '17:00', '18:00')}.`,
+      );
+      // Back to ABSENT for the statistics below (an admin correction notifies nobody)
+      await admin
+        .put(`sessions/${id.d2}/attendance`, {
+          teachers: [{ teacherId: id.sup, status: 'ABSENT' }],
+        })
+        .expect(200);
+      expect((await notificationsOf('sup')).length).toBe(supBefore + 1);
     });
 
     it('a stale value is refused instead of silently overwritten (optimistic concurrency)', async () => {

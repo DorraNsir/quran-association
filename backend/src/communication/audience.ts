@@ -12,10 +12,12 @@ import type { TeacherScope } from '../teaching/teacher-access.service.js';
  * below AND mirrored by the recipient SQL in NotificationsService, so "who
  * can read it" and "who is notified" stay the same rule.
  *
- * Resources (students only):
+ * Resources (published for students):
  *   ALL_STUDENTS → every active student · GROUP → the group of the student's
  *   CURRENT class is targeted · GROUP_CLASS → their current class is targeted.
  *   Teachers consult what reaches their CURRENT classes (and what they wrote).
+ *   Notified: those students, the teachers of a targeted class / group (not
+ *   every teacher for ALL_STUDENTS), and the admins when a teacher publishes.
  *
  * Announcements (visible only while PUBLISHED and not past expiresAt):
  *   EVERYONE → every account (admins included) · TEACHERS / STUDENTS → that

@@ -3,18 +3,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { tunisDateOf } from "@/lib/dates"
-import type { UserNotification } from "@/types/domain"
+import type { NotificationEntityType, NotificationType, UserNotification } from "@/types/domain"
 
 import { api, type Page } from "./client"
 
 /** NotificationDto (API): read state is readAt (isRead is derived). */
 export interface NotificationDto {
   id: string
-  type: "RESOURCE_PUBLISHED" | "ANNOUNCEMENT_PUBLISHED" | "ATTENDANCE_MODIFIED"
+  /** Newer types may come from the API before this version knows them */
+  type: NotificationType | (string & {})
   title: string
   message: string
-  entityType: "RESOURCE" | "ANNOUNCEMENT" | "SESSION"
-  entityId: string
+  /** null: nothing to open */
+  entityType: NotificationEntityType | (string & {}) | null
+  entityId: string | null
+  /** false once its content was deleted; absent from an API older than this field */
+  available?: boolean
   createdAt: string
   readAt: string | null
   isRead: boolean
@@ -28,8 +32,9 @@ export function toNotification(n: NotificationDto, userId: string): UserNotifica
     type: n.type,
     title: n.title,
     message: n.message,
-    entityType: n.entityType,
-    entityId: n.entityId,
+    entityType: n.entityType ?? undefined,
+    entityId: n.entityId ?? undefined,
+    available: n.available ?? true,
     isRead: n.readAt !== null,
     createdAt: tunisDateOf(n.createdAt),
   }

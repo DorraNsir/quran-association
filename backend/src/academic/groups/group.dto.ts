@@ -37,6 +37,15 @@ export class CreateGroupDto {
   @IsString()
   @MaxLength(120)
   audience?: string | null;
+  @ApiPropertyOptional({
+    enum: RecordStatus,
+    enumName: 'RecordStatus',
+    description:
+      'Saved with the name / audience in one transaction (on update: same rules as PATCH …/status). Default on creation: ACTIVE',
+  })
+  @IsOptional()
+  @IsEnum(RecordStatus)
+  status?: RecordStatus;
 }
 
 export class UpdateGroupDto extends PartialType(CreateGroupDto) {}

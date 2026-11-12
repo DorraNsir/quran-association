@@ -27,10 +27,17 @@ import {
   platformDayBounds,
   platformToday,
 } from '../common/platform-clock.js';
+import {
+  classNameAr,
+  onboardingSubmissionMessage,
+} from '../communication/notification-text.js';
+import { NotificationsService } from '../communication/notifications.service.js';
 import type { EnvironmentVariables } from '../config/env.validation.js';
 import { Prisma } from '../generated/prisma/client.js';
 import {
   FilePurpose,
+  NotificationEntity,
+  NotificationType,
   OnboardingSubmissionStatus,
 } from '../generated/prisma/enums.js';
 import { detectFileType, SIGNATURE_BYTES } from '../files/file-signature.js';
@@ -209,6 +216,7 @@ export class StudentOnboardingService {
     private readonly config: ConfigService<EnvironmentVariables, true>,
     private readonly files: FilesService,
     @Inject(STORAGE_DRIVER) private readonly storage: StorageDriver,
+    private readonly notifications: NotificationsService,
   ) {}
 
   enabled() {
@@ -374,6 +382,7 @@ export class StudentOnboardingService {
   /**
    * A PENDING submission for the link's class (never a student). The link is
    * re-checked under a share lock, so a concurrent revocation is serialized.
+   * The admins are told in the same transaction.
    */
   async submit(
     dto: OnboardingSubmitDto,
@@ -397,7 +406,7 @@ export class StudentOnboardingService {
       if (!link || link.revoked) throw linkInvalid();
       if (link.expired) throw linkExpired();
       const fields = this.normalized(dto);
-      await tx.onboardingSubmission.create({
+      const created = await tx.onboardingSubmission.create({
         data: {
           onboardingLinkId: link.id,
           // From the link — never from the request
@@ -416,6 +425,33 @@ export class StudentOnboardingService {
             },
           }),
         },
+        select: {
+          id: true,
+          submittedBy: true,
+          gender: true,
+          firstName: true,
+          lastName: true,
+          groupClass: {
+            select: {
+              group: { select: { name: true } },
+              branch: { select: { name: true } },
+            },
+          },
+        },
+      });
+      await this.notifications.notifyAdmins(tx, {
+        type: NotificationType.ONBOARDING_SUBMITTED,
+        entityType: NotificationEntity.ONBOARDING_SUBMISSION,
+        entityId: created.id,
+        title: 'طلب استكمال جديد',
+        message: onboardingSubmissionMessage({
+          ...created,
+          className: classNameAr({
+            group: created.groupClass.group.name,
+            branch: created.groupClass.branch.name,
+          }),
+        }),
+        actorUserId: null,
       });
     });
     return { received: true };
@@ -551,6 +587,7 @@ export class StudentOnboardingService {
             cin: sub.cin,
           },
           actorUserId,
+          'ONBOARDING',
         );
         if (photoFileId)
           await this.attachPhoto(tx, studentId, photoFileId, actorUserId);

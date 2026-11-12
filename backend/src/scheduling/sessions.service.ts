@@ -10,6 +10,10 @@ import {
   CompletionSource,
   SessionStatus,
 } from '../generated/prisma/client.js';
+import {
+  notifySessionChange,
+  snapshotSession,
+} from '../communication/structure-notifications.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   participantIds,
@@ -311,7 +315,17 @@ export class SessionsService {
     assertTimeRange(dto.startTime, dto.endTime);
     const id = await this.prisma.$transaction(async (tx) => {
       await this.conflicts.lockScheduling(tx);
-      return this.createInTx(tx, dto, actorUserId);
+      const created = await this.createInTx(tx, dto, actorUserId);
+      // An upcoming lesson added by hand: its teachers and students are told
+      if ((dto.status ?? SessionStatus.SCHEDULED) === SessionStatus.SCHEDULED)
+        await notifySessionChange(tx, {
+          actorUserId,
+          event: 'ADDED',
+          before: null,
+          after: await snapshotSession(tx, created),
+          today: await platformToday(tx),
+        });
+      return created;
     });
     return this.get(id);
   }
@@ -322,7 +336,10 @@ export class SessionsService {
    * conflict, the class's active team) — always SCHEDULED, and never in the
    * past: a missed lesson is not back-filled from here.
    */
-  async createExtra(dto: CreateExtraSessionDto): Promise<SessionDto> {
+  async createExtra(
+    dto: CreateExtraSessionDto,
+    actorUserId?: string,
+  ): Promise<SessionDto> {
     assertTimeRange(dto.startTime, dto.endTime);
     const id = await this.prisma.$transaction(async (tx) => {
       await this.conflicts.lockScheduling(tx);
@@ -331,7 +348,7 @@ export class SessionsService {
           'SESSION_DATE_PAST',
           'لا يمكن برمجة حصة إضافية في تاريخ سابق: اختر تاريخ اليوم أو بعده',
         );
-      return this.createInTx(tx, {
+      const created = await this.createInTx(tx, {
         groupClassId: dto.groupClassId,
         roomId: dto.roomId,
         date: dto.date,
@@ -340,6 +357,14 @@ export class SessionsService {
         status: SessionStatus.SCHEDULED,
         additionalGroupClassIds: dto.additionalGroupClassIds,
       });
+      await notifySessionChange(tx, {
+        actorUserId,
+        event: 'ADDED',
+        before: null,
+        after: await snapshotSession(tx, created),
+        today: await platformToday(tx),
+      });
+      return created;
     });
     return this.get(id);
   }
@@ -413,7 +438,11 @@ export class SessionsService {
    * replaced (an added class must fit: CLASS / TEACHER conflicts; a removed
    * class gets no replacement lesson, and must have no work planned there).
    */
-  async update(id: string, dto: UpdateSessionDto): Promise<SessionDto> {
+  async update(
+    id: string,
+    dto: UpdateSessionDto,
+    actorUserId?: string,
+  ): Promise<SessionDto> {
     await this.prisma.$transaction(async (tx) => {
       await this.conflicts.lockScheduling(tx);
       const session = await tx.session.findUnique({
@@ -421,6 +450,8 @@ export class SessionsService {
         include: { teachers: true, extraClasses: true },
       });
       if (!session) throw sessionNotFound();
+      // As its people knew it (to tell them what changed)
+      const before = await snapshotSession(tx, id);
       if (session.status !== SessionStatus.SCHEDULED) {
         throw conflict(
           'SESSION_NOT_EDITABLE',
@@ -489,6 +520,22 @@ export class SessionsService {
       if (participantsChanged)
         await this.conflicts.writeSessionExtras(tx, [id], extraIds);
       if (refresh) await this.conflicts.writeSessionTeams(tx, [id], refresh);
+      // An upcoming lesson moved (date, time, room or classes): its people are told
+      const after = await snapshotSession(tx, id);
+      if (
+        before.date !== after.date ||
+        before.start !== after.start ||
+        before.end !== after.end ||
+        before.room !== after.room ||
+        before.classIds.join() !== after.classIds.join()
+      )
+        await notifySessionChange(tx, {
+          actorUserId,
+          event: 'RESCHEDULED',
+          before,
+          after,
+          today: await platformToday(tx),
+        });
     });
     return this.get(id);
   }
@@ -609,6 +656,23 @@ export class SessionsService {
         },
       });
       if (refresh) await this.conflicts.writeSessionTeams(tx, [id], refresh);
+      // Cancelled, or scheduled again: an upcoming lesson's people are told
+      // (a completion, or a new cancellation reason, is not announced)
+      const event =
+        from === SessionStatus.SCHEDULED && to === SessionStatus.CANCELLED
+          ? ('CANCELLED' as const)
+          : from === SessionStatus.CANCELLED && to === SessionStatus.SCHEDULED
+            ? ('RESTORED' as const)
+            : null;
+      if (event)
+        await notifySessionChange(tx, {
+          actorUserId,
+          event,
+          before: null,
+          after: await snapshotSession(tx, id),
+          today: await platformToday(tx),
+          reason: dto.cancellationReason,
+        });
     });
     return this.get(id);
   }

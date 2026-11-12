@@ -41,6 +41,8 @@ function toDraftClass(v: ClassFormValues, group: Group, groupClass?: GroupClass)
     supervisorId: v.supervisorId,
     assistantIds: v.assistantIds.filter((id) => id !== v.supervisorId),
     status: v.status,
+    // The version this form was opened with: a save meanwhile makes it stale (409)
+    version: groupClass?.version,
   }
 }
 
@@ -138,8 +140,6 @@ export function ClassFormSheet({
     return onSave({
       groupClass: { ...draft, id: groupClass?.id },
       slots: v.slots.map(({ id, day, start, end, roomId }) => ({ id, day, start, end, roomId })),
-      previousSlots: groupClass ? schedulesOf(groupClass.id, lookups.schedules) : [],
-      previousBranchId: groupClass?.branchId,
     })
   })
 

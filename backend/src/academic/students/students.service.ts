@@ -21,6 +21,13 @@ import {
   assertTransfersConfirmed,
   transferPlan,
 } from '../../finance/transfers.js';
+import {
+  type JoinOrigin,
+  notifyStudentJoined,
+  notifyStudentLeft,
+  notifyStudentReactivated,
+  notifyStudentTransferred,
+} from '../../communication/class-membership-notifications.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { classNotFound } from '../group-classes/group-classes.service.js';
 import {
@@ -241,11 +248,13 @@ export class StudentsService {
    * The student-creation path inside a caller's transaction (also used when a
    * registration request is accepted): Person + Student + first enrollment +
    * first status, all starting at the registration date. Returns the id.
+   * The class's teachers are told (`origin`: what the admin did).
    */
   async createInTx(
     tx: Tx,
     dto: CreateStudentDto,
     actorUserId?: string,
+    origin: JoinOrigin = 'DIRECT',
   ): Promise<string> {
     if (Boolean(dto.personId) === Boolean(dto.person)) {
       throw badRequest(
@@ -282,6 +291,12 @@ export class StudentsService {
     });
     // Charged automatically with its group's current fee (if any)
     await billStudents(tx, { studentId }, actorUserId);
+    await notifyStudentJoined(tx, {
+      studentId,
+      groupClassId: dto.groupClassId,
+      actorUserId,
+      origin,
+    });
     return studentId;
   }
 
@@ -518,6 +533,23 @@ export class StudentsService {
     });
     // Charged automatically with the new group's current fee (if not yet)
     await billStudents(tx, { studentId: id }, actorUserId);
+    // The teachers of both classes are told (an already-there no-op returned above)
+    if (student.groupClassId && student.groupClassId !== groupClassId)
+      await notifyStudentTransferred(tx, {
+        studentId: id,
+        fromGroupClassId: student.groupClassId,
+        toGroupClassId: groupClassId,
+        actorUserId,
+        effectiveDate: effective,
+        today,
+      });
+    else if (!student.groupClassId)
+      await notifyStudentJoined(tx, {
+        studentId: id,
+        groupClassId,
+        actorUserId,
+        origin: 'DIRECT',
+      });
   }
 
   /** Class-membership history, most recent first (endDate is exclusive; null = current). */
@@ -613,13 +645,43 @@ export class StudentsService {
         orderBy: { effectiveDate: 'desc' },
         select: { status: true },
       });
+      const current = latest?.status ?? status;
       await tx.student.update({
         where: { id },
-        data: { status: latest?.status ?? status },
+        data: { status: current },
       });
       // A reactivated student is charged automatically if not already
-      if ((latest?.status ?? status) === RecordStatus.ACTIVE)
+      if (current === RecordStatus.ACTIVE)
         await billStudents(tx, { studentId: id }, actorUserId);
+      // Back in the class's roster (made active again): its teachers are told
+      // once — already active, or a back-dated-but-superseded change: nothing
+      if (
+        student.status !== RecordStatus.ACTIVE &&
+        current === RecordStatus.ACTIVE &&
+        student.groupClassId
+      )
+        await notifyStudentReactivated(tx, {
+          studentId: id,
+          groupClassId: student.groupClassId,
+          actorUserId,
+          effectiveDate: effective,
+          today,
+        });
+      // Out of the class's roster (made inactive or archived): its teachers are
+      // told once — a repeated or back-dated-but-superseded change changes nothing
+      if (
+        student.status === RecordStatus.ACTIVE &&
+        current !== RecordStatus.ACTIVE &&
+        student.groupClassId
+      )
+        await notifyStudentLeft(tx, {
+          studentId: id,
+          groupClassId: student.groupClassId,
+          status: current,
+          actorUserId,
+          effectiveDate: effective,
+          today,
+        });
     });
     return this.get(id);
   }

@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import {
@@ -31,6 +32,7 @@ import {
   GroupClassListQueryDto,
   MoveGroupClassDto,
   MoveGroupClassPreviewDto,
+  SaveGroupClassDto,
   UpdateGroupClassDto,
 } from './group-class.dto.js';
 import { GroupClassesService } from './group-classes.service.js';
@@ -75,8 +77,11 @@ export class GroupClassesController {
     description:
       'GROUP_INACTIVE, BRANCH_INACTIVE, ROOM_INACTIVE, TEACHER_INACTIVE',
   })
-  create(@Body() dto: CreateGroupClassDto): Promise<GroupClassDetailDto> {
-    return this.classes.create(dto);
+  create(
+    @CurrentUser() actor: AuthPrincipal,
+    @Body() dto: CreateGroupClassDto,
+  ): Promise<GroupClassDetailDto> {
+    return this.classes.create(dto, actor.userId);
   }
 
   @Patch(':id')
@@ -93,10 +98,38 @@ export class GroupClassesController {
     description: 'BRANCH_INACTIVE, ROOM_INACTIVE, TEACHER_INACTIVE',
   })
   update(
+    @CurrentUser() actor: AuthPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateGroupClassDto,
   ): Promise<GroupClassDetailDto> {
-    return this.classes.update(id, dto);
+    return this.classes.update(id, dto, actor.userId);
+  }
+
+  @Put(':id/save')
+  @ApiOperation({
+    summary:
+      '«حفظ القسم»: the class form in one transaction (branch, status, team, the weekly slots it hosts and their rooms) — all or nothing',
+    description:
+      'Each step runs the same checks as its own endpoint; any refusal undoes every step. A class already as asked (repeated request) changes nothing. Otherwise `version` must be the current one.',
+  })
+  @ApiOkResponse({ type: GroupClassDetailDto })
+  @ApiBadRequestResponse({
+    description:
+      'Validation, ROOM_NOT_IN_BRANCH, SUPERVISOR_IS_ASSISTANT, the slot errors of …/schedules',
+  })
+  @ApiNotFoundResponse({
+    description: 'GROUP_CLASS_NOT_FOUND, SCHEDULE_NOT_FOUND',
+  })
+  @ApiConflictResponse({
+    description:
+      'GROUP_CLASS_CHANGED (stale version), SCHEDULE_CONFLICT, the conflicts of PATCH / status / schedules',
+  })
+  save(
+    @CurrentUser() actor: AuthPrincipal,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SaveGroupClassDto,
+  ): Promise<GroupClassDetailDto> {
+    return this.classes.save(id, dto, actor.userId);
   }
 
   @Get(':id/move-preview')
@@ -147,9 +180,10 @@ export class GroupClassesController {
       'GROUP_INACTIVE, BRANCH_INACTIVE, ROOM_INACTIVE, TEACHER_INACTIVE',
   })
   setStatus(
+    @CurrentUser() actor: AuthPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SetRecordStatusDto,
   ): Promise<GroupClassDetailDto> {
-    return this.classes.setStatus(id, dto.status);
+    return this.classes.setStatus(id, dto.status, actor.userId);
   }
 }

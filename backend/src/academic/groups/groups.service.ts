@@ -5,6 +5,10 @@ import { PageSizeService } from '../../common/page-size.service.js';
 import { paginationMeta } from '../../common/pagination.js';
 import { type Prisma, RecordStatus } from '../../generated/prisma/client.js';
 import { platformToday } from '../../common/platform-clock.js';
+import {
+  type GroupSnapshot,
+  notifyGroupChange,
+} from '../../communication/structure-notifications.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { ScheduleConflictService } from '../../scheduling/schedule-conflicts.service.js';
 import { SessionsService } from '../../scheduling/sessions.service.js';
@@ -118,11 +122,28 @@ export class GroupsService {
     });
   }
 
-  async create(dto: CreateGroupDto): Promise<GroupDetailDto> {
+  async create(
+    dto: CreateGroupDto,
+    actorUserId?: string,
+  ): Promise<GroupDetailDto> {
     try {
-      const { id } = await this.prisma.group.create({
-        data: { name: dto.name, audience: dto.audience ?? null },
-        select: { id: true },
+      const id = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.group.create({
+          // A new group has no class yet: any status is free of conflicts
+          data: {
+            name: dto.name,
+            audience: dto.audience ?? null,
+            ...(dto.status && { status: dto.status }),
+          },
+          select: { id: true, name: true, audience: true, status: true },
+        });
+        // The other admins are told
+        await notifyGroupChange(tx, {
+          actorUserId,
+          before: null,
+          after: created,
+        });
+        return created.id;
       });
       return this.get(id);
     } catch (error) {
@@ -131,13 +152,28 @@ export class GroupsService {
     }
   }
 
-  async update(id: string, dto: UpdateGroupDto): Promise<GroupDetailDto> {
+  /**
+   * Name / audience and, when given, the status — in ONE transaction: a
+   * refused status change (conflicts on re-activation) keeps the old name too.
+   */
+  async update(
+    id: string,
+    dto: UpdateGroupDto,
+    actorUserId?: string,
+  ): Promise<GroupDetailDto> {
     await this.get(id);
     try {
-      await this.prisma.group.update({
-        where: { id },
-        data: { name: dto.name, audience: dto.audience },
-      });
+      await this.prisma.$transaction(
+        (tx) =>
+          this.notifying(tx, id, actorUserId, async () => {
+            await tx.group.update({
+              where: { id },
+              data: { name: dto.name, audience: dto.audience },
+            });
+            if (dto.status) await this.setStatusInTx(tx, id, dto.status);
+          }),
+        { timeout: 30_000 },
+      );
     } catch (error) {
       if (isUniqueViolation(error)) throw nameTaken();
       throw error;
@@ -150,48 +186,86 @@ export class GroupsService {
    * Re-activating a group makes its ACTIVE classes run again: their weekly
    * slots and upcoming sessions must not collide with other classes.
    */
-  async setStatus(id: string, status: RecordStatus): Promise<GroupDetailDto> {
-    const group = await this.get(id);
+  async setStatus(
+    id: string,
+    status: RecordStatus,
+    actorUserId?: string,
+  ): Promise<GroupDetailDto> {
+    await this.get(id);
     await this.prisma.$transaction(
-      async (tx) => {
-        await this.conflicts.lockScheduling(tx);
-        // Updated first so classes of THIS group also see each other as running
-        // (a conflict rolls the whole transaction back)
-        await tx.group.update({ where: { id }, data: { status } });
-        if (
-          status === RecordStatus.ACTIVE &&
-          group.status !== RecordStatus.ACTIVE
-        ) {
-          const today = await platformToday(tx);
-          const classes = await tx.groupClass.findMany({
-            where: { groupId: id, status: RecordStatus.ACTIVE },
-            select: {
-              id: true,
-              supervisorId: true,
-              assistants: { select: { teacherId: true } },
-            },
-          });
-          for (const c of classes) {
-            await this.conflicts.assertClassOccupancyFree(
-              tx,
-              {
-                groupClassId: c.id,
-                teacherIds: [
-                  c.supervisorId,
-                  ...c.assistants.map((a) => a.teacherId),
-                ],
-              },
-              today,
-              { checkWeekly: true },
-            );
-          }
-          // (Re)activated: the sessions of its active classes until the end of the current academic year
-          await this.sessions.generateForCurrentYear(tx, { groupId: id });
-        }
-      },
+      (tx) =>
+        this.notifying(tx, id, actorUserId, () =>
+          this.setStatusInTx(tx, id, status),
+        ),
       { timeout: 30_000 },
     );
     return this.get(id);
+  }
+
+  /**
+   * One operation on a group, its people told what changed (other admins,
+   * its classes' teachers; nothing changed: nobody), in the same transaction.
+   * Locks in the order every group / scheduling write uses: the scheduling
+   * lock, then the group row.
+   */
+  private async notifying(
+    tx: Prisma.TransactionClient,
+    id: string,
+    actorUserId: string | undefined,
+    op: () => Promise<unknown>,
+  ) {
+    await this.conflicts.lockScheduling(tx);
+    const read = async () =>
+      (
+        await tx.$queryRaw<GroupSnapshot[]>`
+          SELECT id, name, audience, status FROM groups WHERE id = ${id}::uuid FOR UPDATE`
+      )[0];
+    const before = await read();
+    await op();
+    await notifyGroupChange(tx, { actorUserId, before, after: await read() });
+  }
+
+  /** The status read under the row lock (a concurrent change is serialized, never missed). */
+  private async setStatusInTx(
+    tx: Prisma.TransactionClient,
+    id: string,
+    status: RecordStatus,
+  ) {
+    await this.conflicts.lockScheduling(tx);
+    const [{ status: previous }] = await tx.$queryRaw<
+      { status: RecordStatus }[]
+    >`SELECT status FROM groups WHERE id = ${id}::uuid FOR UPDATE`;
+    if (previous === status) return;
+    // Updated first so classes of THIS group also see each other as running
+    // (a conflict rolls the whole transaction back)
+    await tx.group.update({ where: { id }, data: { status } });
+    if (status === RecordStatus.ACTIVE && previous !== RecordStatus.ACTIVE) {
+      const today = await platformToday(tx);
+      const classes = await tx.groupClass.findMany({
+        where: { groupId: id, status: RecordStatus.ACTIVE },
+        select: {
+          id: true,
+          supervisorId: true,
+          assistants: { select: { teacherId: true } },
+        },
+      });
+      for (const c of classes) {
+        await this.conflicts.assertClassOccupancyFree(
+          tx,
+          {
+            groupClassId: c.id,
+            teacherIds: [
+              c.supervisorId,
+              ...c.assistants.map((a) => a.teacherId),
+            ],
+          },
+          today,
+          { checkWeekly: true },
+        );
+      }
+      // (Re)activated: the sessions of its active classes until the end of the current academic year
+      await this.sessions.generateForCurrentYear(tx, { groupId: id });
+    }
   }
 
   private toDto(

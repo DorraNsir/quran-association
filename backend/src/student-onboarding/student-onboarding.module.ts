@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AcademicModule } from '../academic/academic.module.js';
 import { PageSizeService } from '../common/page-size.service.js';
+import { CommunicationModule } from '../communication/communication.module.js';
 import { FilesModule } from '../files/files.module.js';
 import { StorageModule } from '../files/storage/storage.module.js';
 import { OnboardingEnabledGuard } from './onboarding-enabled.guard.js';
@@ -20,7 +21,7 @@ import { StudentOnboardingService } from './student-onboarding.service.js';
  * through AcademicModule's StudentsService — never by a second path.
  */
 @Module({
-  imports: [AcademicModule, FilesModule, StorageModule],
+  imports: [AcademicModule, CommunicationModule, FilesModule, StorageModule],
   controllers: [
     AdminStudentOnboardingController,
     PublicStudentOnboardingController,

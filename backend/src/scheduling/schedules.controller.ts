@@ -23,6 +23,8 @@ import {
 } from '@nestjs/swagger';
 
 import { AdminApi } from '../academic/admin-api.decorator.js';
+import type { AuthPrincipal } from '../auth/auth.types.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import {
   CreateWeeklyScheduleDto,
   SchedulingConflictDto,
@@ -74,10 +76,11 @@ export class SchedulesController {
   @ApiNotFoundResponse({ description: 'GROUP_CLASS_NOT_FOUND' })
   @ApiConflictResponse({ type: SchedulingConflictDto, description: CONFLICTS })
   create(
+    @CurrentUser() actor: AuthPrincipal,
     @Param('groupClassId', ParseUUIDPipe) groupClassId: string,
     @Body() dto: CreateWeeklyScheduleDto,
   ): Promise<WeeklyScheduleWriteDto> {
-    return this.schedules.create(groupClassId, dto);
+    return this.schedules.create(groupClassId, dto, actor.userId);
   }
 
   @Get('group-classes/:groupClassId/schedules/:scheduleId/start-date-impact')
@@ -113,11 +116,12 @@ export class SchedulesController {
     description: `${CONFLICTS}, SCHEDULE_START_HAS_SESSIONS, SCHEDULE_START_PROTECTED_SESSIONS, SCHEDULE_START_CONFIRMATION_STALE, SCHEDULE_START_NO_ACADEMIC_YEAR`,
   })
   update(
+    @CurrentUser() actor: AuthPrincipal,
     @Param('groupClassId', ParseUUIDPipe) groupClassId: string,
     @Param('scheduleId', ParseUUIDPipe) scheduleId: string,
     @Body() dto: UpdateWeeklyScheduleDto,
   ): Promise<WeeklyScheduleWriteDto> {
-    return this.schedules.update(groupClassId, scheduleId, dto);
+    return this.schedules.update(groupClassId, scheduleId, dto, actor.userId);
   }
 
   @Delete('group-classes/:groupClassId/schedules/:scheduleId')
@@ -129,9 +133,10 @@ export class SchedulesController {
   @ApiNoContentResponse()
   @ApiNotFoundResponse({ description: 'SCHEDULE_NOT_FOUND' })
   remove(
+    @CurrentUser() actor: AuthPrincipal,
     @Param('groupClassId', ParseUUIDPipe) groupClassId: string,
     @Param('scheduleId', ParseUUIDPipe) scheduleId: string,
   ): Promise<void> {
-    return this.schedules.remove(groupClassId, scheduleId);
+    return this.schedules.remove(groupClassId, scheduleId, actor.userId);
   }
 }

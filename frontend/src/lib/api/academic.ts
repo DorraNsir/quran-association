@@ -75,6 +75,8 @@ export interface GroupClassDto {
   supervisor: TeacherRef
   assistants: TeacherRef[]
   activeStudentsCount: number
+  /** Absent from an API older than «حفظ القسم» */
+  version?: number
 }
 export interface PersonView {
   id: string
@@ -174,6 +176,7 @@ export const toGroupClass = (c: GroupClassDto): GroupClass => ({
   supervisorId: c.supervisor.id,
   assistantIds: c.assistants.map((a) => a.id),
   status: c.status,
+  version: c.version,
 })
 export const toTeacher = (t: TeacherDto): Teacher => ({
   id: t.id,

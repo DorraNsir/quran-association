@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AcademicModule } from '../academic/academic.module.js';
+import { CommunicationModule } from '../communication/communication.module.js';
 import { PageSizeService } from '../common/page-size.service.js';
 import {
   RegistrationRateLimiter,
@@ -13,7 +14,7 @@ import {
 import { RegistrationService } from './registration.service.js';
 
 @Module({
-  imports: [AcademicModule],
+  imports: [AcademicModule, CommunicationModule],
   controllers: [PublicRegistrationController, AdminRegistrationController],
   providers: [
     PageSizeService,

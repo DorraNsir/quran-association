@@ -17,6 +17,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
+import type { AuthPrincipal } from '../../auth/auth.types.js';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator.js';
 import { AdminApi } from '../admin-api.decorator.js';
 import { SetRecordStatusDto } from '../shared.dto.js';
 import {
@@ -57,18 +59,22 @@ export class GroupsController {
   @Post()
   @ApiCreatedResponse({ type: GroupDetailDto })
   @ApiConflictResponse({ description: 'GROUP_NAME_TAKEN' })
-  create(@Body() dto: CreateGroupDto): Promise<GroupDetailDto> {
-    return this.groups.create(dto);
+  create(
+    @CurrentUser() actor: AuthPrincipal,
+    @Body() dto: CreateGroupDto,
+  ): Promise<GroupDetailDto> {
+    return this.groups.create(dto, actor.userId);
   }
 
   @Patch(':id')
   @ApiOkResponse({ type: GroupDetailDto })
   @ApiConflictResponse({ description: 'GROUP_NAME_TAKEN' })
   update(
+    @CurrentUser() actor: AuthPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateGroupDto,
   ): Promise<GroupDetailDto> {
-    return this.groups.update(id, dto);
+    return this.groups.update(id, dto, actor.userId);
   }
 
   @Patch(':id/status')
@@ -77,9 +83,10 @@ export class GroupsController {
   })
   @ApiOkResponse({ type: GroupDetailDto })
   setStatus(
+    @CurrentUser() actor: AuthPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SetRecordStatusDto,
   ): Promise<GroupDetailDto> {
-    return this.groups.setStatus(id, dto.status);
+    return this.groups.setStatus(id, dto.status, actor.userId);
   }
 }

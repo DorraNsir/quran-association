@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest"
 
 import { DirectionProvider } from "@/components/ui/direction"
+import { ApiError } from "@/lib/api/errors"
 import type { ClassSaveInput } from "@/lib/api/hooks/groups"
 import type { Lookups } from "@/lib/domain"
 import { checkClassSlots, keepRoomsOfBranch } from "@/lib/scheduling"
@@ -10,7 +11,7 @@ import type { Group, GroupClass, Student } from "@/types/domain"
 import { ClassFormSheet } from "./class-form-sheet"
 
 const group: Group = { id: "g1", name: "مجموعة الأطفال", audience: "", status: "ACTIVE", createdAt: "2026-09-01" }
-const groupClass: GroupClass = { id: "c1", groupId: "g1", branchId: "b1", supervisorId: "t1", assistantIds: [], status: "ACTIVE" }
+const groupClass: GroupClass = { id: "c1", groupId: "g1", branchId: "b1", supervisorId: "t1", assistantIds: [], status: "ACTIVE", version: 4 }
 
 const lookups: Lookups = {
   branches: [
@@ -61,8 +62,26 @@ describe("class form: one room per weekly slot", () => {
       expect.objectContaining({ id: "s1", roomId: "r1" }),
       expect.objectContaining({ id: "s2", roomId: "r2" }),
     ])
-    expect(input.previousBranchId).toBe("b1")
+    // The whole class at once, with the version the form was opened with
+    expect(input.groupClass).toMatchObject({ id: "c1", branchId: "b1", version: 4 })
     expect(input.groupClass).not.toHaveProperty("roomId")
+  })
+
+  it("a refused save (another admin saved meanwhile) keeps the form open with the user's changes", async () => {
+    const onSave = renderForm(
+      vi.fn(async () => {
+        throw new ApiError(409, "GROUP_CLASS_CHANGED", "عدّل مستخدم آخر هذا القسم منذ فتح النموذج: لم يُحفظ شيء.")
+      })
+    )
+    // The user's change: the Wednesday slot removed
+    fireEvent.click(screen.getByRole("button", { name: "حذف يوم الدراسة 2" }))
+    expect(screen.getAllByRole("combobox", { name: /يوم الدراسة \d+: القاعة/ })).toHaveLength(1)
+    fireEvent.click(screen.getByRole("button", { name: "حفظ التعديلات" }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText(/عدّل مستخدم آخر هذا القسم منذ فتح النموذج/)).toBeTruthy()
+    // Still open with the change, the button usable again
+    expect(screen.getAllByRole("combobox", { name: /يوم الدراسة \d+: القاعة/ })).toHaveLength(1)
+    expect((screen.getByRole("button", { name: "حفظ التعديلات" }) as HTMLButtonElement).disabled).toBe(false)
   })
 
   it("requires a room on every row (a new row starts without one)", async () => {

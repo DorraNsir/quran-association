@@ -292,7 +292,7 @@ describe('Resources, announcements & notifications (e2e)', () => {
   /* ================================================================ */
 
   describe('resources', () => {
-    it('admin publishes to a class: only active student accounts of that class are notified', async () => {
+    it('admin publishes to a class: its active students and its teachers (no admin) are notified', async () => {
       const res = await admin()
         .post(
           'resources',
@@ -311,10 +311,14 @@ describe('Resources, announcements & notifications (e2e)', () => {
         canManage: true,
       });
       id.resAdminC1 = res.body.id;
-      // Not: teachers, the inactive student, the disabled account, the student without account
+      // Its students and teachers (multi, assistant + student, once). Not: other
+      // teachers, admins (an admin published), the inactive student, the disabled
+      // account, the student without account
       expect(await recipients({ resourceId: id.resAdminC1 })).toEqual([
+        'asst',
         'multi',
         'stu1',
+        'sup',
       ]);
     });
 
@@ -326,6 +330,7 @@ describe('Resources, announcements & notifications (e2e)', () => {
         )
         .expect(201);
       id.resAll = all.body.id;
+      // Every student — and no teacher: none is explicitly in this audience
       expect(await recipients({ resourceId: id.resAll })).toEqual([
         'leaver',
         'multi',
@@ -344,14 +349,18 @@ describe('Resources, announcements & notifications (e2e)', () => {
         )
         .expect(201);
       id.resG1 = group.body.id;
+      // The group's students and the teachers of its classes (C1, C2)
       expect(await recipients({ resourceId: id.resG1 })).toEqual([
+        'adminTeacher',
+        'asst',
         'multi',
         'stu1',
         'stu2',
+        'sup',
       ]);
     });
 
-    it('supervisors and assistants publish to their own class; the author is never notified', async () => {
+    it('supervisors and assistants publish to their own class: its people and the admins; the author is never notified', async () => {
       const bySup = await teacher('sup')
         .post(
           'resources',
@@ -363,7 +372,11 @@ describe('Resources, announcements & notifications (e2e)', () => {
         visibility: 'GROUP_CLASS',
         canManage: true,
       });
+      // A teacher published: the admins too (an admin who teaches, once)
       expect(await recipients({ resourceId: id.resSup })).toEqual([
+        'admin',
+        'adminTeacher',
+        'asst',
         'multi',
         'stu1',
       ]);
@@ -382,8 +395,73 @@ describe('Resources, announcements & notifications (e2e)', () => {
         )
         .expect(201);
       expect(await recipients({ resourceId: byMulti.body.id })).toEqual([
+        'admin',
+        'adminTeacher',
+        'asst',
         'stu1',
+        'sup',
       ]);
+    });
+
+    it('an inactive teacher is skipped; a refused publication notifies nobody; a notified teacher opens it until it is deleted', async () => {
+      await prisma.teacher.update({
+        where: { id: id['teacher:asst'] },
+        data: { status: 'INACTIVE' },
+      });
+      try {
+        const res = await admin()
+          .post(
+            'resources',
+            linkResource({
+              title: 'بلا المساعد',
+              visibility: 'GROUP_CLASS',
+              groupClassIds: [id.C1],
+            }),
+          )
+          .expect(201);
+        expect(await recipients({ resourceId: res.body.id })).toEqual([
+          'multi',
+          'stu1',
+          'sup',
+        ]);
+      } finally {
+        await prisma.teacher.update({
+          where: { id: id['teacher:asst'] },
+          data: { status: 'ACTIVE' },
+        });
+      }
+      // Refused (a class that is not theirs): nothing stored, nobody told
+      const before = await prisma.notification.count();
+      await teacher('sup')
+        .post(
+          'resources',
+          linkResource({ title: 'مرفوض', groupClassIds: [id.C3] }),
+        )
+        .expect(403);
+      expect(await prisma.notification.count()).toBe(before);
+      // The teachers it was sent to open it; once deleted, it is gone for them
+      const r = await admin()
+        .post(
+          'resources',
+          linkResource({
+            title: 'للفتح',
+            visibility: 'GROUP_CLASS',
+            groupClassIds: [id.C1],
+          }),
+        )
+        .expect(201);
+      const told = (await notif('asst').list({ pageSize: 100 })).body.data.find(
+        (n: { entityId: string }) => n.entityId === r.body.id,
+      );
+      expect(told).toMatchObject({
+        entityType: 'RESOURCE',
+        available: true,
+        message: `نشر المسؤول الإداري admin ${tag('حساب')} موردًا جديدًا: «للفتح»`,
+      });
+      await teacher('asst').get(`resources/${r.body.id}`).expect(200);
+      await teacher('other').get(`resources/${r.body.id}`).expect(404);
+      await admin().delete(`resources/${r.body.id}`).expect(204);
+      await teacher('asst').get(`resources/${r.body.id}`).expect(404);
     });
 
     it('an unassigned teacher, a student, or a client-chosen author cannot publish', async () => {
@@ -632,20 +710,52 @@ describe('Resources, announcements & notifications (e2e)', () => {
       await teacher('asst').get(`resources/${id.resSup}`).expect(200);
     });
 
-    it('deleting a resource removes its notifications (no dangling links)', async () => {
+    it('deleting a resource keeps its notifications in the history, opening nothing', async () => {
       const r = await teacher('sup')
         .post(
           'resources',
           linkResource({ title: 'مؤقت', groupClassIds: [id.C1] }),
         )
         .expect(201);
-      expect(
-        await prisma.notification.count({ where: { resourceId: r.body.id } }),
-      ).toBe(2);
+      // Its students, its other teacher and the admins (other admins of the
+      // test database too: counted as a whole below)
+      expect(await recipients({ resourceId: r.body.id })).toEqual([
+        'admin',
+        'adminTeacher',
+        'asst',
+        'multi',
+        'stu1',
+      ]);
+      const sent = await prisma.notification.count({
+        where: { resourceId: r.body.id },
+      });
+      const mine = async () =>
+        (
+          await notif('stu1').list({ pageSize: 100 }).expect(200)
+        ).body.data.find((n: { entityId: string }) => n.entityId === r.body.id);
+      const before = await mine();
+      expect(before).toMatchObject({ entityType: 'RESOURCE', available: true });
+      await notif('stu1').read(before.id).expect(200);
+      const unread = await notif('multi').count();
+
       await teacher('sup').delete(`resources/${r.body.id}`).expect(204);
-      expect(
-        await prisma.notification.count({ where: { resourceId: r.body.id } }),
-      ).toBe(0);
+      // Same rows: the link is cleared, the subject, text and read state kept
+      const kept = await prisma.notification.findMany({
+        where: { entityId: r.body.id },
+      });
+      expect(kept).toHaveLength(sent);
+      expect(kept.every((n) => n.resourceId === null)).toBe(true);
+      expect(kept.every((n) => n.entityType === 'RESOURCE')).toBe(true);
+      expect(await mine()).toMatchObject({
+        id: before.id,
+        message: before.message,
+        isRead: true,
+        entityType: 'RESOURCE',
+        entityId: r.body.id,
+        available: false,
+      });
+      expect(await notif('multi').count()).toBe(unread);
+      await student('stu1').get(`resources/${r.body.id}`).expect(404);
       await admin().get(`resources/${r.body.id}`).expect(404);
       await admin().delete(`resources/${randomUUID()}`).expect(404);
     });
@@ -1328,6 +1438,14 @@ describe('Resources, announcements & notifications (e2e)', () => {
         'stu3',
       ]);
       await student('late').get(`announcements/${annId}`).expect(200);
+      // Published by the scheduler: its author is named, as who scheduled it
+      const auto = await prisma.notification.findFirstOrThrow({
+        where: { announcementId: annId, userId: uid.late },
+      });
+      expect(auto).toMatchObject({
+        message: `نُشر في موعده المجدول إعلان: «مجدول» من طرف admin ${tag('حساب')}`,
+        actorUserId: uid.admin,
+      });
       expect(
         (await notif('late').list()).body.data.map(
           (n: { entityId: string }) => n.entityId,
@@ -1553,6 +1671,7 @@ describe('Resources, announcements & notifications (e2e)', () => {
       const first = res.body.data[0];
       expect(Object.keys(first).sort()).toEqual(
         [
+          'available',
           'createdAt',
           'entityId',
           'entityType',
@@ -1573,13 +1692,110 @@ describe('Resources, announcements & notifications (e2e)', () => {
         where: { userId: uid.stu3 },
       });
       expect(res.body.meta.total).toBeLessThanOrEqual(own);
-      // Admins receive EVERYONE announcements only (the author excluded)
+      // Admins receive EVERYONE announcements (the author excluded) and the
+      // resources published by teachers — never an admin's own publication
       const adminTeacher = (await notif('adminTeacher').list({ pageSize: 100 }))
         .body.data;
       expect(
         adminTeacher.map((n: { entityId: string }) => n.entityId),
       ).toContain(id.annEveryone);
-      expect((await notif('admin').list()).body.meta.total).toBe(0);
+      const adminOwn = (await notif('admin').list({ pageSize: 100 })).body
+        .data as { type: string; entityId: string }[];
+      expect(adminOwn.every((n) => n.type === 'RESOURCE_PUBLISHED')).toBe(true);
+      expect(adminOwn.map((n) => n.entityId)).toContain(id.resSup);
+      expect(adminOwn.map((n) => n.entityId)).not.toContain(id.resAdminC1);
+    });
+
+    it('every message names who did it; they are stored as its actor and never notified', async () => {
+      const name = (key: string) => `${key} ${tag('حساب')}`;
+      const res = await teacher('sup')
+        .post(
+          'resources',
+          linkResource({ title: 'تجويد', groupClassIds: [id.C1] }),
+        )
+        .expect(201);
+      const rows = await prisma.notification.findMany({
+        where: { resourceId: res.body.id },
+      });
+      expect(rows.map((n) => n.message)).toEqual(
+        rows.map(() => `نشر المعلم ${name('sup')} موردًا جديدًا: «تجويد»`),
+      );
+      expect(rows.every((n) => n.actorUserId === uid.sup)).toBe(true);
+      expect(rows.some((n) => n.userId === uid.sup)).toBe(false);
+
+      const annId = await adminAnnouncement({
+        title: 'عطلة',
+        audience: 'SPECIFIC_GROUP_CLASSES',
+        groupClassIds: [id.C3],
+      });
+      const ann = await prisma.notification.findFirstOrThrow({
+        where: { announcementId: annId, userId: uid.stu3 },
+      });
+      expect(ann).toMatchObject({
+        message: `نشر المسؤول الإداري ${name('admin')} إعلانًا: «عطلة»`,
+        actorUserId: uid.admin,
+        entityType: 'ANNOUNCEMENT',
+        entityId: annId,
+      });
+    });
+
+    it('the wording agrees with the actor’s gender; without one, the passive form names them', async () => {
+      const name = `asst ${tag('حساب')}`;
+      const publish = async (title: string) => {
+        const res = await teacher('asst')
+          .post('resources', linkResource({ title, groupClassIds: [id.C1] }))
+          .expect(201);
+        return (
+          await prisma.notification.findFirstOrThrow({
+            where: { resourceId: res.body.id },
+          })
+        ).message;
+      };
+      try {
+        await prisma.person.update({
+          where: { id: id['person:asst'] },
+          data: { gender: 'FEMALE' },
+        });
+        expect(await publish('أنثى')).toBe(
+          `نشرت المعلمة ${name} موردًا جديدًا: «أنثى»`,
+        );
+        await prisma.person.update({
+          where: { id: id['person:asst'] },
+          data: { gender: null },
+        });
+        expect(await publish('مجهول')).toBe(
+          `نُشر مورد جديد: «مجهول» من طرف ${name}`,
+        );
+      } finally {
+        await prisma.person.update({
+          where: { id: id['person:asst'] },
+          data: { gender: 'MALE' },
+        });
+      }
+    });
+
+    it('an admin publishing a teacher’s draft is named; neither the admin nor the author is notified', async () => {
+      const draft = await teacher('sup')
+        .post('announcements', {
+          title: 'مسودة المعلم',
+          content: 'نص',
+          groupClassIds: [id.C1],
+          mode: 'DRAFT',
+        })
+        .expect(201);
+      const draftId = draft.body.announcement.id;
+      await admin().post(`announcements/${draftId}/publish`).expect(200);
+      const rows = await prisma.notification.findMany({
+        where: { announcementId: draftId },
+      });
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.some((n) => [uid.admin, uid.sup].includes(n.userId))).toBe(
+        false,
+      );
+      expect(rows.every((n) => n.actorUserId === uid.admin)).toBe(true);
+      expect(rows[0].message).toBe(
+        `نشر المسؤول الإداري admin ${tag('حساب')} إعلانًا: «مسودة المعلم»`,
+      );
     });
 
     it('counts unread, marks one / all as read, idempotently, for myself only', async () => {
