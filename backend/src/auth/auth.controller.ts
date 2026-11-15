@@ -19,12 +19,14 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 
 import type { EnvironmentVariables } from '../config/env.validation.js';
 import { parseOrigins } from '../config/frontend-origins.js';
+import { AuthRateLimiter, withRetryAfter } from './auth-rate-limit.js';
 import { AuthService, type AuthResult } from './auth.service.js';
 import { AuthErrorCode, type AuthPrincipal } from './auth.types.js';
 import { AllowPendingPasswordChange } from './decorators/allow-pending-password-change.decorator.js';
@@ -50,6 +52,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly sessions: SessionService,
+    private readonly limiter: AuthRateLimiter,
     config: ConfigService<EnvironmentVariables, true>,
   ) {
     this.env = {
@@ -77,11 +80,20 @@ export class AuthController {
       'INVALID_CREDENTIALS (same answer for unknown user / wrong password)',
   })
   @ApiForbiddenResponse({ description: 'ACCOUNT_INACTIVE' })
+  @ApiTooManyRequestsResponse({
+    description: 'TOO_MANY_REQUESTS (Retry-After) — repeated failed logins',
+  })
   async login(
     @Body() dto: LoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
-    return this.respond(res, await this.auth.login(dto));
+    const result = await withRetryAfter(res, () =>
+      this.limiter.login(req.ip ?? '', dto.username, () =>
+        this.auth.login(dto),
+      ),
+    );
+    return this.respond(res, result);
   }
 
   @Public()
@@ -174,12 +186,21 @@ export class AuthController {
       'WRONG_CURRENT_PASSWORD or policy violation (8–128 characters)',
   })
   @ApiUnauthorizedResponse()
+  @ApiTooManyRequestsResponse({
+    description:
+      'TOO_MANY_REQUESTS (Retry-After) — repeated wrong current passwords',
+  })
   async changePassword(
     @CurrentUser() user: AuthPrincipal,
     @Body() dto: ChangePasswordDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
-    return this.respond(res, await this.auth.changePassword(user, dto));
+    const result = await withRetryAfter(res, () =>
+      this.limiter.changePassword(user.userId, () =>
+        this.auth.changePassword(user, dto),
+      ),
+    );
+    return this.respond(res, result);
   }
 
   private respond(res: Response, result: AuthResult): AuthResponseDto {

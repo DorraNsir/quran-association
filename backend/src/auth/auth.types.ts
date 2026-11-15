@@ -32,4 +32,5 @@ export const AuthErrorCode = {
   WrongCurrentPassword: 'WRONG_CURRENT_PASSWORD',
   ForbiddenRole: 'FORBIDDEN_ROLE',
   ForbiddenOrigin: 'FORBIDDEN_ORIGIN',
+  TooManyRequests: 'TOO_MANY_REQUESTS',
 } as const;

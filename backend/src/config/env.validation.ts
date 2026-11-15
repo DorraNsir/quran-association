@@ -102,6 +102,37 @@ export class EnvironmentVariables {
   REGISTRATION_RATE_LIMIT_WINDOW_SECONDS: number = 900;
 
   /**
+   * Credential brute-force limits, shared by the web AND mobile endpoints,
+   * per LOGIN_RATE_LIMIT_WINDOW_SECONDS. Only credential FAILURES consume
+   * capacity (INVALID_CREDENTIALS on login, WRONG_CURRENT_PASSWORD on
+   * change-password); successful and inactive-account attempts give their
+   * slot back. See auth/auth-rate-limit.ts.
+   * - LOGIN_RATE_LIMIT_IP_MAX: failed logins per client IP (generous — a
+   *   school Wi-Fi or a mobile carrier NAT puts many users behind one IP);
+   * - LOGIN_RATE_LIMIT_USERNAME_MAX: failed logins per username, any IP;
+   * - PASSWORD_CHANGE_RATE_LIMIT_MAX: wrong current passwords per account.
+   */
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  LOGIN_RATE_LIMIT_IP_MAX: number = 30;
+
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  LOGIN_RATE_LIMIT_USERNAME_MAX: number = 10;
+
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  PASSWORD_CHANGE_RATE_LIMIT_MAX: number = 5;
+
+  @IsInt()
+  @Min(1)
+  @Max(86400)
+  LOGIN_RATE_LIMIT_WINDOW_SECONDS: number = 900;
+
+  /**
    * Reverse proxies in front of the API (Express "trust proxy" hops). 0 = none
    * (local). Behind one proxy (Railway, Render…) set 1 so req.ip is the
    * visitor's address — the registration rate limit is per IP.
