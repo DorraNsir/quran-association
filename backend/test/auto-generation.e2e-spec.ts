@@ -8,7 +8,7 @@ import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
 import { PasswordService } from '../src/auth/password.service.js';
-import { todayIn } from '../src/common/dates.js';
+import { todayIn, toLocalDateTime } from '../src/common/dates.js';
 import { Role } from '../src/generated/prisma/enums.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { onlyId } from './cleanup-ids.js';
@@ -410,14 +410,31 @@ describe('Automatic session generation (e2e)', () => {
       expect(res.body.message).toContain('تاريخ سابق');
     });
 
+    it('is refused when its start time today has already passed (Africa/Tunis)', async () => {
+      // A start always behind the clock: 00:00 today, or (in the first minute
+      // of the day) the last minutes of yesterday
+      const now = toLocalDateTime(new Date(), 'Africa/Tunis');
+      const at =
+        now.slice(11, 16) > '00:00'
+          ? { date: now.slice(0, 10), startTime: '00:00', endTime: '00:01' }
+          : {
+              date: addDays(now.slice(0, 10), -1),
+              startTime: '23:58',
+              endTime: '23:59',
+            };
+      const res = await extra(at).expect(400);
+      expect(res.body.code).toBe('SESSION_DATE_PAST');
+    });
+
     it('creates one SCHEDULED session, not tied to a weekly slot, with the class team', async () => {
+      // A fixed future start (never time-of-day dependent)
       const today = await extra({
-        date: TODAY,
+        date: addDays(TODAY, 2),
         startTime: '22:00',
         endTime: '23:00',
       }).expect(201);
       expect(today.body).toMatchObject({
-        date: TODAY,
+        date: addDays(TODAY, 2),
         status: 'SCHEDULED',
         weeklyScheduleId: null,
       });

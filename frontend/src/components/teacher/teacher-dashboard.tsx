@@ -18,18 +18,24 @@ import { AttendancePeriodStats } from "@/components/attendance/attendance-period
 import { SectionCard } from "@/components/shared/info-list"
 import { StatCard } from "@/components/shared/stat-card"
 import { Button } from "@/components/ui/button"
+import { useAttendanceOpen } from "@/hooks/use-attendance-open"
+import { canTakeAttendance } from "@/lib/attendance"
 import { weekdayOf } from "@/lib/dates"
 import type { Lookups } from "@/lib/domain"
-import { formatDate } from "@/lib/format"
+import { formatDate, formatShortDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { defaultPeriod, indexMemorization, memorizationKey } from "@/lib/memorization"
 import { useClassesMemorization } from "@/lib/api/memorization"
 import { getTeacherGroupClasses } from "@/lib/teacher-access"
+import { attendanceOpensLabel } from "@/lib/session-actions"
 import { cn } from "@/lib/utils"
 import type { ID, ISODate, Student } from "@/types/domain"
 
 import { isAttendancePending, TeacherSessionList, useTeacherSessionRows } from "./teacher-sessions"
 import { useAcademicYears } from "@/lib/store/settings"
+
+/** No lesson waiting: the clock hook stays idle. */
+const NO_SESSION = { status: "CANCELLED", date: "", start: "" } as const
 
 /** "What do I teach today, what is left to record?" — the teacher's day at a glance. */
 export function TeacherDashboard({
@@ -51,7 +57,11 @@ export function TeacherDashboard({
   const latestAnnouncements = useReaderAnnouncements("teacher", 2)
 
   const todayRows = rows.filter((r) => r.session.date === today)
-  const pending = rows.filter((r) => isAttendancePending(r, today)).reverse()
+  // Today's next lesson not started yet: one clock re-checks it, so the
+  // attendance shortcut turns on at its start minute (no page reload)
+  const nextToday = todayRows.find((r) => r.session.status !== "CANCELLED" && !canTakeAttendance(r.session))
+  const { now } = useAttendanceOpen(nextToday?.session ?? NO_SESSION)
+  const pending = rows.filter((r) => isAttendancePending(r, now)).reverse()
   const next = rows.find((r) => r.session.date > today && r.session.status !== "CANCELLED")
 
   const period = defaultPeriod(academicYears, today)
@@ -65,8 +75,11 @@ export function TeacherDashboard({
     list.filter((s) => !byKey.has(memorizationKey(s.id, period.academicYearId, period.semester))).length
   const missingTotal = missing(active)
 
-  // The most useful attendance shortcut: today's session first, else the oldest pending one
-  const attendanceTarget = todayRows.find((r) => r.session.status !== "CANCELLED") ?? pending[pending.length - 1]
+  // The most useful attendance shortcut: today's latest STARTED session, else
+  // the oldest pending one; before today's first start, the action waits (disabled)
+  const startedToday = todayRows.filter((r) => canTakeAttendance(r.session, now))
+  const attendanceTarget = startedToday[startedToday.length - 1] ?? pending[pending.length - 1]
+  const waitingTarget = attendanceTarget ? undefined : todayRows.find((r) => r.session.status !== "CANCELLED")
 
   return (
     <div className="space-y-6">
@@ -87,6 +100,17 @@ export function TeacherDashboard({
               تسجيل الحضور — {attendanceTarget.group?.name}
             </Link>
           </Button>
+        )}
+        {waitingTarget && (
+          <span className="col-span-2 inline-flex flex-col items-start gap-1 sm:col-span-1">
+            <Button size="lg" disabled aria-describedby="dashboard-attendance-opens">
+              <ClipboardCheck />
+              تسجيل الحضور — {waitingTarget.group?.name}
+            </Button>
+            <span id="dashboard-attendance-opens" className="text-xs text-muted-foreground">
+              {attendanceOpensLabel(waitingTarget.session, formatShortDate, now)}
+            </span>
+          </span>
         )}
         <Button asChild size="lg" variant="outline">
           <Link href="/teacher/memorization">

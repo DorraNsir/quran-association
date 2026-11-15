@@ -2,6 +2,7 @@
  * Attendance rules, shared by every screen (pure functions — no UI, no state).
  * The NestJS API will own these later; keep this the single place they live.
  */
+import { attendanceOpen } from "@/lib/session-actions"
 import type {
   AttendanceStatus,
   ID,
@@ -90,9 +91,13 @@ export function sessionProgress(
   return { ...base, state: "NOT_RECORDED" }
 }
 
-/** Attendance can be taken on the day of the session or afterwards, never for a cancelled one. */
-export function canTakeAttendance(session: Session, today: ISODate) {
-  return session.status !== "CANCELLED" && session.date <= today
+/**
+ * Attendance can be taken once the session has STARTED (its date and start
+ * time in Africa/Tunis) — during it or afterwards — never for a cancelled one.
+ * The API enforces the same rule.
+ */
+export function canTakeAttendance(session: Pick<Session, "status" | "date" | "start">, at: Date | number = Date.now()) {
+  return attendanceOpen(session, at)
 }
 
 /** Group records by session id once, instead of filtering per row. */

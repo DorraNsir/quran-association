@@ -34,6 +34,8 @@ export function ScheduleDetailsSheet({
   onEdit,
   onRemove,
   onCancelSession,
+  onEditSession,
+  onDeleteSession,
 }: {
   entry: CalendarEntry | null
   /** The occurrence date shown in the calendar (the session itself recurs weekly) */
@@ -45,6 +47,10 @@ export function ScheduleDetailsSheet({
   onRemove: (entry: CalendarEntry) => void
   /** Cancels only the dated session shown (the weekly slot stays) */
   onCancelSession: (entry: CalendarEntry) => void
+  /** «تعديل الحصة» of an extra lesson — given only when it is offered */
+  onEditSession?: (entry: CalendarEntry) => void
+  /** «حذف نهائي» of an extra lesson — given only when it is offered */
+  onDeleteSession?: (entry: CalendarEntry) => void
 }) {
   const dir = useDirection()
   if (!entry) return null
@@ -177,11 +183,28 @@ export function ScheduleDetailsSheet({
               تعديل الموعد الأسبوعي
             </Button>
           )}
+          {onEditSession && (
+            <Button variant="outline" onClick={() => onEditSession(entry)}>
+              <Pencil />
+              تعديل الحصة
+            </Button>
+          )}
           {/* This date only: the session is cancelled (kept, shown as «ملغاة»), the weekly slot stays */}
           {entry.occurrence?.status === "SCHEDULED" &&  (
             <Button variant="outline" className="ms-auto text-destructive hover:text-destructive" onClick={() => onCancelSession(entry)}>
               <CalendarX2 />
               إلغاء الحصة
+            </Button>
+          )}
+          {/* An extra lesson removed from the database (never a cancellation) */}
+          {onDeleteSession && (
+            <Button
+              variant="destructive"
+              className={entry.occurrence?.status === "SCHEDULED" ? undefined : "ms-auto"}
+              onClick={() => onDeleteSession(entry)}
+            >
+              <Trash2 />
+              حذف نهائي
             </Button>
           )}
           {/* Every week: the slot leaves the weekly programme */}

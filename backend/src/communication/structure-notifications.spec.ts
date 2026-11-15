@@ -105,4 +105,41 @@ describe('structure notification wording', () => {
       'تغيّر موعد حصة قسم الماهر — فرع المركز من طرف أحمد بن علي: من يوم الخميس 5 نوفمبر 2026 من 17:00 إلى 18:00 (القاعة 1) إلى يوم الخميس 5 نوفمبر 2026 من 18:00 إلى 19:00 (القاعة 1).',
     );
   });
+
+  it('lessons by a supervisor teacher, and a deleted extra lesson', () => {
+    const lesson: SessionSnapshot = {
+      id: 'se1',
+      date: '2026-11-05',
+      start: '17:00',
+      end: '18:00',
+      room: 'القاعة 1',
+      status: 'SCHEDULED',
+      classIds: ['c1'],
+      classes: [{ group: 'الماهر', branch: 'فرع المركز' }],
+      teacherIds: [],
+    };
+    expect(
+      sessionMessage('ADDED', admin('MALE'), null, lesson, null, 'TEACHER'),
+    ).toBe(
+      'أضاف المعلم أحمد بن علي حصة إضافية لقسم الماهر — فرع المركز: يوم الخميس 5 نوفمبر 2026 من 17:00 إلى 18:00 (القاعة 1).',
+    );
+    expect(
+      sessionMessage(
+        'CANCELLED',
+        admin('FEMALE'),
+        null,
+        lesson,
+        'مرض',
+        'TEACHER',
+      ),
+    ).toBe(
+      'ألغت المعلمة أحمد بن علي حصة قسم الماهر — فرع المركز: يوم الخميس 5 نوفمبر 2026 من 17:00 إلى 18:00 (القاعة 1)، السبب: مرض.',
+    );
+    expect(sessionMessage('DELETED', admin('MALE'), null, lesson)).toBe(
+      'حذف المسؤول الإداري أحمد بن علي الحصة الإضافية لقسم الماهر — فرع المركز المبرمجة: يوم الخميس 5 نوفمبر 2026 من 17:00 إلى 18:00 (القاعة 1).',
+    );
+    expect(sessionMessage('DELETED', admin(null), null, lesson)).toBe(
+      'حُذفت الحصة الإضافية لقسم الماهر — فرع المركز المبرمجة من طرف أحمد بن علي: يوم الخميس 5 نوفمبر 2026 من 17:00 إلى 18:00 (القاعة 1).',
+    );
+  });
 });

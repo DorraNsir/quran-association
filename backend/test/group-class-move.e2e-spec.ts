@@ -140,17 +140,21 @@ describe('Move a class to another group (e2e)', () => {
         })
         .expect(201)
     ).body.id);
-  /** A one-off session of the class today (each at its own hour: no conflicts) */
+  /**
+   * A manual session of the class YESTERDAY (each at its own hour: no
+   * conflicts) — already started whatever the time of day the suite runs, so
+   * attendance can be recorded (the manual endpoint, not «حصة إضافية»)
+   */
   const session = async (classKey: string, extra: object = {}) => {
     const start = `${String(hour).padStart(2, '0')}:00`;
     const end = `${String(hour).padStart(2, '0')}:45`;
     hour += 1;
     return (
       await admin
-        .post('sessions/extra', {
+        .post('sessions', {
           groupClassId: id[classKey],
           roomId: id.room,
-          date: TODAY,
+          date: addDays(TODAY, -1),
           startTime: start,
           endTime: end,
           ...extra,

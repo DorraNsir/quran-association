@@ -11,6 +11,7 @@ import { fromDbTime } from '../scheduling/time.js';
 import {
   actorSentence,
   classNameAr,
+  type ActorCapacity,
   loadActor,
   type NotificationActor,
   sessionClassesAr,
@@ -232,8 +233,12 @@ type Forms = {
 };
 
 /** The lead of a sentence: who did it (or nobody named, for an automated path). */
-const lead = (actor: NotificationActor | null, forms: Forms) =>
-  actor ? actorSentence(actor, 'ADMIN', forms) : forms.passive('').trimEnd();
+const lead = (
+  actor: NotificationActor | null,
+  forms: Forms,
+  capacity: ActorCapacity = 'ADMIN',
+) =>
+  actor ? actorSentence(actor, capacity, forms) : forms.passive('').trimEnd();
 
 const slotAr = (s: SlotSnapshot) =>
   `${DAY_AR[s.day]} من ${s.start} إلى ${s.end} (${s.room})`;
@@ -698,7 +703,8 @@ export async function snapshotSession(
 }
 
 /** What happened to an upcoming lesson. */
-export type SessionEvent = 'ADDED' | 'RESCHEDULED' | 'CANCELLED' | 'RESTORED';
+export type SessionEvent =
+  'ADDED' | 'RESCHEDULED' | 'CANCELLED' | 'RESTORED' | 'DELETED';
 
 export function sessionMessage(
   event: SessionEvent,
@@ -706,34 +712,42 @@ export function sessionMessage(
   before: SessionSnapshot | null,
   after: SessionSnapshot,
   reason?: string | null,
+  capacity: ActorCapacity = 'ADMIN',
 ) {
   const c = sessionClassesAr(after.classes);
   const when = (s: SessionSnapshot) =>
     `${sessionWhenAr(s.date, s.start, s.end)} (${s.room})`;
+  const by = (forms: Forms) => lead(actor, forms, capacity);
   switch (event) {
     case 'ADDED':
-      return `${lead(actor, {
+      return `${by({
         male: (w) => `أضاف ${w} حصة إضافية لقسم ${c}`,
         female: (w) => `أضافت ${w} حصة إضافية لقسم ${c}`,
         passive: (by) => `أُضيفت حصة إضافية لقسم ${c} ${by}`,
       })}: ${when(after)}.`;
     case 'RESCHEDULED':
-      return `${lead(actor, {
+      return `${by({
         male: (w) => `غيّر ${w} موعد حصة قسم ${c}`,
         female: (w) => `غيّرت ${w} موعد حصة قسم ${c}`,
         passive: (by) => `تغيّر موعد حصة قسم ${c} ${by}`,
       })}: من ${when(before!)} إلى ${when(after)}.`;
     case 'CANCELLED':
-      return `${lead(actor, {
+      return `${by({
         male: (w) => `ألغى ${w} حصة قسم ${c}`,
         female: (w) => `ألغت ${w} حصة قسم ${c}`,
         passive: (by) => `أُلغيت حصة قسم ${c} ${by}`,
       })}: ${when(after)}${reason ? `، السبب: ${reason}` : ''}.`;
     case 'RESTORED':
-      return `${lead(actor, {
+      return `${by({
         male: (w) => `أعاد ${w} برمجة حصة قسم ${c}`,
         female: (w) => `أعادت ${w} برمجة حصة قسم ${c}`,
         passive: (by) => `أُعيدت برمجة حصة قسم ${c} ${by}`,
+      })}: ${when(after)}.`;
+    case 'DELETED':
+      return `${by({
+        male: (w) => `حذف ${w} الحصة الإضافية لقسم ${c} المبرمجة`,
+        female: (w) => `حذفت ${w} الحصة الإضافية لقسم ${c} المبرمجة`,
+        passive: (by) => `حُذفت الحصة الإضافية لقسم ${c} المبرمجة ${by}`,
       })}: ${when(after)}.`;
   }
 }
@@ -743,12 +757,23 @@ const SESSION_TITLES: Record<SessionEvent, string> = {
   RESCHEDULED: 'تغيير موعد حصة',
   CANCELLED: 'إلغاء حصة',
   RESTORED: 'إعادة برمجة حصة',
+  DELETED: 'تم حذف حصة إضافية',
 };
 
 /**
  * An UPCOMING lesson changed by hand: its teachers (team before and after)
  * and the students of its classes (before and after). A lesson entirely in
  * the past (before and after) notifies nobody; generated lessons never reach here.
+ *
+ * A SUPERVISOR TEACHER acting from the teacher workspace (`capacity:
+ * 'TEACHER'`) is named as a teacher, and the active admins are told too
+ * (`notifyAdmins`) — once each, an admin who also teaches the lesson
+ * included, never the teacher who did it.
+ *
+ * DELETED (a lesson removed from the database): the recipients are the
+ * accounts that were told about this lesson before (its earlier
+ * notifications) — nobody else; the notification carries the lesson as its
+ * subject but no link (the row is gone), so it opens nothing.
  */
 export async function notifySessionChange(
   tx: Tx,
@@ -759,22 +784,40 @@ export async function notifySessionChange(
     after: SessionSnapshot;
     today: string;
     reason?: string | null;
+    capacity?: ActorCapacity;
+    notifyAdmins?: boolean;
   },
 ) {
   const { before, after, actorUserId, today } = input;
   if (after.date < today && (!before || before.date < today)) return;
   const actor = actorUserId ? await loadActor(tx, actorUserId) : null;
-  const teachers = await teachersById(tx, [
-    ...(before?.teacherIds ?? []),
-    ...after.teacherIds,
-  ]);
-  const students = await studentAccountsOf(tx, [
-    ...new Set([...(before?.classIds ?? []), ...after.classIds]),
-  ]);
-  const recipients = new Set<string>(
-    [...teachers.values()].map((t) => t.userId).filter((u): u is string => !!u),
-  );
-  for (const userId of students.keys()) recipients.add(userId);
+  const recipients = new Set<string>();
+  if (input.event === 'DELETED') {
+    // Told before: the earlier notifications about this lesson (any type)
+    const told = await tx.notification.findMany({
+      where: {
+        entityType: NotificationEntity.SESSION,
+        entityId: after.id,
+        user: { isActive: true },
+      },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+    for (const n of told) recipients.add(n.userId);
+  } else {
+    const teachers = await teachersById(tx, [
+      ...(before?.teacherIds ?? []),
+      ...after.teacherIds,
+    ]);
+    const students = await studentAccountsOf(tx, [
+      ...new Set([...(before?.classIds ?? []), ...after.classIds]),
+    ]);
+    for (const t of teachers.values()) if (t.userId) recipients.add(t.userId);
+    for (const userId of students.keys()) recipients.add(userId);
+  }
+  if (input.notifyAdmins)
+    for (const userId of await adminAccounts(tx, actorUserId))
+      recipients.add(userId);
   if (actorUserId) recipients.delete(actorUserId);
   const message = sessionMessage(
     input.event,
@@ -782,6 +825,7 @@ export async function notifySessionChange(
     before,
     after,
     input.reason,
+    input.capacity,
   );
   const out = new Map<string, Pending>(
     [...recipients].map((userId) => [
@@ -795,6 +839,7 @@ export async function notifySessionChange(
     NotificationType.SESSION_CHANGED,
     NotificationEntity.SESSION,
     actor,
-    after.id,
+    // A deleted lesson: its subject only, never a link to the removed row
+    input.event === 'DELETED' ? undefined : after.id,
   );
 }

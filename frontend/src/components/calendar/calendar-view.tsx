@@ -4,6 +4,7 @@ import { CalendarRange, Info } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 
+import { DeleteExtraSessionDialog } from "@/components/sessions/extra-session-actions"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { ALL, FilterBar, FilterSelect } from "@/components/shared/filters"
 import { PageHeader } from "@/components/shared/page-header"
@@ -26,7 +27,9 @@ import { countLabels, formatDate, formatDayNumber, formatDuration, formatTimeRan
 import { labels } from "@/lib/i18n"
 import { keys, useApiMutation } from "@/lib/api/academic"
 import { api } from "@/lib/api/client"
-import { toSession, useSessionRange } from "@/lib/api/sessions"
+import { toSession, useSessionRange, type SessionDto } from "@/lib/api/sessions"
+import { workKeys } from "@/lib/api/work-followup"
+import { canDeleteExtra, canEditExtra } from "@/lib/session-actions"
 import type { Group, ID, ISODate, Student, WeeklySchedule, WeeklySlotSave } from "@/types/domain"
 
 import { toneOf, type CalendarEntry } from "./calendar-event"
@@ -35,7 +38,7 @@ import { formatWeekRange, fromMinutes, toMinutes, visibleHours } from "./calenda
 import { MobileAgenda } from "./mobile-agenda"
 import { ScheduleDetailsSheet } from "./schedule-details-sheet"
 import { ScheduleFormSheet, type SchedulePreset } from "./schedule-form-sheet"
-import { ExtraSessionButton, useSaveWeeklySlot } from "./scheduling-actions"
+import { ExtraSessionButton, ExtraSessionSheet, useSaveWeeklySlot } from "./scheduling-actions"
 import { TimeGrid, type GridColumn } from "./time-grid"
 import { usePlatformSettings } from "@/lib/store/settings"
 
@@ -218,11 +221,27 @@ export function CalendarView({
 
   const saveWeeklySlot = useSaveWeeklySlot(live)
   /** Cancels one dated session only (PATCH status → CANCELLED); the weekly slot is untouched */
+  // Same refresh as every other session write: lists, calendars, details, rosters and planned work
   const cancelSessionMutation = useApiMutation(
     ({ id, reason }: { id: ID; reason?: string }) =>
       api(`/admin/sessions/${id}/status`, { method: "PATCH", body: { status: "CANCELLED", cancellationReason: reason } }),
-    [keys.sessions]
+    [keys.sessions, ["attendance"], workKeys.all]
   )
+  // «تعديل الحصة» / «حذف نهائي» of an extra lesson (its API session: room, classes, updatedAt)
+  const [extraAction, setExtraAction] = useState<{ kind: "edit" | "delete"; session: SessionDto } | null>(null)
+  const dtoOf = (entry: CalendarEntry) => (sessionsQuery.data ?? []).find((s) => s.id === entry.occurrence?.id)
+  const extraActionFor = (kind: "edit" | "delete", entry: CalendarEntry) => {
+    const dto = dtoOf(entry)
+    const occurrence = entry.occurrence
+    if (!dto || !occurrence?.extra) return undefined
+    const allowed = kind === "edit" ? canEditExtra(occurrence, dto.attendance.recorded) : canDeleteExtra(occurrence, dto.attendance.recorded)
+    return allowed
+      ? () => {
+          setDetails((d) => (d ? { ...d, open: false } : d))
+          setExtraAction({ kind, session: dto })
+        }
+      : undefined
+  }
   const removeMutation = useApiMutation(
     (schedule: WeeklySchedule) => api(`/admin/group-classes/${schedule.groupClassId}/schedules/${schedule.id}`, { method: "DELETE" }),
     [keys.schedules, keys.sessions]
@@ -414,7 +433,20 @@ export function CalendarView({
           setCancelReason("")
           setCancelling({ entry, open: true })
         }}
+        onEditSession={details?.entry ? extraActionFor("edit", details.entry) : undefined}
+        onDeleteSession={details?.entry ? extraActionFor("delete", details.entry) : undefined}
       />
+
+      {extraAction?.kind === "edit" && (
+        <ExtraSessionSheet open onOpenChange={(open) => !open && setExtraAction(null)} lookups={live} session={extraAction.session} />
+      )}
+      {extraAction?.kind === "delete" && (
+        <DeleteExtraSessionDialog
+          session={{ id: extraAction.session.id, date: extraAction.session.date }}
+          open
+          onOpenChange={(open) => !open && setExtraAction(null)}
+        />
+      )}
 
       {formState && (
         <ScheduleFormSheet

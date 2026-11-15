@@ -28,6 +28,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel,
+  cancelLabel = labels.common.cancel,
   destructive = false,
   onConfirm,
   children,
@@ -37,6 +38,8 @@ export function ConfirmDialog({
   title: string
   description: React.ReactNode
   confirmLabel: string
+  /** The dismiss button («إلغاء» by default) */
+  cancelLabel?: string
   destructive?: boolean
   onConfirm: () => void | Promise<unknown>
   /** Optional extra input (e.g. a reason) between the description and the buttons */
@@ -73,7 +76,7 @@ export function ConfirmDialog({
         {children}
         <FormErrorAlert message={error} />
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>{labels.common.cancel}</AlertDialogCancel>
+          <AlertDialogCancel disabled={pending}>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction variant={destructive ? "destructive" : "default"} onClick={confirm} disabled={pending}>
             {pending && <Loader2 className="animate-spin" />}
             {confirmLabel}

@@ -278,8 +278,30 @@ describe('Workspaces (e2e)', () => {
       expect(body.students[0]).not.toHaveProperty('cin');
       expect(body.students[0]).not.toHaveProperty('address');
       expect(body.branches).toHaveLength(1);
-      // Rooms of my weekly slots (C has no slot yet, so no room)
-      expect(body.rooms.map((r: { id: string }) => r.id)).toEqual([id.R1]);
+      // Rooms of my weekly slots + every ACTIVE room of the branches of the
+      // classes I supervise (for «حصة إضافية»): R1, R2, R3 — not an inactive one
+      expect(body.rooms.map((r: { id: string }) => r.id).sort()).toEqual(
+        [id.R1, id.R2, id.R3].sort(),
+      );
+    });
+
+    it('rooms: an inactive room is never offered; an assistant only gets the rooms of its slots', async () => {
+      const closed = (
+        await send('admin', 'post', 'admin/rooms', {
+          branchId: id.branch,
+          name: tag('مغلقة'),
+        }).expect(201)
+      ).body.id;
+      await send('admin', 'patch', `admin/rooms/${closed}/status`, {
+        status: 'INACTIVE',
+      }).expect(200);
+      const sup = await get('sup', 'teacher/workspace').expect(200);
+      expect(sup.body.rooms.map((r: { id: string }) => r.id)).not.toContain(
+        closed,
+      );
+      // The assistant supervises nothing: only the room of its class's slot
+      const asst = await get('asst', 'teacher/workspace').expect(200);
+      expect(asst.body.rooms.map((r: { id: string }) => r.id)).toEqual([id.R1]);
     });
 
     it('an assistant sees the class too; another teacher does not', async () => {

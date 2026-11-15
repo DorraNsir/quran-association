@@ -10,7 +10,11 @@ import { badRequest, conflict, notFound } from '../common/errors.js';
 import type { EnvironmentVariables } from '../config/env.validation.js';
 import { PageSizeService } from '../common/page-size.service.js';
 import { paginationMeta } from '../common/pagination.js';
-import { platformToday } from '../common/platform-clock.js';
+import {
+  notStartedAt,
+  platformNow,
+  platformToday,
+} from '../common/platform-clock.js';
 import {
   Prisma,
   AttendanceChangeKind,
@@ -1071,15 +1075,22 @@ export class AttendanceService {
 
   private async assertEditable(
     tx: Tx,
-    session: { status: SessionStatus; date: Date },
+    session: { status: SessionStatus; date: Date; startTime: Date },
   ) {
     const reason = await this.notEditableReason(tx, session);
     if (reason) throw reason;
   }
 
+  /**
+   * Attendance is taken once the lesson has STARTED: its date and start time
+   * in the platform timezone (Africa/Tunis) — from the start minute itself,
+   * through and after its end (late recording stays allowed). Never for a
+   * cancelled lesson. The one rule for saving AND for the roster's
+   * `editable` flag, so the UI and the API agree.
+   */
   private async notEditableReason(
     tx: Tx | PrismaService,
-    session: { status: SessionStatus; date: Date },
+    session: { status: SessionStatus; date: Date; startTime: Date },
   ) {
     if (session.status === SessionStatus.CANCELLED) {
       return conflict(
@@ -1087,12 +1098,11 @@ export class AttendanceService {
         'الحصة ملغاة: لا يُسجَّل حضورها',
       );
     }
-    const today = await platformToday(tx);
-    const date = fromDbDate(session.date);
-    if (date > today)
+    const start = fromDbTime(session.startTime);
+    if (notStartedAt(await platformNow(tx), fromDbDate(session.date), start))
       return conflict(
         'ATTENDANCE_SESSION_FUTURE',
-        'لا يمكن تسجيل حضور حصة لم يحن موعدها',
+        `لم يبدأ موعد الحصة بعد: يبدأ تسجيل الحضور عند الساعة ${start}`,
       );
     return undefined;
   }

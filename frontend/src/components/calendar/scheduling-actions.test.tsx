@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { SessionsView } from "@/components/sessions/sessions-view"
 import { DirectionProvider } from "@/components/ui/direction"
 import { clearSession, setSession } from "@/lib/api/session"
-import { todayInTunis } from "@/lib/dates"
+import { addDays, todayInTunis } from "@/lib/dates"
+import { notStartedInTunis } from "@/lib/session-actions"
 import type { Lookups } from "@/lib/domain"
 import { authResponse, json } from "@/test/fetch-mock"
 import { renderWithClient } from "@/test/render"
@@ -74,12 +75,12 @@ describe("sessions page — scheduling actions", () => {
 })
 
 describe("«حصة إضافية (مرة واحدة)» form", () => {
-  it("starts today, in the class's usual room, and refuses a past date without calling the API", async () => {
+  it("starts at 09:00 today (tomorrow once it has passed), in the class's usual room, and refuses a past date without calling the API", async () => {
     const posts = routeFetch()
     renderSheet()
     const dialog = await screen.findByRole("dialog")
     const date = within(dialog).getByLabelText(/التاريخ/) as HTMLInputElement
-    expect(date.value).toBe(todayInTunis())
+    expect(date.value).toBe(notStartedInTunis(todayInTunis(), "09:00") ? todayInTunis() : addDays(todayInTunis(), 1))
     expect(date.min).toBe(todayInTunis())
     expect(within(dialog).getByRole("combobox", { name: /القاعة/ }).textContent).toContain("القاعة 2")
     fireEvent.change(date, { target: { value: "2020-01-01" } })
@@ -95,7 +96,8 @@ describe("«حصة إضافية (مرة واحدة)» form", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "برمجة الحصة الإضافية" }))
     await waitFor(() => expect(posts).toHaveLength(1))
     expect(posts[0].url).toContain("/admin/sessions/extra")
-    expect(posts[0].body).toEqual({ groupClassId: "c1", roomId: "r2", date: todayInTunis(), startTime: "09:00", endTime: "10:30" })
+    const day = notStartedInTunis(todayInTunis(), "09:00") ? todayInTunis() : addDays(todayInTunis(), 1)
+    expect(posts[0].body).toEqual({ groupClassId: "c1", roomId: "r2", date: day, startTime: "09:00", endTime: "10:30" })
   })
 
   it("shows the API's Arabic refusal (e.g. a room conflict) in the form", async () => {

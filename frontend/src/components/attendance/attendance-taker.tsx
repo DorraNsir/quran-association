@@ -26,11 +26,13 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useAttendanceOpen } from "@/hooks/use-attendance-open"
 import type { AttendanceEntry } from "@/lib/attendance"
 import { ApiError, errorMessage } from "@/lib/api/errors"
 import { rosterKey, useSaveAttendance, type SaveAttendanceBody, type SessionRosterDto } from "@/lib/api/sessions"
 import { fullName } from "@/lib/domain"
-import { countLabels, formatDate } from "@/lib/format"
+import { countLabels, formatDate, formatShortDate } from "@/lib/format"
+import { attendanceOpensLabel } from "@/lib/session-actions"
 import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
 import type { AttendanceStatus, ID } from "@/types/domain"
 
@@ -104,6 +106,9 @@ export function AttendanceTaker({ row, roster: saved, workspace = "admin" }: { r
   const [conflict, setConflict] = useState<string | null>(null)
 
   const editable = saved.editable
+  // Not started yet: when the start minute arrives the roster is refreshed (the
+  // server then allows recording) — no page reload
+  const { now } = useAttendanceOpen(session, () => queryClient.invalidateQueries({ queryKey: rosterKey(session.id) }))
   // Correction window closed (teachers): saved rows are locked, unrecorded ones stay open
   const correctable = saved.correctable
   const locked = (draftSaved: Draft, id: ID) => !editable || (!correctable && draftSaved.has(id))
@@ -179,9 +184,11 @@ export function AttendanceTaker({ row, roster: saved, workspace = "admin" }: { r
       {!editable && (
         <Alert className="mb-6">
           {session.status === "CANCELLED" ? <CalendarX2 /> : <Lock />}
-          <AlertTitle>{session.status === "CANCELLED" ? "هذه الحصة ملغاة" : "لم يحن موعد هذه الحصة بعد"}</AlertTitle>
+          <AlertTitle>{session.status === "CANCELLED" ? "هذه الحصة ملغاة" : "لم يبدأ موعد هذه الحصة بعد"}</AlertTitle>
           <AlertDescription>
-            {session.status === "CANCELLED" ? "لا يُسجَّل الحضور في حصة ملغاة." : "يمكن تسجيل الحضور يوم الحصة أو بعدها."}
+            {session.status === "CANCELLED"
+              ? "لا يُسجَّل الحضور في حصة ملغاة."
+              : `${attendanceOpensLabel(session, formatShortDate, now)}، ويمكن تسجيله أثناء الحصة أو بعدها.`}
           </AlertDescription>
         </Alert>
       )}

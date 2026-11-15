@@ -30,7 +30,7 @@ import type { ISODate } from "@/types/domain"
 
 import { ExtraSessionButton, WeeklySlotButton } from "@/components/calendar/scheduling-actions"
 
-import { AttendanceAction } from "./attendance-action"
+import { SessionRowActions } from "./session-row-actions"
 import { toSessionRow, type SessionRow } from "./use-session-rows"
 import { useCurrentAcademicYear, usePlatformSettings } from "@/lib/store/settings"
 
@@ -77,14 +77,19 @@ export function SessionsView({
   today,
   initialTab = "today",
   workspace = "admin",
+  myTeacherId,
 }: {
   /** Admin: every reference; teacher: the teacher's own classes (workspace bundle) */
   lookups: Lookups
   today: ISODate
   initialTab?: SessionTab
   workspace?: StaffWorkspace
+  /** Teacher workspace: the signed-in teacher (supervisors may add extra lessons) */
+  myTeacherId?: string
 }) {
   const isTeacher = workspace === "teacher"
+  // «إضافة حصة إضافية»: only for a supervisor of at least one active class (the API decides)
+  const supervises = Boolean(myTeacherId) && lookups.groupClasses.some((c) => c.supervisorId === myTeacherId && c.status === "ACTIVE")
   const paths = workspacePaths(workspace)
   const indexes = indexLookups(lookups)
   const pageSize = usePlatformSettings().defaultPageSize
@@ -179,8 +184,8 @@ export function SessionsView({
     {
       id: "actions",
       header: <span className="sr-only">{labels.common.actions}</span>,
-      // The group name already opens the session; the row's one action is attendance
-      cell: (r) => <AttendanceAction row={r} today={today} workspace={workspace} />,
+      // The group name already opens the session; started: attendance — not started yet: ⋮ «إلغاء الحصة»
+      cell: (r) => <SessionRowActions row={r} workspace={workspace} myTeacherId={myTeacherId} />,
     },
   ]
 
@@ -203,6 +208,9 @@ export function SessionsView({
                 <WeeklySlotButton lookups={lookups} />
                 <ExtraSessionButton lookups={lookups} />
               </>
+            )}
+            {isTeacher && myTeacherId && supervises && (
+              <ExtraSessionButton lookups={lookups} scope="teacher" supervisorId={myTeacherId} label="إضافة حصة إضافية" />
             )}
           </>
         }
@@ -326,7 +334,7 @@ export function SessionsView({
             </div>
             <div className="flex items-center justify-between gap-2">
               <AttendanceStateLabel {...r.progress} />
-              <AttendanceAction row={r} today={today} workspace={workspace} />
+              <SessionRowActions row={r} workspace={workspace} myTeacherId={myTeacherId} />
             </div>
           </div>
         )}

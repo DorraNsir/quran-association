@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -14,6 +15,7 @@ import {
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -174,5 +176,26 @@ export class SessionsController {
     @Body() dto: SetSessionStatusDto,
   ): Promise<SessionDto> {
     return this.sessions.setStatus(id, dto, actor.userId);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary:
+      'Permanently delete an EXTRA session without history (حذف نهائي — not a cancellation)',
+    description:
+      'Only isExtra; CANCELLED (any date) or SCHEDULED not started yet; no attendance, attendance audit, work program or attendance notification. Earlier notifications are kept (link cleared); the people told about an upcoming lesson are told.',
+  })
+  @ApiNoContentResponse({ description: 'Deleted' })
+  @ApiNotFoundResponse({ description: 'SESSION_NOT_FOUND' })
+  @ApiConflictResponse({
+    description:
+      'SESSION_NOT_EXTRA, SESSION_COMPLETED, SESSION_DATE_PAST, SESSION_HAS_ATTENDANCE, SESSION_HAS_WORK, SESSION_HAS_HISTORY',
+  })
+  remove(
+    @CurrentUser() actor: AuthPrincipal,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    return this.sessions.remove(id, actor.userId);
   }
 }

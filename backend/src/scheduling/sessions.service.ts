@@ -1,13 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 
 import { fromDbDate, toDbDate } from '../common/dates.js';
 import { badRequest, conflict, notFound } from '../common/errors.js';
 import { PageSizeService } from '../common/page-size.service.js';
 import { paginationMeta } from '../common/pagination.js';
-import { platformToday } from '../common/platform-clock.js';
+import {
+  notStartedAt,
+  platformNow,
+  platformToday,
+} from '../common/platform-clock.js';
 import {
   Prisma,
   CompletionSource,
+  NotificationType,
   SessionStatus,
 } from '../generated/prisma/client.js';
 import {
@@ -66,6 +71,7 @@ const select = {
   cancellationReason: true,
   weeklyScheduleId: true,
   isExtra: true,
+  updatedAt: true,
   completedAt: true,
   completionSource: true,
   completedBy: { select: { username: true } },
@@ -149,6 +155,7 @@ const toDto = (
   cancellationReason: s.cancellationReason,
   weeklyScheduleId: s.weeklyScheduleId,
   isExtra: s.isExtra,
+  updatedAt: s.updatedAt,
   completion:
     s.completedAt && s.completionSource
       ? {
@@ -198,6 +205,41 @@ const supervisorInactive = () =>
     'SUPERVISOR_INACTIVE',
     'المعلم المشرف على القسم غير نشط: عيّن مشرفًا بديلًا قبل برمجة حصص جديدة',
   );
+/** A supervisor teacher acting from the teacher workspace (never an admin). */
+export interface SupervisorActor {
+  teacherId: string;
+}
+
+const notSupervisor = () =>
+  new ForbiddenException({
+    code: 'TEACHER_NOT_SUPERVISOR',
+    message: 'هذا الإجراء خاص بالمعلم المشرف على القسم',
+  });
+
+/** Foreign key violation (P2003): the row is still referenced by a RESTRICT relation. */
+const isForeignKeyViolation = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === 'P2003';
+
+const sessionHasHistory = () =>
+  conflict(
+    'SESSION_HAS_HISTORY',
+    'لا يمكن حذف الحصة لوجود بيانات محفوظة مرتبطة بها',
+  );
+
+/** An extra lesson starts in the future (platform timezone), or it is refused. */
+function assertExtraNotStarted(
+  clock: { today: string; now: string },
+  date: string,
+  start: string,
+) {
+  if (!notStartedAt(clock, date, start))
+    throw badRequest(
+      'SESSION_DATE_PAST',
+      'لا يمكن برمجة حصة إضافية في تاريخ سابق أو في وقت مضى: اختر موعدًا لم يحن بعد',
+    );
+}
+
 const MAX_CALENDAR_DAYS = 62;
 const MAX_GENERATION_DAYS = 366;
 
@@ -339,15 +381,22 @@ export class SessionsService {
   async createExtra(
     dto: CreateExtraSessionDto,
     actorUserId?: string,
+    supervisor?: SupervisorActor,
   ): Promise<SessionDto> {
     assertTimeRange(dto.startTime, dto.endTime);
     const id = await this.prisma.$transaction(async (tx) => {
       await this.conflicts.lockScheduling(tx);
-      if (dto.date < (await platformToday(tx)))
-        throw badRequest(
-          'SESSION_DATE_PAST',
-          'لا يمكن برمجة حصة إضافية في تاريخ سابق: اختر تاريخ اليوم أو بعده',
-        );
+      // A supervisor teacher: only for a class they supervise NOW (additional
+      // classes must share that supervisor — checked with the participants)
+      if (supervisor) {
+        const host = await tx.groupClass.findUnique({
+          where: { id: dto.groupClassId },
+          select: { supervisorId: true },
+        });
+        if (host?.supervisorId !== supervisor.teacherId) throw notSupervisor();
+      }
+      const clock = await platformNow(tx);
+      assertExtraNotStarted(clock, dto.date, dto.startTime);
       const created = await this.createInTx(tx, {
         groupClassId: dto.groupClassId,
         roomId: dto.roomId,
@@ -362,7 +411,11 @@ export class SessionsService {
         event: 'ADDED',
         before: null,
         after: await snapshotSession(tx, created),
-        today: await platformToday(tx),
+        today: clock.today,
+        // Added by a supervisor teacher: the administration is told too
+        ...(supervisor
+          ? ({ capacity: 'TEACHER', notifyAdmins: true } as const)
+          : {}),
       });
       return created;
     });
@@ -458,6 +511,16 @@ export class SessionsService {
           'لا يمكن تعديل موعد حصة ملغاة أو منجزة',
         );
       }
+      // Edited from a stale form: another change was saved in between
+      if (
+        dto.expectedUpdatedAt &&
+        new Date(dto.expectedUpdatedAt).getTime() !==
+          session.updatedAt.getTime()
+      )
+        throw conflict(
+          'SESSION_CHANGED',
+          'عُدّلت هذه الحصة للتو من طرف مستخدم آخر: أعد فتحها ثم احفظ تعديلك مجددًا',
+        );
       // Attendance was taken for THIS date and roster: the lesson cannot move
       await this.assertNoAttendance(tx, id);
       const currentExtras = session.extraClasses.map((e) => e.groupClassId);
@@ -472,6 +535,15 @@ export class SessionsService {
         roomId: dto.roomId ?? session.roomId,
       };
       assertTimeRange(slot.start, slot.end);
+      // Work planned here («متابعة العمل») stays valid: every student with a
+      // program must still be expected on the new date in one of its classes
+      if (slot.date !== fromDbDate(session.date) || participantsChanged)
+        await this.assertWorkRosterKept(
+          tx,
+          id,
+          [session.groupClassId, ...extraIds],
+          slot.date,
+        );
       if (participantsChanged) {
         const today = await platformToday(tx);
         if (fromDbDate(session.date) < today || slot.date < today)
@@ -484,6 +556,23 @@ export class SessionsService {
           [id],
           currentExtras.filter((c) => !extraIds.includes(c)),
         );
+      }
+      // An extra lesson is edited only before it starts, and never moved to
+      // a time already past (the same rule as its creation)
+      if (session.isExtra) {
+        const clock = await platformNow(tx);
+        if (
+          !notStartedAt(
+            clock,
+            fromDbDate(session.date),
+            fromDbTime(session.startTime),
+          )
+        )
+          throw conflict(
+            'SESSION_ALREADY_STARTED',
+            'بدأت هذه الحصة أو انتهى موعدها: لا يمكن تعديلها',
+          );
+        assertExtraNotStarted(clock, slot.date, slot.start);
       }
       if (slot.roomId !== session.roomId) {
         const { branchId } = await tx.groupClass.findUniqueOrThrow({
@@ -541,6 +630,135 @@ export class SessionsService {
   }
 
   /**
+   * «حذف نهائي»: PHYSICALLY deletes an extra lesson (never a status change).
+   * Only an extra session (isExtra) that is either CANCELLED (any date) or
+   * SCHEDULED and not started yet (platform timezone), and that has no
+   * protected history: no student / teacher attendance, no attendance audit
+   * (AttendanceChange — a CASCADE relation, so it is checked explicitly, never
+   * left to the database), no work program («متابعة العمل»), no attendance
+   * notification. Its structural rows (team snapshot, additional classes) go
+   * with it; earlier notifications are KEPT (their link is cleared).
+   *
+   * Safety: scheduling lock + the session row locked (attendance saving locks
+   * it too), every condition repeated on the DELETE itself (exactly one row,
+   * or everything is undone), and the RESTRICT foreign keys as the last
+   * guard (a concurrent insert → 409, never a 500, never data loss).
+   * The people told about an upcoming lesson are told it is gone, in the
+   * same transaction.
+   */
+  async remove(id: string, actorUserId?: string): Promise<void> {
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await this.conflicts.lockScheduling(tx);
+        await tx.$queryRaw`SELECT id FROM sessions WHERE id = ${id}::uuid FOR UPDATE`;
+        const session = await tx.session.findUnique({
+          where: { id },
+          select: {
+            isExtra: true,
+            status: true,
+            date: true,
+            startTime: true,
+            _count: {
+              select: {
+                studentAttendance: true,
+                teacherAttendance: true,
+                attendanceChanges: true,
+                workPrograms: true,
+                notifications: {
+                  where: { type: NotificationType.ATTENDANCE_MODIFIED },
+                },
+              },
+            },
+          },
+        });
+        if (!session) throw sessionNotFound();
+        if (!session.isExtra)
+          throw conflict(
+            'SESSION_NOT_EXTRA',
+            'لا يمكن حذف حصة عادية: يمكن إلغاؤها فقط',
+          );
+        if (session.status === SessionStatus.COMPLETED)
+          throw conflict('SESSION_COMPLETED', 'لا يمكن حذف حصة مكتملة');
+        const clock = await platformNow(tx);
+        if (
+          session.status === SessionStatus.SCHEDULED &&
+          !notStartedAt(
+            clock,
+            fromDbDate(session.date),
+            fromDbTime(session.startTime),
+          )
+        )
+          throw conflict(
+            'SESSION_DATE_PAST',
+            'لا يمكن حذف حصة مبرمجة في الماضي أو بدأت: يمكن إلغاؤها فقط',
+          );
+        const n = session._count;
+        if (n.studentAttendance || n.teacherAttendance)
+          throw conflict(
+            'SESSION_HAS_ATTENDANCE',
+            'لا يمكن حذف حصة تم تسجيل الحضور فيها',
+          );
+        if (n.workPrograms)
+          throw conflict(
+            'SESSION_HAS_WORK',
+            'لا يمكن حذف حصة مرتبطة بأعمال الطلبة',
+          );
+        if (n.attendanceChanges || n.notifications) throw sessionHasHistory();
+        // As its people knew it, before the row is gone
+        const snapshot = await snapshotSession(tx, id);
+        const removed = await tx.session.deleteMany({
+          where: {
+            id,
+            isExtra: true,
+            status: { in: [SessionStatus.SCHEDULED, SessionStatus.CANCELLED] },
+            studentAttendance: { none: {} },
+            teacherAttendance: { none: {} },
+            attendanceChanges: { none: {} },
+            workPrograms: { none: {} },
+            notifications: {
+              none: { type: NotificationType.ATTENDANCE_MODIFIED },
+            },
+          },
+        });
+        if (removed.count !== 1) throw sessionHasHistory();
+        await notifySessionChange(tx, {
+          actorUserId,
+          event: 'DELETED',
+          before: null,
+          after: snapshot,
+          today: clock.today,
+        });
+      });
+    } catch (error) {
+      if (isForeignKeyViolation(error)) throw sessionHasHistory();
+      throw error;
+    }
+  }
+
+  /** Students with work planned in the session must stay expected there (classes + date). */
+  private async assertWorkRosterKept(
+    tx: Tx,
+    sessionId: string,
+    classIds: string[],
+    date: string,
+  ) {
+    const [row] = await tx.$queryRaw<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM work_programs w
+      WHERE w."sessionId" = ${sessionId}::uuid
+        AND NOT EXISTS (
+          SELECT 1 FROM student_enrollments e
+          WHERE e."studentId" = w."studentId"
+            AND e."groupClassId" = ANY(${classIds}::uuid[])
+            AND ${expectedOnDate('e', Prisma.sql`${date}::date`)}
+        )`;
+    if (row && row.n > 0)
+      throw conflict(
+        'SESSION_WORK_ROSTER_CHANGED',
+        'خُطّط في هذه الحصة عمل لطلبة لن يكونوا من طلبتها في الموعد الجديد: لا يمكن نقلها إليه',
+      );
+  }
+
+  /**
    * SCHEDULED → CANCELLED (optional reason) | COMPLETED (adminOverride, not in the future);
    * CANCELLED → SCHEDULED (restore: snapshot refreshed if upcoming, conflicts re-checked);
    * COMPLETED → SCHEDULED (reopen: completion data cleared).
@@ -549,6 +767,7 @@ export class SessionsService {
     id: string,
     dto: SetSessionStatusDto,
     actorUserId?: string,
+    supervisor?: SupervisorActor,
   ): Promise<SessionDto> {
     await this.prisma.$transaction(async (tx) => {
       await this.conflicts.lockScheduling(tx);
@@ -559,6 +778,31 @@ export class SessionsService {
       if (!session) throw sessionNotFound();
       const from = session.status;
       const to = dto.status;
+      // A supervisor teacher only CANCELS a lesson they supervise (team
+      // snapshot), still scheduled and not started yet
+      if (supervisor) {
+        const own = session.teachers.some(
+          (t) =>
+            t.teacherId === supervisor.teacherId && t.role === 'SUPERVISOR',
+        );
+        if (!own) throw notSupervisor();
+        if (to !== SessionStatus.CANCELLED || from !== SessionStatus.SCHEDULED)
+          throw conflict(
+            'SESSION_NOT_CANCELLABLE',
+            'لا يمكن إلغاء إلا حصة مبرمجة لم تبدأ بعد',
+          );
+        if (
+          !notStartedAt(
+            await platformNow(tx),
+            fromDbDate(session.date),
+            fromDbTime(session.startTime),
+          )
+        )
+          throw conflict(
+            'SESSION_ALREADY_STARTED',
+            'بدأت هذه الحصة أو انتهى موعدها: لا يمكن إلغاؤها',
+          );
+      }
       if (dto.cancellationReason && to !== SessionStatus.CANCELLED) {
         throw badRequest(
           'CANCELLATION_REASON_UNEXPECTED',
@@ -672,6 +916,10 @@ export class SessionsService {
           after: await snapshotSession(tx, id),
           today: await platformToday(tx),
           reason: dto.cancellationReason,
+          // Cancelled by a supervisor teacher: the administration is told too
+          ...(supervisor
+            ? ({ capacity: 'TEACHER', notifyAdmins: true } as const)
+            : {}),
         });
     });
     return this.get(id);

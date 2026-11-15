@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsIn,
   IsOptional,
@@ -88,6 +89,26 @@ export class UpdateSessionDto {
     'Replaces the additional classes of an UPCOMING lesson without attendance ([] = a normal lesson again); the host class is not editable',
   )
   additionalGroupClassIds?: string[];
+  @ApiPropertyOptional({
+    format: 'date-time',
+    description:
+      'Optimistic check: the updatedAt the form was opened with (409 SESSION_CHANGED if the session changed since)',
+  })
+  @IsOptional()
+  @IsDateString()
+  expectedUpdatedAt?: string;
+}
+
+/** A supervisor teacher cancels one of their upcoming lessons. */
+export class CancelSessionDto {
+  @ApiPropertyOptional({ description: 'Optional reason, shown to its people' })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || undefined : value,
+  )
+  @IsString()
+  @MaxLength(300)
+  cancellationReason?: string;
 }
 
 export class SetSessionStatusDto {
@@ -283,6 +304,11 @@ export class SessionDto {
       'Created as a one-off extra lesson («حصة إضافية»), not from a weekly slot — stored, not inferred from weeklyScheduleId (null too once a slot is deleted)',
   })
   isExtra!: boolean;
+  @ApiProperty({
+    description:
+      'Last change of the session row — send it back as expectedUpdatedAt when editing',
+  })
+  updatedAt!: Date;
   @ApiPropertyOptional({ type: SessionCompletionDto, nullable: true })
   completion!: SessionCompletionDto | null;
   @ApiProperty({

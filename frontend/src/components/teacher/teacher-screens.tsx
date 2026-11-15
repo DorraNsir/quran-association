@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 
+import { ExtraSessionButton } from "@/components/calendar/scheduling-actions"
 import { StudentAttendanceHistory } from "@/components/attendance/student-attendance-history"
 import { StudentMemorization } from "@/components/memorization/student-memorization"
 import { StatusBadge } from "@/components/shared/badges"
@@ -114,7 +115,16 @@ export function TeacherScheduleScreen() {
                   }))}
                 />
               </SectionCard>
-              <SectionCard title="حصص هذا الأسبوع" icon={CalendarCheck2}>
+              <SectionCard
+                title="حصص هذا الأسبوع"
+                icon={CalendarCheck2}
+                action={
+                  // «إضافة حصة إضافية»: a supervisor of an active class (the API decides)
+                  lookups.groupClasses.some((c) => c.supervisorId === teacher.id && c.status === "ACTIVE") && (
+                    <ExtraSessionButton lookups={lookups} scope="teacher" supervisorId={teacher.id} label="إضافة حصة إضافية" />
+                  )
+                }
+              >
                 <TeacherWeekSessions today={today} />
               </SectionCard>
             </div>

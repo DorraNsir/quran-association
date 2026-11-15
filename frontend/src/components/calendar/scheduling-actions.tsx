@@ -1,6 +1,7 @@
 "use client"
 
 import { CalendarPlus, CalendarRange, Info } from "lucide-react"
+import { useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { toast } from "sonner"
 
@@ -14,13 +15,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useFormState } from "@/hooks/use-form-state"
 import { keys, useApiMutation } from "@/lib/api/academic"
 import { api } from "@/lib/api/client"
-import { useCreateExtraSession } from "@/lib/api/sessions"
-import { todayInTunis } from "@/lib/dates"
+import { ApiError } from "@/lib/api/errors"
+import { useCreateExtraSession, useUpdateSession, type SessionDto } from "@/lib/api/sessions"
+import { addDays, todayInTunis } from "@/lib/dates"
 import { describeClass, fullName, indexLookups, roomsOfBranch, type Lookups } from "@/lib/domain"
 import { formatDate, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
 import { isValidTimeRange } from "@/lib/scheduling"
-import type { ISODate, Student, WeeklySlotSave } from "@/types/domain"
+import { notStartedInTunis } from "@/lib/session-actions"
+import type { ID, ISODate, Student, WeeklySlotSave } from "@/types/domain"
 
 import { ScheduleFormSheet } from "./schedule-form-sheet"
 import { SharedClassesField } from "./shared-classes-field"
@@ -130,18 +133,24 @@ export function WeeklySlotButton({
 /** Values pre-filled from the calendar (class / room filters, the shown day). */
 export type ExtraSessionPreset = Partial<Pick<Values, "groupClassId" | "roomId" | "date">>
 
+/** Who adds the lesson: the administration, or a supervisor teacher (their own classes only). */
+export type ExtraSessionScope = { scope?: "admin" } | { scope: "teacher"; supervisorId: ID }
+
 /** «حصة إضافية (مرة واحدة)»: one lesson on one date, not repeated. */
 export function ExtraSessionButton({
   lookups,
   students,
   preset,
   variant = "outline",
+  label = "حصة إضافية",
+  ...who
 }: {
   lookups: Lookups
   students?: Student[]
   preset?: () => ExtraSessionPreset
   variant?: ButtonVariant
-}) {
+  label?: string
+} & ExtraSessionScope) {
   const [state, setState] = useState<{ key: number; open: boolean; preset?: ExtraSessionPreset } | null>(null)
   return (
     <>
@@ -151,7 +160,7 @@ export function ExtraSessionButton({
         onClick={() => setState((s) => ({ key: (s?.key ?? 0) + 1, open: true, preset: preset?.() }))}
       >
         <CalendarPlus />
-        حصة إضافية
+        {label}
       </Button>
       {state && (
         <ExtraSessionSheet
@@ -161,6 +170,7 @@ export function ExtraSessionButton({
           lookups={lookups}
           students={students}
           preset={state.preset}
+          {...who}
         />
       )}
     </>
@@ -177,11 +187,20 @@ interface Values {
   roomId: string
 }
 
+const DEFAULT_START = "09:00"
+
+const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every((id) => b.includes(id))
+
 /**
- * One extra lesson of a class (a make-up, an exam day…): today or later only,
- * in a room of the class's branch, with the class's current team. It is not
+ * One extra lesson of a class (a make-up, an exam day…): not started yet, in
+ * a room of the class's branch, with the class's current team. It is not
  * tied to a weekly slot, so moving or deleting a slot never touches it. The
- * API re-checks everything (past date, room / teacher conflicts).
+ * API re-checks everything (time already past, room / teacher conflicts,
+ * the supervisor for a teacher).
+ *
+ * - admin: any class; with `session`, «تعديل الحصة» of that extra lesson
+ *   (host class locked; a stale form is refused, never overwritten);
+ * - teacher: only the active classes they SUPERVISE (their own endpoint).
  */
 export function ExtraSessionSheet({
   open,
@@ -189,36 +208,67 @@ export function ExtraSessionSheet({
   lookups,
   students,
   preset,
+  session,
+  ...who
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   lookups: Lookups
   students?: Student[]
   preset?: ExtraSessionPreset
-}) {
+  /** Edit this extra lesson (admin only) */
+  session?: SessionDto
+} & ExtraSessionScope) {
   const today = todayInTunis()
-  const indexes = indexLookups(lookups)
-  const create = useCreateExtraSession()
+  const queryClient = useQueryClient()
+  const editing = who.scope !== "teacher" && session ? session : undefined
+  // A teacher adds lessons only to the active classes they supervise
+  const scoped: Lookups =
+    who.scope === "teacher"
+      ? { ...lookups, groupClasses: lookups.groupClasses.filter((c) => c.supervisorId === who.supervisorId && c.status === "ACTIVE") }
+      : lookups
+  const indexes = indexLookups(scoped)
+  const create = useCreateExtraSession(who.scope ?? "admin")
+  const update = useUpdateSession(editing?.id ?? "")
   // The class's usual room is pre-selected: the first ACTIVE room of its branch
   // among the rooms it meets in (its own weekly slots first, then shared ones)
   const usualRoom = (groupClassId: string) => {
     const branchId = indexes.classesById.get(groupClassId)?.branchId
     return indexes.roomsByClass.get(groupClassId)?.find((r) => r.branchId === branchId && r.status === "ACTIVE")?.id ?? ""
   }
-  const initialClass = preset?.groupClassId ?? ""
+  const onlyClass = !editing && scoped.groupClasses.length === 1 ? scoped.groupClasses[0].id : ""
+  const initialClass = editing?.groupClass.id ?? preset?.groupClassId ?? onlyClass
+  const initialExtras = (editing?.additionalClasses ?? []).map((c) => c.id)
+  // A new lesson starts at 09:00 on the shown day, or tomorrow once 09:00 today has passed
+  const presetDate = preset?.date && preset.date >= today ? preset.date : today
+  const initialDate = notStartedInTunis(presetDate, DEFAULT_START) ? presetDate : addDays(today, 1)
   const form = useFormState<Values>(
-    "extra-session",
-    {
-      groupClassId: initialClass,
-      additionalGroupClassIds: [],
-      date: preset?.date && preset.date >= today ? preset.date : today,
-      start: "09:00",
-      end: "10:30",
-      roomId: preset?.roomId ?? usualRoom(initialClass),
-    },
+    editing ? "edit-extra-session" : "extra-session",
+    editing
+      ? {
+          groupClassId: initialClass,
+          additionalGroupClassIds: initialExtras,
+          date: editing.date,
+          start: editing.startTime,
+          end: editing.endTime,
+          roomId: editing.room.id,
+        }
+      : {
+          groupClassId: initialClass,
+          additionalGroupClassIds: [],
+          date: initialDate,
+          start: DEFAULT_START,
+          end: "10:30",
+          roomId: preset?.roomId ?? usualRoom(initialClass),
+        },
     (v) => ({
       groupClassId: v.groupClassId ? undefined : "اختر المجموعة ثم القسم",
-      date: !v.date ? "اختر التاريخ" : v.date < today ? "لا يمكن برمجة حصة إضافية في تاريخ سابق" : undefined,
+      date: !v.date
+        ? "اختر التاريخ"
+        : v.date < today
+          ? "لا يمكن برمجة حصة إضافية في تاريخ سابق"
+          : undefined,
+      start: v.date && v.date >= today && !notStartedInTunis(v.date, v.start) ? "هذا الوقت قد مضى: اختر موعدًا لم يحن بعد" : undefined,
       roomId: v.roomId ? undefined : "اختر قاعة هذه الحصة",
       end: isValidTimeRange(v.start, v.end) ? undefined : "يجب أن تكون ساعة النهاية بعد ساعة البداية",
     })
@@ -226,22 +276,43 @@ export function ExtraSessionSheet({
   const { values, setField } = form
   const groupClass = indexes.classesById.get(values.groupClassId)
   const view = groupClass ? describeClass(groupClass, indexes) : undefined
-  const branchRooms = groupClass ? roomsOfBranch(groupClass.branchId, lookups.rooms).filter((r) => r.status === "ACTIVE") : []
+  const branchRooms = groupClass ? roomsOfBranch(groupClass.branchId, scoped.rooms).filter((r) => r.status === "ACTIVE") : []
+  const hostName = editing ? (indexes.groupsById.get(groupClass?.groupId ?? "")?.name ?? editing.groupClass.group.name) : undefined
 
   const submit = form.handleSubmit(async (v) => {
-    await create.mutateAsync({
-      groupClassId: v.groupClassId,
-      ...(v.additionalGroupClassIds.length ? { additionalGroupClassIds: v.additionalGroupClassIds } : {}),
-      roomId: v.roomId,
-      date: v.date,
-      startTime: v.start,
-      endTime: v.end,
-    })
     const names = [v.groupClassId, ...v.additionalGroupClassIds]
       .map((id) => indexes.groupsById.get(indexes.classesById.get(id)?.groupId ?? "")?.name)
       .filter(Boolean)
       .join(" + ")
-    toast.success(`تمت برمجة حصة إضافية ${names} — ${formatDate(v.date)} ${formatTimeRange(v.start, v.end)}`)
+    if (editing) {
+      try {
+        await update.mutateAsync({
+          date: v.date,
+          startTime: v.start,
+          endTime: v.end,
+          roomId: v.roomId,
+          // Only a change of the shared classes is sent (an unchanged list is left alone)
+          ...(sameIds(v.additionalGroupClassIds, initialExtras) ? {} : { additionalGroupClassIds: v.additionalGroupClassIds }),
+          ...(editing.updatedAt ? { expectedUpdatedAt: editing.updatedAt } : {}),
+        })
+      } catch (error) {
+        // Changed by someone else meanwhile: show its current state (the message explains)
+        if (error instanceof ApiError && error.code === "SESSION_CHANGED")
+          await queryClient.invalidateQueries({ queryKey: keys.sessions })
+        throw error
+      }
+      toast.success(`تم تعديل الحصة الإضافية ${names} — ${formatDate(v.date)} ${formatTimeRange(v.start, v.end)}`)
+    } else {
+      await create.mutateAsync({
+        groupClassId: v.groupClassId,
+        ...(v.additionalGroupClassIds.length ? { additionalGroupClassIds: v.additionalGroupClassIds } : {}),
+        roomId: v.roomId,
+        date: v.date,
+        startTime: v.start,
+        endTime: v.end,
+      })
+      toast.success(`تمت برمجة حصة إضافية ${names} — ${formatDate(v.date)} ${formatTimeRange(v.start, v.end)}`)
+    }
     onOpenChange(false)
   })
 
@@ -249,29 +320,45 @@ export function ExtraSessionSheet({
     <FormSheet
       open={open}
       onOpenChange={onOpenChange}
-      title="حصة إضافية (مرة واحدة)"
-      description="حصة واحدة في تاريخ محدد (تعويض، مراجعة…) لا تتكرر كل أسبوع، مع معلمي القسم."
+      title={editing ? "تعديل الحصة الإضافية" : "حصة إضافية (مرة واحدة)"}
+      description={
+        editing
+          ? "غيّر تاريخ الحصة أو توقيتها أو قاعتها أو الأقسام المشاركة فيها؛ يبقى القسم نفسه، ويُعلَم معلموه وطلبته بالتغيير."
+          : "حصة واحدة في تاريخ محدد (تعويض، مراجعة…) لا تتكرر كل أسبوع، مع معلمي القسم."
+      }
       onSubmit={submit}
-      submitLabel="برمجة الحصة الإضافية"
+      submitLabel={editing ? "حفظ التعديل" : "برمجة الحصة الإضافية"}
       pending={form.pending}
       error={form.serverError}
     >
       <FormSection title="القسم">
-        <FormField label="المجموعة والقسم" required className="sm:col-span-2" {...form.field("groupClassId")}>
-          <ClassPicker
-            id={form.field("groupClassId").id}
-            value={values.groupClassId}
-            onChange={(id) => {
-              setField("groupClassId", id)
-              setField("additionalGroupClassIds", [])
-              setField("roomId", usualRoom(id))
-              form.touch("groupClassId")
-            }}
-            lookups={lookups}
-            students={students}
-            invalid={Boolean(form.field("groupClassId").error)}
-          />
-        </FormField>
+        {editing ? (
+          <FormField label="المجموعة والقسم" className="sm:col-span-2" description="لا يمكن تغيير قسم الحصة" id="edit-extra-session-class">
+            <p id="edit-extra-session-class" className="rounded-md border bg-muted/40 px-3 py-2 text-sm font-medium">
+              {hostName}
+              {view?.branch ? ` — ${view.branch.name}` : ""}
+            </p>
+          </FormField>
+        ) : (
+          <FormField label="المجموعة والقسم" required className="sm:col-span-2" {...form.field("groupClassId")}>
+            <ClassPicker
+              id={form.field("groupClassId").id}
+              value={values.groupClassId}
+              onChange={(id) => {
+                setField("groupClassId", id)
+                setField("additionalGroupClassIds", [])
+                setField("roomId", usualRoom(id))
+                form.touch("groupClassId")
+              }}
+              lookups={scoped}
+              students={students}
+              invalid={Boolean(form.field("groupClassId").error)}
+            />
+          </FormField>
+        )}
+        {who.scope === "teacher" && scoped.groupClasses.length === 0 && (
+          <p className="text-sm text-muted-foreground sm:col-span-2">لا يوجد قسم نشط تشرف عليه.</p>
+        )}
         {view && (
           <div className="space-y-2 rounded-lg border bg-muted/30 p-3 sm:col-span-2">
             {view.supervisor && (
@@ -293,13 +380,13 @@ export function ExtraSessionSheet({
           host={groupClass}
           value={values.additionalGroupClassIds}
           onChange={(ids) => setField("additionalGroupClassIds", ids)}
-          lookups={lookups}
+          lookups={scoped}
           students={students}
         />
       </FormSection>
 
       <FormSection title="الموعد">
-        <FormField label="التاريخ" required className="sm:col-span-2" description="اليوم أو بعده" {...form.field("date")}>
+        <FormField label="التاريخ" required className="sm:col-span-2" description="اليوم أو بعده، في وقت لم يحن بعد" {...form.field("date")}>
           <Input type="date" dir="ltr" min={today} {...form.inputProps("date")} />
         </FormField>
         <FormField label="من" required {...form.field("start")}>

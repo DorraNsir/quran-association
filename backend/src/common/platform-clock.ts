@@ -1,5 +1,5 @@
 import type { Prisma } from '../generated/prisma/client.js';
-import { todayIn } from './dates.js';
+import { todayIn, toLocalDateTime } from './dates.js';
 
 type Db = Pick<Prisma.TransactionClient, 'platformSettings'>;
 
@@ -16,6 +16,19 @@ export async function platformTimezone(db: Db) {
 export async function platformToday(db: Db) {
   return todayIn(await platformTimezone(db));
 }
+
+/** "Now" in the platform timezone: today's date and the wall-clock time (HH:mm). */
+export async function platformNow(db: Db) {
+  const local = toLocalDateTime(new Date(), await platformTimezone(db));
+  return { today: local.slice(0, 10), now: local.slice(11, 16) };
+}
+
+/** Whether a lesson (local date + start time) has not started yet at `clock`. */
+export const notStartedAt = (
+  clock: { today: string; now: string },
+  date: string,
+  start: string,
+) => date > clock.today || (date === clock.today && start > clock.now);
 
 /**
  * Instant bounds of calendar days in the platform timezone, for filtering a

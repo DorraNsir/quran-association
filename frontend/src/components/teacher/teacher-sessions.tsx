@@ -3,6 +3,7 @@
 import { CalendarX2, DoorOpen, Users } from "lucide-react"
 import Link from "next/link"
 
+import { canTakeAttendance } from "@/lib/attendance"
 import { AttendanceStateLabel } from "@/components/attendance/attendance-badges"
 import { AttendanceAction } from "@/components/sessions/attendance-action"
 import { toSessionRow, type SessionRow } from "@/components/sessions/use-session-rows"
@@ -27,8 +28,9 @@ export function useTeacherSessionRows(today: ISODate) {
 }
 
 /** Past or today's sessions whose attendance is missing or incomplete. */
-export function isAttendancePending(row: SessionRow, today: ISODate) {
-  return row.session.date <= today && (row.progress.state === "NOT_RECORDED" || row.progress.state === "PARTIAL")
+/** A lesson that has started (Africa/Tunis) whose attendance is missing or partial. */
+export function isAttendancePending(row: SessionRow, at: Date | number = Date.now()) {
+  return canTakeAttendance(row.session, at) && (row.progress.state === "NOT_RECORDED" || row.progress.state === "PARTIAL")
 }
 
 /** Compact, tappable session rows with the attendance action — for phones first. */

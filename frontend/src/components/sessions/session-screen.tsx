@@ -25,7 +25,7 @@ export function SessionScreen({ sessionId, mode, workspace = "admin" }: { sessio
   if (!session.data || !roster.data) return <QueryState query={[session, roster]}>{null}</QueryState>
   const row = toSessionRow(session.data, today)
   return mode === "details" ? (
-    <SessionDetails row={row} roster={roster.data} today={today} workspace={workspace} />
+    <SessionDetails row={row} roster={roster.data} today={today} workspace={workspace} dto={session.data} />
   ) : (
     <AttendanceTaker key={`${row.session.id}-${roster.dataUpdatedAt}`} row={row} roster={roster.data} workspace={workspace} />
   )

@@ -1,6 +1,19 @@
-import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -16,7 +29,11 @@ import { StudentAccessService } from '../student-space/student-access.service.js
 import { StudentApi } from '../student-space/student-api.decorator.js';
 import { TeacherAccessService } from '../teaching/teacher-access.service.js';
 import { TeacherApi } from '../teaching/teacher-api.decorator.js';
+import { SessionStatus } from '../generated/prisma/enums.js';
+import { SchedulingConflictDto } from './schedule.dto.js';
 import {
+  CancelSessionDto,
+  CreateExtraSessionDto,
   SessionCalendarQueryDto,
   SessionDto,
   SessionListDto,
@@ -92,6 +109,71 @@ export class TeacherSessionsController {
   ): Promise<SessionDto> {
     await this.access.assertSessionAccess(user.userId, id);
     return this.sessions.get(id);
+  }
+
+  /**
+   * «إضافة حصة إضافية» by the SUPERVISOR of the host class (an assistant or
+   * any other teacher: 403). Same rules as the admin endpoint, and the
+   * administration is told.
+   */
+  @Post('extra')
+  @ApiOperation({
+    summary: 'Extra one-off session of a class I supervise (not started yet)',
+  })
+  @ApiCreatedResponse({ type: SessionDto })
+  @ApiBadRequestResponse({
+    description: 'SESSION_TIME_INVALID, SESSION_DATE_PAST',
+  })
+  @ApiForbiddenResponse({
+    description:
+      'TEACHER_PROFILE_REQUIRED, TEACHER_INACTIVE, TEACHER_NOT_SUPERVISOR',
+  })
+  @ApiConflictResponse({
+    type: SchedulingConflictDto,
+    description:
+      'GROUP_CLASS_INACTIVE, SUPERVISOR_INACTIVE, ROOM_*, CLASS_SESSION_CONFLICT, ROOM_SESSION_CONFLICT, TEACHER_SESSION_CONFLICT, SHARED_*',
+  })
+  async createExtra(
+    @CurrentUser() user: AuthPrincipal,
+    @Body() dto: CreateExtraSessionDto,
+  ): Promise<SessionDto> {
+    const teacherId = await this.access.teacherIdOf(user.userId);
+    return this.sessions.createExtra(dto, user.userId, { teacherId });
+  }
+
+  /**
+   * «إلغاء الحصة» by the SUPERVISOR of the lesson (its team snapshot): a
+   * SCHEDULED lesson not started yet and without attendance. Kept as history
+   * (status CANCELLED); restoring / completing stays with the administration.
+   */
+  @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cancel one of my upcoming lessons (supervisor)' })
+  @ApiOkResponse({ type: SessionDto })
+  @ApiNotFoundResponse({ description: 'SESSION_NOT_FOUND' })
+  @ApiForbiddenResponse({
+    description:
+      'TEACHER_PROFILE_REQUIRED, TEACHER_INACTIVE, TEACHER_NOT_SUPERVISOR',
+  })
+  @ApiConflictResponse({
+    description:
+      'SESSION_NOT_CANCELLABLE, SESSION_ALREADY_STARTED, SESSION_HAS_ATTENDANCE',
+  })
+  async cancel(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CancelSessionDto,
+  ): Promise<SessionDto> {
+    const teacherId = await this.access.teacherIdOf(user.userId);
+    return this.sessions.setStatus(
+      id,
+      {
+        status: SessionStatus.CANCELLED,
+        cancellationReason: dto.cancellationReason,
+      },
+      user.userId,
+      { teacherId },
+    );
   }
 }
 

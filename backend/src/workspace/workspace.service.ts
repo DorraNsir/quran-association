@@ -251,9 +251,30 @@ export class WorkspaceService {
         { person: { firstName: 'asc' } },
       ],
     });
+    const bundle = await this.bundle(classes);
+    // «حصة إضافية»: every ACTIVE room of the branches of the classes I
+    // SUPERVISE (where I may add a lesson) — never another branch's rooms
+    const supervisedBranches = [
+      ...new Set(
+        classes
+          .filter((c) => c.supervisorId === teacherId)
+          .map((c) => c.branchId),
+      ),
+    ];
+    const branchRooms = supervisedBranches.length
+      ? await this.prisma.room.findMany({
+          where: {
+            branchId: { in: supervisedBranches },
+            status: ActivationStatus.ACTIVE,
+          },
+          select: { id: true, branchId: true, name: true, status: true },
+          orderBy: { name: 'asc' },
+        })
+      : [];
     return {
       teacher: toTeacher(teacher),
-      ...(await this.bundle(classes)),
+      ...bundle,
+      rooms: unique([...bundle.rooms, ...branchRooms]),
       students: students.map(toStudent),
     };
   }

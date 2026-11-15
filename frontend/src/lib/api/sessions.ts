@@ -1,12 +1,13 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { sessionProgress, type AttendanceSummary } from "@/lib/attendance"
 import type { AttendanceStatus, ISODate, RecordStatus, Session, SessionStatus, TeachingRole } from "@/types/domain"
 
 import { api, keys, useApiMutation } from "./academic"
 import type { Page, Query } from "./client"
+import { workKeys } from "./work-followup"
 
 /* ------------------------------ API DTOs ------------------------------ */
 
@@ -31,6 +32,8 @@ export interface SessionDto {
   weeklyScheduleId: string | null
   /** Created as a one-off extra lesson (stored; a deleted slot's sessions also lose weeklyScheduleId) */
   isExtra: boolean
+  /** Last change of the session row (sent back as expectedUpdatedAt when editing) */
+  updatedAt?: string
   completion?: { completedAt: string; source: "ATTENDANCE" | "ADMIN_OVERRIDE"; completedBy: string | null } | null
   /** The HOST class (whose weekly slot it is) */
   groupClass: { id: string; status: RecordStatus; group: { id: string; name: string; status: RecordStatus } }
@@ -274,26 +277,87 @@ export function useAttendanceHistory(scope: Exclude<SessionScope, "student">, id
   })
 }
 
+/** What a session write may change: lists, calendars, details, rosters and planned work. */
+const SESSION_WRITE_KEYS = [keys.sessions, ["attendance"], workKeys.all] as const
+
 /** Admin: cancel, reopen, or mark completed without attendance (ADMIN_OVERRIDE). */
 export function useSetSessionStatus(id: string) {
   return useApiMutation(
     (body: { status: SessionStatus; cancellationReason?: string; adminOverride?: boolean }) =>
       api<SessionDto>(`/admin/sessions/${id}/status`, { method: "PATCH", body }),
-    [keys.sessions, rosterKey(id)]
+    [keys.sessions, rosterKey(id), workKeys.all]
   )
 }
 
 /**
- * Admin: «حصة إضافية (مرة واحدة)» — one SCHEDULED lesson of a class, today
- * or later, not tied to a weekly slot (the API refuses past dates and
- * room / teacher conflicts).
+ * «إلغاء الحصة»: the admin endpoint (status → CANCELLED), or the supervisor
+ * teacher's own endpoint (POST …/cancel — the API checks the supervisor, a
+ * lesson not started yet and without attendance). Kept as history either way.
  */
-export function useCreateExtraSession() {
+export function useCancelSession(scope: Exclude<SessionScope, "student">, id: string) {
   return useApiMutation(
-    (body: { groupClassId: string; roomId: string; date: ISODate; startTime: string; endTime: string; additionalGroupClassIds?: string[] }) =>
-      api<SessionDto>("/admin/sessions/extra", { method: "POST", body }),
-    [keys.sessions, ["attendance"]]
+    (body: { cancellationReason?: string }) =>
+      scope === "admin"
+        ? api<SessionDto>(`/admin/sessions/${id}/status`, { method: "PATCH", body: { status: "CANCELLED", ...body } })
+        : api<SessionDto>(`/teacher/sessions/${id}/cancel`, { method: "POST", body }),
+    SESSION_WRITE_KEYS
   )
+}
+
+export interface ExtraSessionBody {
+  groupClassId: string
+  roomId: string
+  date: ISODate
+  startTime: string
+  endTime: string
+  additionalGroupClassIds?: string[]
+}
+
+/**
+ * «حصة إضافية (مرة واحدة)» — one SCHEDULED lesson of a class, not started
+ * yet, not tied to a weekly slot: the admin endpoint, or the supervisor
+ * teacher's own (a class they supervise). The API refuses past times and
+ * room / teacher conflicts.
+ */
+export function useCreateExtraSession(scope: Exclude<SessionScope, "student"> = "admin") {
+  return useApiMutation(
+    (body: ExtraSessionBody) => api<SessionDto>(`/${scope}/sessions/extra`, { method: "POST", body }),
+    SESSION_WRITE_KEYS
+  )
+}
+
+/**
+ * Admin «تعديل الحصة»: date, times, room and shared classes of a SCHEDULED
+ * lesson (the host class never changes). `expectedUpdatedAt` refuses a stale
+ * form (409 SESSION_CHANGED) instead of overwriting another change.
+ */
+export function useUpdateSession(id: string) {
+  return useApiMutation(
+    (body: Partial<Omit<ExtraSessionBody, "groupClassId">> & { expectedUpdatedAt?: string }) =>
+      api<SessionDto>(`/admin/sessions/${id}`, { method: "PATCH", body }),
+    SESSION_WRITE_KEYS
+  )
+}
+
+/**
+ * Admin «حذف نهائي» of an extra lesson without history (the API decides and
+ * explains a refusal). The deleted session's own queries are dropped — never
+ * refetched into a "not found" — and everything else is refreshed.
+ */
+export function useDeleteSession(id: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api<void>(`/admin/sessions/${id}`, { method: "DELETE" }),
+    onSuccess: async () => {
+      const isDeleted = (key: readonly unknown[]) => key.includes(id)
+      queryClient.removeQueries({ predicate: (q) => isDeleted(q.queryKey) })
+      await Promise.all(
+        SESSION_WRITE_KEYS.map((queryKey) =>
+          queryClient.invalidateQueries({ queryKey, predicate: (q) => !isDeleted(q.queryKey) })
+        )
+      )
+    },
+  })
 }
 
 /** Page size used when a screen needs "all" rows of a bounded query. */

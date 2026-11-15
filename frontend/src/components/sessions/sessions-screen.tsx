@@ -18,7 +18,9 @@ export function AdminSessionsScreen({ tab }: { tab?: string }) {
 export function TeacherSessionsScreen({ tab }: { tab?: string }) {
   return (
     <WithTeacherWorkspace>
-      {({ lookups }) => <SessionsView workspace="teacher" lookups={lookups} today={todayInTunis()} initialTab={tabOf(tab)} />}
+      {({ lookups, teacher }) => (
+        <SessionsView workspace="teacher" lookups={lookups} myTeacherId={teacher.id} today={todayInTunis()} initialTab={tabOf(tab)} />
+      )}
     </WithTeacherWorkspace>
   )
 }

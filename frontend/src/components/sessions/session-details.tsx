@@ -7,12 +7,15 @@ import {
   ClipboardCheck,
   ClipboardList,
   Info,
+  Pencil,
   Repeat,
   RotateCcw,
+  Trash2,
   Users,
   UsersRound,
 } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { toast } from "sonner"
 
@@ -22,7 +25,6 @@ import { ActionsMenu, type RowAction } from "@/components/shared/actions-menu"
 import { TeacherRoleBadge } from "@/components/shared/badges"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { EmptyState } from "@/components/shared/empty-state"
-import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import { InfoList, SectionCard } from "@/components/shared/info-list"
 import { Breadcrumbs } from "@/components/shared/page-header"
 import { TimeRange } from "@/components/shared/time-range"
@@ -30,52 +32,77 @@ import { PersonCell } from "@/components/shared/user-avatar"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { errorMessage } from "@/lib/api/errors"
-import { useSetSessionStatus, type SessionRosterDto } from "@/lib/api/sessions"
+import { useQueryClient } from "@tanstack/react-query"
+
+import { useAttendanceOpen } from "@/hooks/use-attendance-open"
+import { rosterKey, useSetSessionStatus, type SessionDto, type SessionRosterDto } from "@/lib/api/sessions"
+import { useTeacherWorkspace } from "@/lib/api/workspace"
 import { weekdayOf } from "@/lib/dates"
 import { fullName } from "@/lib/domain"
-import { countLabels, formatDate } from "@/lib/format"
+import { countLabels, formatDate, formatShortDate } from "@/lib/format"
 import { labels } from "@/lib/i18n"
+import { attendanceOpensLabel, canAdminCancel, canDeleteExtra, canEditExtra, canTeacherCancel } from "@/lib/session-actions"
 import { workspacePaths, type StaffWorkspace } from "@/lib/workspace"
 import type { ISODate } from "@/types/domain"
 
+import { CancelSessionDialog } from "./cancel-session-dialog"
+import { DeleteExtraSessionDialog, EditExtraSessionSheet } from "./extra-session-actions"
 import { SessionHeader } from "./session-header"
 import { SessionMemorizationPanel } from "./session-memorization"
 import type { SessionRow } from "./use-session-rows"
 
 /**
- * One dated session. In the teacher workspace the management actions
- * (complete / cancel / reschedule) are hidden: teachers only take attendance.
+ * «إلغاء الحصة» for the SUPERVISOR of the lesson (team snapshot) in the
+ * teacher workspace — an upcoming lesson without attendance. The API checks
+ * all of it again; assistants never get the action.
+ */
+function TeacherSessionMenu({ row, recorded, onCancel }: { row: SessionRow; recorded: number; onCancel: () => void }) {
+  const me = useTeacherWorkspace().data?.teacher.id
+  const isSupervisor = Boolean(me) && row.supervisor?.id === me
+  if (!canTeacherCancel(row.session, recorded, isSupervisor)) return null
+  return (
+    <ActionsMenu
+      label="إجراءات الحصة"
+      triggerVariant="outline"
+      actions={[{ label: "إلغاء الحصة", icon: CalendarX2, destructive: true, onSelect: onCancel }]}
+    />
+  )
+}
+
+/**
+ * One dated session. Admin: complete / cancel / restore, and for an extra
+ * lesson «تعديل الحصة» and «حذف نهائي». Teacher: attendance, and — for the
+ * lesson's supervisor only — «إلغاء الحصة».
  */
 export function SessionDetails({
   row,
   roster,
   today,
   workspace = "admin",
+  dto,
 }: {
   row: SessionRow
   roster: SessionRosterDto
   today: ISODate
   workspace?: StaffWorkspace
+  /** The API session (the edit form needs its room, classes and updatedAt) */
+  dto?: SessionDto
 }) {
   const { session, group, progress } = row
   const paths = workspacePaths(workspace)
+  const router = useRouter()
   const canManage = workspace === "admin"
   const setStatus = useSetSessionStatus(session.id)
-  const [dialog, setDialog] = useState<"cancel" | "complete" | null>(null)
-  const [reason, setReason] = useState("")
-  // The server decides (cancelled, future); the teacher correction window only locks saved values
+  const [dialog, setDialog] = useState<"cancel" | "complete" | "edit" | "delete" | null>(null)
+  // The server decides (cancelled, not started yet); the teacher correction window only locks saved values
   const editable = roster.editable
+  // Before the start: the action shown disabled with its time; at the start the roster is refreshed (no page reload)
+  const queryClient = useQueryClient()
+  const { open: started, now } = useAttendanceOpen(session, () =>
+    queryClient.invalidateQueries({ queryKey: rosterKey(session.id) })
+  )
+  const waitsForStart = !editable && !started && session.status !== "CANCELLED"
   // Expected students, plus anyone recorded who has since left the class
   const students = roster.students.filter((s) => s.expected || s.recorded)
   const team = [
@@ -83,12 +110,20 @@ export function SessionDetails({
     ...row.assistants.map((teacher) => ({ teacher, role: "ASSISTANT" as const })),
   ]
 
+  // Any recorded attendance (students or teachers) means the lesson took place
+  const recorded = roster.recordedCount + roster.teacherRecordedCount
   const secondary: RowAction[] = []
   if (session.status === "SCHEDULED" && session.date <= today) {
     secondary.push({ label: "اعتبار الحصة منجزة", icon: CalendarCheck2, onSelect: () => setDialog("complete") })
   }
+  // An extra lesson not started yet: its date, time, room or shared classes
+  if (dto && canEditExtra(session, recorded)) {
+    secondary.push({ label: "تعديل الحصة", icon: Pencil, onSelect: () => setDialog("edit") })
+  }
   if (session.status !== "CANCELLED") {
-    secondary.push({ label: "إلغاء هذه الحصة", icon: CalendarX2, destructive: true, separated: secondary.length > 0, onSelect: () => setDialog("cancel") })
+    // Only a scheduled lesson without attendance (the API refuses the others)
+    if (canAdminCancel(session, recorded))
+      secondary.push({ label: "إلغاء هذه الحصة", icon: CalendarX2, destructive: true, separated: secondary.length > 0, onSelect: () => setDialog("cancel") })
   } else {
     secondary.push({
       label: "إعادة برمجة الحصة",
@@ -102,6 +137,10 @@ export function SessionDetails({
           }
         ),
     })
+  }
+  // «حذف نهائي»: an extra lesson without attendance, cancelled or not started yet
+  if (canDeleteExtra(session, recorded)) {
+    secondary.push({ label: "حذف نهائي", icon: Trash2, destructive: true, separated: true, onSelect: () => setDialog("delete") })
   }
 
   return (
@@ -122,7 +161,21 @@ export function SessionDetails({
                 </Link>
               </Button>
             )}
-            {canManage && <ActionsMenu label="إجراءات الحصة" triggerVariant="outline" actions={secondary} />}
+            {waitsForStart && (
+              <span className="inline-flex flex-col items-start gap-1">
+                <Button disabled aria-describedby="attendance-opens">
+                  <ClipboardCheck />
+                  تسجيل الحضور
+                </Button>
+                <span id="attendance-opens" className="text-xs text-muted-foreground">
+                  {attendanceOpensLabel(session, formatShortDate, now)}
+                </span>
+              </span>
+            )}
+            {canManage && secondary.length > 0 && <ActionsMenu label="إجراءات الحصة" triggerVariant="outline" actions={secondary} />}
+            {workspace === "teacher" && (
+              <TeacherSessionMenu row={row} recorded={recorded} onCancel={() => setDialog("cancel")} />
+            )}
           </>
         }
       />
@@ -250,52 +303,7 @@ export function SessionDetails({
         </div>
       </div>
 
-      <Dialog open={dialog === "cancel"} onOpenChange={(open) => !open && setDialog(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>إلغاء حصة {formatDate(session.date)}؟</DialogTitle>
-            <DialogDescription>
-              يُلغى هذا التاريخ فقط لقسم {row.branch?.name} من {group?.name}. البرنامج الأسبوعي وبقية الحصص والأقسام الأخرى لا تتغيّر.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-1.5">
-            <Label htmlFor="cancel-reason">سبب الإلغاء (اختياري)</Label>
-            <Textarea
-              id="cancel-reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="مثال: عطلة، غياب المعلم، نشاط بالجمعية…"
-              maxLength={160}
-            />
-          </div>
-          {setStatus.isError && dialog === "cancel" && (
-            <FormErrorAlert message={errorMessage(setStatus.error)} />
-          )}
-          <DialogFooter>
-            <Button variant="outline" disabled={setStatus.isPending} onClick={() => setDialog(null)}>
-              {labels.common.cancel}
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={setStatus.isPending}
-              onClick={() =>
-                setStatus.mutate(
-                  { status: "CANCELLED", cancellationReason: reason.trim() || undefined },
-                  {
-                    onSuccess: () => {
-                      setDialog(null)
-                      toast.success(`أُلغيت حصة ${formatDate(session.date)}`)
-                    },
-                  }
-                )
-              }
-            >
-              <CalendarX2 />
-              إلغاء الحصة
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CancelSessionDialog row={row} workspace={workspace} open={dialog === "cancel"} onOpenChange={(open) => !open && setDialog(null)} />
 
       <ConfirmDialog
         open={dialog === "complete"}
@@ -313,6 +321,18 @@ export function SessionDetails({
           toast.success("سُجّلت الحصة كمنجزة")
         }}
       />
+
+      {canManage && dto && dialog === "edit" && (
+        <EditExtraSessionSheet session={dto} open onOpenChange={(open) => !open && setDialog(null)} />
+      )}
+      {canManage && (
+        <DeleteExtraSessionDialog
+          session={{ id: session.id, date: session.date }}
+          open={dialog === "delete"}
+          onOpenChange={(open) => !open && setDialog(null)}
+          onDeleted={() => router.push(paths.sessions)}
+        />
+      )}
     </>
   )
 }
