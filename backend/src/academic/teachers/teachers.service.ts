@@ -218,15 +218,20 @@ export class TeachersService {
     await this.prisma.$transaction(async (tx) => {
       const teacher = await tx.teacher.findUnique({
         where: { id },
-        select: { personId: true },
+        select: { personId: true, joinedAt: true },
       });
       if (!teacher) throw teacherNotFound();
+      // «تاريخ الالتحاق» decides the past sessions a new assistant joins: it
+      // is set at creation and never changed afterwards (the same value is
+      // accepted, so a form resending it still saves)
+      if (dto.joinedAt && dto.joinedAt !== fromDbDate(teacher.joinedAt))
+        throw conflict(
+          'TEACHER_JOINED_AT_LOCKED',
+          'لا يمكن تعديل تاريخ الالتحاق بعد إنشاء ملف المعلم',
+        );
       await tx.teacher.update({
         where: { id },
-        data: {
-          joinedAt: dto.joinedAt ? toDbDate(dto.joinedAt) : undefined,
-          qualification: dto.qualification,
-        },
+        data: { qualification: dto.qualification },
       });
       if (dto.person) {
         const { firstName, lastName, gender, phone, email, address } =

@@ -576,6 +576,18 @@ export class GroupClassesService {
     // Upcoming SCHEDULED sessions follow (history keeps its snapshot)
     if (rooms.size > 0) await this.conflicts.syncSlotRooms(tx, rooms, today);
     if (teamChanged) await this.conflicts.syncUpcomingSessions(tx, id, today);
+    // A NEW assistant also joins the class's earlier sessions from their
+    // «تاريخ الالتحاق» on (additive; attendance stays «not recorded»)
+    const newAssistants = assistants.filter(
+      (t) => !currentAssistants.includes(t),
+    );
+    if (newAssistants.length)
+      await this.conflicts.addAssistantsToPastSessions(
+        tx,
+        id,
+        newAssistants,
+        today,
+      );
     // A class skipped by an earlier generation (its supervisor was
     // inactive then) gets its missing sessions from its new supervisor
     if (supervisorId !== current.supervisorId)

@@ -478,6 +478,54 @@ export class ScheduleConflictService {
   }
 
   /**
+   * A teacher newly assigned as ASSISTANT of a class also joins the team of
+   * the class's sessions (hosted or shared) dated on or after their
+   * «تاريخ الالتحاق» (Teacher.joinedAt) that `syncUpcomingSessions` does not
+   * reach: past ones (completed included) and those of today or later that
+   * already have attendance. ADDITIVE ONLY — nobody is removed or replaced,
+   * the supervisor never changes, no attendance is written (the teacher starts
+   * «not recorded»), no status or completion changes. Never a cancelled
+   * session, never one where the teacher already is, and never one that
+   * overlaps another non-cancelled session of that teacher (no double
+   * booking, as for new lessons). Runs inside the class save (scheduling lock).
+   */
+  async addAssistantsToPastSessions(
+    tx: Tx,
+    groupClassId: string,
+    teacherIds: string[],
+    today: string,
+  ) {
+    for (const teacherId of teacherIds)
+      await tx.$executeRaw`
+        INSERT INTO session_teachers ("sessionId", "teacherId", role)
+        SELECT s.id, t.id, 'ASSISTANT'::"TeachingRole"
+        FROM sessions s
+        JOIN teachers t ON t.id = ${teacherId}::uuid
+        WHERE ${groupClassId}::uuid = ANY(ARRAY${sessionClassIdsSql('s')})
+          AND s.status IN ('SCHEDULED', 'COMPLETED')
+          AND s.date >= t."joinedAt"
+          AND (
+            s.date < ${today}::date
+            OR EXISTS (SELECT 1 FROM student_attendance a WHERE a."sessionId" = s.id)
+            OR EXISTS (SELECT 1 FROM teacher_attendance a WHERE a."sessionId" = s.id)
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM session_teachers st
+            WHERE st."sessionId" = s.id AND st."teacherId" = t.id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM sessions o
+            JOIN session_teachers ot ON ot."sessionId" = o.id AND ot."teacherId" = t.id
+            WHERE o.id <> s.id
+              AND o.status <> 'CANCELLED'
+              AND o.date = s.date
+              AND o."startTime" < s."endTime"
+              AND o."endTime" > s."startTime"
+          )
+        ON CONFLICT DO NOTHING`;
+  }
+
+  /**
    * After a class is re-staffed: its UPCOMING SCHEDULED sessions (today
    * onward, no attendance yet) — hosted or shared — take the new active team
    * of THEIR participants. Past, completed and cancelled sessions keep their

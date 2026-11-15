@@ -86,7 +86,13 @@ export class UpdateTeacherDto {
   @ValidateNested()
   @Type(() => PersonPatchDto)
   person?: PersonPatchDto;
-  @IsDateOnly({ optional: true }) joinedAt?: string;
+  @ApiPropertyOptional({
+    format: 'date',
+    description:
+      'Read-only after creation: only the current value is accepted (409 TEACHER_JOINED_AT_LOCKED otherwise)',
+  })
+  @IsDateOnly({ optional: true })
+  joinedAt?: string;
   @OptionalText(200) qualification?: string | null;
 }
 

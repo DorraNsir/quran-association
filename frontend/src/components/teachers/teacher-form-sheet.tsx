@@ -161,8 +161,14 @@ export function TeacherFormSheet({
       </FormSection>
 
       <FormSection title="الالتحاق بالجمعية">
-        <FormField label="تاريخ الالتحاق" required {...form.field("joinedAt")}>
-          <Input type="date" {...form.inputProps("joinedAt")} />
+        {/* Set at creation only: it decides the past sessions the teacher joins as an assistant */}
+        <FormField
+          label="تاريخ الالتحاق"
+          required={!teacher}
+          description={teacher ? "لا يُعدَّل بعد إنشاء ملف المعلم" : "يُضاف المعلم عند تكليفه مساعدًا إلى حصص القسم ابتداءً من هذا التاريخ"}
+          {...form.field("joinedAt")}
+        >
+          <Input type="date" readOnly={Boolean(teacher)} aria-readonly={Boolean(teacher) || undefined} {...form.inputProps("joinedAt")} />
         </FormField>
         <FormField label="الحالة" required {...form.field("status")}>
           <Select value={values.status} onValueChange={(v) => setField("status", v as TeacherStatus)}>

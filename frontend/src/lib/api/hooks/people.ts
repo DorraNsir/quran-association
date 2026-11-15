@@ -46,7 +46,8 @@ export function useSaveTeacher() {
   return useApiMutation(async ({ id, input }: { id?: string; input: TeacherInput }) => {
     const { status, photo, ...body } = input
     const saved = id
-      ? await api<{ id: string; status: string }>(`/admin/teachers/${id}`, { method: "PATCH", body })
+      ? // «تاريخ الالتحاق» is set at creation only (the API refuses a change): not sent when editing
+        await api<{ id: string; status: string }>(`/admin/teachers/${id}`, { method: "PATCH", body: { ...body, joinedAt: undefined } })
       : await api<{ id: string; status: string }>("/admin/teachers", { method: "POST", body: { ...body, status } })
     if (saved.status !== status) await api(`/admin/teachers/${saved.id}/status`, { method: "PATCH", body: { status } })
     await applyPhoto("teachers", saved.id, photo)

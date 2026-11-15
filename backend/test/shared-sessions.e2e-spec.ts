@@ -763,8 +763,19 @@ describe('Shared sessions — scheduling (e2e)', () => {
         [id.B1]: 'ASSISTANT',
         [id.A1]: 'ASSISTANT',
       });
-      // The attended lesson keeps its team
-      expect(teamOf(await sessionOf(id.s1Tue2))).not.toHaveProperty(id.N);
+      // The attended lesson keeps its team and its attendance; a NEW
+      // assistant joins it too (on/after their «تاريخ الالتحاق», 2024-09-01)
+      const attended = teamOf(await sessionOf(id.s1Tue2));
+      expect(attended).toMatchObject({
+        [id.N]: 'ASSISTANT',
+        [id.B1]: 'ASSISTANT',
+        [id.A1]: 'ASSISTANT',
+      });
+      expect(
+        await prisma.teacherAttendance.count({
+          where: { sessionId: id.s1Tue2, teacherId: id.D, status: 'PRESENT' },
+        }),
+      ).toBe(1);
     });
 
     it('a class without shared participation is unaffected (normal rules)', async () => {

@@ -362,7 +362,12 @@ describe('Attendance — teachers, audit, notifications, statistics (e2e)', () =
     });
 
     it('a past session keeps the team that taught it; a later assistant gets no access to it', async () => {
-      // A2 leaves the class, A3 joins (today): d1 (yesterday) keeps A2, never shows A3
+      // A2 leaves the class, A3 joins (today): d1 (yesterday) keeps A2, never
+      // shows A3 — A3's «تاريخ الالتحاق» is today, after d1
+      await prisma.teacher.update({
+        where: { id: id.a3 },
+        data: { joinedAt: new Date(`${TODAY}T00:00:00.000Z`) },
+      });
       await admin
         .patch(`group-classes/${id.C}`, {
           supervisorId: id.sup,

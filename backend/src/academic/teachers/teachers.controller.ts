@@ -74,6 +74,9 @@ export class TeachersController {
     summary: 'Edit teacher fields and the canonical Person (one transaction)',
   })
   @ApiOkResponse({ type: TeacherDetailDto })
+  @ApiConflictResponse({
+    description: 'TEACHER_JOINED_AT_LOCKED (joinedAt is set at creation only)',
+  })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateTeacherDto,

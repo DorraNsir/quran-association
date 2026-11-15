@@ -1103,6 +1103,12 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
         },
       });
       id.pastProgram = past.id;
+      // The newcomer joined the association today («تاريخ الالتحاق»), after
+      // that past session: it never joins its team
+      await prisma.teacher.update({
+        where: { id: id.newcomer },
+        data: { joinedAt: new Date(`${TODAY}T00:00:00.000Z`) },
+      });
       await admin
         .patch(`group-classes/${id.C}`, {
           supervisorId: id.sup,
