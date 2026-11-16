@@ -32,6 +32,7 @@
     "react-native-worklets": "0.13.0"
   },
   "devDependencies": {
+    "@testing-library/react-native": "^14.1.0",
     "@types/jest": "30.0.0",
     "@types/react": "~19.3.0",
     "eslint": "^9.0.0",
@@ -55,6 +56,9 @@
     "testMatch": [
       "<rootDir>/src/**/*.test.ts?(x)"
     ],
-    "maxWorkers": 2
+    "maxWorkers": 2,
+    "moduleNameMapper": {
+      "^@/assets/(.*)$": "<rootDir>/assets/$1"
+    }
   }
 }

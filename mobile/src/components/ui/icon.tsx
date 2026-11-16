@@ -1,3 +1,4 @@
+import type { ColorValue } from 'react-native';
 import { SymbolView, type AndroidSymbol, type SFSymbol } from 'expo-symbols';
 
 /**
@@ -24,6 +25,27 @@ const ICONS = {
   teacher: { ios: 'person.text.rectangle', android: 'badge' },
   student: { ios: 'graduationcap', android: 'school' },
   key: { ios: 'key', android: 'key' },
+  calendar: { ios: 'calendar', android: 'calendar_month' },
+  classes: { ios: 'book', android: 'menu_book' },
+  students: { ios: 'person.2', android: 'groups' },
+  clock: { ios: 'clock', android: 'schedule' },
+  completed: { ios: 'calendar.badge.checkmark', android: 'event_available' },
+  attendance: { ios: 'checkmark.seal', android: 'fact_check' },
+  workFollowup: { ios: 'checklist', android: 'checklist' },
+  notes: { ios: 'note.text', android: 'edit_note' },
+  resources: { ios: 'folder', android: 'folder' },
+  announcements: { ios: 'megaphone', android: 'campaign' },
+  location: { ios: 'mappin.and.ellipse', android: 'location_on' },
+  forward: { ios: 'chevron.left', android: 'chevron_left' },
+  room: { ios: 'door.left.hand.open', android: 'meeting_room' },
+  phone: { ios: 'phone', android: 'call' },
+  age: { ios: 'birthday.cake', android: 'cake' },
+  registered: { ios: 'person.badge.plus', android: 'person_add' },
+  info: { ios: 'info.circle', android: 'info' },
+  home: { ios: 'house', android: 'home' },
+  partial: { ios: 'circle.lefthalf.filled', android: 'pending' },
+  notRecorded: { ios: 'circle.dashed', android: 'radio_button_unchecked' },
+  cancelledSession: { ios: 'calendar.badge.exclamationmark', android: 'event_busy' },
 } as const satisfies Record<string, { ios: SFSymbol; android: AndroidSymbol }>;
 
 export type IconName = keyof typeof ICONS;
@@ -35,7 +57,7 @@ export function Icon({
 }: {
   name: IconName;
   size?: number;
-  color: string;
+  color: ColorValue;
 }) {
   const symbol = ICONS[name];
   return (

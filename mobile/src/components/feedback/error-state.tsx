@@ -19,6 +19,8 @@ export function ErrorState({
 }) {
   const api = error instanceof ApiError ? error : null;
   const forbidden = api?.isForbidden ?? false;
+  // Retrying cannot make a refused or missing resource appear
+  const final = forbidden || (api?.isNotFound ?? false);
   const offline = api?.isNetwork ?? false;
 
   return (
@@ -34,7 +36,7 @@ export function ErrorState({
       }
       description={errorMessage(error)}
       action={
-        onRetry && !forbidden ? (
+        onRetry && !final ? (
           <Button
             variant="outline"
             icon="retry"

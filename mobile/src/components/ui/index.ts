@@ -1,8 +1,16 @@
 export { AlertBox } from './alert-box';
 export { AppText, type AppTextProps } from './app-text';
+export { InitialsAvatar } from './avatar';
 export { Button, type ButtonProps } from './button';
 export { Card } from './card';
+export { ChipRow, FilterChip } from './filter-chip';
+export { HeroHeader } from './hero-header';
 export { Icon, type IconName } from './icon';
+export { LinkButton } from './link-button';
 export { LogoMark } from './logo';
+export { Pill } from './pill';
+export { PressableRow } from './pressable-row';
 export { Screen, type ScreenProps } from './screen';
+export { SectionCard } from './section-card';
 export { TextField, type TextFieldProps } from './text-field';
+export { TimeRange } from './time-range';

@@ -16,7 +16,8 @@ import { canUseWorkspace } from '@/features/auth/workspaces';
 import { ar } from '@/i18n/ar';
 import { ensureRTL } from '@/i18n/rtl';
 import { AppProviders } from '@/providers/app-providers';
-import { fontFamilies, useAppTheme, type AppTheme } from '@/theme';
+import { useAppTheme, type AppTheme } from '@/theme';
+import { useStackScreenOptions } from '@/theme/navigation';
 
 ensureRTL();
 void SplashScreen.preventAutoHideAsync();
@@ -44,7 +45,7 @@ function navigationTheme({ dark, colors }: AppTheme): Theme {
  * authorizes every request regardless — this is navigation, not security.
  */
 function RootNavigator() {
-  const theme = useAppTheme();
+  const screenOptions = useStackScreenOptions();
   const { status, user } = useSession();
 
   if (status === 'restoring') return <RestoringGate />;
@@ -55,15 +56,7 @@ function RootNavigator() {
   const ready = signedIn && !user.mustChangePassword;
 
   return (
-    <Stack
-      screenOptions={{
-        headerTitleAlign: 'center',
-        headerShadowVisible: false,
-        headerStyle: { backgroundColor: theme.colors.card },
-        headerTintColor: theme.colors.foreground,
-        headerTitleStyle: { fontFamily: fontFamilies.semibold },
-        contentStyle: { backgroundColor: theme.colors.background },
-      }}>
+    <Stack screenOptions={screenOptions}>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="login" options={{ headerShown: false }} />
       </Stack.Protected>
@@ -79,7 +72,8 @@ function RootNavigator() {
           <Stack.Screen name="admin" options={{ title: ar.workspace.admin, headerBackVisible: false }} />
         </Stack.Protected>
         <Stack.Protected guard={ready && canUseWorkspace(user, 'teacher')}>
-          <Stack.Screen name="teacher" options={{ title: ar.workspace.teacher, headerBackVisible: false }} />
+          {/* Nested stack (app/teacher/_layout.tsx) draws its own headers */}
+          <Stack.Screen name="teacher" options={{ headerShown: false }} />
         </Stack.Protected>
         <Stack.Protected guard={ready && canUseWorkspace(user, 'student')}>
           <Stack.Screen name="student" options={{ title: ar.workspace.student, headerBackVisible: false }} />

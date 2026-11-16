@@ -13,6 +13,10 @@ export interface ScreenProps {
   onRefresh?: () => void;
   /** Safe-area edges to pad; screens under a Stack header skip "top" */
   edges?: Edge[];
+  /** Full-bleed block above the padded content (e.g. HeroHeader); scrolls with it */
+  hero?: ReactNode;
+  /** Fixed block under the scrolling content (e.g. a save bar) — always visible */
+  footer?: ReactNode;
 }
 
 export function Screen({
@@ -21,13 +25,15 @@ export function Screen({
   refreshing = false,
   onRefresh,
   edges = ['bottom'],
+  hero,
+  footer,
 }: ScreenProps) {
   const { colors } = useAppTheme();
   return (
     <SafeAreaView edges={edges} style={[styles.root, { backgroundColor: colors.background }]}>
       {scroll ? (
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={hero ? styles.fillGrow : styles.content}
           refreshControl={
             onRefresh ? (
               <RefreshControl
@@ -35,14 +41,23 @@ export function Screen({
                 onRefresh={onRefresh}
                 tintColor={colors.primary}
                 colors={[colors.primary]}
+                progressViewOffset={hero ? 48 : 0}
               />
             ) : undefined
           }>
-          {children}
+          {hero ? (
+            <>
+              {hero}
+              <View style={styles.content}>{children}</View>
+            </>
+          ) : (
+            children
+          )}
         </ScrollView>
       ) : (
         <View style={[styles.content, styles.fill]}>{children}</View>
       )}
+      {footer}
     </SafeAreaView>
   );
 }
@@ -50,5 +65,6 @@ export function Screen({
 const styles = StyleSheet.create({
   root: { flex: 1 },
   fill: { flex: 1 },
+  fillGrow: { flexGrow: 1 },
   content: { padding: spacing.lg, gap: spacing.lg, flexGrow: 1 },
 });

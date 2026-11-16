@@ -27,6 +27,12 @@ export interface ColorTokens {
   border: string;
   input: string;
   ring: string;
+  /** Branded workspace header (deep logo green) and its text */
+  heroBackground: string;
+  heroForeground: string;
+  heroMuted: string;
+  /** Gold accent of the web login page (hadith, header edge) */
+  gold: string;
 }
 
 export const lightColors: ColorTokens = {
@@ -52,6 +58,10 @@ export const lightColors: ColorTokens = {
   border: '#e3e5e7',
   input: '#d9dbde',
   ring: '#49935d',
+  heroBackground: '#065f2f',
+  heroForeground: '#ffffff',
+  heroMuted: 'rgba(255,255,255,0.78)',
+  gold: '#e8cf98',
 };
 
 export const darkColors: ColorTokens = {
@@ -78,4 +88,8 @@ export const darkColors: ColorTokens = {
   border: 'rgba(255,255,255,0.10)',
   input: 'rgba(255,255,255,0.15)',
   ring: '#49935d',
+  heroBackground: '#12321f',
+  heroForeground: '#f5f5f5',
+  heroMuted: 'rgba(245,245,245,0.72)',
+  gold: '#c9ad6f',
 };

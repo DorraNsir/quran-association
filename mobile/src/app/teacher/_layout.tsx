@@ -1,0 +1,22 @@
+import { Stack } from 'expo-router';
+
+import { ar } from '@/i18n/ar';
+import { useStackScreenOptions } from '@/theme/navigation';
+
+/**
+ * «فضاء المعلم»: the bottom tabs (home, classes, sessions) and, above them,
+ * the detail screens. Reachable only through the root Stack.Protected guard
+ * (TEACHER role + teacher profile); the backend still authorizes every request.
+ */
+export default function TeacherLayout() {
+  const screenOptions = useStackScreenOptions();
+  return (
+    <Stack screenOptions={screenOptions}>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false, title: ar.workspace.teacher }} />
+      <Stack.Screen name="classes/[id]" options={{ title: ar.classes.details }} />
+      <Stack.Screen name="students/[id]" options={{ title: ar.student.title }} />
+      <Stack.Screen name="sessions/[id]/index" options={{ title: ar.sessions.detailTitle }} />
+      <Stack.Screen name="sessions/[id]/attendance" options={{ title: ar.attendance.title }} />
+    </Stack>
+  );
+}

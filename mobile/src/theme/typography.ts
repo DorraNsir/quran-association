@@ -21,11 +21,14 @@ export const fontFor = (weight: FontWeightName): TextStyle => ({
 /** Type scale (px), close to the web's Tailwind text-* sizes. */
 export const textVariants = {
   title: { fontSize: 24, lineHeight: 36, ...fontFor('bold') },
-  heading: { fontSize: 18, lineHeight: 28, ...fontFor('semibold') },
+  heading: { fontSize: 17, lineHeight: 26, ...fontFor('semibold') },
   body: { fontSize: 15, lineHeight: 24, ...fontFor('regular') },
   bodyStrong: { fontSize: 15, lineHeight: 24, ...fontFor('semibold') },
   label: { fontSize: 14, lineHeight: 20, ...fontFor('medium') },
   caption: { fontSize: 13, lineHeight: 20, ...fontFor('regular') },
+  /** Big figures (stats, rates) */
+  figure: { fontSize: 28, lineHeight: 36, ...fontFor('bold') },
+  small: { fontSize: 12, lineHeight: 18, ...fontFor('medium') },
 } satisfies Record<string, TextStyle>;
 
 export type TextVariant = keyof typeof textVariants;
