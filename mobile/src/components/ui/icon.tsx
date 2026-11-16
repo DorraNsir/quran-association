@@ -43,6 +43,8 @@ const ICONS = {
   registered: { ios: 'person.badge.plus', android: 'person_add' },
   info: { ios: 'info.circle', android: 'info' },
   home: { ios: 'house', android: 'home' },
+  filter: { ios: 'slider.horizontal.3', android: 'tune' },
+  close: { ios: 'xmark', android: 'close' },
   partial: { ios: 'circle.lefthalf.filled', android: 'pending' },
   notRecorded: { ios: 'circle.dashed', android: 'radio_button_unchecked' },
   cancelledSession: { ios: 'calendar.badge.exclamationmark', android: 'event_busy' },

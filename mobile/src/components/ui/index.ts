@@ -1,6 +1,7 @@
 export { AlertBox } from './alert-box';
 export { AppText, type AppTextProps } from './app-text';
-export { InitialsAvatar } from './avatar';
+export { avatarLetter, InitialsAvatar } from './avatar';
+export { BottomSheet, OptionRow } from './bottom-sheet';
 export { Button, type ButtonProps } from './button';
 export { Card } from './card';
 export { ChipRow, FilterChip } from './filter-chip';
@@ -8,7 +9,7 @@ export { HeroHeader } from './hero-header';
 export { Icon, type IconName } from './icon';
 export { LinkButton } from './link-button';
 export { LogoMark } from './logo';
-export { Pill } from './pill';
+export { Pill, pillColors, type PillTone } from './pill';
 export { PressableRow } from './pressable-row';
 export { Screen, type ScreenProps } from './screen';
 export { SectionCard } from './section-card';

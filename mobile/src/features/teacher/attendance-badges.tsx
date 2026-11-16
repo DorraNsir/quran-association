@@ -21,7 +21,7 @@ const stateColor = (colors: ColorTokens, state: AttendanceState) =>
     PARTIAL: colors.warning,
     NOT_RECORDED: colors.destructive,
     UPCOMING: colors.mutedForeground,
-    CANCELLED: colors.mutedForeground,
+    CANCELLED: colors.destructiveSoftForeground,
   })[state];
 
 /** Web AttendanceStateLabel: icon + label (+ "n من m مسجَّل"), colour never the only signal. */

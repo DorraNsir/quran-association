@@ -4,6 +4,7 @@ import type { ColorValue } from 'react-native';
 import { Icon, type IconName } from '@/components/ui';
 import { ar } from '@/i18n/ar';
 import { fontFamilies, useAppTheme } from '@/theme';
+import { useHeaderOptions } from '@/theme/navigation';
 
 function icon(name: IconName) {
   function TabIcon({ color }: { color: ColorValue }) {
@@ -20,14 +21,11 @@ function icon(name: IconName) {
  */
 export default function TeacherTabsLayout() {
   const { colors } = useAppTheme();
+  const headerOptions = useHeaderOptions();
   return (
     <Tabs
       screenOptions={{
-        headerTitleAlign: 'center',
-        headerShadowVisible: false,
-        headerStyle: { backgroundColor: colors.card },
-        headerTintColor: colors.foreground,
-        headerTitleStyle: { fontFamily: fontFamilies.semibold },
+        ...headerOptions,
         sceneStyle: { backgroundColor: colors.background },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,

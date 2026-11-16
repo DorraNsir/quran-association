@@ -10,7 +10,8 @@ export type Weekday = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
 export type RecordStatus = 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
 export type ActivationStatus = 'ACTIVE' | 'INACTIVE';
 export type SessionStatus = 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
-export type Semester = 'SEMESTER_1' | 'SEMESTER_2';
+/** The API's semester values (Prisma enum Semester) — sent as-is in queries. */
+export type Semester = 'FIRST' | 'SECOND';
 
 export interface WsBranch {
   id: string;
@@ -140,16 +141,47 @@ export interface AttendanceSummary {
   to: string | null;
 }
 
+/** ClassMemorizationStudentDto: a student enrolled in the class during the semester. */
+export interface ClassMemorizationStudent {
+  studentId: string;
+  firstName: string;
+  lastName: string;
+  photoUrl: string | null;
+  studentStatus: RecordStatus;
+  /** Still in this class today */
+  currentMember: boolean;
+  /** null = not recorded yet for this semester */
+  lastMemorizedSurahNumber: number | null;
+  surahName: string | null;
+  updatedAt: string | null;
+}
+
+/** ClassMemorizationDto — GET /teacher/group-classes/:id/memorization */
 export interface ClassMemorization {
   groupClass: { id: string; group: { id: string; name: string } };
   academicYear: { id: string; label: string };
   semester: Semester;
-  students: {
-    studentId: string;
-    studentStatus: RecordStatus;
-    currentMember: boolean;
-    lastMemorizedSurahNumber: number | null;
-  }[];
+  /** Semester dates (inclusive) */
+  period: { from: string; to: string };
+  students: ClassMemorizationStudent[];
+}
+
+/**
+ * MemorizationRecordDto — GET /teacher/students/:id/memorization (one
+ * semester; the API answers null when nothing is recorded). ONE value per
+ * student × academic year × semester: the last memorized surah (mushaf
+ * number 1–114, name from the server). No dates per lesson, no verses, no
+ * types, no evaluation exist in this model.
+ */
+export interface MemorizationRecord {
+  studentId: string;
+  academicYear: { id: string; label: string };
+  semester: Semester;
+  lastMemorizedSurahNumber: number;
+  surahName: string;
+  updatedAt: string;
+  /** Username of the last updater */
+  updatedBy: string | null;
 }
 
 /* -------------------------------- attendance -------------------------------- */

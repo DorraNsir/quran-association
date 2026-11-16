@@ -1,7 +1,7 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { setStatusBarStyle } from 'expo-status-bar';
 import { useCallback, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { EmptyState, QueryState } from '@/components/feedback';
 import {
@@ -64,7 +64,6 @@ export function TeacherDashboard() {
   };
   const memoQueries = d.memorization;
   const memoRows = memoQueries.flatMap((q) => (q.data ? [q.data] : []));
-  const initials = `${user.person.firstName.charAt(0)}${user.person.lastName.charAt(0)}`;
 
   return (
     <Screen
@@ -74,7 +73,7 @@ export function TeacherDashboard() {
       hero={<HeroHeader title={ar.workspace.teacher} />}>
       {/* Welcome: name first, the platform date on its own line */}
       <View style={styles.welcome}>
-        <InitialsAvatar initials={initials} size={52} />
+        <InitialsAvatar name={`${user.person.firstName} ${user.person.lastName}`} size={52} />
         <View style={styles.flex}>
           <AppText variant="title" numberOfLines={1}>
             {t.welcome} {user.person.firstName}
@@ -98,23 +97,42 @@ export function TeacherDashboard() {
       </QueryState>
 
       <SectionCard
-        title={t.upcomingTitle}
+        title={t.todayTitle}
         icon="calendar"
         action={<LinkButton label={ar.sessions.seeAll} onPress={() => router.push('/teacher/sessions')} />}>
-        <QueryState
-          query={d.upcoming}
-          empty={d.upcomingList.length === 0}
-          emptyIcon="calendar"
-          emptyTitle={t.upcomingEmpty}>
-          {d.upcomingList.map((s, i) => (
-            <SessionCard
-              key={s.id}
-              session={s}
-              today={d.clock.today}
-              bordered={i > 0}
-              onPress={() => router.push({ pathname: '/teacher/sessions/[id]', params: { id: s.id } })}
-            />
-          ))}
+        <QueryState query={d.today}>
+          {d.todayList.length > 0 ? (
+            d.todayList.map((s, i) => (
+              <SessionCard
+                key={s.id}
+                session={s}
+                today={d.clock.today}
+                showDate={false}
+                showProgress
+                bordered={i > 0}
+                onPress={() => router.push({ pathname: '/teacher/sessions/[id]', params: { id: s.id } })}
+              />
+            ))
+          ) : (
+            <>
+              <EmptyState icon="calendar" title={t.todayEmpty} />
+              {d.nextSession ? (
+                <View style={styles.column}>
+                  <AppText variant="label" tone="muted">
+                    {t.nextSession}
+                  </AppText>
+                  <SessionCard
+                    session={d.nextSession}
+                    today={d.clock.today}
+                    bordered={false}
+                    onPress={() =>
+                      router.push({ pathname: '/teacher/sessions/[id]', params: { id: d.nextSession!.id } })
+                    }
+                  />
+                </View>
+              ) : null}
+            </>
+          )}
         </QueryState>
       </SectionCard>
 
@@ -157,7 +175,12 @@ export function TeacherDashboard() {
       <SectionCard
         title={t.memorizationTitle}
         icon="classes"
-        aside={d.year && d.semester ? `${ltr(d.year.label)} · ${ar.labels.semester[d.semester]}` : undefined}>
+        //aside={d.year && d.semester ? `${ltr(d.year.label)} · ${ar.labels.semester[d.semester]}` : undefined}
+        action={
+          d.year && d.classes.length > 0 ? (
+            <LinkButton label={ar.memorization.open} onPress={() => router.push('/teacher/memorization')} />
+          ) : undefined
+        }>
         {!d.year ? (
           <EmptyState icon="classes" title={t.memorizationNoYear} />
         ) : (
@@ -167,13 +190,17 @@ export function TeacherDashboard() {
             emptyIcon="classes"
             emptyTitle={t.classesEmpty}>
             {memoRows.map((m) => (
-              <MemorizationRow key={m.groupClassId} item={m} />
+              <MemorizationRow
+                key={m.groupClassId}
+                item={m}
+                onPress={() => router.push({ pathname: '/teacher/memorization', params: { classId: m.groupClassId } })}
+              />
             ))}
           </QueryState>
         )}
       </SectionCard>
 
-      <ToolsCard />
+      <ToolsCard onOpen={(path) => router.push(path)} />
 
       <WorkspaceSwitcher current="teacher" />
       <LogoutButton />
@@ -262,14 +289,15 @@ function ProgressBar({ ratio }: { ratio: number }) {
   );
 }
 
-function MemorizationRow({ item: m }: { item: MemorizationProgress }) {
+function MemorizationRow({ item: m, onPress }: { item: MemorizationProgress; onPress: () => void }) {
   const { colors } = useAppTheme();
   const left = m.total - m.recorded;
   return (
-    <View
-      style={[styles.memo, { borderColor: colors.border }]}
-      accessible
-      accessibilityLabel={`${m.groupName}: ${formatCountOf(m.recorded, m.total)}`}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${ar.memorization.open}: ${m.groupName}، ${formatCountOf(m.recorded, m.total)}`}
+      style={({ pressed }) => [styles.memo, { borderColor: colors.border }, pressed && { backgroundColor: colors.accent }]}>
       <View style={styles.titleRow}>
         <AppText variant="bodyStrong" numberOfLines={1} style={styles.flex}>
           {m.groupName}
@@ -288,27 +316,48 @@ function MemorizationRow({ item: m }: { item: MemorizationProgress }) {
           {formatCountOf(m.recorded, m.total)}
         </AppText>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
-const TOOLS: { icon: IconName; label: string }[] = [
-  { icon: 'attendance', label: t.tools.sessions },
-  { icon: 'classes', label: t.tools.memorization },
+/** Modules that do not exist yet: listed so the roadmap is visible, clearly inactive. */
+const COMING: { icon: IconName; label: string }[] = [
   { icon: 'workFollowup', label: t.tools.workFollowup },
   { icon: 'notes', label: t.tools.notes },
-  { icon: 'calendar', label: t.tools.schedule },
   { icon: 'resources', label: t.tools.resources },
   { icon: 'announcements', label: t.tools.announcements },
 ];
 
-/** Future teacher modules: a compact, clearly inactive roadmap (no fake buttons). */
-function ToolsCard() {
+/** Teacher tools: working shortcuts first, then the clearly inactive roadmap (no fake buttons). */
+function ToolsCard({ onOpen }: { onOpen: (path: '/teacher/schedule' | '/teacher/memorization') => void }) {
   const { colors } = useAppTheme();
+  const available: { icon: IconName; label: string; path: '/teacher/schedule' | '/teacher/memorization' }[] = [
+    { icon: 'calendar', label: ar.schedule.open, path: '/teacher/schedule' },
+    { icon: 'classes', label: ar.memorization.open, path: '/teacher/memorization' },
+  ];
   return (
-    <SectionCard title={t.toolsTitle} icon="workFollowup" action={<Pill label={t.comingSoon} />}>
+    <SectionCard title={t.toolsTitle} icon="workFollowup">
       <View style={styles.tools}>
-        {TOOLS.map((tool) => (
+        {available.map((tool) => (
+          <Pressable
+            key={tool.path}
+            onPress={() => onOpen(tool.path)}
+            accessibilityRole="link"
+            accessibilityLabel={tool.label}
+            style={({ pressed }) => [
+              styles.toolLink,
+              { backgroundColor: pressed ? colors.brandSoft : colors.card, borderColor: colors.primary },
+            ]}>
+            <Icon name={tool.icon} size={16} color={colors.primary} />
+            <AppText variant="label" tone="primary">
+              {tool.label}
+            </AppText>
+          </Pressable>
+        ))}
+      </View>
+      <View style={styles.tools}>
+        <Pill label={t.comingSoon} />
+        {COMING.map((tool) => (
           <View
             key={tool.label}
             style={[styles.tool, { borderColor: colors.border }]}
@@ -388,6 +437,15 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   tools: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  toolLink: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+  },
   tool: {
     flexDirection: 'row',
     alignItems: 'center',

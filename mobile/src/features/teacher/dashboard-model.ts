@@ -1,11 +1,9 @@
 import type { CurrentAcademicYear } from '@/features/preferences/preferences';
 
-import { toSessionItem, type SessionItem } from './sessions-model';
 import type {
   ClassMemorization,
   RecordStatus,
   Semester,
-  Session,
   TeacherWorkspace,
   Weekday,
 } from './types';
@@ -60,8 +58,8 @@ export function platformClock(timeZone: string | undefined, now: Date = new Date
 /** Semester containing `today`, else the first — the web's defaultPeriod rule. */
 export function currentSemester(year: CurrentAcademicYear, today: string): Semester {
   if (today >= year.secondSemester.startDate && today <= year.secondSemester.endDate)
-    return 'SEMESTER_2';
-  return 'SEMESTER_1';
+    return 'SECOND';
+  return 'FIRST';
 }
 
 /* --------------------------------- classes --------------------------------- */
@@ -197,25 +195,6 @@ export function activeStudentCount(ws: TeacherWorkspace, classIds: ReadonlySet<s
 }
 
 /* --------------------------------- sessions --------------------------------- */
-
-/** An upcoming lesson (same view model as the sessions screen). */
-export type UpcomingSession = SessionItem;
-
-/**
- * Upcoming lessons: SCHEDULED sessions from today on (the API filters by
- * date and status), minus today's lessons that have already ended.
- */
-export function upcomingSessions(
-  sessions: readonly Session[],
-  clock: PlatformClock,
-  limit = 5,
-): UpcomingSession[] {
-  return sessions
-    .filter((s) => s.status === 'SCHEDULED')
-    .filter((s) => s.date > clock.today || (s.date === clock.today && s.endTime > clock.time))
-    .slice(0, limit)
-    .map((s) => toSessionItem(s, clock));
-}
 
 /* ------------------------------- memorization ------------------------------- */
 

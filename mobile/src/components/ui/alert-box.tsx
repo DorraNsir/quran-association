@@ -17,8 +17,10 @@ export function AlertBox({
   const destructive = tone === 'destructive';
   return (
     <View
+      accessible
       accessibilityRole="alert"
       accessibilityLiveRegion="assertive"
+      accessibilityLabel={message}
       style={[
         styles.root,
         {

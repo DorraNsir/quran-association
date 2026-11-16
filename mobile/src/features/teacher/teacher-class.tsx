@@ -17,6 +17,7 @@ import { useSession } from '@/features/auth/auth-provider';
 import { usePreferences } from '@/features/preferences/preferences';
 import { ar } from '@/i18n/ar';
 import { radius, spacing, useAppTheme } from '@/theme';
+import { headerTitle } from '@/theme/navigation';
 
 import { ScheduleList } from './class-card';
 import { classRoster, findTeacherClass, studentsLabel } from './classes-model';
@@ -46,7 +47,7 @@ export function TeacherClassScreen({ groupClassId }: { groupClassId: string }) {
 
   return (
     <Screen refreshing={refreshing} onRefresh={onRefresh}>
-      {item ? <Stack.Screen options={{ title: item.groupName }} /> : null}
+      {item ? <Stack.Screen options={{ title: headerTitle(item.groupName) }} /> : null}
       <QueryState query={workspace}>
         {!item ? (
           <EmptyState
@@ -82,6 +83,14 @@ export function TeacherClassScreen({ groupClassId }: { groupClassId: string }) {
               </View>
             </Card>
 
+            <Button
+              variant="outline"
+              icon="classes"
+              label={ar.memorization.open}
+              fullWidth
+              onPress={() => router.push({ pathname: '/teacher/memorization', params: { classId: item.id } })}
+            />
+
             <SectionCard title={ar.classes.details} icon="info">
               <InfoRow icon="location" label={ar.classes.branch}>
                 {item.branchName}
@@ -98,7 +107,7 @@ export function TeacherClassScreen({ groupClassId }: { groupClassId: string }) {
             <SectionCard title={ar.classes.team} icon="teacher">
               {item.team.map((m) => (
                 <View key={`${m.role}-${m.id}`} style={styles.titleRow}>
-                  <InitialsAvatar initials={m.name.split(' ').map((w) => w.charAt(0)).slice(0, 2).join('')} size={32} />
+                  <InitialsAvatar name={m.name} size={32} />
                   <AppText variant="body" style={styles.flex} numberOfLines={1}>
                     {m.name}
                     {m.isMe ? (
@@ -123,7 +132,7 @@ export function TeacherClassScreen({ groupClassId }: { groupClassId: string }) {
                     accessibilityLabel={s.name}
                     onPress={() => router.push({ pathname: '/teacher/students/[id]', params: { id: s.id } })}>
                     <View style={styles.titleRow}>
-                      <InitialsAvatar initials={s.initials} size={36} />
+                      <InitialsAvatar name={s.name} size={36} />
                       <View style={styles.flex}>
                         <AppText variant="body" numberOfLines={1}>
                           {s.name}

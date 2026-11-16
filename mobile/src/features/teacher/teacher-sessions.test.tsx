@@ -7,7 +7,7 @@ import type { SessionUser } from '@/features/auth/types';
 import { ar } from '@/i18n/ar';
 import { formatDateLong } from '@/i18n/format';
 
-import { pageOf, sessionFixture } from './__fixtures__/sessions';
+import { attendanceFixture, pageOf, rosterStudentFixture, sessionFixture } from './__fixtures__/sessions';
 import { workspaceFixture } from './__fixtures__/workspace';
 import { platformClock } from './dashboard-model';
 import { TeacherSessionScreen } from './teacher-session';
@@ -150,16 +150,51 @@ describe('«الحصص» list', () => {
     expect(listCalls().filter((u) => params(u).pageSize === '1')).toHaveLength(1);
   });
 
-  it('class and period filters are server parameters', async () => {
+  it('period and class filters live in a bottom sheet; they are server parameters, shown as removable chips', async () => {
     stub(() => ({ status: 200, body: pageOf([]) }));
     await renderScreen(<TeacherSessionsScreen />);
+    // Compact bar: no period / class chip rows on the page itself
+    expect(screen.queryByLabelText(ar.sessions.periods.week)).toBeNull();
+    await press(ar.sessions.filters);
+    expect(screen.getByText(ar.sessions.filtersTitle)).toBeTruthy();
     await press(ar.sessions.periods.week);
     await press('مجموعة الأمل');
+    expect(screen.getByLabelText(ar.sessions.periods.week).props.accessibilityState.selected).toBe(true);
+    await press(ar.sessions.done);
     const last = params(listCalls().at(-1)!);
     expect(last.groupClassId).toBe('c2');
     expect(last.from).toBe(TODAY);
     expect(last.to! >= TODAY).toBe(true);
     expect(await screen.findByText(ar.sessions.emptyFiltered)).toBeTruthy();
+    // Active filters are visible and counted on the button
+    expect(screen.getByLabelText(`${ar.sessions.filters}، ${ar.sessions.activeFilters(2)}`)).toBeTruthy();
+    expect(screen.getByLabelText(ar.sessions.removeFilter(ar.sessions.periods.week))).toBeTruthy();
+    expect(screen.getByLabelText(ar.sessions.removeFilter('مجموعة الأمل'))).toBeTruthy();
+  });
+
+  it('removing one filter chip, then «إعادة الضبط», restore the unfiltered query', async () => {
+    stub(() => ({ status: 200, body: pageOf([]) }));
+    await renderScreen(<TeacherSessionsScreen />);
+    await press(ar.sessions.filters);
+    await press(ar.sessions.periods.month);
+    await press('مجموعة الأمل');
+    await press(ar.sessions.done);
+    await press(ar.sessions.removeFilter('مجموعة الأمل'));
+    expect(params(listCalls().at(-1)!).groupClassId).toBeUndefined();
+    expect(params(listCalls().at(-1)!).from).toBeDefined(); // month still on
+    await press(ar.sessions.resetFilters);
+    const last = params(listCalls().filter((u) => params(u).pageSize === '20').at(-1)!);
+    expect(last).toEqual({ from: TODAY, to: TODAY, order: 'asc', page: '1', pageSize: '20' }); // the plain «اليوم» tab
+    expect(screen.queryByLabelText(ar.sessions.resetFilters)).toBeNull();
+    expect(screen.getByLabelText(ar.sessions.filters)).toBeTruthy();
+  });
+
+  it('every status tab is still offered in one row', async () => {
+    stub(() => ({ status: 200, body: pageOf([]) }));
+    await renderScreen(<TeacherSessionsScreen />);
+    await screen.findByLabelText(ar.sessions.filters);
+    for (const tab of ['upcoming', 'today', 'pending', 'done', 'cancelled', 'all'] as const)
+      expect(screen.getByLabelText(new RegExp(`^${ar.sessions.tabs[tab]}`))).toBeTruthy();
   });
 
   it('pagination: the next page only on demand, appended', async () => {
@@ -226,37 +261,90 @@ describe('session details', () => {
     attendance: { expected: 2, recorded: 1, present: 1, absent: 0, late: 0, excused: 0 },
   });
 
-  it("this session's room and branch, shared groups (only mine openable), team, read-only attendance", async () => {
-    stub(() => ({ status: 200, body: shared }));
+  /** The session itself, and its roster (GET …/attendance) — answered separately. */
+  const route = (session: unknown, roster: Answer) => (url: string) =>
+    url.endsWith('/attendance') ? roster : { status: 200, body: session };
+
+  it("summary: this session's room and branch; groups — mine openable (chevron row), partner name only", async () => {
+    stub(route(shared, { status: 200, body: attendanceFixture() }));
     await renderScreen(<TeacherSessionScreen sessionId="s1" />);
     expect(await screen.findByText(formatDateLong('2099-01-05'))).toBeTruthy();
-    expect(screen.getByText('قاعة 4')).toBeTruthy();
-    expect(screen.getByText('فرع الرقوبة')).toBeTruthy();
+    expect(screen.getByText('قاعة 4 — فرع الرقوبة')).toBeTruthy();
     expect(screen.getByText(ar.teacher.extra)).toBeTruthy();
-    expect(screen.getByText(ar.sessions.sharedNote)).toBeTruthy();
-    expect(screen.getByText(ar.sessions.attendanceRecorded(1, 2))).toBeTruthy();
     expect(screen.getByText(`(${ar.classes.you})`)).toBeTruthy();
-    // c1 is mine → openable; c3 is a partner class → name only
     await press(`${ar.classes.open}: مجموعة الفجر`);
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/classes/[id]', params: { id: 'c1' } });
     expect(screen.queryByLabelText(`${ar.classes.open}: مجموعة أخرى`)).toBeNull();
-    expect(screen.getByText('مجموعة أخرى')).toBeTruthy();
-    expect(calls.some((u) => u.endsWith('/teacher/sessions/s1'))).toBe(true);
+    expect(screen.getByLabelText(`مجموعة أخرى، ${ar.sessions.partnerGroup}`)).toBeTruthy();
   });
 
-  it('cancelled: the reason; attendance still viewable (read-only), marked as a cancelled session', async () => {
-    stub(() => ({ status: 200, body: { ...shared, status: 'CANCELLED', cancellationReason: 'عطلة رسمية' } }));
+  it('the attendance action sits right under the summary, before the groups, with its progress', async () => {
+    stub(route(shared, { status: 200, body: attendanceFixture() }));
     await renderScreen(<TeacherSessionScreen sessionId="s1" />);
-    expect(await screen.findByText('عطلة رسمية')).toBeTruthy();
-    expect(screen.getByLabelText(ar.attendance.state.CANCELLED)).toBeTruthy();
-    expect(screen.queryByText(ar.sessions.attendanceRecorded(1, 2))).toBeNull();
-  });
-
-  it('“view attendance” opens the attendance screen of this session', async () => {
-    stub(() => ({ status: 200, body: shared }));
-    await renderScreen(<TeacherSessionScreen sessionId="s1" />);
-    await press(ar.attendance.open);
+    const action = await screen.findByLabelText(ar.attendance.action.complete);
+    expect(action).toBeTruthy();
+    expect(screen.getByText(ar.attendance.progress(2, 3))).toBeTruthy();
+    expect(screen.getByText(ar.attendance.teamProgress(1, 2))).toBeTruthy();
+    // Matches come back in document (render-tree) order: summary → action → groups
+    const date = formatDateLong('2099-01-05');
+    const order = screen
+      .getAllByText(new RegExp(`^(${date}|${ar.attendance.action.complete}|${ar.sessions.groups})$`))
+      .map((n) => String(n.props.children));
+    expect(order).toEqual([date, ar.attendance.action.complete, ar.sessions.groups]);
+    // Only ONE attendance action on the page
+    expect(screen.getAllByRole('button').filter((b) => /الحضور/.test(String(b.props.accessibilityLabel)))).toHaveLength(1);
+    await press(ar.attendance.action.complete);
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/sessions/[id]/attendance', params: { id: 's1' } });
+  });
+
+  it.each([
+    ['record', attendanceFixture({ students: [rosterStudentFixture('a', 'أنس')], teacherRecordedCount: 0, teachers: attendanceFixture().teachers.map((t) => ({ ...t, recorded: false, status: null })) })],
+    ['complete', attendanceFixture()],
+    [
+      'edit',
+      attendanceFixture({
+        students: [rosterStudentFixture('a', 'أنس', { recorded: true, status: 'PRESENT' })],
+        complete: true,
+        teacherRecordedCount: 2,
+        teachers: attendanceFixture().teachers.map((t) => ({ ...t, recorded: true, status: 'PRESENT' as const })),
+      }),
+    ],
+    ['view', attendanceFixture({ editable: false, correctable: false })],
+    [
+      'view',
+      attendanceFixture({
+        correctable: false,
+        students: [rosterStudentFixture('a', 'أنس', { recorded: true, status: 'PRESENT' })],
+        complete: true,
+        teacherRecordedCount: 2,
+        teachers: attendanceFixture().teachers.map((t) => ({ ...t, recorded: true, status: 'PRESENT' as const })),
+      }),
+    ],
+  ] as const)('contextual action from the server roster: %s', async (kind, roster) => {
+    stub(route(shared, { status: 200, body: roster }));
+    await renderScreen(<TeacherSessionScreen sessionId="s1" />);
+    expect(await screen.findByLabelText(ar.attendance.action[kind])).toBeTruthy();
+  });
+
+  it('roster unavailable (offline): the session counts are shown and «عرض الحضور» still opens the screen', async () => {
+    stub(route(shared, 'offline'));
+    await renderScreen(<TeacherSessionScreen sessionId="s1" />);
+    expect(await screen.findByLabelText(`${ar.attendance.state.PARTIAL} · ${ar.attendance.progress(1, 2)}`)).toBeTruthy();
+    await press(ar.attendance.action.view);
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/sessions/[id]/attendance', params: { id: 's1' } });
+  });
+
+  it('cancelled: the reason in the summary; attendance read-only', async () => {
+    stub(
+      route(
+        { ...shared, status: 'CANCELLED', cancellationReason: 'عطلة رسمية' },
+        { status: 200, body: attendanceFixture({ sessionStatus: 'CANCELLED', editable: false, correctable: false }) },
+      ),
+    );
+    await renderScreen(<TeacherSessionScreen sessionId="s1" />);
+    expect(await screen.findByText(`${ar.sessions.cancellationReason}: عطلة رسمية`)).toBeTruthy();
+    expect(await screen.findByLabelText(ar.attendance.action.view)).toBeTruthy();
+    expect(screen.getByLabelText(ar.attendance.state.CANCELLED)).toBeTruthy();
   });
 
   it('404 SESSION_NOT_FOUND (not my session): message, no pointless retry', async () => {

@@ -119,9 +119,7 @@ describe('student lists belong to the right class', () => {
     expect(classRoster(workspaceFixture(), 'c1')[0]?.age).toBeNull(); // no "today" → no age
   });
 
-  it('initials for the avatar', () => {
-    expect(classRoster(workspaceFixture(), 'c2')[0]!.initials).toBe('خا');
-  });
+
 });
 
 describe('student profile', () => {

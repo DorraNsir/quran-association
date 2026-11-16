@@ -19,14 +19,11 @@ export function findTeacherClass(ws: TeacherWorkspace, groupClassId: string): Te
 export interface RosterStudent {
   id: string;
   name: string;
-  initials: string;
   gender: WsStudent['gender'];
   /** Age on `today` when the date of birth is known (else null — never guessed) */
   age: number | null;
 }
 
-const initialsOf = (s: Pick<WsStudent, 'firstName' | 'lastName'>) =>
-  `${s.firstName.trim().charAt(0)}${s.lastName.trim().charAt(0)}`;
 
 /**
  * «الطلبة» of a class: students CURRENTLY placed in that exact class
@@ -44,7 +41,6 @@ export function classRoster(
     .map((s) => ({
       id: s.id,
       name: fullName(s),
-      initials: initialsOf(s),
       gender: s.gender,
       age: today && s.dateOfBirth ? ageOn(s.dateOfBirth, today) : null,
     }))
@@ -54,7 +50,6 @@ export function classRoster(
 export interface StudentProfile {
   student: WsStudent;
   name: string;
-  initials: string;
   /** Age today, when the date of birth is known */
   age: number | null;
   /** The student's current class — always one of mine */
@@ -73,7 +68,6 @@ export function studentProfile(ws: TeacherWorkspace, studentId: string, today: s
   return {
     student,
     name: fullName(student),
-    initials: initialsOf(student),
     age: student.dateOfBirth ? ageOn(student.dateOfBirth, today) : null,
     groupClass,
   };

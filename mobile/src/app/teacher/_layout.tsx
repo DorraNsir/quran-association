@@ -14,7 +14,11 @@ export default function TeacherLayout() {
     <Stack screenOptions={screenOptions}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false, title: ar.workspace.teacher }} />
       <Stack.Screen name="classes/[id]" options={{ title: ar.classes.details }} />
-      <Stack.Screen name="students/[id]" options={{ title: ar.student.title }} />
+      <Stack.Screen name="students/[id]/index" options={{ title: ar.student.title }} />
+      <Stack.Screen name="students/[id]/memorization/index" options={{ title: ar.memorization.history }} />
+      <Stack.Screen name="students/[id]/memorization/record" options={{ title: ar.memorization.formTitle }} />
+      <Stack.Screen name="memorization" options={{ title: ar.memorization.title }} />
+      <Stack.Screen name="schedule" options={{ title: ar.schedule.title }} />
       <Stack.Screen name="sessions/[id]/index" options={{ title: ar.sessions.detailTitle }} />
       <Stack.Screen name="sessions/[id]/attendance" options={{ title: ar.attendance.title }} />
     </Stack>

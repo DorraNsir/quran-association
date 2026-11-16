@@ -1,9 +1,11 @@
 import { useRouter } from 'expo-router';
+import { StyleSheet, View } from 'react-native';
 
 import { QueryState } from '@/components/feedback';
-import { AppText, Card, Screen } from '@/components/ui';
+import { AppText, Card, LinkButton, Screen } from '@/components/ui';
 import { useSession } from '@/features/auth/auth-provider';
 import { ar } from '@/i18n/ar';
+import { spacing } from '@/theme';
 
 import { ClassCard } from './class-card';
 import { teacherClasses } from './dashboard-model';
@@ -21,9 +23,12 @@ export function TeacherClassesScreen() {
 
   return (
     <Screen refreshing={refreshing} onRefresh={onRefresh} edges={[]}>
-      <AppText variant="caption" tone="muted">
-        {ar.classes.intro}
-      </AppText>
+      <View style={styles.intro}>
+        <AppText variant="caption" tone="muted" style={styles.flex}>
+          {ar.classes.intro}
+        </AppText>
+        <LinkButton label={ar.schedule.open} onPress={() => router.push('/teacher/schedule')} />
+      </View>
       <Card>
         <QueryState
           query={workspace}
@@ -44,3 +49,8 @@ export function TeacherClassesScreen() {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  intro: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
+  flex: { flex: 1 },
+});

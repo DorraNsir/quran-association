@@ -1,5 +1,5 @@
-import { Stack, usePreventRemove } from 'expo-router';
-import { useRef, useState } from 'react';
+import { Stack, useNavigation, usePreventRemove, useRouter } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { EmptyState, QueryState } from '@/components/feedback';
@@ -20,6 +20,7 @@ import { ar } from '@/i18n/ar';
 import { formatDateLong } from '@/i18n/format';
 import { errorMessage } from '@/services/api';
 import { fontFamilies, radius, spacing, touchTarget, useAppTheme, type ColorTokens } from '@/theme';
+import { headerTitle } from '@/theme/navigation';
 
 import { AttendanceStateLabel, AttendanceStatusBadge } from './attendance-badges';
 import {
@@ -49,6 +50,7 @@ import {
   type AttendanceNotice,
 } from './attendance-model';
 import { classifySaveError, useSaveAttendance, type SaveErrorKind } from './attendance-save';
+import { SessionStatusPill } from './session-card';
 import type { AttendanceStatus, RosterStudent, RosterTeacher, SessionAttendance } from './types';
 import { teacherKey } from './use-teacher-dashboard';
 import { usePullToRefresh } from './use-refresh';
@@ -73,7 +75,8 @@ function noticeText(n: AttendanceNotice): string {
 
 type Message = { tone: 'info' | 'destructive'; text: string; kind?: SaveErrorKind };
 
-const initialsOf = (p: { firstName: string; lastName: string }) => `${p.firstName.charAt(0)}${p.lastName.charAt(0)}`;
+/** How long the compact «saved» confirmation stays readable before going back. */
+export const SAVED_CONFIRMATION_MS = 1200;
 
 /**
  * «الحضور» of one of MY sessions (GET / PUT /teacher/sessions/:id/attendance):
@@ -94,8 +97,20 @@ export function TeacherAttendanceScreen({ sessionId }: { sessionId: string }) {
   const [drafts, setDrafts] = useState<AttendanceDrafts>(EMPTY_DRAFTS);
   const [message, setMessage] = useState<Message | null>(null);
   const [openNote, setOpenNote] = useState<string | null>(null);
+  /** The server confirmed the save: a compact confirmation, then back to the previous screen */
+  const [savedText, setSavedText] = useState<string | null>(null);
   // Synchronous guard: a double tap cannot send twice before the next render
   const submitting = useRef(false);
+  const router = useRouter();
+  const navigation = useNavigation();
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Leaving by «رجوع» during the confirmation unmounts the screen: no second navigation
+  useEffect(
+    () => () => {
+      if (leaveTimer.current) clearTimeout(leaveTimer.current);
+    },
+    [],
+  );
 
   const dto = query.data;
   const editing = dto
@@ -123,30 +138,39 @@ export function TeacherAttendanceScreen({ sessionId }: { sessionId: string }) {
     const wasScheduled = dto.sessionStatus === 'SCHEDULED';
     const body = savePayload(dto, drafts);
     try {
+      // Resolves once the server confirmed AND the session screens were refreshed
       const saved = await save.mutateAsync(body);
       setDrafts(EMPTY_DRAFTS);
       setOpenNote(null);
       const left = saved.expectedCount - saved.recordedCount;
-      setMessage({
-        tone: 'info',
-        // Completion is the server's answer; a teachers-only save never completes a session
-        text: !body.records
+      // Completion is the server's answer; a teachers-only save never completes a session
+      setSavedText(
+        !body.records
           ? a.savedTeachers
           : wasScheduled && saved.sessionStatus === 'COMPLETED'
             ? a.savedSessionCompleted
             : left > 0
               ? a.savedPartial(left)
               : a.savedComplete,
-      });
+      );
+      // Still blocked: no second save while the confirmation is shown
+      leaveTimer.current = setTimeout(() => {
+        leaveTimer.current = null;
+        if (!navigation.isFocused()) return;
+        // Back through the real stack (the session details below); a deep link without
+        // history opens that session's details instead
+        if (router.canGoBack()) router.back();
+        else router.replace({ pathname: '/teacher/sessions/[id]', params: { id: sessionId } });
+      }, SAVED_CONFIRMATION_MS);
+      return;
     } catch (error) {
       // Every failure keeps the edits on screen
       const kind = classifySaveError(error);
       setMessage({ tone: 'destructive', kind, text: kind === 'offline' ? a.offlineSave : errorMessage(error) });
       // The server's rules changed (window closed, cancelled, scope, team…): reload its flags
       if (kind === 'locked' || kind === 'invalid') void query.refetch();
-    } finally {
-      submitting.current = false;
     }
+    submitting.current = false;
   }
 
   function reloadLatest() {
@@ -167,8 +191,21 @@ export function TeacherAttendanceScreen({ sessionId }: { sessionId: string }) {
     ? dto.teachers.filter((t) => effective(drafts.teachers, teacherSubject(t)).status !== null).length
     : 0;
 
-  const footer =
-    dto && (editing || message) ? (
+  const footer = savedText ? (
+    <View style={[styles.saveBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View
+        accessible
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+        accessibilityLabel={savedText}
+        style={[styles.savedToast, { backgroundColor: colors.brandSoft }]}>
+        <Icon name="success" size={18} color={colors.brandSoftForeground} />
+        <AppText variant="label" style={[styles.flex, { color: colors.brandSoftForeground }]} numberOfLines={2}>
+          {savedText}
+        </AppText>
+      </View>
+    </View>
+  ) : dto && (editing || message) ? (
       <View style={[styles.saveBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
         {message ? (
           <View style={styles.column}>
@@ -221,7 +258,7 @@ export function TeacherAttendanceScreen({ sessionId }: { sessionId: string }) {
   const editorProps = (part: keyof AttendanceDrafts, subject: Subject) => ({
     subject,
     draft: drafts[part],
-    disabled: saving,
+    disabled: saving || savedText !== null,
     noteOpen: openNote === `${part}:${subject.id}`,
     onToggleNote: () => setOpenNote(openNote === `${part}:${subject.id}` ? null : `${part}:${subject.id}`),
     onStatus: (status: AttendanceStatus) => edit({ ...drafts, [part]: setStatus(drafts[part], subject, status) }),
@@ -233,7 +270,7 @@ export function TeacherAttendanceScreen({ sessionId }: { sessionId: string }) {
       <QueryState query={query}>
         {dto && counts ? (
           <>
-            <Stack.Screen options={{ title: `${a.title} — ${groupNames[0]}` }} />
+            <Stack.Screen options={{ title: headerTitle(`${a.title} — ${groupNames[0]}`) }} />
             <Card style={styles.header}>
               <AppText variant="heading" numberOfLines={2}>
                 {groupNames.join(' · ')}
@@ -252,7 +289,10 @@ export function TeacherAttendanceScreen({ sessionId }: { sessionId: string }) {
                 </AppText>
               </View>
               <View style={[styles.progressBox, { borderColor: colors.border }]}>
-                <AttendanceStateLabel state={rosterState(dto)} />
+                <View style={styles.inline}>
+                  <SessionStatusPill status={dto.sessionStatus} />
+                  <AttendanceStateLabel state={rosterState(dto)} />
+                </View>
                 <AppText variant="bodyStrong">{a.progress(dto.recordedCount, dto.expectedCount)}</AppText>
               </View>
               {dto.expectedCount > 0 ? (
@@ -302,7 +342,6 @@ export function TeacherAttendanceScreen({ sessionId }: { sessionId: string }) {
                         <AttendanceEditor
                           key={s.studentId}
                           name={`${s.firstName} ${s.lastName}`}
-                          initials={initialsOf(s)}
                           caption={s.expected ? undefined : `${a.notCounted} — ${a.notCountedCorrectable}`}
                           bordered={i > 0}
                           {...editorProps('students', studentSubject(s))}
@@ -326,7 +365,6 @@ export function TeacherAttendanceScreen({ sessionId }: { sessionId: string }) {
                   <AttendanceEditor
                     key={t.teacherId}
                     name={name}
-                    initials={initialsOf(t)}
                     caption={caption}
                     bordered={i > 0}
                     {...editorProps('teachers', teacherSubject(t))}
@@ -357,7 +395,6 @@ const statusTint = (colors: ColorTokens, status: AttendanceStatus) =>
 function AttendanceEditor({
   subject,
   name,
-  initials,
   caption,
   draft,
   bordered,
@@ -369,7 +406,6 @@ function AttendanceEditor({
 }: {
   subject: Subject;
   name: string;
-  initials: string;
   caption?: string;
   draft: Draft;
   bordered: boolean;
@@ -386,7 +422,7 @@ function AttendanceEditor({
   return (
     <View style={[styles.editor, bordered && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}>
       <View style={styles.row}>
-        <InitialsAvatar initials={initials} size={32} />
+        <InitialsAvatar name={name} size={32} />
         <View style={styles.flex}>
           <AppText variant="bodyStrong" numberOfLines={1}>
             {name}
@@ -474,7 +510,7 @@ function StudentRow({ student: s, dto, bordered }: { student: RosterStudent; dto
       style={[styles.readRow, bordered && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}
       accessible
       accessibilityLabel={`${name}، ${status}${s.expected ? '' : `، ${a.notCounted}`}${s.note ? `، ${a.note}: ${s.note}` : ''}`}>
-      <InitialsAvatar initials={initialsOf(s)} size={36} />
+      <InitialsAvatar name={name} size={36} />
       <View style={styles.flex}>
         <AppText variant="body" numberOfLines={1}>
           {name}
@@ -521,7 +557,7 @@ function TeacherRow({
       style={[styles.readRow, bordered && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}
       accessible
       accessibilityLabel={`${name}، ${caption}، ${status}${t.note ? `، ${a.note}: ${t.note}` : ''}`}>
-      <InitialsAvatar initials={initialsOf(t)} size={32} />
+      <InitialsAvatar name={name} size={32} />
       <View style={styles.flex}>
         <AppText variant="body" numberOfLines={1}>
           {name}
@@ -586,6 +622,15 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   dot: { width: 8, height: 8, borderRadius: radius.full },
+  savedToast: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
   saveBar: {
     gap: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,

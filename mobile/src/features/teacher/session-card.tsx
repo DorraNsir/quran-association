@@ -2,26 +2,30 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Icon, Pill, TimeRange } from '@/components/ui';
 import { ar } from '@/i18n/ar';
-import { dayOfMonth, formatDateLong, formatMonth, sameYear, WEEKDAY_NAMES, weekdayOf } from '@/i18n/format';
+import { dayOfMonth, formatDateLong, formatMonth, sameYear, WEEKDAY_NAMES, weekdayOf, timeRangeLabel } from '@/i18n/format';
 import { radius, spacing, touchTarget, useAppTheme } from '@/theme';
 
 import { AttendanceStateLabel } from './attendance-badges';
+import { EXTRA_SESSION_TONE, SESSION_STATUS_ICON, SESSION_STATUS_TONE } from './session-status';
 import type { SessionItem } from './sessions-model';
 
 export function SessionStatusPill({ status }: { status: SessionItem['status'] }) {
   return (
-    <Pill
-      label={ar.sessions.status[status]}
-      tone={status === 'COMPLETED' ? 'brand' : status === 'CANCELLED' ? 'warning' : 'muted'}
-    />
+    <Pill label={ar.sessions.status[status]} tone={SESSION_STATUS_TONE[status]} icon={SESSION_STATUS_ICON[status]} />
   );
+}
+
+/** Extra session badge: amber, distinct from every status. */
+export function ExtraSessionPill() {
+  return <Pill label={ar.teacher.extra} tone={EXTRA_SESSION_TONE} />;
 }
 
 /**
  * A session at a glance: a date box on the right (weekday, day, month —
  * "today" in solid green; hidden when the list already groups by day), then
  * group(s), THIS session's room and branch, a time chip and its badges.
- * Pressable when `onPress` is given; cancelled sessions are dimmed, never hidden.
+ * Pressable when `onPress` is given; a cancelled session stays fully readable
+ * (the SESSION is cancelled, not the group): red status badge and its reason.
  */
 export function SessionCard({
   session: s,
@@ -43,7 +47,7 @@ export function SessionCard({
   const weekday = WEEKDAY_NAMES[weekdayOf(s.date)];
   const onToday = s.isToday ? colors.primaryForeground : undefined;
   const cancelled = s.status === 'CANCELLED';
-  const label = `${s.isToday ? `${ar.teacher.today}، ` : ''}${formatDateLong(s.date)}، من ${s.start} إلى ${s.end}، ${s.groupNames.join('، ')}، ${s.roomName} — ${s.branchName}، ${ar.sessions.status[s.status]}${s.isExtra ? `، ${ar.teacher.extra}` : ''}`;
+  const label = `${s.isToday ? `${ar.teacher.today}، ` : ''}${formatDateLong(s.date)}، ${timeRangeLabel(s.start, s.end)}، ${s.groupNames.join('، ')}، ${s.roomName} — ${s.branchName}، ${ar.sessions.status[s.status]}${s.isExtra ? `، ${ar.teacher.extra}` : ''}`;
 
   const body = (
     <>
@@ -61,10 +65,7 @@ export function SessionCard({
         </View>
       ) : null}
       <View style={styles.body}>
-        <AppText
-          variant="bodyStrong"
-          numberOfLines={2}
-          style={cancelled ? [styles.struck, { color: colors.mutedForeground }] : undefined}>
+        <AppText variant="bodyStrong" numberOfLines={2}>
           {s.groupNames.join(' · ')}
         </AppText>
         <View style={styles.meta}>
@@ -79,14 +80,14 @@ export function SessionCard({
             <TimeRange start={s.start} end={s.end} variant="small" tone={cancelled ? 'muted' : 'primary'} />
           </View>
           {s.status !== 'SCHEDULED' ? <SessionStatusPill status={s.status} /> : null}
-          {s.isExtra ? <Pill label={ar.teacher.extra} tone="warning" /> : null}
+          {s.isExtra ? <ExtraSessionPill /> : null}
           {s.isShared ? <Pill label={ar.teacher.shared} /> : null}
         </View>
         {showProgress && (s.progress === 'COMPLETE' || s.progress === 'PARTIAL' || s.progress === 'NOT_RECORDED') ? (
           <AttendanceStateLabel state={s.progress} recorded={s.recorded} expected={s.expected} />
         ) : null}
         {s.cancellationReason ? (
-          <AppText variant="small" tone="muted" numberOfLines={2}>
+          <AppText variant="small" numberOfLines={2} style={{ color: colors.destructiveSoftForeground }}>
             {ar.sessions.cancellationReason}: {s.cancellationReason}
           </AppText>
         ) : null}
@@ -132,7 +133,6 @@ const styles = StyleSheet.create({
   },
   number: { fontVariant: ['tabular-nums'] },
   body: { flex: 1, gap: spacing.xs },
-  struck: { textDecorationLine: 'line-through' },
   meta: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   shrink: { flexShrink: 1 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.xs },

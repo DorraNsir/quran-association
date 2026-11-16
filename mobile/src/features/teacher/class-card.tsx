@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { AppText, Icon, Pill, PressableRow, TimeRange, type IconName } from '@/components/ui';
 import { ar } from '@/i18n/ar';
-import { WEEKDAY_NAMES } from '@/i18n/format';
+import { WEEKDAY_NAMES, timeRangeLabel } from '@/i18n/format';
 import { radius, spacing, useAppTheme } from '@/theme';
 
 import { studentsLabel } from './classes-model';
@@ -24,7 +24,7 @@ export function SlotChips({ slots }: { slots: ClassSlot[] }) {
           key={slot.id}
           style={[styles.chip, { backgroundColor: colors.muted }]}
           accessible
-          accessibilityLabel={`${WEEKDAY_NAMES[slot.day]} من ${slot.start} إلى ${slot.end}${slot.shared ? `، ${ar.teacher.shared}` : ''}`}>
+          accessibilityLabel={`${WEEKDAY_NAMES[slot.day]} ${timeRangeLabel(slot.start, slot.end)}${slot.shared ? `، ${ar.teacher.shared}` : ''}`}>
           <AppText variant="small">{WEEKDAY_NAMES[slot.day]}</AppText>
           <TimeRange start={slot.start} end={slot.end} tone="muted" />
           {slot.shared ? <Icon name="students" size={12} color={colors.mutedForeground} /> : null}
@@ -111,7 +111,7 @@ export function ScheduleList({ slots }: { slots: ClassSlot[] }) {
             key={slot.id}
             style={[styles.slotRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}
             accessible
-            accessibilityLabel={`${WEEKDAY_NAMES[slot.day]} من ${slot.start} إلى ${slot.end}، ${place}${slot.sharedWith.length ? `، ${ar.classes.sharedWith(slot.sharedWith.join('، '))}` : ''}`}>
+            accessibilityLabel={`${WEEKDAY_NAMES[slot.day]} ${timeRangeLabel(slot.start, slot.end)}، ${place}${slot.sharedWith.length ? `، ${ar.classes.sharedWith(slot.sharedWith.join('، '))}` : ''}`}>
             <View style={[styles.dayTag, { backgroundColor: colors.brandSoft }]}>
               <AppText variant="small" style={{ color: colors.brandSoftForeground }}>
                 {WEEKDAY_NAMES[slot.day]}

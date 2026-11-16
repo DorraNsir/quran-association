@@ -7,6 +7,7 @@ import type { SessionUser } from '@/features/auth/types';
 import { ar } from '@/i18n/ar';
 import { formatDateLong } from '@/i18n/format';
 
+import { YEAR_FIXTURE } from './__fixtures__/memorization';
 import { attendanceFixture, pageOf, sessionFixture } from './__fixtures__/sessions';
 import { workspaceFixture } from './__fixtures__/workspace';
 
@@ -46,6 +47,8 @@ const signedIn = (u: SessionUser): SessionState => ({ status: 'signedIn', user: 
 const requests: string[] = [];
 const methods: string[] = [];
 let attendanceEditable = false;
+/** A current academic year for the memorization tests (none by default). */
+let navYear: unknown = null;
 beforeEach(() => {
   requests.length = 0;
   methods.length = 0;
@@ -60,6 +63,14 @@ beforeEach(() => {
   globalThis.fetch = jest.fn(async (url: string, init?: RequestInit) => {
     requests.push(url);
     methods.push(init?.method ?? 'GET');
+    if (url.includes('/platform-preferences'))
+      return {
+        status: 200,
+        ok: true,
+        text: async () =>
+          JSON.stringify({ timezone: 'Africa/Tunis', dateFormat: 'DD/MM/YYYY', defaultCalendarView: 'week', defaultPageSize: 20, currentAcademicYear: navYear }),
+      };
+    if (url.includes('/teacher/students/st1/memorization')) return { status: 200, ok: true, text: async () => 'null' };
     // Built per request, so a test can switch the roster to editable
     if (url.includes('/teacher/sessions/s1/attendance'))
       return {
@@ -141,7 +152,7 @@ describe('teacher navigation through the real route tree', () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
     mockState = signedIn(user({}));
     const router = await renderRouter(APP, { initialUrl: '/teacher/sessions/s1' });
-    await tap(ar.attendance.open);
+    await tap(ar.attendance.action.complete); // editable roster, partly recorded
     expect(router).toHavePathname('/teacher/sessions/s1/attendance');
     const group = await screen.findByLabelText(ar.attendance.statusGroup('يوسف التونسي'));
     await fireEvent.press(within(group).getByLabelText(ar.attendance.status.PRESENT));
@@ -154,6 +165,94 @@ describe('teacher navigation through the real route tree', () => {
     expect(methods.every((m) => m === 'GET')).toBe(true);
     alert.mockRestore();
     attendanceEditable = false;
+  });
+
+  it('a confirmed attendance save shows the confirmation, then goes BACK to the session details, refreshed', async () => {
+    attendanceEditable = true;
+    mockState = signedIn(user({}));
+    const router = await renderRouter(APP, { initialUrl: '/teacher/sessions/s1' });
+    await tap(ar.attendance.action.complete);
+    expect(router).toHavePathname('/teacher/sessions/s1/attendance');
+    const group = await screen.findByLabelText(ar.attendance.statusGroup('يوسف التونسي'));
+    await fireEvent.press(within(group).getByLabelText(ar.attendance.status.PRESENT));
+    const detailsBefore = requests.filter((u) => /\/teacher\/sessions\/s1$/.test(u)).length;
+    // renderRouter runs on Jest's fake timers: time is advanced explicitly
+    await fireEvent.press(screen.getByLabelText(ar.attendance.save));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(50);
+    });
+    expect(methods.filter((m) => m === 'PUT')).toHaveLength(1);
+    expect(await screen.findByRole('alert', { name: /^تم حفظ/ })).toBeTruthy();
+    expect(router).toHavePathname('/teacher/sessions/s1/attendance'); // still reading the confirmation
+    // The session details below were refreshed by the save (status / counts from the server)
+    expect(requests.filter((u) => /\/teacher\/sessions\/s1$/.test(u)).length).toBeGreaterThan(detailsBefore);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1300);
+    });
+    expect(router).toHavePathname('/teacher/sessions/s1'); // back through the stack, not a new screen
+    expect(methods.filter((m) => m === 'PUT')).toHaveLength(1);
+    attendanceEditable = false;
+  });
+
+  it('memorization entry points: student profile → «سجل الحفظ», class → «متابعة الحفظ»', async () => {
+    mockState = signedIn(user({}));
+    const router = await renderRouter(APP, { initialUrl: '/teacher/students/st1' });
+    await tap(`${ar.memorization.history} — محمد التونسي`);
+    expect(router).toHavePathname('/teacher/students/st1/memorization');
+    await act(async () => {
+      appRouter.back();
+    });
+    await act(async () => {
+      appRouter.push('/teacher/classes/c1');
+    });
+    await tap(ar.memorization.open);
+    expect(router).toHavePathname('/teacher/memorization');
+  });
+
+  it('history → «إضافة متابعة» opens the form for THAT semester', async () => {
+    navYear = YEAR_FIXTURE;
+    mockState = signedIn(user({}));
+    const router = await renderRouter(APP, { initialUrl: '/teacher/students/st1/memorization' });
+    await tap(`${ar.memorization.add} — ${ar.labels.semester.SECOND}`);
+    expect(router).toHavePathnameWithParams('/teacher/students/st1/memorization/record?semester=SECOND');
+    expect(await screen.findByLabelText(ar.memorization.searchLabel)).toBeTruthy();
+    navYear = null;
+  });
+
+  it('a STUDENT cannot open the memorization form', async () => {
+    mockState = signedIn(user({ roles: ['STUDENT'], teacherId: null, studentId: 's1' }));
+    const router = await renderRouter(APP, { initialUrl: '/teacher/students/st1/memorization/record' });
+    expect(router.getPathname().startsWith('/teacher')).toBe(false);
+    expect(requests.some((u) => u.includes('/memorization'))).toBe(false);
+  });
+
+  it('a STUDENT cannot open the teacher memorization screens', async () => {
+    mockState = signedIn(user({ roles: ['STUDENT'], teacherId: null, studentId: 's1' }));
+    const router = await renderRouter(APP, { initialUrl: '/teacher/memorization' });
+    expect(router.getPathname().startsWith('/teacher')).toBe(false);
+    expect(requests.some((u) => u.includes('/memorization'))).toBe(false);
+  });
+
+  it('«جدولي» entry points: dashboard tools and «مجموعاتي»; a slot opens its class', async () => {
+    mockState = signedIn(user({}));
+    const router = await renderRouter(APP, { initialUrl: '/teacher' });
+    await tap(ar.schedule.open);
+    expect(router).toHavePathname('/teacher/schedule');
+    await tap(/^الأربعاء من 17:00 إلى 19:00/);
+    expect(router).toHavePathname('/teacher/classes/c1');
+    await act(async () => {
+      appRouter.push('/teacher/classes');
+    });
+    await tap(ar.schedule.open);
+    expect(router).toHavePathname('/teacher/schedule');
+    expect(methods.every((m) => m === 'GET')).toBe(true);
+  });
+
+  it('a STUDENT cannot open the teacher schedule', async () => {
+    mockState = signedIn(user({ roles: ['STUDENT'], teacherId: null, studentId: 's1' }));
+    const router = await renderRouter(APP, { initialUrl: '/teacher/schedule' });
+    expect(router.getPathname().startsWith('/teacher')).toBe(false);
+    expect(requests.some((u) => u.includes('/teacher/'))).toBe(false);
   });
 
   it('a teacher lands on the teacher space from "/"', async () => {

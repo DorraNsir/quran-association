@@ -5,6 +5,7 @@ import type { SaveBody } from './attendance-draft';
 import type {
   AttendanceSummary,
   ClassMemorization,
+  MemorizationRecord,
   Page,
   Semester,
   Session,
@@ -78,6 +79,37 @@ export const fetchSessionAttendance = (sessionId: string, signal?: AbortSignal) 
  */
 export const saveSessionAttendance = (sessionId: string, body: SaveBody) =>
   api<SessionAttendance>(`/teacher/sessions/${encodeURIComponent(sessionId)}/attendance`, {
+    method: 'PUT',
+    body,
+  });
+
+/**
+ * GET /api/teacher/students/:id/memorization — one semester of a student I
+ * teach (or taught during that semester): the record, or null when not
+ * recorded yet; 403 when the student is outside my classes for that period.
+ */
+export const fetchStudentMemorization = (
+  studentId: string,
+  query: { academicYearId: string; semester: Semester },
+  signal?: AbortSignal,
+) =>
+  api<MemorizationRecord | null | undefined>(`/teacher/students/${encodeURIComponent(studentId)}/memorization`, {
+    query: query as Query,
+    signal,
+    // «null» may arrive as an empty body: always null, never undefined
+  }).then((record) => record ?? null);
+
+/**
+ * PUT /api/teacher/students/:id/memorization — sets THE semester's last
+ * memorized surah (creates or updates the single record; UpsertMemorizationDto:
+ * academicYearId, semester FIRST|SECOND, lastMemorizedSurahNumber 1–114).
+ * The server records who updated it. No concurrency check, no delete endpoint.
+ */
+export const saveStudentMemorization = (
+  studentId: string,
+  body: { academicYearId: string; semester: Semester; lastMemorizedSurahNumber: number },
+) =>
+  api<MemorizationRecord>(`/teacher/students/${encodeURIComponent(studentId)}/memorization`, {
     method: 'PUT',
     body,
   });

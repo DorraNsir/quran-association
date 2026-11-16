@@ -1,14 +1,13 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { EmptyState, QueryState } from '@/components/feedback';
-import { AppText, Button, Card, ChipRow, Pill, Screen } from '@/components/ui';
+import { AppText, BottomSheet, Button, Card, ChipRow, Icon, OptionRow, Pill, Screen } from '@/components/ui';
 import { useSession } from '@/features/auth/auth-provider';
 import { usePreferences } from '@/features/preferences/preferences';
 import { ar } from '@/i18n/ar';
 import { formatDateLong } from '@/i18n/format';
-import { spacing, useAppTheme } from '@/theme';
+import { radius, spacing, useAppTheme } from '@/theme';
 
 import { platformClock, teacherClasses } from './dashboard-model';
 import { SessionCard } from './session-card';
@@ -48,6 +47,7 @@ export function TeacherSessionsScreen() {
   const [tab, setTab] = useState<SessionTab>(DEFAULT_SESSION_TAB);
   const [period, setPeriod] = useState<PeriodPreset>('all');
   const [classId, setClassId] = useState<string>(ALL);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const classes = workspace.data ? teacherClasses(workspace.data) : [];
   // Wait for the platform day before asking for date-bounded lists
@@ -89,26 +89,22 @@ export function TeacherSessionsScreen() {
               value === 'pending' && pending.data ? `${ar.sessions.tabs.pending} (${pending.data})` : ar.sessions.tabs[value],
           }))}
         />
-        <ChipRow
-          label={ar.sessions.filterPeriod}
-          value={period}
-          onChange={setPeriod}
-          options={PERIOD_PRESETS.filter((p) => p !== 'year' || year).map((value) => ({
-            value,
-            label: ar.sessions.periods[value],
-          }))}
+        <FilterBar
+          total={pages.data ? total : null}
+          active={[
+            ...(period !== 'all'
+              ? [{ key: 'period', label: ar.sessions.periods[period], clear: () => setPeriod('all') }]
+              : []),
+            ...(classId !== ALL
+              ? [{ key: 'class', label: classes.find((c) => c.id === classId)?.groupName ?? '—', clear: () => setClassId(ALL) }]
+              : []),
+          ]}
+          onOpen={() => setSheetOpen(true)}
+          onReset={() => {
+            setPeriod('all');
+            setClassId(ALL);
+          }}
         />
-        {classes.length > 1 ? (
-          <ChipRow
-            label={ar.sessions.filterClass}
-            value={classId}
-            onChange={setClassId}
-            options={[
-              { value: ALL, label: ar.sessions.allClasses },
-              ...classes.map((c) => ({ value: c.id, label: c.groupName })),
-            ]}
-          />
-        ) : null}
       </View>
 
       <Card>
@@ -121,9 +117,6 @@ export function TeacherSessionsScreen() {
             emptyIcon="calendar"
             emptyTitle={ar.sessions.empty[tab]}
             emptyDescription={filtered ? ar.sessions.emptyFiltered : tab === 'all' ? ar.sessions.emptyNoSessions : undefined}>
-            <AppText variant="small" tone="muted">
-              {ar.sessions.count(total)}
-            </AppText>
             {days.map((day) => (
               <View key={day.date} style={styles.day}>
                 <View style={[styles.dayHeader, { borderColor: colors.border }]}>
@@ -156,12 +149,144 @@ export function TeacherSessionsScreen() {
           </QueryState>
         )}
       </Card>
+
+      <BottomSheet
+        visible={sheetOpen}
+        title={ar.sessions.filtersTitle}
+        closeLabel={ar.sessions.closeFilters}
+        onClose={() => setSheetOpen(false)}
+        footer={
+          <>
+            <View style={styles.flex}>
+              <Button
+                variant="outline"
+                label={ar.sessions.resetFilters}
+                fullWidth
+                disabled={!filtered}
+                onPress={() => {
+                  setPeriod('all');
+                  setClassId(ALL);
+                }}
+              />
+            </View>
+            <View style={styles.flex}>
+              <Button label={ar.sessions.done} fullWidth onPress={() => setSheetOpen(false)} />
+            </View>
+          </>
+        }>
+        <View style={styles.sheetGroup} accessibilityRole="radiogroup" accessibilityLabel={ar.sessions.filterPeriod}>
+          <AppText variant="label">{ar.sessions.filterPeriod}</AppText>
+          {PERIOD_PRESETS.filter((p) => p !== 'year' || year).map((value) => (
+            <OptionRow
+              key={value}
+              label={ar.sessions.periods[value]}
+              selected={period === value}
+              onPress={() => setPeriod(value)}
+            />
+          ))}
+        </View>
+        {classes.length > 1 ? (
+          <View style={styles.sheetGroup} accessibilityRole="radiogroup" accessibilityLabel={ar.sessions.filterClass}>
+            <AppText variant="label">{ar.sessions.filterClass}</AppText>
+            {[{ id: ALL, groupName: ar.sessions.allClasses }, ...classes].map((c) => (
+              <OptionRow key={c.id} label={c.groupName} selected={classId === c.id} onPress={() => setClassId(c.id)} />
+            ))}
+          </View>
+        ) : null}
+      </BottomSheet>
     </Screen>
+  );
+}
+
+/**
+ * One compact line under the status tabs: «تصفية» (opens the sheet, shows
+ * how many filters are on), each active filter as a removable chip, a reset
+ * link, and the session count — instead of two extra rows of chips.
+ */
+function FilterBar({
+  total,
+  active,
+  onOpen,
+  onReset,
+}: {
+  total: number | null;
+  active: { key: string; label: string; clear: () => void }[];
+  onOpen: () => void;
+  onReset: () => void;
+}) {
+  const { colors } = useAppTheme();
+  const on = active.length > 0;
+  return (
+    <View style={styles.filterBar}>
+      <Pressable
+        onPress={onOpen}
+        accessibilityRole="button"
+        accessibilityLabel={on ? `${ar.sessions.filters}، ${ar.sessions.activeFilters(active.length)}` : ar.sessions.filters}
+        style={({ pressed }) => [
+          styles.filterButton,
+          { borderColor: on ? colors.primary : colors.border, backgroundColor: on ? colors.brandSoft : colors.card },
+          pressed && { opacity: 0.8 },
+        ]}>
+        <Icon name="filter" size={16} color={on ? colors.primary : colors.foreground} />
+        <AppText variant="small" style={{ color: on ? colors.brandSoftForeground : colors.foreground }}>
+          {ar.sessions.filters}
+          {on ? ` (${active.length})` : ''}
+        </AppText>
+      </Pressable>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeChips} style={styles.flex}>
+        {active.map((f) => (
+          <Pressable
+            key={f.key}
+            onPress={f.clear}
+            accessibilityRole="button"
+            accessibilityLabel={ar.sessions.removeFilter(f.label)}
+            hitSlop={{ top: 6, bottom: 6 }}
+            style={[styles.activeChip, { backgroundColor: colors.brandSoft }]}>
+            <AppText variant="small" numberOfLines={1} style={{ color: colors.brandSoftForeground, maxWidth: 140 }}>
+              {f.label}
+            </AppText>
+            <Icon name="close" size={12} color={colors.brandSoftForeground} />
+          </Pressable>
+        ))}
+        {on ? (
+          <Pressable onPress={onReset} accessibilityRole="button" accessibilityLabel={ar.sessions.resetFilters} hitSlop={8}>
+            <AppText variant="small" tone="primary">
+              {ar.sessions.resetFilters}
+            </AppText>
+          </Pressable>
+        ) : null}
+      </ScrollView>
+      {total !== null ? (
+        <AppText variant="small" tone="muted" accessibilityLiveRegion="polite">
+          {ar.sessions.count(total)}
+        </AppText>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   filters: { gap: spacing.sm },
+  filterBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  filterButton: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+  },
+  activeChips: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  activeChip: {
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+  },
+  sheetGroup: { gap: spacing.sm },
   day: { gap: 0 },
   dayHeader: {
     flexDirection: 'row',

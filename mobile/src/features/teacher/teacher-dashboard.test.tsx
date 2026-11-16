@@ -5,9 +5,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import type { SessionUser } from '@/features/auth/types';
 import { ar } from '@/i18n/ar';
-import { formatCountOf, formatDateLong, formatPercent, ltr } from '@/i18n/format';
+import { formatCountOf, formatDateLong, formatPercent } from '@/i18n/format';
 
 import { pageOf, sessionFixture } from './__fixtures__/sessions';
+import { platformClock } from './dashboard-model';
 import { TeacherDashboard } from './teacher-dashboard';
 
 /*
@@ -59,7 +60,18 @@ const WORKSPACE = {
 };
 
 // A full SessionDto (shared fixture) — the API always sends every field
-const UPCOMING = pageOf([sessionFixture('sess-1', '2099-01-05', '17:00', '19:00')], 1, 10);
+const TODAY = platformClock('Africa/Tunis').today;
+// «حصص اليوم»: every status of the day; «الحصة القادمة» only when today is empty
+const TODAY_PAGE = pageOf(
+  [
+    sessionFixture('sess-1', TODAY, '17:00', '19:00'),
+    sessionFixture('sess-0', TODAY, '08:00', '09:00', { status: 'CANCELLED', cancellationReason: 'عطلة' }),
+  ],
+  1,
+  50,
+);
+const NEXT_PAGE = pageOf([sessionFixture('sess-2', '2099-01-05', '17:00', '19:00')], 1, 1);
+const EMPTY_PAGE = { data: [], meta: { page: 1, pageSize: 50, total: 0, totalPages: 1 } };
 
 type Route = { status: number; body?: unknown } | 'offline' | 'pending';
 type Routes = Record<string, Route>;
@@ -73,7 +85,8 @@ function stubApi(overrides: Routes = {}) {
     },
     '/teacher/workspace': { status: 200, body: WORKSPACE },
     'status=COMPLETED': { status: 200, body: { data: [], meta: { page: 1, pageSize: 1, total: 12, totalPages: 12 } } },
-    'status=SCHEDULED': { status: 200, body: UPCOMING },
+    'pageSize=50': { status: 200, body: TODAY_PAGE },
+    'status=SCHEDULED': { status: 200, body: NEXT_PAGE },
     '/teacher/attendance/summary': {
       status: 200,
       body: { recorded: 10, present: 7, absent: 2, late: 1, excused: 0, attended: 8, eligible: 10, rate: 80, from: null, to: null },
@@ -83,7 +96,7 @@ function stubApi(overrides: Routes = {}) {
       body: {
         groupClass: { id: 'c1', group: { id: 'g1', name: 'مجموعة الفجر' } },
         academicYear: { id: YEAR.id, label: YEAR.label },
-        semester: 'SEMESTER_1',
+        semester: 'FIRST',
         period: { from: '2026-09-15', to: '2027-01-31' },
         students: [
           { studentId: 's1', studentStatus: 'ACTIVE', currentMember: true, lastMemorizedSurahNumber: 78 },
@@ -155,12 +168,21 @@ describe('TeacherDashboard', () => {
     expect(await screen.findByText(t.memorizationMissing(1))).toBeTruthy();
     expect(screen.getByText(formatCountOf(1, 2))).toBeTruthy();
     expect(screen.getAllByText('مجموعة الفجر').length).toBeGreaterThan(0);
-    expect(screen.getByText(`${ltr(YEAR.label)} · ${ar.labels.semester.SEMESTER_1}`)).toBeTruthy();
+    // The memorization card no longer shows the «year · semester» aside (removed in the UI); the semester is still sent below
     // The upcoming session's full Arabic date (platform calendar day, not numeric)
-    expect(screen.getByLabelText(new RegExp(formatDateLong('2099-01-05')))).toBeTruthy();
+    // Today's lessons, all statuses (a cancelled one too); no «next» request needed
+    expect(screen.getByText(t.todayTitle)).toBeTruthy();
+    expect(screen.getAllByLabelText(new RegExp(formatDateLong(TODAY)))).toHaveLength(2);
+    expect(screen.getByText(`${ar.sessions.cancellationReason}: عطلة`)).toBeTruthy();
+    expect(calls.some((u) => u.includes('status=SCHEDULED'))).toBe(false);
     // The upcoming list is requested from today, SCHEDULED, ascending
-    expect(calls.some((u) => u.includes('/teacher/sessions?') && u.includes('status=SCHEDULED') && u.includes('order=asc'))).toBe(true);
+    expect(
+      calls.some((u) => u.includes(`/teacher/sessions?from=${TODAY}&to=${TODAY}&order=asc`) && !u.includes('status=')),
+    ).toBe(true);
     expect(calls.some((u) => u.includes(`/teacher/attendance/summary?academicYearId=${YEAR.id}`))).toBe(true);
+    // The API's semester values (FIRST / SECOND) — «SEMESTER_1» is refused by the backend
+    expect(calls.some((u) => u.includes('/memorization?') && u.includes('semester=FIRST'))).toBe(true);
+    expect(calls.some((u) => u.includes('SEMESTER_1'))).toBe(false);
   });
 
   it('loading state while the API has not answered', async () => {
@@ -168,7 +190,7 @@ describe('TeacherDashboard', () => {
     await renderDashboard();
     // Sections are independent: the others finish while these keep loading
     expect(await screen.findByText(formatPercent(80))).toBeTruthy();
-    expect(await screen.findByText('قاعة 1 — الفرع الرئيسي')).toBeTruthy();
+    expect((await screen.findAllByText('قاعة 1 — الفرع الرئيسي')).length).toBe(2); // today's two lessons
     expect(screen.getAllByLabelText(ar.states.loading).length).toBeGreaterThan(0);
     expect(screen.queryByLabelText(`${t.myClasses}: 0`)).toBeNull(); // never a fake zero while loading
   });
@@ -203,23 +225,27 @@ describe('TeacherDashboard', () => {
   });
 
   it('server error: generic error state with retry', async () => {
-    stubApi({ 'status=SCHEDULED': { status: 500, body: { message: 'Internal server error' } } });
+    stubApi({ 'pageSize=50': { status: 500, body: { message: 'Internal server error' } } });
     await renderDashboard();
     expect(await screen.findByText(ar.states.errorTitle)).toBeTruthy();
     expect(screen.getByLabelText(ar.states.retry)).toBeTruthy();
   });
 
-  it('empty states: no classes, no upcoming sessions, no recorded attendance', async () => {
+  it('empty states: no classes, no lesson today (→ the next one), no recorded attendance', async () => {
     stubApi({
       '/teacher/workspace': { status: 200, body: { ...WORKSPACE, groupClasses: [], students: [] } },
-      'status=SCHEDULED': { status: 200, body: { data: [], meta: { page: 1, pageSize: 10, total: 0, totalPages: 1 } } },
+      'pageSize=50': { status: 200, body: EMPTY_PAGE },
       '/teacher/attendance/summary': {
         status: 200,
         body: { recorded: 0, present: 0, absent: 0, late: 0, excused: 0, attended: 0, eligible: 0, rate: null, from: null, to: null },
       },
     });
     await renderDashboard();
-    expect(await screen.findByText(t.upcomingEmpty)).toBeTruthy();
+    expect(await screen.findByText(t.todayEmpty)).toBeTruthy();
+    // No lesson today: the next one is shown (one small request, only now)
+    expect(await screen.findByText(t.nextSession)).toBeTruthy();
+    expect(screen.getByLabelText(new RegExp(formatDateLong('2099-01-05')))).toBeTruthy();
+    expect(calls.filter((u) => u.includes('status=SCHEDULED') && u.includes('pageSize=1'))).toHaveLength(1);
     expect((await screen.findAllByText(t.classesEmpty)).length).toBeGreaterThan(0);
     expect(await screen.findByText(t.attendanceEmpty)).toBeTruthy();
     expect(calls.some((u) => u.includes('/memorization'))).toBe(false);

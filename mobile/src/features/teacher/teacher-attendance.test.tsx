@@ -9,7 +9,7 @@ import { ar } from '@/i18n/ar';
 import { formatDateLong } from '@/i18n/format';
 
 import { attendanceFixture, rosterStudentFixture } from './__fixtures__/sessions';
-import { TeacherAttendanceScreen } from './teacher-attendance';
+import { SAVED_CONFIRMATION_MS, TeacherAttendanceScreen } from './teacher-attendance';
 import type { RosterTeacher, SessionAttendance } from './types';
 
 /*
@@ -19,8 +19,12 @@ import type { RosterTeacher, SessionAttendance } from './types';
  */
 let mockPreventRemove: { active: boolean; callback?: (o: { repeat: () => void }) => void } = { active: false };
 jest.mock('expo-symbols', () => ({ SymbolView: () => null }));
+const mockBack = jest.fn();
+const mockReplace = jest.fn();
+const mockNav = { canGoBack: true, focused: true };
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ push: jest.fn(), back: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), back: mockBack, replace: mockReplace, canGoBack: () => mockNav.canGoBack }),
+  useNavigation: () => ({ isFocused: () => mockNav.focused }),
   Stack: { Screen: () => null },
   usePreventRemove: (active: boolean, callback: (o: { repeat: () => void }) => void) => {
     mockPreventRemove = { active, callback };
@@ -92,6 +96,12 @@ const statusButton = (name: string, status: keyof typeof a.short) =>
   within(screen.getByLabelText(a.statusGroup(name))).getByLabelText(a.status[status]);
 const saveButton = () => screen.getByLabelText(a.save);
 
+beforeEach(() => {
+  mockBack.mockReset();
+  mockReplace.mockReset();
+  mockNav.canGoBack = true;
+  mockNav.focused = true;
+});
 afterEach(async () => {
   await act(async () => {
     for (const c of clients.splice(0)) {
@@ -131,7 +141,8 @@ describe('recording attendance', () => {
     expect(screen.getByText(a.savedSessionCompleted)).toBeTruthy();
     expect(screen.getByText(a.state.COMPLETE)).toBeTruthy();
     expect(screen.getByText(a.progress(3, 3))).toBeTruthy();
-    expect(screen.getByText(a.nothingToSave)).toBeTruthy();
+    // The save bar became the compact confirmation (no second save possible)
+    expect(screen.queryByLabelText(a.save)).toBeNull();
   });
 
   it('partial save: allowed, announced before saving, and reported after', async () => {
@@ -261,6 +272,9 @@ describe('team attendance — any member records every member, themselves includ
       records: [{ studentId: 'st3', status: 'PRESENT', expectedStatus: null }],
       teachers: [{ teacherId: 't-2', status: 'PRESENT', expectedStatus: null }],
     });
+    expect(screen.getByRole('alert', { name: /^تم حفظ/ })).toBeTruthy();
+    await settle(SAVED_CONFIRMATION_MS + 50);
+    expect(mockBack).toHaveBeenCalledTimes(1);
   });
 
   it('shared session, assistant with a limited STUDENT scope: still records the whole team', async () => {
@@ -514,6 +528,94 @@ describe('save safety', () => {
     expect(client.getQueryState(['teacher', 't-me', 'sessions', 'detail', 's1'])?.isInvalidated).toBe(true);
     expect(client.getQueryState(['teacher', 't-me', 'sessions', 'pending-count', {}])?.isInvalidated).toBe(true);
     expect((client.getQueryData(['teacher', 't-me', 'sessions', 'attendance', 's1']) as SessionAttendance).sessionStatus).toBe('COMPLETED');
+  });
+});
+
+describe('after a confirmed save: compact confirmation, then back', () => {
+  const saveOne = async (name = 'يوسف التونسي', status: 'PRESENT' | 'ABSENT' = 'PRESENT') => {
+    await screen.findByLabelText(a.statusGroup(name));
+    await press(statusButton(name, status));
+    await press(saveButton());
+    await settle();
+  };
+
+  it('students-only save: confirmation stays readable ~1 s, then ONE back through the stack', async () => {
+    stub(() => ({ status: 200, body: attendanceFixture() }), () => ({ status: 200, body: attendanceFixture() }));
+    await renderScreen();
+    await saveOne();
+    expect(screen.getByRole('alert', { name: a.savedPartial(1) })).toBeTruthy(); // st2 still unrecorded in the answer
+    await settle(SAVED_CONFIRMATION_MS - 300);
+    expect(mockBack).not.toHaveBeenCalled(); // still reading the confirmation
+    await settle(400);
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled(); // no hard-coded destination
+    await settle(SAVED_CONFIRMATION_MS);
+    expect(mockBack).toHaveBeenCalledTimes(1); // never twice
+  });
+
+  it('teachers-only save: its own confirmation, then back', async () => {
+    stub(() => ({ status: 200, body: attendanceFixture() }), () => ({ status: 200, body: attendanceFixture() }));
+    await renderScreen();
+    await saveOne('سارة بن علي');
+    expect(puts()[0]!.body).toEqual({ teachers: [{ teacherId: 't-2', status: 'PRESENT', expectedStatus: null }] });
+    expect(screen.getByRole('alert', { name: a.savedTeachers })).toBeTruthy();
+    await settle(SAVED_CONFIRMATION_MS + 50);
+    expect(mockBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('no navigation after a failed save; the edits and the error stay', async () => {
+    stub(() => ({ status: 200, body: attendanceFixture() }), () => ({ status: 500, body: {} }));
+    await renderScreen();
+    await saveOne();
+    await settle(SAVED_CONFIRMATION_MS + 100);
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(screen.getByText(a.unsaved(1))).toBeTruthy();
+    expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+    expect(screen.getByLabelText(a.save)).toBeTruthy();
+  });
+
+  it('no second save during the confirmation: rows are locked, the save button is gone', async () => {
+    stub(() => ({ status: 200, body: attendanceFixture() }), () => ({ status: 200, body: attendanceFixture() }));
+    await renderScreen();
+    await saveOne();
+    await press(statusButton('محمد التونسي', 'ABSENT'));
+    expect(screen.queryByLabelText(a.save)).toBeNull();
+    expect(screen.queryByText(a.unsaved(1))).toBeNull();
+    expect(puts()).toHaveLength(1);
+  });
+
+  it('leaving with «رجوع» during the confirmation: the timer is cleared, no navigation', async () => {
+    stub(() => ({ status: 200, body: attendanceFixture() }), () => ({ status: 200, body: attendanceFixture() }));
+    await renderScreen();
+    await saveOne();
+    const clear = jest.spyOn(globalThis, 'clearTimeout');
+    await act(async () => {
+      screen.unmount();
+    });
+    expect(clear).toHaveBeenCalled();
+    clear.mockRestore();
+    await settle(SAVED_CONFIRMATION_MS + 100);
+    expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it('the screen is no longer focused when the timer ends: no navigation', async () => {
+    stub(() => ({ status: 200, body: attendanceFixture() }), () => ({ status: 200, body: attendanceFixture() }));
+    await renderScreen();
+    await saveOne();
+    mockNav.focused = false;
+    await settle(SAVED_CONFIRMATION_MS + 100);
+    expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it('opened from a link without history: goes to THAT session\'s details', async () => {
+    mockNav.canGoBack = false;
+    stub(() => ({ status: 200, body: attendanceFixture() }), () => ({ status: 200, body: attendanceFixture() }));
+    await renderScreen();
+    await saveOne();
+    await settle(SAVED_CONFIRMATION_MS + 100);
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith({ pathname: '/teacher/sessions/[id]', params: { id: 's1' } });
   });
 });
 

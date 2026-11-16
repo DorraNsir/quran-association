@@ -19,21 +19,23 @@ import { usePreferences } from '@/features/preferences/preferences';
 import { ar } from '@/i18n/ar';
 import { formatDate, formatDateLong } from '@/i18n/format';
 import { radius, spacing, useAppTheme } from '@/theme';
+import { headerTitle } from '@/theme/navigation';
 
-import { platformClock, teacherClasses } from './dashboard-model';
+import { attendanceAction } from './attendance-action';
 import { AttendanceStateLabel } from './attendance-badges';
-import { InfoRow } from './info-row';
-import { SessionStatusPill } from './session-card';
-import { myRoleIn, sessionTeam, toSessionItem } from './sessions-model';
+import { rosterState } from './attendance-model';
+import { platformClock, teacherClasses } from './dashboard-model';
+import { ExtraSessionPill, SessionStatusPill } from './session-card';
+import { myRoleIn, sessionTeam, toSessionItem, type SessionItem } from './sessions-model';
 import { teacherKey, useTeacherWorkspace } from './use-teacher-dashboard';
 import { usePullToRefresh } from './use-refresh';
-import { useTeacherSession } from './use-teacher-sessions';
+import { useSessionAttendance, useTeacherSession } from './use-teacher-sessions';
 
 /**
- * One of MY sessions, read-only (GET /teacher/sessions/:id). WHERE and WHO
- * are this session's snapshot — a shared or extra lesson may be in another
- * room or branch than the class's usual ones. No editing, cancelling or
- * attendance marking in this phase.
+ * One of MY sessions (GET /teacher/sessions/:id): a compact summary, then the
+ * attendance action right away (no scrolling), then the groups and the team.
+ * WHERE and WHO are this session's snapshot — a shared or extra lesson may be
+ * in another room or branch than the class's usual ones.
  */
 export function TeacherSessionScreen({ sessionId }: { sessionId: string }) {
   const { user } = useSession();
@@ -43,7 +45,10 @@ export function TeacherSessionScreen({ sessionId }: { sessionId: string }) {
   const preferences = usePreferences();
   const workspace = useTeacherWorkspace(teacherId);
   const query = useTeacherSession(teacherId, sessionId);
-  const { refreshing, onRefresh } = usePullToRefresh([[...teacherKey(teacherId), 'sessions', 'detail', sessionId]]);
+  const { refreshing, onRefresh } = usePullToRefresh([
+    [...teacherKey(teacherId), 'sessions', 'detail', sessionId],
+    [...teacherKey(teacherId), 'sessions', 'attendance', sessionId],
+  ]);
   const clock = platformClock(preferences.data?.timezone);
 
   const session = query.data;
@@ -54,71 +59,99 @@ export function TeacherSessionScreen({ sessionId }: { sessionId: string }) {
 
   return (
     <Screen refreshing={refreshing} onRefresh={onRefresh}>
-      {item ? <Stack.Screen options={{ title: item.groupNames.join(' · ') }} /> : null}
+      {item ? <Stack.Screen options={{ title: headerTitle(item.groupNames.join(' · ')) }} /> : null}
       <QueryState query={query}>
         {session && item ? (
           <>
-            <Card style={styles.header}>
+            {/* Summary: when, where, what kind */}
+            <Card style={styles.summary}>
               <View style={styles.row}>
                 <View style={[styles.iconTile, { backgroundColor: colors.brandSoft }]}>
-                  <Icon name="calendar" size={24} color={colors.primary} />
+                  <Icon name="calendar" size={22} color={colors.primary} />
                 </View>
                 <View style={styles.flex}>
-                  <AppText variant="heading">{formatDateLong(item.date)}</AppText>
-                  <TimeRange start={item.start} end={item.end} variant="bodyStrong" tone="primary" />
+                  <AppText variant="bodyStrong">{formatDateLong(item.date)}</AppText>
+                  <TimeRange start={item.start} end={item.end} variant="label" tone="primary" />
                 </View>
+              </View>
+              <View style={styles.meta}>
+                <Icon name="location" size={14} color={colors.mutedForeground} />
+                <AppText variant="caption" tone="muted" style={styles.shrink}>
+                  {item.roomName} — {item.branchName}
+                </AppText>
               </View>
               <View style={styles.pills}>
                 <SessionStatusPill status={item.status} />
                 {item.isToday ? <Pill label={ar.teacher.today} tone="brand" /> : null}
-                {item.isExtra ? <Pill label={ar.teacher.extra} tone="warning" /> : null}
+                {item.isExtra ? <ExtraSessionPill /> : null}
                 {item.isShared ? <Pill label={ar.teacher.shared} /> : null}
                 {role ? <Pill label={ar.labels.teachingRole[role]} tone={role === 'SUPERVISOR' ? 'brand' : 'muted'} /> : null}
               </View>
               {item.status === 'CANCELLED' ? (
-                <InfoRow icon="info" label={ar.sessions.cancellationReason}>
-                  {item.cancellationReason ?? ar.sessions.noReason}
-                </InfoRow>
+                <AppText variant="small" style={{ color: colors.destructiveSoftForeground }}>
+                  {ar.sessions.cancellationReason}: {item.cancellationReason ?? ar.sessions.noReason}
+                </AppText>
               ) : null}
               {session.completion ? (
-                <InfoRow icon="completed" label={ar.sessions.completedOn}>
-                  {formatDate(session.completion.completedAt)}
-                </InfoRow>
+                <AppText variant="small" tone="muted">
+                  {ar.sessions.completedOn} {formatDate(session.completion.completedAt)}
+                </AppText>
               ) : null}
             </Card>
 
-            <SectionCard title={ar.sessions.place} icon="location">
-              <InfoRow icon="room" label={ar.classes.room}>
-                {item.roomName}
-              </InfoRow>
-              <InfoRow icon="location" label={ar.classes.branch}>
-                {item.branchName}
-              </InfoRow>
-            </SectionCard>
+            <AttendanceActionCard
+              teacherId={teacherId}
+              sessionId={session.id}
+              fallback={item}
+              onOpen={() => router.push({ pathname: '/teacher/sessions/[id]/attendance', params: { id: session.id } })}
+            />
 
-            <SectionCard title={ar.sessions.groups} icon="classes" aside={item.isShared ? ar.sessions.sharedNote : undefined}>
-              {classes.map((c, i) =>
-                myClassIds.has(c.id) ? (
-                  <PressableRow
-                    key={c.id}
-                    bordered={i > 0}
-                    accessibilityLabel={`${ar.classes.open}: ${c.group.name}`}
-                    onPress={() => router.push({ pathname: '/teacher/classes/[id]', params: { id: c.id } })}>
-                    <AppText variant="bodyStrong">{c.group.name}</AppText>
-                  </PressableRow>
-                ) : (
-                  // A partner class of a shared lesson that is not mine: name only, not openable
-                  <View key={c.id} style={[styles.plainRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}>
-                    <AppText variant="body">{c.group.name}</AppText>
-                  </View>
-                ),
-              )}
+            <SectionCard title={ar.sessions.groups} icon="classes" aside={item.isShared ? ar.teacher.shared : undefined}>
+              <View>
+                {classes.map((c, i) =>
+                  myClassIds.has(c.id) ? (
+                    <PressableRow
+                      key={c.id}
+                      bordered={i > 0}
+                      accessibilityLabel={`${ar.classes.open}: ${c.group.name}`}
+                      onPress={() => router.push({ pathname: '/teacher/classes/[id]', params: { id: c.id } })}>
+                      <View style={styles.row}>
+                        <View style={[styles.smallTile, { backgroundColor: colors.brandSoft }]}>
+                          <Icon name="classes" size={16} color={colors.primary} />
+                        </View>
+                        <AppText variant="bodyStrong" numberOfLines={2} style={styles.flex}>
+                          {c.group.name}
+                        </AppText>
+                      </View>
+                    </PressableRow>
+                  ) : (
+                    // A partner class of a shared lesson that is not mine: name only — no arrow, not openable
+                    <View
+                      key={c.id}
+                      style={[styles.plainRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}
+                      accessible
+                      accessibilityLabel={`${c.group.name}، ${ar.sessions.partnerGroup}`}>
+                      <View style={[styles.smallTile, { backgroundColor: colors.muted }]}>
+                        <Icon name="classes" size={16} color={colors.mutedForeground} />
+                      </View>
+                      <View style={styles.flex}>
+                        <AppText variant="body" numberOfLines={2}>
+                          {c.group.name}
+                        </AppText>
+                        <AppText variant="small" tone="muted">
+                          {ar.sessions.partnerGroup}
+                        </AppText>
+                      </View>
+                    </View>
+                  ),
+                )}
+              </View>
             </SectionCard>
 
             <SectionCard title={ar.sessions.team} icon="teacher">
               {sessionTeam(session, teacherId).map((m) => (
                 <View key={m.id} style={styles.row}>
-                  <InitialsAvatar initials={m.name.split(' ').map((w) => w.charAt(0)).slice(0, 2).join('')} size={32} />
+                  <InitialsAvatar name={m.name} size={32} />
                   <AppText variant="body" style={styles.flex} numberOfLines={1}>
                     {m.name}
                     {m.isMe ? (
@@ -131,24 +164,6 @@ export function TeacherSessionScreen({ sessionId }: { sessionId: string }) {
                 </View>
               ))}
             </SectionCard>
-
-            <SectionCard title={ar.sessions.attendanceTitle} icon="attendance">
-              <AttendanceStateLabel state={item.progress} recorded={item.recorded} expected={item.expected} />
-              {item.status !== 'CANCELLED' ? (
-                <AppText variant="body">
-                  {ar.sessions.attendanceRecorded(session.attendance.recorded, session.attendance.expected)}
-                </AppText>
-              ) : null}
-              <Button
-                variant="outline"
-                icon="attendance"
-                label={ar.attendance.open}
-                fullWidth
-                onPress={() =>
-                  router.push({ pathname: '/teacher/sessions/[id]/attendance', params: { id: session.id } })
-                }
-              />
-            </SectionCard>
           </>
         ) : null}
       </QueryState>
@@ -156,11 +171,69 @@ export function TeacherSessionScreen({ sessionId }: { sessionId: string }) {
   );
 }
 
+/**
+ * The ONE attendance entry point, right under the summary. Its label and
+ * emphasis come from the roster the server returns (what may be changed
+ * now); until it arrives, or if it fails, the session's own counts are
+ * shown and the action stays a plain «عرض الحضور».
+ */
+function AttendanceActionCard({
+  teacherId,
+  sessionId,
+  fallback,
+  onOpen,
+}: {
+  teacherId: string;
+  sessionId: string;
+  fallback: SessionItem;
+  onOpen: () => void;
+}) {
+  const roster = useSessionAttendance(teacherId, sessionId);
+  const dto = roster.data;
+  const kind = dto ? attendanceAction(dto) : 'view';
+  const primary = kind !== 'view';
+  return (
+    <Card style={styles.action}>
+      <View style={styles.actionHead}>
+        {dto ? (
+          <AttendanceStateLabel state={rosterState(dto)} />
+        ) : (
+          <AttendanceStateLabel state={fallback.progress} recorded={fallback.recorded} expected={fallback.expected} />
+        )}
+        {dto ? (
+          <View style={styles.counts}>
+            <AppText variant="small" tone="muted">
+              {ar.attendance.progress(dto.recordedCount, dto.expectedCount)}
+            </AppText>
+            <AppText variant="small" tone="muted">
+              {ar.attendance.teamProgress(dto.teacherRecordedCount, dto.teacherExpectedCount)}
+            </AppText>
+          </View>
+        ) : null}
+      </View>
+      <Button
+        variant={primary ? 'primary' : 'outline'}
+        icon="attendance"
+        label={ar.attendance.action[kind]}
+        loading={roster.isPending}
+        fullWidth
+        onPress={onOpen}
+      />
+    </Card>
+  );
+}
+
 const styles = StyleSheet.create({
-  header: { gap: spacing.md },
+  summary: { gap: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  iconTile: { width: 52, height: 52, borderRadius: radius.xl, alignItems: 'center', justifyContent: 'center' },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  shrink: { flexShrink: 1 },
+  iconTile: { width: 44, height: 44, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center' },
+  smallTile: { width: 32, height: 32, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  plainRow: { paddingVertical: spacing.md },
+  action: { gap: spacing.sm },
+  actionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, flexWrap: 'wrap' },
+  counts: { alignItems: 'flex-end' },
+  plainRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm, minHeight: 48 },
   flex: { flex: 1 },
 });

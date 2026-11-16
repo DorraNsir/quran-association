@@ -7,6 +7,7 @@ import { useSession } from '@/features/auth/auth-provider';
 import { usePreferences } from '@/features/preferences/preferences';
 import { ar } from '@/i18n/ar';
 import { spacing } from '@/theme';
+import { headerTitle } from '@/theme/navigation';
 
 import { formatDate } from '@/i18n/format';
 
@@ -34,7 +35,7 @@ export function TeacherStudentScreen({ studentId }: { studentId: string }) {
 
   return (
     <Screen refreshing={refreshing} onRefresh={onRefresh}>
-      {profile ? <Stack.Screen options={{ title: profile.name }} /> : null}
+      {profile ? <Stack.Screen options={{ title: headerTitle(profile.name) }} /> : null}
       <QueryState query={workspace}>
         {!profile ? (
           <EmptyState
@@ -46,7 +47,7 @@ export function TeacherStudentScreen({ studentId }: { studentId: string }) {
         ) : (
           <>
             <Card style={styles.header}>
-              <InitialsAvatar initials={profile.initials} size={64} />
+              <InitialsAvatar name={profile.name} size={64} />
               <AppText variant="title" center>
                 {profile.name}
               </AppText>
@@ -72,6 +73,26 @@ export function TeacherStudentScreen({ studentId }: { studentId: string }) {
                   {profile.groupClass.groupName} — {profile.groupClass.branchName}
                 </AppText>
               </PressableRow>
+            </Card>
+
+            <Card>
+              <PressableRow
+                bordered={false}
+                accessibilityLabel={`${ar.memorization.history} — ${profile.name}`}
+                onPress={() => router.push({ pathname: '/teacher/students/[id]/memorization', params: { id: profile.student.id } })}>
+                <AppText variant="bodyStrong">{ar.memorization.history}</AppText>
+                <AppText variant="small" tone="muted">
+                  {ar.memorization.lastSurah}
+                </AppText>
+              </PressableRow>
+              <Button
+                icon="notes"
+                label={ar.memorization.record}
+                fullWidth
+                onPress={() =>
+                  router.push({ pathname: '/teacher/students/[id]/memorization/record', params: { id: profile.student.id } })
+                }
+              />
             </Card>
 
             <SectionCard title={ar.student.info} icon="info">

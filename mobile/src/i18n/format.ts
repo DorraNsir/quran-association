@@ -107,6 +107,11 @@ const PDI = '⁩';
  * Wraps left-to-right content (e.g. "2026-2027", "80%") so the Arabic
  * paragraph around it can never reorder its characters or its neighbours.
  */
+/** Spoken/accessible time range: «من 17:00 إلى 19:00» (start first, the backend's times as is). */
+export function timeRangeLabel(start: string, end: string): string {
+  return `من ${start} إلى ${end}`;
+}
+
 export function ltr(text: string | number): string {
   return `${LRI}${text}${PDI}`;
 }

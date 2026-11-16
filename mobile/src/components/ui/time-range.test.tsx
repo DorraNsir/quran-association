@@ -16,3 +16,15 @@ describe('TimeRange (no reliance on bidi reordering)', () => {
     expect(screen.getByLabelText('من 17:00 إلى 19:30')).toBeTruthy();
   });
 });
+
+describe('TimeRange order is fixed, whatever the device layout direction', () => {
+  it('the row direction is forced to RTL: start always on the right, read first (LTR device or Expo Go before the RTL reload)', async () => {
+    await render(<TimeRange start="08:30" end="10:00" />);
+    expect(screen.getByLabelText('من 08:30 إلى 10:00')).toHaveStyle({ direction: 'rtl', flexDirection: 'row' });
+  });
+
+  it('shows the backend times exactly as given (no conversion, no reordering)', async () => {
+    await render(<TimeRange start="23:15" end="00:45" />);
+    expect(screen.getAllByText(/^\d\d:\d\d$/).map((n) => n.props.children)).toEqual(['23:15', '00:45']);
+  });
+});

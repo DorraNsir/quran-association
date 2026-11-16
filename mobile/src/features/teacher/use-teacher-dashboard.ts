@@ -8,8 +8,8 @@ import {
   memorizationProgress,
   platformClock,
   teacherClasses,
-  upcomingSessions,
 } from './dashboard-model';
+import { addDays, toSessionItem } from './sessions-model';
 import {
   fetchClassMemorization,
   fetchTeacherAttendanceSummary,
@@ -20,8 +20,8 @@ import {
 /** Every teacher query lives under this key (scoped to the signed-in teacher). */
 export const teacherKey = (teacherId: string) => ['teacher', teacherId] as const;
 
-const UPCOMING_FETCH = 10;
-const UPCOMING_SHOWN = 5;
+/** Today's lessons of one teacher: a handful at most; bounded anyway. */
+const TODAY_MAX = 50;
 
 /**
  * GET /teacher/workspace — one cached bundle shared by the dashboard, the
@@ -55,14 +55,25 @@ export function useTeacherDashboard(teacherId: string) {
     select: (page) => page.meta.total,
   });
 
-  const upcoming = useQuery({
-    queryKey: [...teacherKey(teacherId), 'sessions', 'upcoming', clock.today],
+  // «حصص اليوم» (the web dashboard's section): every lesson of the platform
+  // day, whatever its status — done, cancelled or still to come
+  const today = useQuery({
+    queryKey: [...teacherKey(teacherId), 'sessions', 'today', clock.today],
+    queryFn: ({ signal }) =>
+      fetchTeacherSessions({ from: clock.today, to: clock.today, order: 'asc', pageSize: TODAY_MAX }, signal),
+    enabled: prefsSettled,
+  });
+  // No lesson today: «الحصة القادمة», one small request, only then
+  const todayEmpty = today.isSuccess && today.data.data.length === 0;
+  const next = useQuery({
+    queryKey: [...teacherKey(teacherId), 'sessions', 'next', clock.today],
     queryFn: ({ signal }) =>
       fetchTeacherSessions(
-        { from: clock.today, status: 'SCHEDULED', order: 'asc', pageSize: UPCOMING_FETCH },
+        { from: addDays(clock.today, 1), status: 'SCHEDULED', order: 'asc', pageSize: 1 },
         signal,
       ),
-    enabled: prefsSettled,
+    enabled: todayEmpty,
+    select: (page) => page.data[0] ?? null,
   });
 
   const attendance = useQuery({
@@ -96,8 +107,9 @@ export function useTeacherDashboard(teacherId: string) {
     workspace,
     classes,
     completedCount,
-    upcoming,
-    upcomingList: upcoming.data ? upcomingSessions(upcoming.data.data, clock, UPCOMING_SHOWN) : [],
+    today,
+    todayList: today.data ? today.data.data.map((s) => toSessionItem(s, clock)) : [],
+    nextSession: next.data ? toSessionItem(next.data, clock) : null,
     attendance,
     memorization,
   };
