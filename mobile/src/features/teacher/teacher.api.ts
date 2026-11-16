@@ -1,6 +1,14 @@
 import { api, type Query } from '@/services/api';
 
 import type { SaveBody } from './attendance-draft';
+import type {
+  EligibleSession,
+  EvaluationLine,
+  NewWorkItem,
+  WorkItemPatch,
+  WorkProgram,
+  WorkProgramFilters,
+} from './work-types';
 
 import type {
   AttendanceSummary,
@@ -11,6 +19,7 @@ import type {
   Session,
   SessionAttendance,
   SessionStatus,
+  TeacherNote,
   TeacherWorkspace,
 } from './types';
 
@@ -112,4 +121,86 @@ export const saveStudentMemorization = (
   api<MemorizationRecord>(`/teacher/students/${encodeURIComponent(studentId)}/memorization`, {
     method: 'PUT',
     body,
+  });
+
+/*
+ * «ملاحظاتي» — /api/teacher/notes (TeacherWorkspaceController): the signed-in
+ * teacher's OWN private notes. The owner comes from the token; another
+ * teacher's note answers 404 TEACHER_NOTE_NOT_FOUND. A note is only its
+ * `content` (1–2000 characters after trimming); the dates are the server's.
+ * There is no GET by id: a note is read from the list.
+ */
+const NOTES_PAGE_SIZE = 100; // the API's MAX_PAGE_SIZE
+const NOTES_MAX_PAGES = 50;
+
+/** GET /api/teacher/notes, every page (most recently updated first) — as the web's fetchAll. */
+export async function fetchAllTeacherNotes(signal?: AbortSignal): Promise<TeacherNote[]> {
+  const notes: TeacherNote[] = [];
+  for (let page = 1; page <= NOTES_MAX_PAGES; page++) {
+    const result = await api<Page<TeacherNote>>('/teacher/notes', { query: { page, pageSize: NOTES_PAGE_SIZE }, signal });
+    notes.push(...result.data);
+    if (page >= result.meta.totalPages) break;
+  }
+  return notes;
+}
+
+/** POST /api/teacher/notes — CreateTeacherNoteDto { content }. */
+export const createTeacherNote = (content: string) =>
+  api<TeacherNote>('/teacher/notes', { method: 'POST', body: { content } });
+
+/** PATCH /api/teacher/notes/:id — UpdateTeacherNoteDto { content } (my note only). */
+export const updateTeacherNote = (id: string, content: string) =>
+  api<TeacherNote>(`/teacher/notes/${encodeURIComponent(id)}`, { method: 'PATCH', body: { content } });
+
+/** DELETE /api/teacher/notes/:id — 204 (my note only). */
+export const deleteTeacherNote = (id: string) =>
+  api<void>(`/teacher/notes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+/*
+ * «متابعة برنامج العمل» — /api/teacher/work-programs and /work-items
+ * (TeacherWorkFollowupController). The server checks on every call that I am
+ * in the session's TEAM SNAPSHOT (supervisor or assistant alike) and, in a
+ * shared session, that the student is of a class I manage there. Nothing is
+ * ever deleted (a dropped item is evaluated CANCELLED). Writes carry the
+ * versions they were made from: a stale write answers 409 instead of
+ * overwriting someone else's change.
+ */
+const WORK = '/teacher/work-programs';
+
+const clean = (q: object): Query =>
+  Object.fromEntries(Object.entries(q).filter(([, v]) => v !== undefined && v !== '')) as Query;
+
+/** GET — my programs (filters, pagination), each with its items and server progress. */
+export const fetchWorkPrograms = (filters: WorkProgramFilters & { page: number; pageSize: number }, signal?: AbortSignal) =>
+  api<Page<WorkProgram>>(WORK, { query: clean(filters), signal });
+
+/** GET /:id — 404 also for a program outside my scope. */
+export const fetchWorkProgram = (id: string, signal?: AbortSignal) =>
+  api<WorkProgram>(`${WORK}/${encodeURIComponent(id)}`, { signal });
+
+/** GET eligible-sessions — the student's existing UPCOMING sessions that may receive work (never a free date). */
+export const fetchEligibleSessions = (studentId: string, afterSessionId: string | undefined, signal?: AbortSignal) =>
+  api<EligibleSession[]>(`${WORK}/eligible-sessions`, { query: clean({ studentId, afterSessionId }), signal });
+
+/** POST — CreateWorkProgramDto (one program per student per session; 409 WORK_PROGRAM_EXISTS + programId). */
+export const createWorkProgram = (body: { studentId: string; sessionId: string; generalNotes: string | null; items: NewWorkItem[] }) =>
+  api<WorkProgram>(WORK, { method: 'POST', body });
+
+/** PATCH /:id — UpdateWorkProgramDto: notes (+ program version), changed saved items (+ their versions), new items. */
+export const updateWorkProgram = (
+  id: string,
+  body: { version?: number; generalNotes?: string | null; items?: WorkItemPatch[]; newItems?: NewWorkItem[] },
+) => api<WorkProgram>(`${WORK}/${encodeURIComponent(id)}`, { method: 'PATCH', body });
+
+/** PATCH /:id/evaluation — «حفظ التقييم»: the changed items (+ notes), atomically. */
+export const evaluateWorkProgram = (
+  id: string,
+  body: { items: EvaluationLine[]; version?: number; generalNotes?: string | null },
+) => api<WorkProgram>(`${WORK}/${encodeURIComponent(id)}/evaluation`, { method: 'PATCH', body });
+
+/** POST /work-items/:id/transfer | next-recitation — answers with the TARGET program. */
+export const scheduleWorkItem = (itemId: string, mode: 'carry' | 'next', targetSessionId: string, description?: string) =>
+  api<WorkProgram>(`/teacher/work-items/${encodeURIComponent(itemId)}/${mode === 'carry' ? 'transfer' : 'next-recitation'}`, {
+    method: 'POST',
+    body: mode === 'carry' ? { targetSessionId } : { targetSessionId, description },
   });

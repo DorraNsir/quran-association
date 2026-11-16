@@ -322,18 +322,18 @@ function MemorizationRow({ item: m, onPress }: { item: MemorizationProgress; onP
 
 /** Modules that do not exist yet: listed so the roadmap is visible, clearly inactive. */
 const COMING: { icon: IconName; label: string }[] = [
-  { icon: 'workFollowup', label: t.tools.workFollowup },
-  { icon: 'notes', label: t.tools.notes },
   { icon: 'resources', label: t.tools.resources },
   { icon: 'announcements', label: t.tools.announcements },
 ];
 
 /** Teacher tools: working shortcuts first, then the clearly inactive roadmap (no fake buttons). */
-function ToolsCard({ onOpen }: { onOpen: (path: '/teacher/schedule' | '/teacher/memorization') => void }) {
+function ToolsCard({ onOpen }: { onOpen: (path: '/teacher/schedule' | '/teacher/memorization' | '/teacher/notes' | '/teacher/work') => void }) {
   const { colors } = useAppTheme();
-  const available: { icon: IconName; label: string; path: '/teacher/schedule' | '/teacher/memorization' }[] = [
+  const available: { icon: IconName; label: string; path: '/teacher/schedule' | '/teacher/memorization' | '/teacher/notes' | '/teacher/work' }[] = [
     { icon: 'calendar', label: ar.schedule.open, path: '/teacher/schedule' },
     { icon: 'classes', label: ar.memorization.open, path: '/teacher/memorization' },
+    { icon: 'workFollowup', label: ar.work.open, path: '/teacher/work' },
+    { icon: 'notes', label: ar.notes.open, path: '/teacher/notes' },
   ];
   return (
     <SectionCard title={t.toolsTitle} icon="workFollowup">

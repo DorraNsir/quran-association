@@ -220,6 +220,15 @@ export interface RosterTeacher {
   note: string | null;
 }
 
+/** TeacherNoteDto — «ملاحظاتي»: a PRIVATE note, its text and server-set dates only */
+export interface TeacherNote {
+  id: string;
+  content: string;
+  /** ISO timestamps set by the server */
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** SessionAttendanceDto — GET /teacher/sessions/:id/attendance (in the CALLER's scope) */
 export interface SessionAttendance {
   sessionId: string;

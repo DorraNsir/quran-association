@@ -7,9 +7,9 @@ import { Icon, type IconName } from './icon';
 
 /**
  * Pill tones: a soft background with a dark text of the same hue (AA contrast).
- * brand/success = green, danger = red, warning = amber, muted = neutral.
+ * brand/success = green, danger = red, warning = amber, info = sky, muted = neutral.
  */
-export type PillTone = 'muted' | 'brand' | 'success' | 'warning' | 'danger';
+export type PillTone = 'muted' | 'brand' | 'success' | 'warning' | 'danger' | 'info';
 
 export function pillColors(colors: ColorTokens, tone: PillTone): { bg: string; fg: string } {
   switch (tone) {
@@ -20,6 +20,8 @@ export function pillColors(colors: ColorTokens, tone: PillTone): { bg: string; f
       return { bg: colors.warningSoft, fg: colors.warningSoftForeground };
     case 'danger':
       return { bg: colors.destructiveSoft, fg: colors.destructiveSoftForeground };
+    case 'info':
+      return { bg: colors.infoSoft, fg: colors.infoSoftForeground };
     default:
       return { bg: colors.muted, fg: colors.mutedForeground };
   }

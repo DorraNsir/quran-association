@@ -11,7 +11,7 @@ import { radius, spacing, touchTarget, useAppTheme } from '@/theme';
 import { AppText } from './app-text';
 import { Icon, type IconName } from './icon';
 
-type Variant = 'primary' | 'outline' | 'ghost';
+type Variant = 'primary' | 'outline' | 'ghost' | 'destructive';
 
 export interface ButtonProps extends Omit<PressableProps, 'children' | 'style'> {
   label: string;
@@ -21,7 +21,7 @@ export interface ButtonProps extends Omit<PressableProps, 'children' | 'style'> 
   fullWidth?: boolean;
 }
 
-/** Same three variants as the web's shadcn Button that the app uses most. */
+/** The web's shadcn Button variants the app uses (destructive: soft red, for deletions). */
 export function Button({
   label,
   variant = 'primary',
@@ -33,7 +33,12 @@ export function Button({
 }: ButtonProps) {
   const { colors } = useAppTheme();
   const isDisabled = disabled || loading;
-  const fg = variant === 'primary' ? colors.primaryForeground : colors.foreground;
+  const fg =
+    variant === 'primary'
+      ? colors.primaryForeground
+      : variant === 'destructive'
+        ? colors.destructiveSoftForeground
+        : colors.foreground;
 
   return (
     <Pressable
@@ -48,6 +53,11 @@ export function Button({
         variant === 'outline' && {
           backgroundColor: colors.card,
           borderColor: colors.input,
+          borderWidth: StyleSheet.hairlineWidth * 2,
+        },
+        variant === 'destructive' && {
+          backgroundColor: colors.destructiveSoft,
+          borderColor: colors.destructive,
           borderWidth: StyleSheet.hairlineWidth * 2,
         },
         pressed && { opacity: 0.85 },

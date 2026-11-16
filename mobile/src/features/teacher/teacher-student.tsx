@@ -95,6 +95,18 @@ export function TeacherStudentScreen({ studentId }: { studentId: string }) {
               />
             </Card>
 
+            <Card>
+              <PressableRow
+                bordered={false}
+                accessibilityLabel={`${ar.work.studentLink} — ${profile.name}`}
+                onPress={() => router.push({ pathname: '/teacher/work', params: { studentId: profile.student.id } })}>
+                <AppText variant="bodyStrong">{ar.work.studentLink}</AppText>
+                <AppText variant="small" tone="muted">
+                  {ar.work.intro}
+                </AppText>
+              </PressableRow>
+            </Card>
+
             <SectionCard title={ar.student.info} icon="info">
               <InfoRow icon="location" label={ar.student.branch}>
                 {profile.groupClass.branchName}

@@ -28,6 +28,9 @@ export interface ColorTokens {
   warningSoft: string;
   /** Dark amber text on warningSoft (AA) — extra sessions, warnings */
   warningSoftForeground: string;
+  /** Sky tone (web bg-sky-50 / text-sky-800) — a postponed work item */
+  infoSoft: string;
+  infoSoftForeground: string;
   border: string;
   input: string;
   ring: string;
@@ -61,6 +64,8 @@ export const lightColors: ColorTokens = {
   warning: '#b86b00',
   warningSoft: '#fff4d7',
   warningSoftForeground: '#7c4300',
+  infoSoft: '#f0f9ff',
+  infoSoftForeground: '#075985',
   border: '#e3e5e7',
   input: '#d9dbde',
   ring: '#49935d',
@@ -92,6 +97,8 @@ export const darkColors: ColorTokens = {
   warning: '#f2af48',
   warningSoft: '#3c2a0e',
   warningSoftForeground: '#f7c674',
+  infoSoft: '#0c2a3a',
+  infoSoftForeground: '#9bd7f5',
   // Web: oklch(1 0 0 / 10%) and / 15%
   border: 'rgba(255,255,255,0.10)',
   input: 'rgba(255,255,255,0.15)',

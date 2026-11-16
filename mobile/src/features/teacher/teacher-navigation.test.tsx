@@ -8,6 +8,8 @@ import { ar } from '@/i18n/ar';
 import { formatDateLong } from '@/i18n/format';
 
 import { YEAR_FIXTURE } from './__fixtures__/memorization';
+import { notesFixture, notesPage } from './__fixtures__/notes';
+import { workPage, workProgram } from './__fixtures__/work';
 import { attendanceFixture, pageOf, sessionFixture } from './__fixtures__/sessions';
 import { workspaceFixture } from './__fixtures__/workspace';
 
@@ -55,6 +57,9 @@ beforeEach(() => {
   const answers: [string, unknown][] = [
     ['/platform-preferences', { timezone: 'Africa/Tunis', dateFormat: 'DD/MM/YYYY', defaultCalendarView: 'week', defaultPageSize: 20, currentAcademicYear: null }],
     ['/teacher/workspace', workspaceFixture()],
+    ['/teacher/notes', notesPage(notesFixture())],
+    ['/teacher/work-programs/w1', workProgram()],
+    ['/teacher/work-programs', workPage([workProgram()])],
     // Most specific first: a session's details, then the paginated list
     ['/teacher/sessions/s1', sessionFixture('s1', '2099-01-05', '17:00', '19:00')],
     ['/teacher/sessions', pageOf([sessionFixture('s1', '2099-01-05', '17:00', '19:00')])],
@@ -246,6 +251,65 @@ describe('teacher navigation through the real route tree', () => {
     await tap(ar.schedule.open);
     expect(router).toHavePathname('/teacher/schedule');
     expect(methods.every((m) => m === 'GET')).toBe(true);
+  });
+
+  it('«ملاحظاتي»: dashboard tools → list → a note → edit, and back', async () => {
+    mockState = signedIn(user({}));
+    const router = await renderRouter(APP, { initialUrl: '/teacher' });
+    await tap(ar.notes.open);
+    expect(router).toHavePathname('/teacher/notes');
+    await tap(/مراجعة سورة الملك/);
+    expect(router).toHavePathname('/teacher/notes/n2');
+    await tap(ar.notes.edit);
+    expect(router).toHavePathname('/teacher/notes/n2/edit');
+    expect((await screen.findByLabelText(ar.notes.field)).props.value).toBe(notesFixture()[0]!.content);
+    await act(async () => {
+      appRouter.back();
+    });
+    expect(router).toHavePathname('/teacher/notes/n2');
+    await act(async () => {
+      appRouter.back();
+    });
+    await tap(ar.notes.add);
+    expect(router).toHavePathname('/teacher/notes/new');
+    expect(methods.every((m) => m === 'GET')).toBe(true); // browsing never writes
+  });
+
+  it('«متابعة برنامج العمل»: dashboard tools → list → a program → evaluation', async () => {
+    mockState = signedIn(user({}));
+    const router = await renderRouter(APP, { initialUrl: '/teacher' });
+    await tap(ar.work.open);
+    expect(router).toHavePathname('/teacher/work');
+    await tap(/^برنامج العمل محمد التونسي/);
+    expect(router).toHavePathname('/teacher/work/w1');
+    await tap(ar.work.evaluate);
+    expect(router).toHavePathname('/teacher/work/w1/evaluate');
+    expect(methods.every((m) => m === 'GET')).toBe(true);
+  });
+
+  it('class details → «برنامج العمل» opens the list filtered by that class', async () => {
+    mockState = signedIn(user({}));
+    const router = await renderRouter(APP, { initialUrl: '/teacher/classes/c1' });
+    await tap(ar.work.classLink);
+    expect(router).toHavePathname('/teacher/work');
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10);
+    });
+    expect(requests.some((u) => u.includes('/teacher/work-programs?') && u.includes('groupClassId=c1'))).toBe(true);
+  });
+
+  it('a STUDENT cannot open the teacher work programs', async () => {
+    mockState = signedIn(user({ roles: ['STUDENT'], teacherId: null, studentId: 's1' }));
+    const router = await renderRouter(APP, { initialUrl: '/teacher/work/w1' });
+    expect(router.getPathname().startsWith('/teacher')).toBe(false);
+    expect(requests.some((u) => u.includes('/work-programs'))).toBe(false);
+  });
+
+  it('a STUDENT cannot open the teacher notes', async () => {
+    mockState = signedIn(user({ roles: ['STUDENT'], teacherId: null, studentId: 's1' }));
+    const router = await renderRouter(APP, { initialUrl: '/teacher/notes/n2' });
+    expect(router.getPathname().startsWith('/teacher')).toBe(false);
+    expect(requests.some((u) => u.includes('/teacher/notes'))).toBe(false);
   });
 
   it('a STUDENT cannot open the teacher schedule', async () => {
