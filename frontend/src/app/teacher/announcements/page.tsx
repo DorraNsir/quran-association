@@ -1,10 +1,10 @@
 import type { Metadata } from "next"
 
-import { AnnouncementFeed } from "@/components/communication/announcements-views"
+import { TeacherAnnouncementsScreen } from "@/components/communication/teacher-announcements"
 
 export const metadata: Metadata = { title: "الإعلانات" }
 
-/** The API returns only the announcements addressed to the signed-in account. */
+/** The feed of what reaches the teacher, and «إعلاناتي»: their own announcements to their current classes. */
 export default function Page() {
-  return <AnnouncementFeed workspace="teacher" />
+  return <TeacherAnnouncementsScreen />
 }

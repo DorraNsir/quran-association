@@ -1,6 +1,6 @@
 import { router as appRouter } from 'expo-router';
 import { act, fireEvent, renderRouter, screen, within } from 'expo-router/testing-library';
-import { Alert } from 'react-native';
+import { Alert, StyleSheet } from 'react-native';
 
 import type { SessionState } from '@/features/auth/session';
 import type { SessionUser } from '@/features/auth/types';
@@ -332,6 +332,58 @@ describe('teacher navigation through the real route tree', () => {
     await tap(/^عطلة نهاية السداسي/);
     expect(router).toHavePathname('/teacher/announcements/a0');
     expect(screen.queryByLabelText(ar.announcements.edit)).toBeNull();
+    expect(methods.every((m) => m === 'GET')).toBe(true);
+  });
+
+  it('dashboard tools: the six tools, as an equal two-column grid, each opening its screen', async () => {
+    mockState = signedIn(user({}));
+    const router = await renderRouter(APP, { initialUrl: '/teacher' });
+    const tiles = await screen.findAllByTestId('teacher-tool');
+    expect(tiles.map((t) => t.props.accessibilityLabel)).toEqual([
+      ar.schedule.open,
+      ar.memorization.open,
+      ar.work.open,
+      ar.notes.open,
+      ar.resources.open,
+      ar.announcements.open,
+    ]);
+    // Same width for every tile (two per row)
+    expect(new Set(tiles.map((t) => StyleSheet.flatten(t.props.style).width))).toEqual(new Set(['48.5%']));
+    expect(screen.queryByText(ar.teacher.comingSoon)).toBeNull();
+    await fireEvent.press(tiles[2]!);
+    expect(router).toHavePathname('/teacher/work');
+  });
+
+  it('logout moved to «حسابي» (header button): confirmation first, then the EXISTING session logout', async () => {
+    mockState = signedIn(user({}));
+    const { session } = jest.requireMock('@/features/auth/auth-provider') as { session: { logout: jest.Mock } };
+    session.logout.mockClear();
+    const router = await renderRouter(APP, { initialUrl: '/teacher' });
+    await screen.findAllByTestId('teacher-tool');
+    // No logout button on the dashboard anymore
+    expect(screen.queryByLabelText(ar.auth.logout)).toBeNull();
+    await tap(ar.account.open);
+    expect(router).toHavePathname('/teacher/account');
+    expect(await screen.findByText('ahmed.t')).toBeTruthy();
+    let alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => buttons?.find((b) => b.style === 'cancel')?.onPress?.());
+    await tap(ar.auth.logout);
+    expect(alert).toHaveBeenCalledWith(ar.auth.logoutConfirmTitle, ar.auth.logoutConfirmMessage, expect.any(Array));
+    expect(session.logout).not.toHaveBeenCalled();
+    alert.mockRestore();
+    alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => buttons?.find((b) => b.style === 'destructive')?.onPress?.());
+    await tap(ar.auth.logout);
+    expect(session.logout).toHaveBeenCalledTimes(1);
+    alert.mockRestore();
+  });
+
+  it('announcements: «إعلان جديد» opens the creation form for an eligible teacher; nothing is sent by opening it', async () => {
+    mockState = signedIn(user({}));
+    const router = await renderRouter(APP, { initialUrl: '/teacher/announcements' });
+    await tap(ar.announcements.add);
+    expect(router).toHavePathname('/teacher/announcements/new');
+    expect(await screen.findByLabelText(ar.announcements.titleLabel)).toBeTruthy();
+    // No default audience: my class is offered, not selected
+    expect(screen.getByRole('checkbox', { name: 'مجموعة الفجر' }).props.accessibilityState.checked).toBe(false);
     expect(methods.every((m) => m === 'GET')).toBe(true);
   });
 

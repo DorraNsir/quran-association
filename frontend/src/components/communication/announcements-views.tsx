@@ -3,7 +3,7 @@
 import { Archive, CalendarClock, CalendarDays, CalendarX2, Eye, Loader2, Megaphone, Pencil, Plus, SearchX, Send, Target, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { ActionsMenu, type RowAction } from "@/components/shared/actions-menu"
@@ -50,7 +50,7 @@ import type { AnnouncementAudienceType, ID } from "@/types/domain"
 
 import { AnnouncementFormSheet, type AnnouncementFormResult } from "./announcement-form-sheet"
 
-const STATE_LABEL: Record<AnnouncementState, { label: string; className: string }> = {
+export const STATE_LABEL: Record<AnnouncementState, { label: string; className: string }> = {
   ACTIVE: { label: "منشور", className: "bg-brand-soft text-brand-soft-foreground" },
   SCHEDULED: { label: "مجدول", className: "bg-muted text-foreground" },
   DRAFT: { label: "مسودة", className: "bg-warning-soft text-warning" },
@@ -79,13 +79,13 @@ export function AnnouncementAudienceBadge({ audience }: { audience: Announcement
   )
 }
 
-function audienceDetail(a: AnnouncementDto) {
+export function audienceDetail(a: AnnouncementDto) {
   if (a.audience === "SPECIFIC_GROUP_CLASSES") return a.groupClasses.map((c) => `${c.group.name} — ${c.branch.name}`)
   if (a.audience === "SPECIFIC_BRANCHES") return a.branches.map((b) => b.name)
   return []
 }
 
-function publicationLine(a: AnnouncementDto) {
+export function publicationLine(a: AnnouncementDto) {
   if (a.state === "SCHEDULED") return `يُنشر في ${scheduleLabel(a)}`
   if (a.state === "DRAFT") return "مسودة — لم تُنشر بعد"
   return `النشر: ${formatDate(dayOf(a))}${a.expiresAt ? ` · الانتهاء: ${formatDate(a.expiresAt)}` : ""}`
@@ -95,6 +95,8 @@ function publicationLine(a: AnnouncementDto) {
 function ScheduleDialog({ announcement, onDone }: { announcement: AnnouncementDto | null; onDone: () => void }) {
   const today = todayInTunis()
   const action = useAnnouncementAction(announcement?.id ?? "")
+  // Synchronous guard against a double submit (isPending re-renders too late)
+  const submitting = useRef(false)
   const [date, setDate] = useState(announcement?.scheduledForLocal?.slice(0, 10) ?? today)
   const [time, setTime] = useState(announcement?.scheduledForLocal?.slice(11, 16) ?? "")
   const [error, setError] = useState<string>()
@@ -112,10 +114,14 @@ function ScheduleDialog({ announcement, onDone }: { announcement: AnnouncementDt
             e.preventDefault()
             const problem = validate()
             setError(problem)
-            if (problem || action.isPending) return
+            if (problem || action.isPending || submitting.current) return
+            submitting.current = true
             action.mutate(
               { kind: "schedule", scheduledAt: value },
               {
+                onSettled: () => {
+                  submitting.current = false
+                },
                 onSuccess: () => {
                   toast.success("تمت جدولة الإعلان", { description: `يُنشر في ${formatDate(date)} على الساعة ${time}` })
                   onDone()
@@ -155,7 +161,7 @@ function ScheduleDialog({ announcement, onDone }: { announcement: AnnouncementDt
 
 type Pending = { kind: "publish" | "cancel-schedule" | "archive" | "delete"; announcement: AnnouncementDto }
 
-const CONFIRM: Record<Pending["kind"], { title: string; description: (a: AnnouncementDto) => string; label: string; success: string; destructive?: boolean }> = {
+export const CONFIRM: Record<Pending["kind"], { title: string; description: (a: AnnouncementDto) => string; label: string; success: string; destructive?: boolean }> = {
   publish: {
     title: "نشر الإعلان الآن؟",
     description: (a) => `سيظهر «${a.title}» فورًا ويُرسل إشعار إلى الجمهور المستهدف.`,
@@ -234,11 +240,19 @@ function AnnouncementEditor({
   const create = useCreateAnnouncement()
   const update = useUpdateAnnouncement(announcement?.id ?? "")
   const mutation = announcement ? update : create
+  // Synchronous guard: two fast submits happen before `isPending` re-renders
+  const submitting = useRef(false)
+  const release = () => {
+    submitting.current = false
+  }
   const save = (result: AnnouncementFormResult) => {
+    if (submitting.current || mutation.isPending) return
+    submitting.current = true
     if (announcement) {
       update.mutate(
         { input: result.input, published: announcement.status === "PUBLISHED" },
         {
+          onSettled: release,
           onSuccess: () => {
             onOpenChange(false)
             toast.success("تم تعديل الإعلان")
@@ -248,6 +262,7 @@ function AnnouncementEditor({
       return
     }
     create.mutate(result, {
+      onSettled: release,
       onSuccess: ({ notifiedCount }) => {
         onOpenChange(false)
         if (result.mode === "PUBLISH_NOW") toast.success("تم نشر الإعلان", { description: `أُرسل إشعار إلى ${notifiedCount} حساب.` })
@@ -372,7 +387,9 @@ export function AdminAnnouncements({ lookups }: { lookups: Lookups }) {
 
 /** The latest active announcements addressed to the signed-in teacher or student. */
 export function useReaderAnnouncements(scope: Exclude<AnnouncementScope, "admin">, limit = 2) {
-  return useAnnouncements(scope, {}, 1, limit).data?.data ?? []
+  // Teachers also get their own drafts / archived ones from this endpoint: only what is live today
+  const list = useAnnouncements(scope, scope === "teacher" ? { status: "PUBLISHED" } : {}, 1, limit)
+  return (list.data?.data ?? []).filter((a) => a.state === "ACTIVE")
 }
 
 /** Compact list item, also used by dashboards. */
@@ -438,7 +455,18 @@ export function AnnouncementFeed({ workspace }: { workspace: Exclude<Announcemen
 }
 
 /** One announcement. Admins also see audience, status and the actions of its status. */
-export function AnnouncementDetails({ announcementId, workspace, lookups }: { announcementId: ID; workspace: AnnouncementScope; lookups?: Lookups }) {
+export function AnnouncementDetails({
+  announcementId,
+  workspace,
+  lookups,
+  renderActions,
+}: {
+  announcementId: ID
+  workspace: AnnouncementScope
+  lookups?: Lookups
+  /** Non-admin workspaces: the actions of an announcement the caller may manage (teacher: their own) */
+  renderActions?: (announcement: AnnouncementDto) => React.ReactNode
+}) {
   const router = useRouter()
   const query = useAnnouncement(workspace, announcementId)
   const [editing, setEditing] = useState<{ key: number; open: boolean }>({ key: 0, open: false })
@@ -451,6 +479,8 @@ export function AnnouncementDetails({ announcementId, workspace, lookups }: { an
     return <NotFoundState title="الإعلان غير موجود" backHref={back} backLabel="العودة إلى الإعلانات" />
   const announcement = query.data
   if (!announcement) return <QueryState query={query}>{null}</QueryState>
+  // Status, audience and the full publication line: for whoever manages it (admin, or its teacher author)
+  const manages = isAdmin || (Boolean(renderActions) && announcement.canManage)
 
   return (
     <>
@@ -458,7 +488,7 @@ export function AnnouncementDetails({ announcementId, workspace, lookups }: { an
       <Card className="gap-4 p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 space-y-2">
-            {isAdmin && (
+            {manages && (
               <div className="flex flex-wrap gap-1.5">
                 <Badge className={cn("font-normal", STATE_LABEL[announcement.state].className)}>{STATE_LABEL[announcement.state].label}</Badge>
                 <AnnouncementAudienceBadge audience={announcement.audience} />
@@ -467,9 +497,10 @@ export function AnnouncementDetails({ announcementId, workspace, lookups }: { an
             <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{announcement.title}</h1>
             <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <CalendarDays className="size-4" aria-hidden />
-              {isAdmin ? publicationLine(announcement) : formatDate(dayOf(announcement))}
+              {manages ? publicationLine(announcement) : formatDate(dayOf(announcement))}
             </p>
           </div>
+          {!isAdmin && announcement.canManage && renderActions?.(announcement)}
           {isAdmin && announcement.canManage && (
             <ActionsMenu
               label="إجراءات الإعلان"
@@ -483,7 +514,7 @@ export function AnnouncementDetails({ announcementId, workspace, lookups }: { an
           )}
         </div>
         <p className="leading-relaxed whitespace-pre-wrap">{announcement.content}</p>
-        {isAdmin && audienceDetail(announcement).length > 0 && (
+        {manages && audienceDetail(announcement).length > 0 && (
           <div className="space-y-1.5 border-t pt-3">
             <p className="text-xs text-muted-foreground">{announcement.audience === "SPECIFIC_BRANCHES" ? "الفروع المستهدفة" : "الفصول المستهدفة"}</p>
             <ul className="flex flex-wrap gap-1">

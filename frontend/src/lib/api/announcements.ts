@@ -136,3 +136,60 @@ export function useAnnouncementAction(id: ID) {
     invalidate
   )
 }
+
+/* ------------------------------ teacher writes ------------------------------ */
+
+/**
+ * «إعلاناتي» — the TEACHER endpoints (/api/teacher/announcements), never the
+ * admin ones. A teacher writes only toward the classes they are CURRENTLY
+ * assigned to (supervisor or assistant; the API checks it on every write,
+ * ANNOUNCEMENT_CLASS_ACCESS_DENIED), publishes now or saves a draft (no
+ * scheduling), and manages only their own announcements (canManage).
+ */
+export type TeacherPublicationMode = "PUBLISH_NOW" | "DRAFT"
+
+export interface TeacherAnnouncementInput {
+  title: string
+  content: string
+  groupClassIds: ID[]
+  expiresAt: ISODate | null
+}
+
+/** POST — TeacherAnnouncementDto (always SPECIFIC_GROUP_CLASSES: no audience field). */
+export function useCreateTeacherAnnouncement() {
+  return useApiMutation(
+    ({ input, mode }: { input: TeacherAnnouncementInput; mode: TeacherPublicationMode }) =>
+      api<{ announcement: AnnouncementDto; notifiedCount: number }>("/teacher/announcements", {
+        method: "POST",
+        body: { title: input.title, content: input.content, groupClassIds: input.groupClassIds, expiresAt: input.expiresAt, mode },
+      }),
+    invalidate
+  )
+}
+
+/** PATCH — a draft fully; after publication only title, content and expiry (ANNOUNCEMENT_PUBLISHED_LOCKED). */
+export function useUpdateTeacherAnnouncement(id: ID) {
+  return useApiMutation(
+    ({ input, published }: { input: TeacherAnnouncementInput; published: boolean }) =>
+      api<AnnouncementDto>(`/teacher/announcements/${id}`, {
+        method: "PATCH",
+        body: published
+          ? { title: input.title, content: input.content, expiresAt: input.expiresAt }
+          : { title: input.title, content: input.content, expiresAt: input.expiresAt, groupClassIds: input.groupClassIds },
+      }),
+    invalidate
+  )
+}
+
+export type TeacherAnnouncementAction = "publish" | "archive" | "delete"
+
+/** Publish a draft (notifies once; a repeat answers 409) / archive a published one / delete. */
+export function useTeacherAnnouncementAction(id: ID) {
+  return useApiMutation(
+    (action: TeacherAnnouncementAction) =>
+      action === "delete"
+        ? api(`/teacher/announcements/${id}`, { method: "DELETE" })
+        : api(`/teacher/announcements/${id}/${action}`, { method: "POST" }),
+    invalidate
+  )
+}

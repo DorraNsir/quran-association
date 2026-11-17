@@ -10,6 +10,7 @@ import { formatDateLong } from '@/i18n/format';
 import { attendanceFixture, pageOf, rosterStudentFixture, sessionFixture } from './__fixtures__/sessions';
 import { workspaceFixture } from './__fixtures__/workspace';
 import { platformClock } from './dashboard-model';
+import { addDays, startOfWeek } from './sessions-model';
 import { TeacherSessionScreen } from './teacher-session';
 import { TeacherSessionsScreen } from './teacher-sessions';
 
@@ -161,10 +162,14 @@ describe('«الحصص» list', () => {
     await press('مجموعة الأمل');
     expect(screen.getByLabelText(ar.sessions.periods.week).props.accessibilityState.selected).toBe(true);
     await press(ar.sessions.done);
-    const last = params(listCalls().at(-1)!);
+    // The MAIN list request (not the pageSize=1 «حضور غير مكتمل» count, whose
+    // range — past days ∩ this week — differs from today on any day but Monday)
+    const last = params(listCalls().filter((u) => params(u).pageSize !== '1').at(-1)!);
     expect(last.groupClassId).toBe('c2');
+    // Default tab «اليوم» ∩ «هذا الأسبوع» (Monday → Sunday): today
     expect(last.from).toBe(TODAY);
-    expect(last.to! >= TODAY).toBe(true);
+    expect(last.to).toBe(TODAY);
+    expect(TODAY >= startOfWeek(TODAY) && TODAY <= addDays(startOfWeek(TODAY), 6)).toBe(true);
     expect(await screen.findByText(ar.sessions.emptyFiltered)).toBeTruthy();
     // Active filters are visible and counted on the button
     expect(screen.getByLabelText(`${ar.sessions.filters}، ${ar.sessions.activeFilters(2)}`)).toBeTruthy();

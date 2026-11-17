@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,7 +14,7 @@ import { LogoMark } from './logo';
  * deep logo green, with the web login page's gold accent as its lower edge.
  * Draws under the status bar and pads by the safe-area inset itself.
  */
-export function HeroHeader({ title }: { title: string }) {
+export function HeroHeader({ title, action }: { title: string; action?: ReactNode }) {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   return (
@@ -38,6 +39,7 @@ export function HeroHeader({ title }: { title: string }) {
           {title}
         </AppText>
       </View>
+      {action}
     </View>
   );
 }

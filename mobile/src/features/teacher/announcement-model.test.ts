@@ -68,7 +68,7 @@ describe('request bodies', () => {
     });
   });
 
-  it('the draft keeps only targets among MY current classes', () => {
+  it('the draft keeps only targets among MY current classes; a new one has NO default audience', () => {
     const a = myAnnouncement('a1', {
       groupClasses: [
         { id: 'c1', group: { id: 'g1', name: 'أ' }, branch: { id: 'b', name: 'ب' } },
@@ -76,7 +76,8 @@ describe('request bodies', () => {
       ],
     });
     expect(draftOfAnnouncement(a, new Set(['c1'])).classIds).toEqual(['c1']);
-    expect(draftOfAnnouncement(undefined, new Set(['c1'])).classIds).toEqual(['c1']);
+    // Even with a single eligible class nothing is preselected (as on the web)
+    expect(draftOfAnnouncement(undefined, new Set(['c1'])).classIds).toEqual([]);
     expect(draftOfAnnouncement(undefined, new Set(['c1', 'c2'])).classIds).toEqual([]);
   });
 });

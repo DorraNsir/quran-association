@@ -57,6 +57,18 @@ export function TeacherAnnouncementFormScreen({ announcementId }: { announcement
     </Screen>
   );
 
+  // A new one needs a current, active class of mine (also when the route is opened directly)
+  if (!announcementId && workspace.data && !teacherClasses(workspace.data).some((c) => c.status === 'ACTIVE'))
+    return (
+      <Screen>
+        <Stack.Screen options={{ title }} />
+        <EmptyState
+          icon="forbidden"
+          title={t.noClasses}
+          action={<Button variant="outline" label={t.backToList} onPress={() => router.replace('/teacher/announcements')} />}
+        />
+      </Screen>
+    );
   if (announcementId && query.isError && isAnnouncementUnavailable(query.error)) return unavailable;
   // Somebody else's, or archived: never an edit form (the server would refuse)
   if (announcementId && query.data && (!query.data.canManage || query.data.status === 'ARCHIVED')) return unavailable;

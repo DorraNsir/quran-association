@@ -504,6 +504,13 @@ export const ar = {
     stay: 'البقاء',
     discard: 'تجاهل',
   },
+  account: {
+    title: 'حسابي',
+    open: 'الحساب والإعدادات',
+    signedInAs: 'الحساب الحالي',
+    session: 'الجلسة',
+    logoutHint: 'يُنهي الجلسة على هذا الجهاز فقط ويحذف بيانات الدخول المحفوظة فيه.',
+  },
   announcements: {
     title: 'الإعلانات',
     open: 'الإعلانات',

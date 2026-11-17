@@ -310,6 +310,39 @@ describe('details', () => {
   });
 });
 
+describe('direct routes (same rules as the web)', () => {
+  it('an eligible teacher opens the creation form', async () => {
+    stub();
+    await renderScreen(<TeacherAnnouncementFormScreen />);
+    expect(await screen.findByLabelText(t.titleLabel)).toBeTruthy();
+  });
+
+  it('no current active class: the creation route offers no form', async () => {
+    const ws = workspaceFixture();
+    ws.groupClasses = ws.groupClasses.map((c) => ({ ...c, status: 'INACTIVE' as const }));
+    stub((c) => (c.path.endsWith('/teacher/workspace') ? ok(ws) : undefined));
+    await renderScreen(<TeacherAnnouncementFormScreen />);
+    expect(await screen.findByText(t.noClasses)).toBeTruthy();
+    expect(screen.queryByLabelText(t.titleLabel)).toBeNull();
+    expect(writes()).toHaveLength(0);
+  });
+
+  it('my ARCHIVED announcement: delete only (no edit, no restore) — and its edit route opens no form', async () => {
+    const archived = myAnnouncement('a4', { status: 'ARCHIVED', state: 'ARCHIVED' });
+    stub(undefined, archived);
+    await renderScreen(<TeacherAnnouncementScreen announcementId="a4" />);
+    expect(await screen.findByLabelText(t.delete)).toBeTruthy();
+    for (const label of [t.edit, t.publish, t.archive]) expect(screen.queryByLabelText(label)).toBeNull();
+  });
+
+  it('the edit route of an archived one: no form', async () => {
+    stub(undefined, myAnnouncement('a4', { status: 'ARCHIVED', state: 'ARCHIVED' }));
+    await renderScreen(<TeacherAnnouncementFormScreen announcementId="a4" />);
+    expect(await screen.findByText(t.notFound)).toBeTruthy();
+    expect(screen.queryByLabelText(t.titleLabel)).toBeNull();
+  });
+});
+
 describe('writing', () => {
   it('validation before sending, then «publish now» with the exact TeacherAnnouncementDto', async () => {
     stub((c) => (c.method === 'POST' ? { status: 201, body: { announcement: myAnnouncement('a5'), notifiedCount: 3 } } : undefined));
@@ -318,15 +351,19 @@ describe('writing', () => {
     expect(screen.getByRole('alert', { name: t.errors.titleRequired })).toBeTruthy();
     await fireEvent.changeText(screen.getByLabelText(t.titleLabel), '  مراجعة يوم السبت ');
     await fireEvent.changeText(screen.getByLabelText(t.contentLabel), 'مراجعة جماعية.');
+    // No default audience (as on the web): nothing selected; the inactive class is not offered
+    expect(screen.getByRole('checkbox', { name: 'مجموعة الفجر' }).props.accessibilityState.checked).toBe(false);
+    expect(screen.queryByRole('checkbox', { name: 'مجموعة الأمل' })).toBeNull();
+    await fireEvent.press(screen.getByLabelText(t.publishNow));
+    expect(screen.getByRole('alert', { name: t.errors.classesRequired })).toBeTruthy();
+    expect(writes()).toHaveLength(0);
+    await fireEvent.press(screen.getByRole('checkbox', { name: 'مجموعة الفجر' }));
     await fireEvent.changeText(screen.getByLabelText(t.expiryLabel), '31/12/2026');
     await fireEvent.press(screen.getByLabelText(t.publishNow));
     expect(screen.getByRole('alert', { name: t.errors.expiryInvalid })).toBeTruthy();
     expect(writes()).toHaveLength(0);
     await fireEvent.changeText(screen.getByLabelText(t.expiryLabel), '2099-12-31');
     expect(screen.getByText(t.expiryPreview('الخميس 31 ديسمبر 2099'))).toBeTruthy();
-    // My only ACTIVE class is preselected; the inactive one is not offered
-    expect(screen.getByRole('checkbox', { name: 'مجموعة الفجر' }).props.accessibilityState.checked).toBe(true);
-    expect(screen.queryByRole('checkbox', { name: 'مجموعة الأمل' })).toBeNull();
     await fireEvent.press(screen.getByLabelText(t.publishNow));
     await settle();
     expect(writes()).toEqual([
@@ -346,6 +383,7 @@ describe('writing', () => {
     await renderScreen(<TeacherAnnouncementFormScreen />);
     await fireEvent.changeText(await screen.findByLabelText(t.titleLabel), 'مسودة');
     await fireEvent.changeText(screen.getByLabelText(t.contentLabel), 'نص');
+    await fireEvent.press(screen.getByRole('checkbox', { name: 'مجموعة الفجر' }));
     await fireEvent.press(screen.getByLabelText(t.saveDraft));
     await settle();
     expect(writes()[0]!.body).toMatchObject({ mode: 'DRAFT' });
@@ -368,6 +406,7 @@ describe('writing', () => {
     await renderScreen(<TeacherAnnouncementFormScreen />);
     await fireEvent.changeText(await screen.findByLabelText(t.titleLabel), 'عنوان');
     await fireEvent.changeText(screen.getByLabelText(t.contentLabel), 'نص مهم');
+    await fireEvent.press(screen.getByRole('checkbox', { name: 'مجموعة الفجر' }));
     await fireEvent.press(screen.getByLabelText(t.publishNow));
     await fireEvent.press(screen.getByLabelText(t.saving));
     await fireEvent.press(screen.getByLabelText(t.saveDraft));

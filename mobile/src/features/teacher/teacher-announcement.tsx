@@ -98,7 +98,9 @@ export function TeacherAnnouncementScreen({ announcementId }: { announcementId: 
   }
 
   const working = action.isPending;
-  const footer = a?.canManage ? (
+  // Actions (and the state badge): only on MY announcements — the server's canManage
+  const manage = Boolean(a?.canManage);
+  const footer = a && manage ? (
     <View style={[styles.bar, { backgroundColor: colors.card, borderColor: colors.border }]}>
       {done ? <SuccessToast message={done} /> : null}
       {error ? <AlertBox message={error} /> : null}
@@ -151,7 +153,7 @@ export function TeacherAnnouncementScreen({ announcementId }: { announcementId: 
                 </AppText>
               </View>
               <View style={styles.pills}>
-                {a.canManage ? <Pill label={t.state[a.state]} tone={STATE_TONE[a.state]} /> : null}
+                {manage ? <Pill label={t.state[a.state]} tone={STATE_TONE[a.state]} /> : null}
                 <Pill label={t.audience[a.audience]} />
               </View>
               <AppText variant="small" tone="muted">

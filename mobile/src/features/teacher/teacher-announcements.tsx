@@ -51,7 +51,7 @@ export function TeacherAnnouncementsScreen() {
   const timeZone = usePreferences().data?.timezone;
   const workspace = useTeacherWorkspace(teacherId);
   const classes = workspace.data ? teacherClasses(workspace.data) : [];
-  // Writing needs a current, active class (the server refuses otherwise)
+  // Writing needs a current, active class of mine (the server refuses otherwise)
   const canPublish = classes.some((c) => c.status === 'ACTIVE');
 
   const [tab, setTab] = useState<Tab>('feed');

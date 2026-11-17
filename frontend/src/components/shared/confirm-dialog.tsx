@@ -1,7 +1,7 @@
 "use client"
 
 import { Loader2 } from "lucide-react"
-import { useState } from "react"
+import { useRef, useState } from "react"
 
 import { FormErrorAlert } from "@/components/shared/form-error-alert"
 import {
@@ -47,23 +47,34 @@ export function ConfirmDialog({
 }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Synchronous guard: `pending` only disables the button after a re-render, so
+  // a second click in the same frame would run the action twice
+  const running = useRef(false)
 
   function confirm(event: React.MouseEvent) {
+    if (running.current) {
+      event.preventDefault()
+      return
+    }
     const result = onConfirm()
     if (!result || typeof (result as Promise<unknown>).then !== "function") return
     event.preventDefault()
+    running.current = true
     setPending(true)
     setError(null)
     ;(result as Promise<unknown>)
       .catch((e: unknown) => setError(errorMessage(e)))
-      .finally(() => setPending(false))
+      .finally(() => {
+        running.current = false
+        setPending(false)
+      })
   }
 
   return (
     <AlertDialog
       open={open}
       onOpenChange={(next) => {
-        if (pending) return
+        if (pending || running.current) return
         if (!next) setError(null)
         onOpenChange(next)
       }}

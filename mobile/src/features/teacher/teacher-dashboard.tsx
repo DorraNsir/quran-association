@@ -15,7 +15,7 @@ import {
   SectionCard,
   type IconName,
 } from '@/components/ui';
-import { LogoutButton, WorkspaceSwitcher } from '@/features/auth/account-components';
+import { WorkspaceSwitcher } from '@/features/auth/account-components';
 import { useSession } from '@/features/auth/auth-provider';
 import { ar } from '@/i18n/ar';
 import {
@@ -70,7 +70,7 @@ export function TeacherDashboard() {
       refreshing={refreshing}
       onRefresh={onRefresh}
       edges={[]}
-      hero={<HeroHeader title={ar.workspace.teacher} />}>
+      hero={<HeroHeader title={ar.workspace.teacher} action={<AccountButton onPress={() => router.push('/teacher/account')} />} />}>
       {/* Welcome: name first, the platform date on its own line */}
       <View style={styles.welcome}>
         <InitialsAvatar name={`${user.person.firstName} ${user.person.lastName}`} size={52} />
@@ -203,7 +203,6 @@ export function TeacherDashboard() {
       <ToolsCard onOpen={(path) => router.push(path)} />
 
       <WorkspaceSwitcher current="teacher" />
-      <LogoutButton />
     </Screen>
   );
 }
@@ -326,6 +325,21 @@ const COMING: { icon: IconName; label: string }[] = [];
 type ToolPath = '/teacher/schedule' | '/teacher/memorization' | '/teacher/notes' | '/teacher/work' | '/teacher/resources' | '/teacher/announcements';
 
 /** Teacher tools: working shortcuts first, then the clearly inactive roadmap (no fake buttons). */
+/** «حسابي» in the green header: account, other workspaces, logout. */
+function AccountButton({ onPress }: { onPress: () => void }) {
+  const { colors } = useAppTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={ar.account.open}
+      hitSlop={6}
+      style={({ pressed }) => [styles.accountButton, pressed && { opacity: 0.7 }]}>
+      <Icon name="user" size={22} color={colors.heroForeground} />
+    </Pressable>
+  );
+}
+
 function ToolsCard({ onOpen }: { onOpen: (path: ToolPath) => void }) {
   const { colors } = useAppTheme();
   const available: { icon: IconName; label: string; path: ToolPath }[] = [
@@ -338,19 +352,23 @@ function ToolsCard({ onOpen }: { onOpen: (path: ToolPath) => void }) {
   ];
   return (
     <SectionCard title={t.toolsTitle} icon="workFollowup">
-      <View style={styles.tools}>
+      {/* Two equal columns; in RTL the first tool is on the right (reading order kept) */}
+      <View style={styles.toolGrid}>
         {available.map((tool) => (
           <Pressable
             key={tool.path}
             onPress={() => onOpen(tool.path)}
             accessibilityRole="link"
             accessibilityLabel={tool.label}
+            testID="teacher-tool"
             style={({ pressed }) => [
-              styles.toolLink,
-              { backgroundColor: pressed ? colors.brandSoft : colors.card, borderColor: colors.primary },
+              styles.toolTile,
+              { backgroundColor: pressed ? colors.brandSoft : colors.card, borderColor: colors.border },
             ]}>
-            <Icon name={tool.icon} size={16} color={colors.primary} />
-            <AppText variant="label" tone="primary">
+            <View style={[styles.toolIcon, { backgroundColor: colors.brandSoft }]}>
+              <Icon name={tool.icon} size={20} color={colors.primary} />
+            </View>
+            <AppText variant="label" center numberOfLines={2} style={{ color: colors.foreground }}>
               {tool.label}
             </AppText>
           </Pressable>
@@ -440,14 +458,26 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   tools: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  toolLink: {
-    minHeight: 40,
-    flexDirection: 'row',
+  toolGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: spacing.sm },
+  toolTile: {
+    width: '48.5%',
+    minHeight: 88,
     alignItems: 'center',
+    justifyContent: 'center',
     gap: spacing.xs,
     borderWidth: 1,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  toolIcon: { width: 40, height: 40, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
+  accountButton: {
+    width: 44,
+    height: 44,
     borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
   },
   tool: {
     flexDirection: 'row',

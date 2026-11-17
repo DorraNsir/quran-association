@@ -92,13 +92,13 @@ export const draftOfAnnouncement = (a: Announcement | undefined, allowed: Readon
   title: a?.title ?? '',
   content: a?.content ?? '',
   // A teacher keeps targets only among their own current classes
+  // No default audience (as on the web): a new announcement starts with no class;
+  // an existing one keeps only targets among my current classes
   classIds: a
     ? a.groupClasses.map((c) => c.id).filter((id) => allowed.has(id))
     : initialClassId && allowed.has(initialClassId)
       ? [initialClassId]
-      : allowed.size === 1
-        ? [...allowed]
-        : [],
+      : [],
   expiresAt: a?.expiresAt ?? '',
 });
 
