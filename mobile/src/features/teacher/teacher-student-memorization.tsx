@@ -60,7 +60,7 @@ export function TeacherStudentMemorizationScreen({ studentId }: { studentId: str
           <>
             <Stack.Screen options={{ title: headerTitle(`${m.history} — ${profile.name}`) }} />
             <Card style={styles.header}>
-              <InitialsAvatar name={profile.name} size={48} />
+              <InitialsAvatar name={profile.name} size={48} photoUrl={profile.student.photoUrl} />
               <View style={styles.flex}>
                 <AppText variant="heading" numberOfLines={1}>
                   {profile.name}

@@ -40,15 +40,24 @@ describe('supervisor and assistant roles', () => {
     expect([c2!.id, c2!.role]).toEqual(['c2', 'ASSISTANT']);
   });
 
-  it('the team: supervisor first, then assistants, me marked', () => {
+  it('the team: supervisor first, then assistants, me marked — with each teacher\'s photo path', () => {
     expect(c1!.team).toEqual([
-      { id: ME, name: 'أحمد السالمي', role: 'SUPERVISOR', isMe: true },
-      { id: 't-2', name: 'سارة بن علي', role: 'ASSISTANT', isMe: false },
+      { id: ME, name: 'أحمد السالمي', role: 'SUPERVISOR', isMe: true, photoUrl: null },
+      { id: 't-2', name: 'سارة بن علي', role: 'ASSISTANT', isMe: false, photoUrl: null },
     ]);
     expect(c2!.team).toEqual([
-      { id: 't-2', name: 'سارة بن علي', role: 'SUPERVISOR', isMe: false },
-      { id: ME, name: 'أحمد السالمي', role: 'ASSISTANT', isMe: true },
+      { id: 't-2', name: 'سارة بن علي', role: 'SUPERVISOR', isMe: false, photoUrl: null },
+      { id: ME, name: 'أحمد السالمي', role: 'ASSISTANT', isMe: true, photoUrl: null },
     ]);
+  });
+
+  it('the team and the roster carry the photo path from the workspace (never guessed)', () => {
+    const ws = workspaceFixture();
+    ws.teachers = ws.teachers.map((t) => (t.id === 't-2' ? { ...t, photoUrl: '/api/files/p-t2' } : t));
+    ws.students = ws.students.map((s) => (s.id === 'st1' ? { ...s, photoUrl: '/api/files/p-st1' } : s));
+    const c = teacherClasses(ws).find((x) => x.id === 'c1')!;
+    expect(c.team.find((m) => m.id === 't-2')!.photoUrl).toBe('/api/files/p-t2');
+    expect(classRoster(ws, 'c1').find((s) => s.id === 'st1')!.photoUrl).toBe('/api/files/p-st1');
   });
 
   it('rooms come from the slots the class meets in, including shared slots it joins', () => {

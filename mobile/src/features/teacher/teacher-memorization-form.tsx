@@ -150,7 +150,7 @@ export function TeacherMemorizationFormScreen({ studentId, semesterParam }: { st
           <>
             <Card style={styles.context}>
               <View style={styles.row}>
-                <InitialsAvatar name={profile.name} size={44} />
+                <InitialsAvatar name={profile.name} size={44} photoUrl={profile.student.photoUrl} />
                 <View style={styles.flex}>
                   <AppText variant="bodyStrong" numberOfLines={1}>
                     {profile.name}

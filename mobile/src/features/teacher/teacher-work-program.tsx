@@ -85,7 +85,7 @@ export function TeacherWorkProgramScreen({ programId }: { programId: string }) {
           <>
             <Card style={styles.summary}>
               <View style={styles.head}>
-                <InitialsAvatar name={studentName(program)} size={44} />
+                <InitialsAvatar name={studentName(program)} size={44} photoUrl={program.student.photoUrl} />
                 <View style={styles.flex}>
                   <AppText variant="bodyStrong" accessibilityRole="header">
                     {studentName(program)}

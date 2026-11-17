@@ -1,6 +1,6 @@
 export { AlertBox } from './alert-box';
 export { AppText, type AppTextProps } from './app-text';
-export { avatarLetter, InitialsAvatar } from './avatar';
+export { avatarLetter, InitialsAvatar, resolvePhoto, type PhotoSource } from './avatar';
 export { BottomSheet, OptionRow } from './bottom-sheet';
 export { Button, type ButtonProps } from './button';
 export { Card } from './card';

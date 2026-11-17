@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
-import { AppText, Button, Card, Icon } from '@/components/ui';
+import { AppText, Button, Card, Icon, InitialsAvatar } from '@/components/ui';
 import { ar } from '@/i18n/ar';
 import { radius, spacing, touchTarget, useAppTheme } from '@/theme';
 
@@ -29,12 +29,17 @@ export function AccountCard({ title }: { title?: string }) {
           {title}
         </AppText>
       ) : null}
-      <AppText variant="heading">
-        {user.person.firstName} {user.person.lastName}
-      </AppText>
-      <AppText variant="caption" tone="muted" style={styles.ltr}>
-        {user.username}
-      </AppText>
+      <View style={styles.identity}>
+        <InitialsAvatar name={`${user.person.firstName} ${user.person.lastName}`} size={56} photoUrl={user.person.photoUrl} />
+        <View style={styles.flex}>
+          <AppText variant="heading">
+            {user.person.firstName} {user.person.lastName}
+          </AppText>
+          <AppText variant="caption" tone="muted" style={styles.ltr}>
+            {user.username}
+          </AppText>
+        </View>
+      </View>
       <View style={styles.badges}>
         {user.roles.map((role) => (
           <View key={role} style={[styles.badge, { backgroundColor: colors.brandSoft }]}>
@@ -86,6 +91,7 @@ export function LogoutButton() {
 
 const styles = StyleSheet.create({
   ltr: { writingDirection: 'ltr' },
+  identity: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   badge: { borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: 2 },
   switchRow: {

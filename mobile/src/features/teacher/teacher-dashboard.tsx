@@ -73,7 +73,7 @@ export function TeacherDashboard() {
       hero={<HeroHeader title={ar.workspace.teacher} action={<AccountButton onPress={() => router.push('/teacher/account')} />} />}>
       {/* Welcome: name first, the platform date on its own line */}
       <View style={styles.welcome}>
-        <InitialsAvatar name={`${user.person.firstName} ${user.person.lastName}`} size={52} />
+        <InitialsAvatar name={`${user.person.firstName} ${user.person.lastName}`} size={52} photoUrl={user.person.photoUrl} />
         <View style={styles.flex}>
           <AppText variant="title" numberOfLines={1}>
             {t.welcome} {user.person.firstName}

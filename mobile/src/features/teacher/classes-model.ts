@@ -22,6 +22,7 @@ export interface RosterStudent {
   gender: WsStudent['gender'];
   /** Age on `today` when the date of birth is known (else null — never guessed) */
   age: number | null;
+  photoUrl: string | null;
 }
 
 
@@ -43,6 +44,7 @@ export function classRoster(
       name: fullName(s),
       gender: s.gender,
       age: today && s.dateOfBirth ? ageOn(s.dateOfBirth, today) : null,
+      photoUrl: s.photoUrl,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, 'ar'));
 }

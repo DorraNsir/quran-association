@@ -16,7 +16,7 @@ import { renderWithClient, testQueryClient, wrapperFor } from "@/test/render"
 import { TeacherAnnouncementActions, TeacherAnnouncementEditor, teacherActionsFor } from "./teacher-announcement-actions"
 import { eligibleClasses } from "./teacher-announcement-audience"
 import { TeacherAnnouncementFormSheet } from "./teacher-announcement-form"
-import { TeacherAnnouncements } from "./teacher-announcements"
+import { TeacherAnnouncementCard, TeacherAnnouncements } from "./teacher-announcements"
 
 /*
  * Teacher announcements on the web — network mocked (no database):
@@ -313,5 +313,45 @@ describe("teacher announcements page", () => {
     rtl(<TeacherAnnouncements teacherId="t-nobody" lookups={lookups} />)
     expect(await screen.findByText("لا توجد فصول نشطة مسندة إليك حاليًا لنشر الإعلانات.")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "إعلان جديد" })).toBeNull()
+  })
+})
+
+describe("announcement card — the same metadata as on mobile", () => {
+  const classTarget = (n: number) => ({ id: `c${n}`, group: { id: `g${n}`, name: `مجموعة ${n}` }, branch: { id: "b1", name: "فرع المركز" } })
+  const card = (a: AnnouncementDto, mine = false) => rtl(<TeacherAnnouncementCard announcement={a} today="2026-11-17" mine={mine} />)
+
+  it("title, preview, targeted class with its branch, publisher and publication day", () => {
+    card(announcement("a1"))
+    expect(screen.getByRole("heading", { name: "مراجعة يوم السبت" })).toBeTruthy()
+    expect(screen.getByText("مراجعة جماعية")).toBeTruthy()
+    expect(screen.getByText("مجموعة الماهر — فرع المركز")).toBeTruthy()
+    expect(screen.getByTestId("announcement-publisher").textContent).toBe("أحمد المؤدب")
+    expect(screen.getByText(/12 نوفمبر 2026/)).toBeTruthy()
+  })
+
+  it("several classes: three chips, the others summed up as «+n» and still named (tooltip / screen readers)", () => {
+    card(announcement("a1", { groupClasses: [1, 2, 3, 4, 5].map(classTarget) }))
+    const audience = screen.getByLabelText("الجمهور المستهدف")
+    expect(within(audience).getByText("مجموعة 3 — فرع المركز")).toBeTruthy()
+    expect(within(audience).queryByText("مجموعة 4 — فرع المركز")).toBeNull()
+    const more = within(audience).getByText("+2")
+    expect(more.getAttribute("title")).toBe("مجموعة 4 — فرع المركز، مجموعة 5 — فرع المركز")
+  })
+
+  it("an association-wide announcement shows its audience label (no classes)", () => {
+    card(announcement("a1", { audience: "TEACHERS", groupClasses: [] }))
+    expect(within(screen.getByLabelText("الجمهور المستهدف")).getByText("المعلمون")).toBeTruthy()
+  })
+
+  it("missing publisher names: no empty name, the date stays", () => {
+    card(announcement("a1", { publishedBy: { id: "u1", firstName: "", lastName: "" } }))
+    expect(screen.queryByTestId("announcement-publisher")).toBeNull()
+    expect(screen.getByText(/12 نوفمبر 2026/)).toBeTruthy()
+  })
+
+  it("«إعلاناتي»: the state badge and the full publication line", () => {
+    card(announcement("a1", { status: "DRAFT", state: "DRAFT", publishedAt: null }), true)
+    expect(screen.getByText("مسودة")).toBeTruthy()
+    expect(screen.getByText("مسودة — لم تُنشر بعد")).toBeTruthy()
   })
 })

@@ -35,6 +35,7 @@ export interface MemorizationRow {
   surahNumber: number | null;
   surahName: string | null;
   updatedAt: string | null;
+  photoUrl: string | null;
 }
 
 /**
@@ -51,6 +52,7 @@ export function memorizationRoster(dto: ClassMemorization): MemorizationRow[] {
       surahNumber: s.lastMemorizedSurahNumber,
       surahName: s.surahName,
       updatedAt: s.updatedAt,
+      photoUrl: s.photoUrl,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, 'ar'));
 }

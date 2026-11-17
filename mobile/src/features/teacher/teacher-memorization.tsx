@@ -191,7 +191,7 @@ export function TeacherMemorizationScreen({
                           }
                         >
                           <View style={styles.row}>
-                            <InitialsAvatar name={r.name} size={36} />
+                            <InitialsAvatar name={r.name} size={36} photoUrl={r.photoUrl} />
                             <View style={styles.flex}>
                               <AppText variant="body" numberOfLines={1}>
                                 {r.name}

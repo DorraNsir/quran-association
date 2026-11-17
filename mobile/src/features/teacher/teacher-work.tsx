@@ -193,7 +193,7 @@ function ProgramCard({ program: p, timeZone, onPress }: { program: WorkProgram; 
     <Card style={styles.card}>
       <PressableRow bordered={false} onPress={onPress} accessibilityLabel={`${w.detailTitle} ${name} — ${p.session.groupName}، ${p.session.date}`}>
         <View style={styles.head}>
-          <InitialsAvatar name={name} size={40} />
+          <InitialsAvatar name={name} size={40} photoUrl={p.student.photoUrl} />
           <View style={styles.flex}>
             <AppText variant="bodyStrong" numberOfLines={1}>
               {name}

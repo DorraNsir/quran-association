@@ -342,6 +342,7 @@ export function TeacherAttendanceScreen({ sessionId }: { sessionId: string }) {
                         <AttendanceEditor
                           key={s.studentId}
                           name={`${s.firstName} ${s.lastName}`}
+                          photoUrl={s.photoUrl}
                           caption={s.expected ? undefined : `${a.notCounted} — ${a.notCountedCorrectable}`}
                           bordered={i > 0}
                           {...editorProps('students', studentSubject(s))}
@@ -365,6 +366,7 @@ export function TeacherAttendanceScreen({ sessionId }: { sessionId: string }) {
                   <AttendanceEditor
                     key={t.teacherId}
                     name={name}
+                    photoUrl={t.photoUrl}
                     caption={caption}
                     bordered={i > 0}
                     {...editorProps('teachers', teacherSubject(t))}
@@ -395,6 +397,7 @@ const statusTint = (colors: ColorTokens, status: AttendanceStatus) =>
 function AttendanceEditor({
   subject,
   name,
+  photoUrl,
   caption,
   draft,
   bordered,
@@ -406,6 +409,7 @@ function AttendanceEditor({
 }: {
   subject: Subject;
   name: string;
+  photoUrl?: string | null;
   caption?: string;
   draft: Draft;
   bordered: boolean;
@@ -422,7 +426,7 @@ function AttendanceEditor({
   return (
     <View style={[styles.editor, bordered && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}>
       <View style={styles.row}>
-        <InitialsAvatar name={name} size={32} />
+        <InitialsAvatar name={name} size={32} photoUrl={photoUrl} />
         <View style={styles.flex}>
           <AppText variant="bodyStrong" numberOfLines={1}>
             {name}
@@ -510,7 +514,7 @@ function StudentRow({ student: s, dto, bordered }: { student: RosterStudent; dto
       style={[styles.readRow, bordered && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}
       accessible
       accessibilityLabel={`${name}، ${status}${s.expected ? '' : `، ${a.notCounted}`}${s.note ? `، ${a.note}: ${s.note}` : ''}`}>
-      <InitialsAvatar name={name} size={36} />
+      <InitialsAvatar name={name} size={36} photoUrl={s.photoUrl} />
       <View style={styles.flex}>
         <AppText variant="body" numberOfLines={1}>
           {name}
@@ -557,7 +561,7 @@ function TeacherRow({
       style={[styles.readRow, bordered && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}
       accessible
       accessibilityLabel={`${name}، ${caption}، ${status}${t.note ? `، ${a.note}: ${t.note}` : ''}`}>
-      <InitialsAvatar name={name} size={32} />
+      <InitialsAvatar name={name} size={32} photoUrl={t.photoUrl} />
       <View style={styles.flex}>
         <AppText variant="body" numberOfLines={1}>
           {name}

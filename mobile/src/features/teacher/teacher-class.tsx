@@ -121,7 +121,7 @@ export function TeacherClassScreen({ groupClassId }: { groupClassId: string }) {
             <SectionCard title={ar.classes.team} icon="teacher">
               {item.team.map((m) => (
                 <View key={`${m.role}-${m.id}`} style={styles.titleRow}>
-                  <InitialsAvatar name={m.name} size={32} />
+                  <InitialsAvatar name={m.name} size={32} photoUrl={m.photoUrl} />
                   <AppText variant="body" style={styles.flex} numberOfLines={1}>
                     {m.name}
                     {m.isMe ? (
@@ -146,7 +146,7 @@ export function TeacherClassScreen({ groupClassId }: { groupClassId: string }) {
                     accessibilityLabel={s.name}
                     onPress={() => router.push({ pathname: '/teacher/students/[id]', params: { id: s.id } })}>
                     <View style={styles.titleRow}>
-                      <InitialsAvatar name={s.name} size={36} />
+                      <InitialsAvatar name={s.name} size={36} photoUrl={s.photoUrl} />
                       <View style={styles.flex}>
                         <AppText variant="body" numberOfLines={1}>
                           {s.name}

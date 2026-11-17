@@ -47,7 +47,7 @@ export function TeacherStudentScreen({ studentId }: { studentId: string }) {
         ) : (
           <>
             <Card style={styles.header}>
-              <InitialsAvatar name={profile.name} size={64} />
+              <InitialsAvatar name={profile.name} size={64} photoUrl={profile.student.photoUrl} />
               <AppText variant="title" center>
                 {profile.name}
               </AppText>

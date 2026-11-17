@@ -14,15 +14,15 @@ import { WithTeacherWorkspace } from "@/components/shared/with-workspace"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { useAnnouncements } from "@/lib/api/announcements"
+import { useAnnouncements, type AnnouncementDto } from "@/lib/api/announcements"
 import { todayInTunis, tunisDateOf } from "@/lib/dates"
 import type { Lookups } from "@/lib/domain"
-import { formatRelativeDay } from "@/lib/format"
+import { formatDate, formatRelativeDay } from "@/lib/format"
 import { usePlatformSettings } from "@/lib/store/settings"
 import { cn } from "@/lib/utils"
 import type { ID } from "@/types/domain"
 
-import { AnnouncementDetails, audienceDetail, publicationLine, STATE_LABEL } from "./announcements-views"
+import { AnnouncementAudienceBadge, AnnouncementDetails, audienceDetail, publicationLine, STATE_LABEL } from "./announcements-views"
 import { TeacherAnnouncementActions, TeacherAnnouncementEditor } from "./teacher-announcement-actions"
 import { eligibleClasses } from "./teacher-announcement-audience"
 
@@ -152,34 +152,12 @@ export function TeacherAnnouncements({ teacherId, lookups }: { teacherId: ID; lo
           <ul className="space-y-3">
             {rows.map((a) => (
               <li key={a.id}>
-                <Card className="gap-2 p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <Link href={`${BACK}/${a.id}`} className="min-w-0 space-y-1 hover:opacity-80">
-                      <h3 className="font-semibold">{a.title}</h3>
-                      <p className="line-clamp-2 text-sm text-muted-foreground">{a.content}</p>
-                    </Link>
-                    {view === "mine" ? (
-                      <TeacherAnnouncementActions announcement={a} classes={classes} />
-                    ) : (
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {formatRelativeDay(tunisDateOf(a.publishedAt ?? a.createdAt), today)}
-                      </span>
-                    )}
-                  </div>
-                  {view === "mine" && (
-                    <>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <Badge className={cn("font-normal", STATE_LABEL[a.state].className)}>{STATE_LABEL[a.state].label}</Badge>
-                        {audienceDetail(a).map((t) => (
-                          <Badge key={t} variant="outline" className="h-auto whitespace-normal py-0.5 text-start font-normal">
-                            {t}
-                          </Badge>
-                        ))}
-                      </div>
-                      <p className="text-xs text-muted-foreground">{publicationLine(a)}</p>
-                    </>
-                  )}
-                </Card>
+                <TeacherAnnouncementCard
+                  announcement={a}
+                  today={today}
+                  mine={view === "mine"}
+                  actions={view === "mine" ? <TeacherAnnouncementActions announcement={a} classes={classes} /> : undefined}
+                />
               </li>
             ))}
           </ul>
@@ -189,5 +167,67 @@ export function TeacherAnnouncements({ teacherId, lookups }: { teacherId: ID; lo
 
       <TeacherAnnouncementEditor key={`new-${editor.key}`} open={editor.open} onOpenChange={(open) => setEditor((p) => ({ ...p, open }))} classes={classes} />
     </>
+  )
+}
+
+const MAX_AUDIENCE_CHIPS = 3
+
+/**
+ * One compact announcement card (the same metadata as on mobile): title, a
+ * two-line preview, who it reaches (each class «group — branch»; the extra
+ * ones summed up as «+n», all named in its tooltip and on the details page),
+ * the publisher and the publication day. «إعلاناتي» adds the state badge, the
+ * full publication line and the actions.
+ */
+export function TeacherAnnouncementCard({
+  announcement: a,
+  today,
+  mine,
+  actions,
+}: {
+  announcement: AnnouncementDto
+  today: string
+  mine: boolean
+  actions?: React.ReactNode
+}) {
+  const targets = audienceDetail(a)
+  const shown = targets.slice(0, MAX_AUDIENCE_CHIPS)
+  const rest = targets.slice(MAX_AUDIENCE_CHIPS)
+  const publisher = `${a.publishedBy?.firstName ?? ""} ${a.publishedBy?.lastName ?? ""}`.trim()
+  const day = tunisDateOf(a.publishedAt ?? a.createdAt)
+  return (
+    <Card className="gap-2 p-4" data-testid="announcement-card">
+      <div className="flex items-start justify-between gap-2">
+        <Link href={`${BACK}/${a.id}`} className="min-w-0 space-y-1 hover:opacity-80">
+          <h3 className="font-semibold leading-snug">{a.title}</h3>
+          <p className="line-clamp-2 text-sm text-muted-foreground">{a.content}</p>
+        </Link>
+        {actions}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5" aria-label="الجمهور المستهدف">
+        {mine && <Badge className={cn("font-normal", STATE_LABEL[a.state].className)}>{STATE_LABEL[a.state].label}</Badge>}
+        {targets.length === 0 ? (
+          <AnnouncementAudienceBadge audience={a.audience} />
+        ) : (
+          <>
+            {shown.map((t) => (
+              <Badge key={t} variant="outline" className="h-auto max-w-full truncate py-0.5 font-normal" title={t}>
+                {t}
+              </Badge>
+            ))}
+            {rest.length > 0 && (
+              <Badge variant="secondary" className="font-normal" title={rest.join("، ")} aria-label={`و${rest.length} أخرى: ${rest.join("، ")}`}>
+                +{rest.length}
+              </Badge>
+            )}
+          </>
+        )}
+      </div>
+      <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+        {publisher && <span data-testid="announcement-publisher">{publisher}</span>}
+        {publisher && <span aria-hidden>·</span>}
+        <span>{mine ? publicationLine(a) : `${formatDate(day)} (${formatRelativeDay(day, today)})`}</span>
+      </p>
+    </Card>
   )
 }

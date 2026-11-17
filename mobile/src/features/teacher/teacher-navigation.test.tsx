@@ -32,7 +32,7 @@ let mockState: SessionState;
 jest.mock('@/features/auth/auth-provider', () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => children,
   useSession: () => mockState,
-  session: { logout: jest.fn(), restore: jest.fn() },
+  session: { logout: jest.fn(), restore: jest.fn(), changePassword: jest.fn(async () => undefined) },
 }));
 
 const person = { id: 'p1', firstName: 'أحمد', lastName: 'السالمي', photoUrl: null, email: null, phone: null };
@@ -374,6 +374,25 @@ describe('teacher navigation through the real route tree', () => {
     await tap(ar.auth.logout);
     expect(session.logout).toHaveBeenCalledTimes(1);
     alert.mockRestore();
+  });
+
+  it('«حسابي» → «تغيير كلمة المرور»: a confirmed change shows the confirmation, then back to the account', async () => {
+    mockState = signedIn(user({}));
+    const { session } = jest.requireMock('@/features/auth/auth-provider') as { session: { changePassword: jest.Mock } };
+    session.changePassword.mockClear();
+    const router = await renderRouter(APP, { initialUrl: '/teacher/account' });
+    await tap(ar.auth.changePasswordTitle);
+    expect(router).toHavePathname('/teacher/password');
+    await fireEvent.changeText(await screen.findByLabelText(ar.auth.currentPassword), 'old-password-1');
+    await fireEvent.changeText(screen.getByLabelText(ar.auth.newPassword), 'new-password-1');
+    await fireEvent.changeText(screen.getByLabelText(ar.auth.confirmPassword), 'new-password-1');
+    await tap(ar.auth.saveChanges);
+    expect(session.changePassword).toHaveBeenCalledWith('old-password-1', 'new-password-1');
+    expect(await screen.findByRole('alert', { name: ar.auth.passwordChanged })).toBeTruthy();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1300);
+    });
+    expect(router).toHavePathname('/teacher/account');
   });
 
   it('announcements: «إعلان جديد» opens the creation form for an eligible teacher; nothing is sent by opening it', async () => {

@@ -46,6 +46,8 @@ export const ar = {
     newPassword: 'كلمة المرور الجديدة',
     confirmPassword: 'تأكيد كلمة المرور الجديدة',
     savePassword: 'حفظ كلمة المرور',
+    saveChanges: 'حفظ التغييرات',
+    changePasswordHint: 'ستبقى متصلًا على هذا الجهاز، وتُنهى جلساتك على الأجهزة الأخرى.',
     currentRequired: 'أدخل كلمة المرور الحالية',
     passwordTooShort: 'كلمة المرور يجب أن تتكوّن من 8 أحرف على الأقل',
     passwordTooLong: 'كلمة المرور طويلة جدًا (128 حرفًا على الأكثر)',

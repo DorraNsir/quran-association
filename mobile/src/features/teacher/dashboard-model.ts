@@ -90,6 +90,8 @@ export interface TeamMember {
   name: string;
   role: TeachingRole;
   isMe: boolean;
+  /** The teacher's photo path (backend photoUrl), null when none */
+  photoUrl: string | null;
 }
 
 export interface TeacherClassSummary {
@@ -118,8 +120,9 @@ export function teacherClasses(ws: TeacherWorkspace): TeacherClassSummary[] {
   const branches = new Map(ws.branches.map((b) => [b.id, b]));
   const rooms = new Map(ws.rooms.map((r) => [r.id, r]));
   const teachers = new Map(ws.teachers.map((t) => [t.id, t]));
+  const teacherOf = (id: string) => (id === me ? ws.teacher : teachers.get(id));
   const nameOf = (id: string) => {
-    const t = id === me ? ws.teacher : teachers.get(id);
+    const t = teacherOf(id);
     return t ? `${t.firstName} ${t.lastName}` : null;
   };
   const byWeek = <T extends { dayOfWeek: Weekday; startTime: string }>(a: T, b: T) =>
@@ -162,7 +165,7 @@ export function teacherClasses(ws: TeacherWorkspace): TeacherClassSummary[] {
           .map((id) => ({ id, role: 'ASSISTANT' as const })),
       ].flatMap((m) => {
         const name = nameOf(m.id);
-        return name ? [{ ...m, name, isMe: m.id === me }] : [];
+        return name ? [{ ...m, name, isMe: m.id === me, photoUrl: teacherOf(m.id)?.photoUrl ?? null }] : [];
       });
       const group = groups.get(c.groupId);
       return {
