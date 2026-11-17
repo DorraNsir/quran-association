@@ -1,6 +1,11 @@
+import { File as ExpoFile } from 'expo-file-system';
+
 import { api, type Query } from '@/services/api';
 
+import type { Announcement, AnnouncementFilters, PublishResult, TeacherAnnouncementBody } from './announcement-types';
 import type { SaveBody } from './attendance-draft';
+import { mimeOf } from './resource-model';
+import type { PickedFile, Resource, ResourceFilters, StoredFile, TeacherResourceBody } from './resource-types';
 import type {
   EligibleSession,
   EvaluationLine,
@@ -204,3 +209,90 @@ export const scheduleWorkItem = (itemId: string, mode: 'carry' | 'next', targetS
     method: 'POST',
     body: mode === 'carry' ? { targetSessionId } : { targetSessionId, description },
   });
+
+/*
+ * «الموارد التعليمية» — /api/teacher/resources (TeacherResourcesController):
+ * the resources reaching my CURRENT classes (and all-students ones), plus my
+ * own; `canManage` = I published it (only then edit / delete). A teacher
+ * publishes only toward classes they are currently assigned to (GROUP_CLASS).
+ * Missing and not-visible resources both answer 404.
+ */
+const RESOURCES = '/teacher/resources';
+
+export const fetchResources = (filters: ResourceFilters & { page: number; pageSize: number }, signal?: AbortSignal) =>
+  api<Page<Resource>>(RESOURCES, { query: clean(filters), signal });
+
+export const fetchResource = (id: string, signal?: AbortSignal) =>
+  api<Resource>(`${RESOURCES}/${encodeURIComponent(id)}`, { signal });
+
+export const createResource = (body: TeacherResourceBody) => api<Resource>(RESOURCES, { method: 'POST', body });
+
+export const updateResource = (id: string, body: Partial<TeacherResourceBody>) =>
+  api<Resource>(`${RESOURCES}/${encodeURIComponent(id)}`, { method: 'PATCH', body });
+
+export const deleteResource = (id: string) => api<void>(`${RESOURCES}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+/** Uploads may take longer than ordinary requests (25 MB audio on a phone network). */
+export const UPLOAD_TIMEOUT_MS = 180_000;
+
+/**
+ * POST /api/files?purpose=EDUCATIONAL_RESOURCE&groupClassId=… — multipart,
+ * field `file` (the backend's FileInterceptor('file')). A teacher's upload is
+ * tied to one of their CURRENT classes; the server detects the real type and
+ * enforces the size limits. Private until attached to a resource; an
+ * unattached upload is removed by the server's cleanup.
+ */
+export function uploadResourceFile(file: PickedFile, groupClassId: string) {
+  const form = new FormData();
+  // SDK 58's global fetch is expo/fetch: it does NOT read React Native's
+  // { uri, name, type } parts (it throws before sending — shown as "offline").
+  // It serializes a part exposing bytes(): the picked file is read through
+  // expo-file-system. The DECLARED type is the normalized one (the server
+  // refuses a declared type that differs from the content).
+  const local = new ExpoFile(file.uri);
+  const part = {
+    name: file.name,
+    type: mimeOf(file) ?? file.mimeType ?? 'application/octet-stream',
+    bytes: async () => new Uint8Array(await local.arrayBuffer()),
+  };
+  form.append('file', part as unknown as Blob);
+  return api<StoredFile>('/files', {
+    method: 'POST',
+    query: { purpose: 'EDUCATIONAL_RESOURCE', groupClassId },
+    form,
+    timeoutMs: UPLOAD_TIMEOUT_MS,
+  });
+}
+
+/*
+ * «الإعلانات» — /api/teacher/announcements (TeacherAnnouncementsController):
+ * what reaches me TODAY (EVERYONE, TEACHERS, my current classes / branches)
+ * plus everything I wrote, any status. `canManage` = I wrote it: only then
+ * edit / publish / archive / delete — and only toward my CURRENT classes.
+ * Missing and not-visible both answer 404.
+ */
+const ANNOUNCEMENTS = '/teacher/announcements';
+const announcementPath = (id: string, action?: 'publish' | 'archive') =>
+  `${ANNOUNCEMENTS}/${encodeURIComponent(id)}${action ? `/${action}` : ''}`;
+
+export const fetchAnnouncements = (filters: AnnouncementFilters & { page: number; pageSize: number }, signal?: AbortSignal) =>
+  api<Page<Announcement>>(ANNOUNCEMENTS, { query: clean(filters), signal });
+
+export const fetchAnnouncement = (id: string, signal?: AbortSignal) => api<Announcement>(announcementPath(id), { signal });
+
+/** POST — publish now (default; the audience is notified) or save as a draft. */
+export const createAnnouncement = (body: TeacherAnnouncementBody) =>
+  api<PublishResult>(ANNOUNCEMENTS, { method: 'POST', body });
+
+/** PATCH — draft: everything; published: title, content, expiresAt only (ANNOUNCEMENT_PUBLISHED_LOCKED). */
+export const updateAnnouncement = (id: string, body: Partial<Omit<TeacherAnnouncementBody, 'mode'>>) =>
+  api<Announcement>(announcementPath(id), { method: 'PATCH', body });
+
+/** POST /:id/publish — a DRAFT, now (notifies once; a repeat answers 409). */
+export const publishAnnouncement = (id: string) => api<PublishResult>(announcementPath(id, 'publish'), { method: 'POST' });
+
+/** POST /:id/archive — a PUBLISHED one: hidden from readers, kept. */
+export const archiveAnnouncement = (id: string) => api<Announcement>(announcementPath(id, 'archive'), { method: 'POST' });
+
+/** DELETE — permanently, with its notifications. */
+export const deleteAnnouncement = (id: string) => api<void>(announcementPath(id), { method: 'DELETE' });

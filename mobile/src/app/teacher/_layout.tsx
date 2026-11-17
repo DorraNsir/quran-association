@@ -25,6 +25,14 @@ export default function TeacherLayout() {
       <Stack.Screen name="work/[id]/evaluate" options={{ title: ar.work.evaluateTitle }} />
       <Stack.Screen name="work/[id]/edit" options={{ title: ar.work.editTitle }} />
       <Stack.Screen name="work/[id]/schedule" options={{ title: ar.work.detailTitle }} />
+      <Stack.Screen name="announcements/index" options={{ title: ar.announcements.title }} />
+      <Stack.Screen name="announcements/new" options={{ title: ar.announcements.newTitle }} />
+      <Stack.Screen name="announcements/[id]/index" options={{ title: ar.announcements.detailTitle }} />
+      <Stack.Screen name="announcements/[id]/edit" options={{ title: ar.announcements.editTitle }} />
+      <Stack.Screen name="resources/index" options={{ title: ar.resources.title }} />
+      <Stack.Screen name="resources/new" options={{ title: ar.resources.newTitle }} />
+      <Stack.Screen name="resources/[id]/index" options={{ title: ar.resources.detailTitle }} />
+      <Stack.Screen name="resources/[id]/edit" options={{ title: ar.resources.editTitle }} />
       <Stack.Screen name="notes/index" options={{ title: ar.notes.title }} />
       <Stack.Screen name="notes/new" options={{ title: ar.notes.newTitle }} />
       <Stack.Screen name="notes/[id]/index" options={{ title: ar.notes.detailTitle }} />

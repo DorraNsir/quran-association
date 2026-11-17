@@ -16,3 +16,4 @@ export { SectionCard } from './section-card';
 export { TextField, type TextFieldProps } from './text-field';
 export { TimeRange } from './time-range';
 export { SuccessToast } from './success-toast';
+export { FilterBar, type ActiveFilter } from './filter-bar';

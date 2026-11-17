@@ -320,20 +320,21 @@ function MemorizationRow({ item: m, onPress }: { item: MemorizationProgress; onP
   );
 }
 
-/** Modules that do not exist yet: listed so the roadmap is visible, clearly inactive. */
-const COMING: { icon: IconName; label: string }[] = [
-  { icon: 'resources', label: t.tools.resources },
-  { icon: 'announcements', label: t.tools.announcements },
-];
+/** Modules that do not exist yet: listed so the roadmap is visible, clearly inactive (none left today). */
+const COMING: { icon: IconName; label: string }[] = [];
+
+type ToolPath = '/teacher/schedule' | '/teacher/memorization' | '/teacher/notes' | '/teacher/work' | '/teacher/resources' | '/teacher/announcements';
 
 /** Teacher tools: working shortcuts first, then the clearly inactive roadmap (no fake buttons). */
-function ToolsCard({ onOpen }: { onOpen: (path: '/teacher/schedule' | '/teacher/memorization' | '/teacher/notes' | '/teacher/work') => void }) {
+function ToolsCard({ onOpen }: { onOpen: (path: ToolPath) => void }) {
   const { colors } = useAppTheme();
-  const available: { icon: IconName; label: string; path: '/teacher/schedule' | '/teacher/memorization' | '/teacher/notes' | '/teacher/work' }[] = [
+  const available: { icon: IconName; label: string; path: ToolPath }[] = [
     { icon: 'calendar', label: ar.schedule.open, path: '/teacher/schedule' },
     { icon: 'classes', label: ar.memorization.open, path: '/teacher/memorization' },
     { icon: 'workFollowup', label: ar.work.open, path: '/teacher/work' },
     { icon: 'notes', label: ar.notes.open, path: '/teacher/notes' },
+    { icon: 'resources', label: ar.resources.open, path: '/teacher/resources' },
+    { icon: 'announcements', label: ar.announcements.open, path: '/teacher/announcements' },
   ];
   return (
     <SectionCard title={t.toolsTitle} icon="workFollowup">
@@ -355,22 +356,24 @@ function ToolsCard({ onOpen }: { onOpen: (path: '/teacher/schedule' | '/teacher/
           </Pressable>
         ))}
       </View>
-      <View style={styles.tools}>
-        <Pill label={t.comingSoon} />
-        {COMING.map((tool) => (
-          <View
-            key={tool.label}
-            style={[styles.tool, { borderColor: colors.border }]}
-            accessible
-            accessibilityLabel={`${tool.label} — ${t.comingSoon}`}
-            accessibilityState={{ disabled: true }}>
-            <Icon name={tool.icon} size={14} color={colors.mutedForeground} />
-            <AppText variant="small" tone="muted">
-              {tool.label}
-            </AppText>
-          </View>
-        ))}
-      </View>
+      {COMING.length ? (
+        <View style={styles.tools}>
+          <Pill label={t.comingSoon} />
+          {COMING.map((tool) => (
+            <View
+              key={tool.label}
+              style={[styles.tool, { borderColor: colors.border }]}
+              accessible
+              accessibilityLabel={`${tool.label} — ${t.comingSoon}`}
+              accessibilityState={{ disabled: true }}>
+              <Icon name={tool.icon} size={14} color={colors.mutedForeground} />
+              <AppText variant="small" tone="muted">
+                {tool.label}
+              </AppText>
+            </View>
+          ))}
+        </View>
+      ) : null}
     </SectionCard>
   );
 }

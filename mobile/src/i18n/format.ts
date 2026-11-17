@@ -102,6 +102,17 @@ export function sameYear(date: string, reference: string): boolean {
 /** Unicode isolates: LTR content (years, ratios, %) embedded in Arabic text. */
 const LRI = '⁦';
 const PDI = '⁩';
+const FSI = '\u2068';
+
+/**
+ * User-entered text of unknown direction (an English title, a Latin file
+ * name, a mixed sentence): a FIRST-STRONG isolate — it keeps its own
+ * direction (no punctuation jumping to the wrong end) inside the RTL
+ * layout. The characters themselves are unchanged.
+ */
+export function auto(text: string): string {
+  return text ? `${FSI}${text}${PDI}` : text;
+}
 
 /**
  * Wraps left-to-right content (e.g. "2026-2027", "80%") so the Arabic

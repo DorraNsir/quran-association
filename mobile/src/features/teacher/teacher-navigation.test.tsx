@@ -9,6 +9,8 @@ import { formatDateLong } from '@/i18n/format';
 
 import { YEAR_FIXTURE } from './__fixtures__/memorization';
 import { notesFixture, notesPage } from './__fixtures__/notes';
+import { announcementFixture, announcementPage } from './__fixtures__/announcements';
+import { resourceFixture, resourcePage } from './__fixtures__/resources';
 import { workPage, workProgram } from './__fixtures__/work';
 import { attendanceFixture, pageOf, sessionFixture } from './__fixtures__/sessions';
 import { workspaceFixture } from './__fixtures__/workspace';
@@ -58,6 +60,10 @@ beforeEach(() => {
     ['/platform-preferences', { timezone: 'Africa/Tunis', dateFormat: 'DD/MM/YYYY', defaultCalendarView: 'week', defaultPageSize: 20, currentAcademicYear: null }],
     ['/teacher/workspace', workspaceFixture()],
     ['/teacher/notes', notesPage(notesFixture())],
+    ['/teacher/announcements/a0', announcementFixture('a0')],
+    ['/teacher/announcements', announcementPage([announcementFixture('a0')])],
+    ['/teacher/resources/r1', resourceFixture('r1')],
+    ['/teacher/resources', resourcePage([resourceFixture('r1')])],
     ['/teacher/work-programs/w1', workProgram()],
     ['/teacher/work-programs', workPage([workProgram()])],
     // Most specific first: a session's details, then the paginated list
@@ -296,6 +302,51 @@ describe('teacher navigation through the real route tree', () => {
       await jest.advanceTimersByTimeAsync(10);
     });
     expect(requests.some((u) => u.includes('/teacher/work-programs?') && u.includes('groupClassId=c1'))).toBe(true);
+  });
+
+  it('«الموارد التعليمية»: dashboard tools → list → a resource; class → «موارد القسم»', async () => {
+    mockState = signedIn(user({}));
+    const router = await renderRouter(APP, { initialUrl: '/teacher' });
+    await tap(ar.resources.open);
+    expect(router).toHavePathname('/teacher/resources');
+    await tap(/^أحكام النون الساكنة/);
+    expect(router).toHavePathname('/teacher/resources/r1');
+    expect(await screen.findByLabelText(ar.resources.openFile)).toBeTruthy();
+    await act(async () => {
+      appRouter.push('/teacher/classes/c1');
+    });
+    await tap(ar.resources.classLink);
+    expect(router).toHavePathname('/teacher/resources');
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10);
+    });
+    expect(requests.some((u) => u.includes('/teacher/resources?') && u.includes('groupClassId=c1'))).toBe(true);
+    expect(methods.every((m) => m === 'GET')).toBe(true);
+  });
+
+  it('«الإعلانات»: dashboard tools → feed → an announcement (read only when not mine)', async () => {
+    mockState = signedIn(user({}));
+    const router = await renderRouter(APP, { initialUrl: '/teacher' });
+    await tap(ar.announcements.open);
+    expect(router).toHavePathname('/teacher/announcements');
+    await tap(/^عطلة نهاية السداسي/);
+    expect(router).toHavePathname('/teacher/announcements/a0');
+    expect(screen.queryByLabelText(ar.announcements.edit)).toBeNull();
+    expect(methods.every((m) => m === 'GET')).toBe(true);
+  });
+
+  it('a STUDENT cannot open the teacher announcements', async () => {
+    mockState = signedIn(user({ roles: ['STUDENT'], teacherId: null, studentId: 's1' }));
+    const router = await renderRouter(APP, { initialUrl: '/teacher/announcements/a0' });
+    expect(router.getPathname().startsWith('/teacher')).toBe(false);
+    expect(requests.some((u) => u.includes('/teacher/announcements'))).toBe(false);
+  });
+
+  it('a STUDENT cannot open the teacher resources', async () => {
+    mockState = signedIn(user({ roles: ['STUDENT'], teacherId: null, studentId: 's1' }));
+    const router = await renderRouter(APP, { initialUrl: '/teacher/resources/r1' });
+    expect(router.getPathname().startsWith('/teacher')).toBe(false);
+    expect(requests.some((u) => u.includes('/teacher/resources'))).toBe(false);
   });
 
   it('a STUDENT cannot open the teacher work programs', async () => {

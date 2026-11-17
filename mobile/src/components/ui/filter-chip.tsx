@@ -4,21 +4,26 @@ import { radius, spacing, useAppTheme } from '@/theme';
 
 import { AppText } from './app-text';
 
-/** One option of a single-choice filter (selected = solid green, like the web tabs). */
+/**
+ * One option of a single-choice filter (selected = solid green, like the web
+ * tabs) — or, with role "checkbox", one toggle of a multiple choice.
+ */
 export function FilterChip({
   label,
   selected,
   onPress,
+  role = 'radio',
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
+  role?: 'radio' | 'checkbox';
 }) {
   const { colors } = useAppTheme();
   return (
     <Pressable
       onPress={onPress}
-      accessibilityRole="radio"
+      accessibilityRole={role}
       accessibilityLabel={label}
       accessibilityState={{ selected, checked: selected }}
       hitSlop={{ top: 6, bottom: 6 }}

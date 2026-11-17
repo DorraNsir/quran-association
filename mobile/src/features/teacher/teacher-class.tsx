@@ -97,6 +97,13 @@ export function TeacherClassScreen({ groupClassId }: { groupClassId: string }) {
               fullWidth
               onPress={() => router.push({ pathname: '/teacher/work', params: { classId: item.id } })}
             />
+            <Button
+              variant="outline"
+              icon="resources"
+              label={ar.resources.classLink}
+              fullWidth
+              onPress={() => router.push({ pathname: '/teacher/resources', params: { classId: item.id } })}
+            />
 
             <SectionCard title={ar.classes.details} icon="info">
               <InfoRow icon="location" label={ar.classes.branch}>

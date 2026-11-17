@@ -49,9 +49,11 @@ export function TeacherWorkScreen({ initialClassId, studentId }: { initialClassI
   const [text, setText] = useState('');
   const [q, setQ] = useState('');
   useEffect(() => {
+    // Nothing typed since the last search: no timer (no needless update)
+    if (text.trim() === q) return;
     const t = setTimeout(() => setQ(text.trim()), SEARCH_DELAY_MS);
     return () => clearTimeout(t);
-  }, [text]);
+  }, [text, q]);
 
   const filters: WorkProgramFilters = {
     ...(q ? { q } : {}),
