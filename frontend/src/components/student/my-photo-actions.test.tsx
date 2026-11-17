@@ -68,3 +68,27 @@ describe("student profile — my photo (the only editable field)", () => {
     await waitFor(() => expect(calls).toContain("DELETE /api/student/profile/photo"))
   })
 })
+
+describe("teacher — my own photo (same actions, teacher endpoint)", () => {
+  beforeEach(() => {
+    clearSession()
+    setSession(authResponse("u2", ["TEACHER"]))
+  })
+
+  it("uploads as PROFILE_PHOTO then attaches it through /api/teacher/profile/photo (never the admin route)", async () => {
+    const calls = routeFetch()
+    renderWithClient(<MyPhotoActions hasPhoto={false} role="teacher" />)
+    pick(new File(["x"], "me.jpg", { type: "image/jpeg" }))
+    await waitFor(() => expect(calls).toContain("PUT /api/teacher/profile/photo"))
+    expect(uploads).toEqual([{ path: "/files", query: { purpose: "PROFILE_PHOTO" } }])
+    expect(calls.some((c) => c.includes("/admin/") || c.includes("/student/"))).toBe(false)
+    await waitFor(() => expect(reload).toHaveBeenCalled())
+  })
+
+  it("removes my photo through the teacher endpoint", async () => {
+    const calls = routeFetch()
+    renderWithClient(<MyPhotoActions hasPhoto role="teacher" />)
+    fireEvent.click(screen.getByRole("button", { name: "حذف الصورة" }))
+    await waitFor(() => expect(calls).toContain("DELETE /api/teacher/profile/photo"))
+  })
+})

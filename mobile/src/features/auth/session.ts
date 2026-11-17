@@ -152,6 +152,15 @@ export function createSessionManager(
     if (token) await endpoints.mobileLogout(token).catch(() => undefined);
   }
 
+  /**
+   * The server CONFIRMED a new own photo (PUT/DELETE …/profile/photo answered
+   * with its photoUrl): the signed-in person shows it at once. Tokens untouched.
+   */
+  function setOwnPhoto(photoUrl: string | null): void {
+    if (!state.user) return;
+    setState({ user: { ...state.user, person: { ...state.user.person, photoUrl } } });
+  }
+
   /** Foreground: renew ahead of expiry so the next request does not hit a 401. */
   async function refreshIfExpiringSoon(marginMs = 60_000): Promise<void> {
     if (state.status !== 'signedIn' || !accessToken) return;
@@ -174,6 +183,7 @@ export function createSessionManager(
     restore,
     login,
     changePassword,
+    setOwnPhoto,
     logout,
     refresh,
     refreshIfExpiringSoon,

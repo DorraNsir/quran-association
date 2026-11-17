@@ -20,6 +20,8 @@ import {
 import { AdminApi } from '../academic/admin-api.decorator.js';
 import { StudentAccessService } from '../student-space/student-access.service.js';
 import { StudentApi } from '../student-space/student-api.decorator.js';
+import { TeacherAccessService } from '../teaching/teacher-access.service.js';
+import { TeacherApi } from '../teaching/teacher-api.decorator.js';
 import type { AuthPrincipal } from '../auth/auth.types.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { notFound } from '../common/errors.js';
@@ -43,8 +45,8 @@ class PersonPhotoDto {
 
 /**
  * Profile photos of students and teachers, managed by ADMINs (as in the
- * frontend forms) — and a student's OWN photo, by that student (the only
- * profile field a student may change). Stored on the canonical Person: a PROFILE_PHOTO image,
+ * frontend forms) — and a person's OWN photo, by that student or teacher
+ * (the only profile field they may change themselves). Stored on the canonical Person: a PROFILE_PHOTO image,
  * private (visible to the person, the admins and their class audience
  * through GET /api/files/:id). Replacing/removing keeps the old file until
  * the cleanup finds it unused.
@@ -84,17 +86,27 @@ export class PersonPhotosService {
     });
   }
 
-  /** A student's own photo: only an image THEY uploaded (assertAttachable, non-admin). */
+  /**
+   * A student's or a teacher's OWN photo: only an image THEY uploaded
+   * (assertAttachable, non-admin). The id comes from the signed-in account.
+   */
   async setOwn(
-    studentId: string,
+    owner: 'student' | 'teacher',
+    id: string,
     fileId: string | null,
     userId: string,
   ): Promise<PersonPhotoDto> {
     return this.prisma.$transaction(async (tx) => {
-      const row = await tx.student.findUniqueOrThrow({
-        where: { id: studentId },
-        select: { personId: true },
-      });
+      const row =
+        owner === 'student'
+          ? await tx.student.findUniqueOrThrow({
+              where: { id },
+              select: { personId: true },
+            })
+          : await tx.teacher.findUniqueOrThrow({
+              where: { id },
+              select: { personId: true },
+            });
       return this.apply(tx, row.personId, fileId, { userId, isAdmin: false });
     });
   }
@@ -217,7 +229,7 @@ export class StudentProfilePhotoController {
   })
   async set(@Body() dto: SetPhotoDto, @CurrentUser() user: AuthPrincipal) {
     const { studentId } = await this.access.scopeOf(user.userId);
-    return this.photos.setOwn(studentId, dto.fileId, user.userId);
+    return this.photos.setOwn('student', studentId, dto.fileId, user.userId);
   }
 
   @Delete()
@@ -225,6 +237,40 @@ export class StudentProfilePhotoController {
   @ApiOkResponse({ type: PersonPhotoDto })
   async remove(@CurrentUser() user: AuthPrincipal) {
     const { studentId } = await this.access.scopeOf(user.userId);
-    return this.photos.setOwn(studentId, null, user.userId);
+    return this.photos.setOwn('student', studentId, null, user.userId);
+  }
+}
+
+/** The signed-in teacher's own photo (the teacher comes from the account: an ACTIVE teacher profile). */
+@ApiTags('teacher / profile')
+@TeacherApi()
+@Controller('teacher/profile/photo')
+export class TeacherProfilePhotoController {
+  constructor(
+    private readonly photos: PersonPhotosService,
+    private readonly access: TeacherAccessService,
+  ) {}
+
+  @Put()
+  @ApiOperation({
+    summary:
+      'Set my photo (a PROFILE_PHOTO image I uploaded through POST /api/files)',
+  })
+  @ApiOkResponse({ type: PersonPhotoDto })
+  @ApiBadRequestResponse(ERRORS.bad)
+  @ApiNotFoundResponse({
+    description: 'FILE_NOT_FOUND (also for a file uploaded by someone else)',
+  })
+  async set(@Body() dto: SetPhotoDto, @CurrentUser() user: AuthPrincipal) {
+    const teacherId = await this.access.teacherIdOf(user.userId);
+    return this.photos.setOwn('teacher', teacherId, dto.fileId, user.userId);
+  }
+
+  @Delete()
+  @ApiOperation({ summary: 'Remove my photo' })
+  @ApiOkResponse({ type: PersonPhotoDto })
+  async remove(@CurrentUser() user: AuthPrincipal) {
+    const teacherId = await this.access.teacherIdOf(user.userId);
+    return this.photos.setOwn('teacher', teacherId, null, user.userId);
   }
 }

@@ -125,18 +125,20 @@ export function useTeacherWorkspace() {
 }
 
 /**
- * The signed-in student's OWN photo — the only profile field a student may
- * change: upload (PROFILE_PHOTO) then attach, or remove (null).
+ * The signed-in student's or teacher's OWN photo — the only profile field
+ * they may change: upload (PROFILE_PHOTO) then attach, or remove (null).
+ * /api/{student|teacher}/profile/photo: the person comes from the account.
  */
-export function useSetMyPhoto() {
+export function useSetMyPhoto(role: "student" | "teacher" = "student") {
   const queryClient = useQueryClient()
+  const path = `/${role}/profile/photo`
   return useMutation({
     mutationFn: async (photo: File | null) => {
-      if (photo === null) return api("/student/profile/photo", { method: "DELETE" })
+      if (photo === null) return api(path, { method: "DELETE" })
       const file = await uploadFile<{ id: string }>("/files", { purpose: "PROFILE_PHOTO" }, photo)
-      return api("/student/profile/photo", { method: "PUT", body: { fileId: file.id } })
+      return api(path, { method: "PUT", body: { fileId: file.id } })
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKeys.student }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKeys[role] }),
   })
 }
 

@@ -223,6 +223,18 @@ describe('login / change password / logout', () => {
     expect(s.bridge.getAccessToken()).toBe('access-3');
   });
 
+  it('own photo confirmed by the server: the signed-in person shows it at once; tokens untouched', async () => {
+    const mem = memoryStorage();
+    const s = createSessionManager(mem.storage, endpoints());
+    await s.login('teacher.one', 'secret-123');
+    const token = s.bridge.getAccessToken();
+    s.setOwnPhoto('/api/files/f9');
+    expect(s.getState().user?.person.photoUrl).toBe('/api/files/f9');
+    s.setOwnPhoto(null);
+    expect(s.getState().user?.person.photoUrl).toBeNull();
+    expect(s.bridge.getAccessToken()).toBe(token);
+  });
+
   it('logout clears local credentials FIRST, even when the server cannot be reached', async () => {
     const mem = memoryStorage();
     const api = endpoints({ mobileLogout: jest.fn().mockRejectedValue(networkError()) });

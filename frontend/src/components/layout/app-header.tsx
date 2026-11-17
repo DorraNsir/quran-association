@@ -1,11 +1,12 @@
 "use client"
 
-import { Check, KeyRound, Languages, LogOut, Menu, UserRound } from "lucide-react"
+import { Camera, Check, KeyRound, Languages, LogOut, Menu, UserRound } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useState } from "react"
 
 import { NotificationBell } from "@/components/communication/notifications"
+import { MyPhotoDialog } from "@/components/shared/my-photo-dialog"
 import { UserAvatar } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { useDirection } from "@/components/ui/direction"
@@ -106,6 +107,7 @@ function UserMenu({ user, workspace }: { user: User; workspace: Workspace }) {
   const router = useRouter()
   const { logout } = useAuth()
   const [leaving, setLeaving] = useState(false)
+  const [photoOpen, setPhotoOpen] = useState(false)
   const name = fullName(user)
   // The other workspaces this account may open (one account, several roles)
   const others = workspaces.filter(
@@ -121,59 +123,71 @@ function UserMenu({ user, workspace }: { user: User; workspace: Workspace }) {
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger className="flex items-center gap-2.5 rounded-lg p-1 text-start outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 sm:pe-2.5">
-        <UserAvatar name={name} photoUrl={user.photoUrl} size="sm" />
-        <span className="hidden flex-col leading-tight sm:flex">
-          <span className="text-sm font-medium">{name}</span>
-          <span className="text-xs text-muted-foreground">
-            {user.roles.map((r) => labels.role[r]).join(" · ")}
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger className="flex items-center gap-2.5 rounded-lg p-1 text-start outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 sm:pe-2.5">
+          <UserAvatar name={name} photoUrl={user.photoUrl} size="sm" />
+          <span className="hidden flex-col leading-tight sm:flex">
+            <span className="text-sm font-medium">{name}</span>
+            <span className="text-xs text-muted-foreground">
+              {user.roles.map((r) => labels.role[r]).join(" · ")}
+            </span>
           </span>
-        </span>
-        <span className="sr-only">قائمة المستخدم</span>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuLabel className="font-normal">
-          <p className="font-medium text-foreground">{name}</p>
-          <p className="truncate text-xs text-muted-foreground" dir="ltr">
-            {user.username ?? user.email}
-          </p>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          {workspace === "student" ? (
-            <DropdownMenuItem asChild>
-              <Link href="/student/profile">
-                <UserRound />
-                ملفي الشخصي
-              </Link>
-            </DropdownMenuItem>
-          ) : null}
-          <DropdownMenuItem asChild>
-            <Link href="/change-password">
-              <KeyRound />
-              تغيير كلمة المرور
-            </Link>
-          </DropdownMenuItem>
-          {others.map((w) => {
-            const Icon = w.icon
-            return (
-              <DropdownMenuItem key={w.id} asChild>
-                <Link href={w.href}>
-                  <Icon />
-                  الانتقال إلى {w.label}
+          <span className="sr-only">قائمة المستخدم</span>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuLabel className="font-normal">
+            <p className="font-medium text-foreground">{name}</p>
+            <p className="truncate text-xs text-muted-foreground" dir="ltr">
+              {user.username ?? user.email}
+            </p>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            {workspace === "student" ? (
+              <DropdownMenuItem asChild>
+                <Link href="/student/profile">
+                  <UserRound />
+                  ملفي الشخصي
                 </Link>
               </DropdownMenuItem>
-            )
-          })}
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem disabled={leaving} onSelect={() => void signOut()}>
-          <LogOut />
-          تسجيل الخروج
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+            ) : null}
+            {workspace === "teacher" ? (
+              // A teacher changes or removes their OWN photo (no profile page in the teacher space)
+              <DropdownMenuItem onSelect={() => setPhotoOpen(true)}>
+                <Camera />
+                الصورة الشخصية
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuItem asChild>
+              <Link href="/change-password">
+                <KeyRound />
+                تغيير كلمة المرور
+              </Link>
+            </DropdownMenuItem>
+            {others.map((w) => {
+              const Icon = w.icon
+              return (
+                <DropdownMenuItem key={w.id} asChild>
+                  <Link href={w.href}>
+                    <Icon />
+                    الانتقال إلى {w.label}
+                  </Link>
+                </DropdownMenuItem>
+              )
+            })}
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem disabled={leaving} onSelect={() => void signOut()}>
+            <LogOut />
+            تسجيل الخروج
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {workspace === "teacher" && (
+        <MyPhotoDialog open={photoOpen} onOpenChange={setPhotoOpen} name={name} photoUrl={user.photoUrl} role="teacher" />
+      )}
+    </>
   )
 }
 

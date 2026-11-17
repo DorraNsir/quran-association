@@ -1,11 +1,13 @@
 import { useRouter } from 'expo-router';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
-import { AppText, Button, Card, Icon, InitialsAvatar } from '@/components/ui';
+import { AppText, Button, Card, Icon, InitialsAvatar, type IconName } from '@/components/ui';
 import { ar } from '@/i18n/ar';
 import { radius, spacing, touchTarget, useAppTheme } from '@/theme';
 
 import { session, useSession } from './auth-provider';
+import type { PhotoRole } from './my-photo';
+import { ProfilePhotoEditor } from './profile-photo';
 import { availableWorkspaces, type Workspace } from './workspaces';
 
 export const WORKSPACE_ICON = { admin: 'admin', teacher: 'teacher', student: 'student' } as const;
@@ -18,7 +20,7 @@ export function confirmLogout() {
 }
 
 /** Who is signed in (GET /auth/me data held by the session). */
-export function AccountCard({ title }: { title?: string }) {
+export function AccountCard({ title, photoRole }: { title?: string; photoRole?: PhotoRole }) {
   const { user } = useSession();
   const { colors } = useAppTheme();
   if (!user) return null;
@@ -30,7 +32,12 @@ export function AccountCard({ title }: { title?: string }) {
         </AppText>
       ) : null}
       <View style={styles.identity}>
-        <InitialsAvatar name={`${user.person.firstName} ${user.person.lastName}`} size={56} photoUrl={user.person.photoUrl} />
+        {photoRole ? (
+          // Own photo editable (camera / gallery / delete) for a role that has the endpoint
+          <ProfilePhotoEditor role={photoRole} name={`${user.person.firstName} ${user.person.lastName}`} photoUrl={user.person.photoUrl} size={64} />
+        ) : (
+          <InitialsAvatar name={`${user.person.firstName} ${user.person.lastName}`} size={56} photoUrl={user.person.photoUrl} />
+        )}
         <View style={styles.flex}>
           <AppText variant="heading">
             {user.person.firstName} {user.person.lastName}
@@ -85,6 +92,42 @@ export function WorkspaceSwitcher({ current }: { current: Workspace }) {
   );
 }
 
+/**
+ * One account action as a full-width row (the design reference): icon and
+ * label on the right, a chevron on the left; green for a regular action,
+ * red for leaving the session. Colour is never the only signal (icon + text).
+ */
+export function AccountActionRow({
+  icon,
+  label,
+  tone,
+  onPress,
+}: {
+  icon: IconName;
+  label: string;
+  tone: 'brand' | 'danger';
+  onPress: () => void;
+}) {
+  const { colors } = useAppTheme();
+  const fg = tone === 'brand' ? colors.brandSoftForeground : colors.destructiveSoftForeground;
+  const bg = tone === 'brand' ? colors.brandSoft : colors.destructiveSoft;
+  const border = tone === 'brand' ? colors.primary : colors.destructive;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      testID={`account-action-${tone}`}
+      style={({ pressed }) => [styles.actionRow, { backgroundColor: bg, borderColor: border }, pressed && { opacity: 0.8 }]}>
+      <Icon name={icon} size={20} color={fg} />
+      <AppText variant="bodyStrong" style={[styles.flex, { color: fg }]}>
+        {label}
+      </AppText>
+      <Icon name="forward" size={18} color={fg} />
+    </Pressable>
+  );
+}
+
 export function LogoutButton() {
   return <Button variant="outline" icon="logout" label={ar.auth.logout} onPress={confirmLogout} />;
 }
@@ -92,6 +135,15 @@ export function LogoutButton() {
 const styles = StyleSheet.create({
   ltr: { writingDirection: 'ltr' },
   identity: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  actionRow: {
+    minHeight: touchTarget + 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.lg,
+  },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   badge: { borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: 2 },
   switchRow: {

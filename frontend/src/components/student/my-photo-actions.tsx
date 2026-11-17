@@ -11,13 +11,13 @@ import { useSetMyPhoto } from "@/lib/api/workspace"
 import { useAuth } from "@/lib/auth/auth-provider"
 
 /**
- * The student changes or removes their own photo — the only profile field
- * they may change (everything else goes through the administration). Saved
- * at once; the header avatar follows (session reloaded).
+ * A student or a teacher changes or removes their OWN photo — the only
+ * profile field they may change (everything else goes through the
+ * administration). Saved at once; the header avatar follows (session reloaded).
  */
-export function MyPhotoActions({ hasPhoto }: { hasPhoto: boolean }) {
+export function MyPhotoActions({ hasPhoto, role = "student" }: { hasPhoto: boolean; role?: "student" | "teacher" }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const setPhoto = useSetMyPhoto()
+  const setPhoto = useSetMyPhoto(role)
   const { reload } = useAuth()
 
   function save(photo: File | null) {

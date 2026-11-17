@@ -46,6 +46,7 @@ const ICONS = {
   pending: { ios: 'circle.dashed', android: 'radio_button_unchecked' },
   pdf: { ios: 'doc.richtext', android: 'picture_as_pdf' },
   image: { ios: 'photo', android: 'image' },
+  camera: { ios: 'camera', android: 'photo_camera' },
   audio: { ios: 'waveform', android: 'graphic_eq' },
   file: { ios: 'doc', android: 'description' },
   video: { ios: 'play.rectangle', android: 'smart_display' },

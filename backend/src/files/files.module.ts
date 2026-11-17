@@ -19,6 +19,7 @@ import {
   PersonPhotosController,
   PersonPhotosService,
   StudentProfilePhotoController,
+  TeacherProfilePhotoController,
 } from './person-photos.controller.js';
 import {
   STORAGE_DRIVER,
@@ -72,6 +73,7 @@ import { UploadPermissionGuard } from './upload-permission.guard.js';
     AdminFilesController,
     PersonPhotosController,
     StudentProfilePhotoController,
+    TeacherProfilePhotoController,
   ],
   providers: [
     FilesService,

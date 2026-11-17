@@ -343,9 +343,8 @@ describe('Settings & file storage (e2e)', () => {
       expect(await code('sup', { purpose: 'ASSOCIATION_LOGO' }, 403)).toBe(
         'FILE_PURPOSE_FORBIDDEN',
       );
-      expect(await code('sup', { purpose: 'PROFILE_PHOTO' }, 403)).toBe(
-        'FILE_PURPOSE_FORBIDDEN',
-      );
+      // An ACTIVE teacher may upload their OWN profile photo (attachable to their own profile only)
+      await upload('sup', { purpose: 'PROFILE_PHOTO' }, PNG()).expect(201);
       expect(
         await code(
           's1',
@@ -1134,11 +1133,7 @@ describe('Settings & file storage (e2e)', () => {
         .set(as(token.s1))
         .send({ person: { firstName: 'x' } })
         .expect(403);
-      // Teachers still cannot upload profile photos; an inactive student neither
-      expect(
-        (await upload('sup', { purpose: 'PROFILE_PHOTO' }, PNG()).expect(403))
-          .body.code,
-      ).toBe('FILE_PURPOSE_FORBIDDEN');
+      // An inactive student cannot upload profile photos
       await prisma.student.update({
         where: { id: id['student:s2'] },
         data: { status: 'INACTIVE' },
@@ -1160,6 +1155,79 @@ describe('Settings & file storage (e2e)', () => {
             .expect(200)
         ).body.photoUrl,
       ).toBeNull();
+    });
+  });
+
+  describe('a teacher\'s OWN photo (/api/teacher/profile/photo)', () => {
+    it('an active teacher uploads and sets their own photo; nobody else can use that file', async () => {
+      const mine = await uploadOk(
+        'asst',
+        { purpose: 'PROFILE_PHOTO' },
+        JPEG(),
+        'me.jpg',
+        'image/jpeg',
+      );
+      const own = (who = 'asst') =>
+        http().put('/api/teacher/profile/photo').set(as(token[who]));
+      expect(
+        (await own().send({ fileId: mine }).expect(200)).body,
+      ).toMatchObject({ photoFileId: mine, photoUrl: `/api/files/${mine}` });
+      // Stored on THEIR person (the admin view shows it), readable by them
+      expect(
+        (await admin.get(`teachers/${id['teacher:asst']}`)).body.photoUrl ??
+          (await admin.get(`teachers/${id['teacher:asst']}`)).body.person
+            ?.photoUrl,
+      ).toBe(`/api/files/${mine}`);
+      await fetchFile('asst', mine).expect(200);
+      // Another teacher cannot attach it to themselves
+      await own('sup').send({ fileId: mine }).expect(404);
+      // A file someone else uploaded, or of another purpose, cannot be used
+      const adminFile = await uploadOk(
+        'admin',
+        { purpose: 'PROFILE_PHOTO' },
+        PNG(),
+      );
+      await own().send({ fileId: adminFile }).expect(404);
+      await own().send({ fileId: id.cmsImage }).expect(404);
+      // Removing it
+      expect(
+        (
+          await http()
+            .delete('/api/teacher/profile/photo')
+            .set(as(token.asst))
+            .expect(200)
+        ).body.photoUrl,
+      ).toBeNull();
+    });
+
+    it('an INACTIVE teacher can neither upload nor set a photo; a student cannot use the teacher route', async () => {
+      await prisma.teacher.update({
+        where: { id: id['teacher:asst'] },
+        data: { status: 'INACTIVE' },
+      });
+      try {
+        expect(
+          (
+            await upload('asst', { purpose: 'PROFILE_PHOTO' }, PNG()).expect(
+              403,
+            )
+          ).body.code,
+        ).toBe('FILE_PURPOSE_FORBIDDEN');
+        await http()
+          .delete('/api/teacher/profile/photo')
+          .set(as(token.asst))
+          .expect(403);
+      } finally {
+        await prisma.teacher.update({
+          where: { id: id['teacher:asst'] },
+          data: { status: 'ACTIVE' },
+        });
+      }
+      await http()
+        .put('/api/teacher/profile/photo')
+        .set(as(token.s1))
+        .send({ fileId: null })
+        .expect(403);
     });
   });
 

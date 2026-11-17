@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { AlertBox, Button, TextField } from '@/components/ui';
+import { AlertBox, Button, TextField, type IconName } from '@/components/ui';
 import { ar } from '@/i18n/ar';
 import { errorMessage } from '@/services/api';
 import { spacing } from '@/theme';
@@ -19,9 +19,11 @@ import { passwordPolicyError } from './password-policy';
  */
 export function ChangePasswordForm({
   submitLabel,
+  submitIcon,
   onChanged,
 }: {
   submitLabel: string;
+  submitIcon?: IconName;
   /** Called once the server confirmed the change (the new session is already in place) */
   onChanged?: () => void;
 }) {
@@ -85,7 +87,7 @@ export function ChangePasswordForm({
       {field('next', ar.auth.newPassword)}
       {field('confirm', ar.auth.confirmPassword)}
       {error ? <AlertBox message={error} /> : null}
-      <Button label={submitLabel} loading={pending} fullWidth onPress={() => void onSubmit()} />
+      <Button label={submitLabel} icon={submitIcon} loading={pending} fullWidth onPress={() => void onSubmit()} />
     </View>
   );
 }

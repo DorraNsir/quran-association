@@ -51,7 +51,14 @@
           "faceIDPermission": false
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "يحتاج التطبيق إلى الوصول إلى صورك لاختيار صورتك الشخصية.",
+          "cameraPermission": "يحتاج التطبيق إلى الكاميرا لالتقاط صورتك الشخصية."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
