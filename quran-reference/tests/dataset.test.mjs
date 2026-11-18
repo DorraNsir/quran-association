@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 
 const ds = JSON.parse(readFileSync(new URL('../data/qalun-tn-v1.json', import.meta.url), 'utf8'));
 const counts = ds.surahs.map((s) => s.ayahCount);
-const STATUSES = new Set(['cross-checked', 'consistent', 'needs-review', 'verified']);
+const STATUSES = new Set(['needs-review', 'structurally-consistent', 'cross-checked', 'pdf-independent', 'print-verified']);
 
 /** Global position of a verse in Mushaf order (1 … totalAyahs). */
 const offsets = counts.reduce((acc, c, i) => (acc.push(acc[i] + c), acc), [0]);
@@ -128,15 +128,17 @@ test('a juz starts on a page whose header shows that juz (or the next page)', ()
   }
 });
 
-test('every entry has provenance and a known status; nothing is marked verified yet', () => {
+test('every entry has provenance and a known status; print-verified only through recorded print checks', () => {
   for (const r of [...ds.surahs, ...ds.pageStarts, ...ds.eighthStarts]) {
     assert.ok(STATUSES.has(r.status));
-    assert.notEqual(r.status, 'verified');
+    if (ds.printChecks === 0) assert.notEqual(r.status, 'print-verified');
     assert.ok(typeof r.evidence === 'string' && r.evidence.length > 0);
   }
   for (const r of [...ds.pageStarts, ...ds.eighthStarts]) assert.ok(Number.isInteger(r.pdfPage));
 });
 
-test('known open item: al-Ahzab title count is flagged for review', () => {
-  assert.equal(ds.surahs[32].status, 'needs-review');
+test('al-Ahzab: 73 verses, independently re-checked against the PDF (title digit still to confirm in print)', () => {
+  assert.equal(ds.surahs[32].ayahCount, 73);
+  assert.equal(ds.surahs[32].status, 'pdf-independent');
+  assert.match(ds.surahs[32].evidence, /printed copy/);
 });

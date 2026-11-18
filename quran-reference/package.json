@@ -1,0 +1,8 @@
+{
+  "name": "quran-reference",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/dataset.test.mjs tests/golden.test.mjs engine/engine.test.ts"
+  }
+}

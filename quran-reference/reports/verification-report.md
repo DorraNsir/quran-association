@@ -1,5 +1,7 @@
 # Qalun (Tunisia) Mushaf — extraction and verification report
 
+> **Note (Phase 2B):** statuses were renamed and extended — `consistent` is now `structurally-consistent`, and `pdf-independent` / `print-verified` were added. Current counts and the independent checks are in `reports/independent-verification.md`; the tables below describe the original extraction.
+
 Edition: `qalun-abi-nashit-tn-hannibal-mualim-v1` · source `مصحف قالون (الطبعة التونسية).pdf` · SHA-256 `25395b82ba2f834dbf44ebd86b417d909088d3af5580a1271100bd051bd5585c`
 
 ## Summary

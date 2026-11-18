@@ -1,0 +1,29 @@
+quarter,surah,ayah,medallion_label,method
+25,3,92,حزب,text «لن تنالوا البر» opens the line
+37,4,87,حزب,text «الله لا إله إلا هو ليجمعنكم» opens the page
+38,4,97,ربع-type,after verse-end 96
+47,5,49,نصف,after verse-end 48
+51,5,111,نصف,after verse-end 110
+74,8,60,ربع-type,line start; previous line ends with 59
+79,9,61,نصف,after verse-end 60
+86,10,49,(not in crop),line start; previous line ends with 48
+89,11,1,حزب,first verse after the Hud title and basmala
+96,12,36,ربع-type,after verse-end 35 (quarter / three-quarters label not distinguishable at this size)
+100,13,6,ربع-type,text «ويستعجلونك بالسيئة» opens the page
+106,15,49,ربع-type,after verse-end 48 (line start) «نبئ عبادي»
+110,16,71,ربع-type,after verse-end 70
+112,16,112,ربع-type,after verse-end 111
+119,18,30,نصف,after verse-end 29
+120,18,50,ربع-type,after verse-end 49
+130,21,30,ربع-type,after verse-end 29
+138,23,39,ربع-type,after verse-end 38
+146,25,45,ربع-type,after verse-end 44
+150,26,160,ربع-type,text «كذبت قوم لوط المرسلين» opens the page
+158,28,71,ربع-type,text «قل أرأيتم إن جعل الله عليكم الليل سرمدا» opens the page
+163,30,30,نصف,line start; previous line ends with 29 «فأقم وجهك للدين حنيفا»
+170,33,49,ربع-type,line start; previous line ends with 48
+191,41,1,نصف,first verse after the Fussilat title and basmala
+199,44,25,نصف,after verse-end 24
+222,63,9,ربع-type,line start; previous line ends with 8
+228,71,1,ربع-type,first verse after the Nuh title and basmala
+240,101,1,ربع-type,first verse after the al-Qaria title and basmala
