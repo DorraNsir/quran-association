@@ -79,7 +79,18 @@ export interface WorkProgram {
   createdAt: string
   updatedAt: string
   progress: WorkProgress
+  /**
+   * The server's verdict (its clock, Africa/Tunis) when this response was
+   * built: evaluation opens once the session has started and never for a
+   * cancelled one. The evaluation endpoints enforce the same rule (409).
+   */
+  evaluation: WorkEvaluationState
   items: WorkItem[]
+}
+
+export interface WorkEvaluationState {
+  allowed: boolean
+  blockedReason: "SESSION_NOT_STARTED" | "SESSION_CANCELLED" | null
 }
 
 /** A student's own work program (GET /api/student/work-programs) — read-only, no internal metadata. */

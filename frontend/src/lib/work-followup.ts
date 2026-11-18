@@ -6,8 +6,9 @@
 import { tunisTimeOf, weekdayOf } from "@/lib/dates"
 import { formatDate, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import type { ISODate } from "@/types/domain"
-import type { WorkItem, WorkProgress, WorkSession, WorkStatus, WorkType } from "@/types/work-followup"
+import { attendanceOpen } from "@/lib/session-actions"
+import type { ISODate, SessionStatus } from "@/types/domain"
+import type { WorkItem, WorkProgram, WorkProgress, WorkSession, WorkStatus, WorkType } from "@/types/work-followup"
 
 export const WORK_TYPES: WorkType[] = ["MEMORIZATION", "REVISION", "RECITATION", "EXAM"]
 export const WORK_STATUSES: WorkStatus[] = ["NOT_EVALUATED", "COMPLETED", "NOT_COMPLETED", "PARTIAL", "POSTPONED", "CANCELLED"]
@@ -28,9 +29,53 @@ export const workStatusLabel: Record<WorkStatus, string> = {
   CANCELLED: "ملغى",
 }
 
-/** Results that may be continued in a later session («نقل إلى الحصة القادمة») — manually only. */
-export const isTransferable = (status: WorkStatus) =>
-  status === "NOT_COMPLETED" || status === "PARTIAL" || status === "POSTPONED" || status === "CANCELLED"
+/**
+ * Results that may be continued in a later session («نقل إلى الحصة القادمة»)
+ * — manually only. A CANCELLED session's work is never evaluated: its
+ * unevaluated items may be carried as they are (the API's rule).
+ */
+export const isTransferable = (status: WorkStatus, sessionStatus?: SessionStatus) =>
+  status === "NOT_COMPLETED" ||
+  status === "PARTIAL" ||
+  status === "POSTPONED" ||
+  status === "CANCELLED" ||
+  (status === "NOT_EVALUATED" && sessionStatus === "CANCELLED")
+
+/** Why «تقييم الأعمال» is closed now (null: open). */
+export type EvaluationBlock = "NOT_STARTED" | "CANCELLED"
+
+export const evaluationBlockMessage: Record<EvaluationBlock, string> = {
+  NOT_STARTED: "لا يمكن تقييم برنامج العمل قبل بداية الحصة",
+  CANCELLED: "لا يمكن تقييم برنامج العمل لحصة ملغاة",
+}
+
+/** The API's refusals of an evaluation, mapped to the same reasons. */
+export const EVALUATION_ERROR_CODES = ["WORK_SESSION_NOT_STARTED", "WORK_SESSION_CANCELLED"] as const
+
+/**
+ * Evaluation opens once the session has STARTED (its current date and start
+ * time — Africa/Tunis), during and after it, completed included; never for a
+ * cancelled session. The server's verdict (`program.evaluation`) decides;
+ * the clock only OPENS a «not started yet» once the start minute has come
+ * while the page stays open (the attendance rule) — a wrong device clock
+ * never opens what the server closed for another reason, and the API
+ * refuses (409) anything early anyway.
+ */
+export function evaluationBlockOf(program: Pick<WorkProgram, "session" | "evaluation">, at: Date | number = Date.now()): EvaluationBlock | null {
+  const { session, evaluation } = program
+  if (session.status === "CANCELLED" || evaluation?.blockedReason === "SESSION_CANCELLED") return "CANCELLED"
+  const started = attendanceOpen({ status: session.status, date: session.date, start: session.startTime }, at)
+  // Without the server's verdict (an older API): the clock alone
+  if (!evaluation) return started ? null : "NOT_STARTED"
+  return evaluation.blockedReason === "SESSION_NOT_STARTED" && !started ? "NOT_STARTED" : null
+}
+
+/** «منقول من حصة سابقة: … — مؤجل»; from a cancelled session, unevaluated: «منقول من حصة ملغاة: …». */
+export function carriedFromLabel(from: { sessionDate: ISODate; status: WorkStatus }) {
+  return from.status === "NOT_EVALUATED"
+    ? `منقول من حصة ملغاة: ${formatDate(from.sessionDate)}`
+    : `منقول من حصة سابقة: ${formatDate(from.sessionDate)} — ${workStatusLabel[from.status]}`
+}
 
 /**
  * The approved rule, for a draft (the evaluation sheet) — the API returns

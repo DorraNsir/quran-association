@@ -60,7 +60,9 @@ const program: WorkProgram = {
   id: "p1",
   version: 3,
   student: { id: "s1", firstName: "درة", lastName: "نصير", photoUrl: null },
-  session: session("ses1", "2099-10-19"),
+  // A lesson that has started (past): evaluation is open
+  session: session("ses1", "2026-10-19"),
+  evaluation: { allowed: true, blockedReason: null },
   generalNotes: null,
   lastEditedBy: "مريم بن علي",
   createdAt: "2026-10-01T00:00:00Z",
@@ -80,7 +82,7 @@ const program: WorkProgram = {
 }
 
 /** Answers like the API; records every request. */
-function routeFetch(overrides: { evaluation?: () => Response; get?: () => Response } = {}) {
+function routeFetch(overrides: { evaluation?: () => Response; get?: () => Response; list?: WorkProgram } = {}) {
   const calls: { method: string; path: string; search: URLSearchParams; body?: unknown }[] = []
   vi.stubGlobal(
     "fetch",
@@ -89,7 +91,8 @@ function routeFetch(overrides: { evaluation?: () => Response; get?: () => Respon
       const method = init?.method ?? "GET"
       calls.push({ method, path: url.pathname, search: url.searchParams, body: init?.body ? JSON.parse(String(init.body)) : undefined })
       const path = url.pathname.replace(/^\/api/, "")
-      if (path === "/teacher/work-programs") return json(200, { data: [program], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } })
+      if (path === "/teacher/work-programs")
+        return json(200, { data: [overrides.list ?? program], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } })
       if (path === "/teacher/work-programs/session-options") return json(200, [program.session])
       if (path === "/teacher/work-programs/eligible-sessions")
         return json(200, [{ ...session("ses2", "2099-10-22"), programId: null }, { ...session("ses1", "2099-10-19"), programId: "p1" }])
@@ -241,5 +244,79 @@ describe("«متابعة العمل» — create form (API)", () => {
     fireEvent.click(await screen.findByRole("option", { name: /يوجد برنامج/ }))
     expect(await within(sheet).findByText("يوجد برنامج عمل لهذه الحصة. هل تريد تعديله؟")).toBeTruthy()
     expect(within(sheet).getByRole("button", { name: "حفظ برنامج العمل" })).toHaveProperty("disabled", true)
+  })
+})
+
+describe("«متابعة العمل» — evaluation follows the session (API)", () => {
+  const upcoming: WorkProgram = {
+    ...program,
+    session: session("ses1", "2099-10-19"),
+    evaluation: { allowed: false, blockedReason: "SESSION_NOT_STARTED" },
+  }
+  const cancelled: WorkProgram = {
+    ...program,
+    session: { ...session("ses1", "2099-10-19"), status: "CANCELLED" },
+    evaluation: { allowed: false, blockedReason: "SESSION_CANCELLED" },
+    items: [item("i5", { type: "MEMORIZATION", description: "حفظ سورة الملك" }), ...program.items.slice(1)],
+  }
+
+  it("before the session starts: «تقييم الأعمال» is disabled with the reason (list and program page)", async () => {
+    routeFetch({ list: upcoming, get: () => json(200, upcoming) })
+    const { unmount } = renderIn(<WorkFollowupScreen />)
+    const button = await screen.findByRole("button", { name: "تقييم الأعمال" })
+    expect(button).toHaveProperty("disabled", true)
+    expect(screen.getByText("لا يمكن تقييم برنامج العمل قبل بداية الحصة")).toBeTruthy()
+    fireEvent.click(button)
+    expect(screen.queryByRole("dialog")).toBeNull()
+    unmount()
+    renderIn(<WorkProgramDetails programId="p1" />)
+    expect(await screen.findByRole("button", { name: "تقييم الأعمال" })).toHaveProperty("disabled", true)
+    expect(screen.getByRole("status").textContent).toBe("لا يمكن تقييم برنامج العمل قبل بداية الحصة")
+    // Editing (planning) stays available
+    expect(screen.getByRole("button", { name: "تعديل البرنامج" })).toHaveProperty("disabled", false)
+  })
+
+  it("cancelled session: evaluation disabled; its unevaluated work can still be carried", async () => {
+    const calls = routeFetch({ list: cancelled, get: () => json(200, cancelled) })
+    renderIn(<WorkProgramDetails programId="p1" />)
+    expect(await screen.findByRole("button", { name: "تقييم الأعمال" })).toHaveProperty("disabled", true)
+    expect(screen.getByRole("status").textContent).toBe("لا يمكن تقييم برنامج العمل لحصة ملغاة")
+    const pending = screen.getByText("حفظ سورة الملك").closest("li")!
+    fireEvent.click(within(pending).getByRole("button", { name: "نقل إلى الحصة القادمة" }))
+    const dialog = screen.getByRole("dialog")
+    await within(dialog).findByRole("combobox")
+    fireEvent.click(within(dialog).getByRole("button", { name: "تأكيد" }))
+    await waitFor(() => expect(calls.some((c) => c.path === "/api/teacher/work-items/i5/transfer")).toBe(true))
+  })
+
+  it("an unevaluated item of a normal session offers no transfer", async () => {
+    routeFetch({ get: () => json(200, { ...program, items: [item("i6", { description: "عمل لم يقيّم" })] }) })
+    renderIn(<WorkProgramDetails programId="p1" />)
+    const row = (await screen.findByText("عمل لم يقيّم")).closest("li")!
+    expect(within(row).queryByRole("button", { name: "نقل إلى الحصة القادمة" })).toBeNull()
+  })
+
+  it("carried from a cancelled session: «منقول من حصة ملغاة»", async () => {
+    const carried = item("i7", {
+      description: "حفظ سورة القلم",
+      carriedFrom: { itemId: "x", programId: "p0", sessionId: "ses0", sessionDate: "2026-10-15", status: "NOT_EVALUATED" },
+    })
+    routeFetch({ get: () => json(200, { ...program, items: [carried] }) })
+    renderIn(<WorkProgramDetails programId="p1" />)
+    expect(await screen.findByText(/^منقول من حصة ملغاة: /)).toBeTruthy()
+  })
+
+  it("the API refuses (the lesson moved / was cancelled meanwhile): its message is shown and the programs reload", async () => {
+    const message = "لا يمكن تقييم برنامج العمل قبل بداية الحصة"
+    const calls = routeFetch({ evaluation: () => json(409, { code: "WORK_SESSION_NOT_STARTED", message }) })
+    renderIn(<WorkFollowupScreen />)
+    fireEvent.click(await screen.findByRole("button", { name: "تقييم الأعمال" }))
+    const sheet = screen.getByRole("dialog")
+    fireEvent.click(within(within(sheet).getByRole("radiogroup", { name: /حفظ صفحتين/ })).getByRole("radio", { name: "منجز" }))
+    const listCalls = () => calls.filter((c) => c.method === "GET" && c.path === "/api/teacher/work-programs").length
+    const before = listCalls()
+    fireEvent.click(within(sheet).getByRole("button", { name: "حفظ التقييم" }))
+    expect(await within(sheet).findByText(message)).toBeTruthy()
+    await waitFor(() => expect(listCalls()).toBeGreaterThan(before))
   })
 })

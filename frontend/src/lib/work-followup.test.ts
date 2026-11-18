@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest"
 
-import type { WorkStatus } from "@/types/work-followup"
+import type { WorkProgram, WorkStatus } from "@/types/work-followup"
 
-import { isTransferable, nextRecitation, phaseOf, progressLabel, progressOf, recitationOrdinal, WORK_STATUSES } from "./work-followup"
+import {
+  carriedFromLabel,
+  evaluationBlockMessage,
+  evaluationBlockOf,
+  isTransferable,
+  nextRecitation,
+  phaseOf,
+  progressLabel,
+  progressOf,
+  recitationOrdinal,
+  WORK_STATUSES,
+} from "./work-followup"
 
 const TODAY = "2026-10-17"
 const items = (...statuses: WorkStatus[]) => statuses.map((status) => ({ status }))
@@ -23,7 +34,50 @@ describe("«متابعة العمل» display rules", () => {
   })
 
   it("transfer is offered for غير منجز / جزئي / مؤجل / ملغى only", () => {
-    expect(WORK_STATUSES.filter(isTransferable)).toEqual(["NOT_COMPLETED", "PARTIAL", "POSTPONED", "CANCELLED"])
+    expect(WORK_STATUSES.filter((s) => isTransferable(s))).toEqual(["NOT_COMPLETED", "PARTIAL", "POSTPONED", "CANCELLED"])
+    expect(WORK_STATUSES.filter((s) => isTransferable(s, "SCHEDULED"))).toEqual(["NOT_COMPLETED", "PARTIAL", "POSTPONED", "CANCELLED"])
+    expect(WORK_STATUSES.filter((s) => isTransferable(s, "COMPLETED"))).not.toContain("NOT_EVALUATED")
+  })
+
+  it("a cancelled session: its unevaluated work may be carried too (never evaluated)", () => {
+    expect(isTransferable("NOT_EVALUATED", "CANCELLED")).toBe(true)
+    expect(isTransferable("COMPLETED", "CANCELLED")).toBe(false)
+  })
+
+  describe("evaluation follows the session (server verdict + Africa/Tunis clock)", () => {
+    // 2026-11-18 15:00 in Tunis (UTC+1)
+    const at = new Date("2026-11-18T14:00:00Z")
+    const of = (status: "SCHEDULED" | "COMPLETED" | "CANCELLED", date: string, startTime: string, blockedReason: WorkProgram["evaluation"]["blockedReason"]) => ({
+      session: { id: "s", date, startTime, endTime: "23:00", status, groupClassId: "c", groupName: "g", branchName: "b" },
+      evaluation: { allowed: blockedReason === null, blockedReason },
+    })
+
+    it("before the start: closed; the message says why", () => {
+      expect(evaluationBlockOf(of("SCHEDULED", "2026-11-18", "16:00", "SESSION_NOT_STARTED"), at)).toBe("NOT_STARTED")
+      expect(evaluationBlockOf(of("SCHEDULED", "2026-11-19", "08:00", "SESSION_NOT_STARTED"), at)).toBe("NOT_STARTED")
+      expect(evaluationBlockMessage.NOT_STARTED).toBe("لا يمكن تقييم برنامج العمل قبل بداية الحصة")
+    })
+
+    it("ongoing and completed: open", () => {
+      expect(evaluationBlockOf(of("SCHEDULED", "2026-11-18", "14:30", null), at)).toBeNull()
+      expect(evaluationBlockOf(of("COMPLETED", "2026-11-10", "16:00", null), at)).toBeNull()
+    })
+
+    it("the start minute came while the page stayed open: the clock opens what the server said «not yet»", () => {
+      expect(evaluationBlockOf(of("SCHEDULED", "2026-11-18", "15:00", "SESSION_NOT_STARTED"), at)).toBeNull()
+    })
+
+    it("the server decides: a device clock behind never closes an open session, a cancelled one is never opened", () => {
+      // The device thinks 15:00, the server says the 16:00 lesson started
+      expect(evaluationBlockOf(of("SCHEDULED", "2026-11-18", "16:00", null), at)).toBeNull()
+      expect(evaluationBlockOf(of("CANCELLED", "2026-11-10", "16:00", "SESSION_CANCELLED"), at)).toBe("CANCELLED")
+      expect(evaluationBlockMessage.CANCELLED).toBe("لا يمكن تقييم برنامج العمل لحصة ملغاة")
+    })
+  })
+
+  it("«منقول من …»: the result when carried; from a cancelled session, unevaluated", () => {
+    expect(carriedFromLabel({ sessionDate: "2026-11-10", status: "POSTPONED" })).toMatch(/^منقول من حصة سابقة: .* — مؤجل$/)
+    expect(carriedFromLabel({ sessionDate: "2026-11-10", status: "NOT_EVALUATED" })).toMatch(/^منقول من حصة ملغاة: /)
   })
 
   it("the proposed next recitation increments the number and keeps the Surah (no limit)", () => {

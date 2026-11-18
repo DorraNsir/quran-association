@@ -8,12 +8,14 @@ import { QueryState } from "@/components/shared/query-state"
 import { UserAvatar } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { useEvaluationBlock } from "@/hooks/use-evaluation-block"
 import { ApiError } from "@/lib/api/errors"
 import { useWorkProgram } from "@/lib/api/work-followup"
 import { todayInTunis } from "@/lib/dates"
 import { formatDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { isTransferable, phaseOf, workStatusLabel } from "@/lib/work-followup"
+import { carriedFromLabel, evaluationBlockMessage, isTransferable, phaseOf } from "@/lib/work-followup"
+import type { WorkProgram } from "@/types/work-followup"
 
 import { WorkStatusBadge, WorkTypeBadge } from "./work-badges"
 import { useWorkFollowup } from "./work-followup-provider"
@@ -28,15 +30,19 @@ const BACK = "/teacher/work-followup"
  * class, a session they did not teach) is "not found" for them.
  */
 export function WorkProgramDetails({ programId }: { programId: string }) {
-  const { openEdit, openEvaluate, openSchedule } = useWorkFollowup()
   const query = useWorkProgram(programId)
-  const today = todayInTunis()
 
   if (query.error instanceof ApiError && (query.error.isNotFound || query.error.isForbidden || query.error.status === 400))
     return <NotFoundState title="برنامج العمل غير موجود" backHref={BACK} backLabel="العودة إلى متابعة العمل" />
   const program = query.data
   if (!program) return <QueryState query={query}>{null}</QueryState>
+  return <ProgramView program={program} />
+}
 
+function ProgramView({ program }: { program: WorkProgram }) {
+  const { openEdit, openEvaluate, openSchedule } = useWorkFollowup()
+  const today = todayInTunis()
+  const blocked = useEvaluationBlock(program)
   const { student, session, progress: p } = program
   const name = `${student.firstName} ${student.lastName}`
 
@@ -66,12 +72,17 @@ export function WorkProgramDetails({ programId }: { programId: string }) {
               <Pencil />
               تعديل البرنامج
             </Button>
-            <Button onClick={() => openEvaluate(program)}>
+            <Button onClick={() => openEvaluate(program)} disabled={blocked !== null} aria-describedby={blocked ? "wf-eval-blocked" : undefined}>
               <ClipboardCheck />
               تقييم الأعمال
             </Button>
           </div>
         </div>
+        {blocked && (
+          <p id="wf-eval-blocked" role="status" className="border-t bg-muted/30 px-5 py-3 text-sm text-muted-foreground">
+            {evaluationBlockMessage[blocked]}
+          </p>
+        )}
         {/* <div className="grid gap-4 border-t p-5 sm:grid-cols-[1fr_16rem]">
           <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
@@ -115,7 +126,7 @@ export function WorkProgramDetails({ programId }: { programId: string }) {
                     <p className="flex items-center gap-1 text-xs text-primary">
                       <CornerDownLeft className="size-3 shrink-0" aria-hidden />
                       {/* The source's status WHEN it was carried (kept by the API) */}
-                      منقول من حصة سابقة: {formatDate(item.carriedFrom.sessionDate)} — {workStatusLabel[item.carriedFrom.status]}
+                      {carriedFromLabel(item.carriedFrom)}
                     </p>
                   )}
                   {item.continuedFrom && (
@@ -136,9 +147,9 @@ export function WorkProgramDetails({ programId }: { programId: string }) {
                       العرضة التالية مبرمجة في حصة {item.continuedBy.map((c) => formatDate(c.sessionDate)).join("، ")}
                     </p>
                   )}
-                  {(isTransferable(item.status) || item.type === "RECITATION") && (
+                  {(isTransferable(item.status, session.status) || item.type === "RECITATION") && (
                     <div className="flex flex-wrap gap-2 pt-1">
-                      {isTransferable(item.status) && (
+                      {isTransferable(item.status, session.status) && (
                         <Button variant="outline" size="sm" onClick={() => openSchedule("carry", item, program)}>
                           <ArrowLeftRight />
                           نقل إلى الحصة القادمة

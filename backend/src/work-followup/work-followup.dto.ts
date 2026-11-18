@@ -410,11 +410,38 @@ export class WorkProgressDto {
   rate!: number | null;
 }
 
+/** Why a program cannot be evaluated now (null: it can). */
+export const EVALUATION_BLOCKS = [
+  'SESSION_NOT_STARTED',
+  'SESSION_CANCELLED',
+] as const;
+export type EvaluationBlock = (typeof EVALUATION_BLOCKS)[number];
+
+export class WorkEvaluationStateDto {
+  @ApiProperty({
+    description:
+      'Evaluation is open: the session has started (ongoing or past, incl. completed) and is not cancelled — server clock, platform timezone',
+  })
+  allowed!: boolean;
+  @ApiPropertyOptional({
+    enum: EVALUATION_BLOCKS,
+    nullable: true,
+    description: 'Set iff allowed is false',
+  })
+  blockedReason!: EvaluationBlock | null;
+}
+
 export class WorkProgramDto {
   @ApiProperty() id!: string;
   @ApiProperty() version!: number;
   @ApiProperty({ type: WorkStudentDto }) student!: WorkStudentDto;
   @ApiProperty({ type: WorkSessionDto }) session!: WorkSessionDto;
+  @ApiProperty({
+    type: WorkEvaluationStateDto,
+    description:
+      'Whether evaluation is open when this response was built (the evaluation endpoints enforce the same rule)',
+  })
+  evaluation!: WorkEvaluationStateDto;
   @ApiPropertyOptional({ type: String, nullable: true })
   generalNotes!: string | null;
   @ApiPropertyOptional({

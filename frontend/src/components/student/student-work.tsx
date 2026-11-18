@@ -127,7 +127,9 @@ function StudentWorkCard({ program, phase }: { program: StudentWorkProgram; phas
             {item.carriedFrom && (
               <p className="flex items-center gap-1 text-xs text-primary">
                 <CornerDownLeft className="size-3 shrink-0" aria-hidden />
-                منقول من حصة {formatDate(item.carriedFrom.sessionDate)} — {workStatusLabel[item.carriedFrom.status]}
+                {item.carriedFrom.status === "NOT_EVALUATED"
+                  ? `منقول من حصة ملغاة: ${formatDate(item.carriedFrom.sessionDate)}`
+                  : `منقول من حصة ${formatDate(item.carriedFrom.sessionDate)} — ${workStatusLabel[item.carriedFrom.status]}`}
               </p>
             )}
           </li>

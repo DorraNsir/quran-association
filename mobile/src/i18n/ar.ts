@@ -418,6 +418,12 @@ export const ar = {
     comment: 'تعليق التقييم',
     evaluatedBy: (name: string, date: string) => `قيّمه ${name} · ${date}`,
     carriedFrom: (date: string, status: string) => `منقول من حصة سابقة: ${date} — ${status}`,
+    carriedFromCancelled: (date: string) => `منقول من حصة ملغاة: ${date}`,
+    backToProgram: 'العودة إلى برنامج العمل',
+    evaluationBlocked: {
+      NOT_STARTED: 'لا يمكن تقييم برنامج العمل قبل بداية الحصة',
+      CANCELLED: 'لا يمكن تقييم برنامج العمل لحصة ملغاة',
+    },
     continuedFrom: (date: string) => `تلي عرضة حصة ${date}`,
     carriedTo: (dates: string) => `نُقل إلى حصة ${dates}`,
     continuedBy: (dates: string) => `العرضة التالية مبرمجة في حصة ${dates}`,

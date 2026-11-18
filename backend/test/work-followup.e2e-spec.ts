@@ -8,9 +8,10 @@ import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
 import { PasswordService } from '../src/auth/password.service.js';
-import { todayIn } from '../src/common/dates.js';
+import { todayIn, toDbDate } from '../src/common/dates.js';
 import { Role } from '../src/generated/prisma/enums.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { toDbTime } from '../src/scheduling/time.js';
 
 const RUN = randomUUID().slice(0, 8);
 const PASSWORD = 'initial-pass-123';
@@ -48,6 +49,7 @@ interface Program {
   id: string;
   version: number;
   session: { id: string; date: string; startTime: string; status: string };
+  evaluation: { allowed: boolean; blockedReason: string | null };
   items: Item[];
   progress: Record<string, number | null>;
   lastEditedBy: string | null;
@@ -165,6 +167,23 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
         })
         .expect(201)
     ).body.id as string;
+
+  /**
+   * Time passes: the lesson planned while upcoming is now under way (today,
+   * 00:00–23:59, platform timezone). Work is only planned in upcoming
+   * sessions and only evaluated once they have started, so the tests move
+   * the clock of the SESSION (the server clock cannot be moved). Another
+   * date (e.g. yesterday): a lesson whose time has passed, not yet completed.
+   */
+  const startNow = (sessionId: string, date = TODAY) =>
+    prisma.session.update({
+      where: { id: sessionId },
+      data: {
+        date: toDbDate(date),
+        startTime: toDbTime('00:00'),
+        endTime: toDbTime('23:59'),
+      },
+    });
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -537,6 +556,58 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
   // ───────────────────────── evaluation ─────────────────────────
 
   describe('evaluation', () => {
+    it('before the session starts: refused for everyone (one item and the whole program), nothing written', async () => {
+      const before = await programOf('sup', id.p1);
+      expect(before.evaluation).toEqual({
+        allowed: false,
+        blockedReason: 'SESSION_NOT_STARTED',
+      });
+      for (const who of ['sup', 'asst', 'admin']) {
+        const one = await evaluate(
+          who,
+          before,
+          before.items[0].id,
+          'COMPLETED',
+        ).expect(409);
+        expect(one.body).toMatchObject({
+          code: 'WORK_SESSION_NOT_STARTED',
+          message: 'لا يمكن تقييم برنامج العمل قبل بداية الحصة',
+        });
+        const all = await api
+          .patch(who, `work-programs/${id.p1}/evaluation`, {
+            version: before.version,
+            generalNotes: 'قبل الحصة',
+            items: [
+              {
+                id: before.items[1].id,
+                status: 'PARTIAL',
+                version: before.items[1].version,
+              },
+            ],
+          })
+          .expect(409);
+        expect(all.body.code).toBe('WORK_SESSION_NOT_STARTED');
+      }
+      // A teacher outside the session's team: still 403 (access is checked first)
+      await evaluate('other', before, before.items[0].id, 'COMPLETED').expect(
+        403,
+      );
+      const after = await programOf('sup', id.p1);
+      expect(after.items.map((i) => [i.status, i.version])).toEqual(
+        before.items.map((i) => [i.status, i.version]),
+      );
+      expect([after.version, after.generalNotes]).toEqual([
+        before.version,
+        before.generalNotes,
+      ]);
+      // The lesson starts: evaluation opens (the rest of this suite)
+      await startNow(id.u1);
+      expect((await programOf('sup', id.p1)).evaluation).toEqual({
+        allowed: true,
+        blockedReason: null,
+      });
+    });
+
     it('one item at a time: others untouched, time and evaluator stored, comment kept', async () => {
       const before = await programOf('sup', id.p1);
       const target = before.items[0];
@@ -743,7 +814,7 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
         carriedFrom: {
           itemId: recitation.id,
           sessionId: id.u1,
-          sessionDate: addDays(TODAY, 2),
+          sessionDate: TODAY,
           status: 'NOT_COMPLETED',
         },
       });
@@ -830,18 +901,33 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
     });
 
     it('target rules: later, scheduled, upcoming, the same student’s class, authorized', async () => {
+      // A source still upcoming: u3's lesson is cancelled, so its unevaluated
+      // work may be carried (restored at the end)
+      await admin
+        .patch(`sessions/${id.u3}/status`, { status: 'CANCELLED' })
+        .expect(200);
       const later = await programOf('sup', id.p3);
       const back = later.items[0];
-      await evaluate('sup', later, back.id, 'POSTPONED').expect(200);
+      expect(back.status).toBe('NOT_EVALUATED');
+      expect(
+        (
+          await api
+            .post('sup', `work-items/${back.id}/transfer`, {
+              targetSessionId: id.u2,
+            })
+            .expect(400)
+        ).body.code,
+      ).toBe('WORK_TARGET_SESSION_NOT_LATER');
+      // A session already under way is no target
       expect(
         (
           await api
             .post('sup', `work-items/${back.id}/transfer`, {
               targetSessionId: id.u1,
             })
-            .expect(400)
+            .expect(409)
         ).body.code,
-      ).toBe('WORK_TARGET_SESSION_NOT_LATER');
+      ).toBe('WORK_SESSION_NOT_UPCOMING');
       expect(
         (
           await api
@@ -878,6 +964,12 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
           targetSessionId: randomUUID(),
         })
         .expect(404);
+      expect(
+        await prisma.workItem.count({ where: { carriedFromItemId: back.id } }),
+      ).toBe(0);
+      await admin
+        .patch(`sessions/${id.u3}/status`, { status: 'SCHEDULED' })
+        .expect(200);
     });
   });
 
@@ -1059,7 +1151,7 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
   // ───────────────────────── history ─────────────────────────
 
   describe('history and integrity', () => {
-    it('a cancelled session keeps its work (results still editable), but receives no new item', async () => {
+    it('a cancelled session keeps its work, but its work is never evaluated and it receives no new item', async () => {
       await admin
         .patch(`sessions/${id.u4}/status`, { status: 'CANCELLED' })
         .expect(200);
@@ -1070,7 +1162,16 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
       const p = list[0];
       expect(p.session.status).toBe('CANCELLED');
       expect(p.items.length).toBeGreaterThan(0);
-      await evaluate('sup', p, p.items[0].id, 'CANCELLED').expect(200);
+      expect(p.evaluation).toEqual({
+        allowed: false,
+        blockedReason: 'SESSION_CANCELLED',
+      });
+      expect(
+        (await evaluate('sup', p, p.items[0].id, 'CANCELLED').expect(409)).body,
+      ).toMatchObject({
+        code: 'WORK_SESSION_CANCELLED',
+        message: 'لا يمكن تقييم برنامج العمل لحصة ملغاة',
+      });
       expect(
         (
           await api
@@ -1215,7 +1316,7 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
       const p1 = mine.data.find((p: { id: string }) => p.id === id.p1);
       expect(p1.session).toMatchObject({
         id: id.u1,
-        date: addDays(TODAY, 2),
+        date: TODAY,
         groupName: tag('مجموعة الماهر'),
       });
       expect(p1.teacherName).toBe(`sup ${tag('حساب')}`);
@@ -1233,7 +1334,7 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
       // A carried item says where it came from
       const target = mine.data.find((p: { id: string }) => p.id === id.p3);
       expect(target.items[0].carriedFrom).toEqual({
-        sessionDate: addDays(TODAY, 2),
+        sessionDate: TODAY,
         status: 'NOT_COMPLETED',
       });
     });
@@ -1303,6 +1404,256 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
         .expect(403);
       // Teachers do not use the student route
       await http().get('/api/student/work-programs').set(as('sup')).expect(403);
+    });
+  });
+
+  // ───────────────────────── session timing (Work Program 2.0 — phase 1) ─────────────────────────
+
+  describe('evaluation follows the session: upcoming ✗, ongoing ✓, completed ✓, cancelled ✗', () => {
+    const items = [
+      { type: 'MEMORIZATION', description: 'حفظ سورة النبأ' },
+      { type: 'REVISION', description: 'مراجعة سورة النازعات' },
+      { type: 'EXAM', description: 'اختبار جزء عم' },
+    ];
+    const batch = (who: string, p: Program, status: string) =>
+      api.patch(who, `work-programs/${p.id}/evaluation`, {
+        items: p.items.map((i) => ({ id: i.id, status, version: i.version })),
+      });
+
+    // The class's assistant is now «newcomer» (see «history and integrity»)
+    beforeAll(async () => {
+      id.t1 = await session('C', addDays(TODAY, 12), '16:00');
+      id.t2 = await session('C', addDays(TODAY, 14), '16:00');
+      id.t3 = await session('C', addDays(TODAY, 16), '16:00');
+      id.t4 = await session('C', addDays(TODAY, 18), '16:00');
+      id.pt1 = (await create('sup', 's2', 't1', items).expect(201)).body.id;
+      id.pt3 = (
+        await create('newcomer', 's2', 't3', items).expect(201)
+      ).body.id;
+    });
+
+    it('rescheduled: the session’s CURRENT date and time count (refused until the new start)', async () => {
+      // An extra lesson is moved only before it starts (scheduling rule)
+      await admin
+        .patch(`sessions/${id.t1}`, {
+          date: addDays(TODAY, 13),
+          startTime: '15:00',
+          endTime: '16:00',
+        })
+        .expect(200);
+      const p = await programOf('sup', id.pt1);
+      expect(p.session).toMatchObject({
+        date: addDays(TODAY, 13),
+        startTime: '15:00',
+      });
+      expect(p.evaluation.blockedReason).toBe('SESSION_NOT_STARTED');
+      expect(
+        (await evaluate('sup', p, p.items[0].id, 'PARTIAL').expect(409)).body
+          .code,
+      ).toBe('WORK_SESSION_NOT_STARTED');
+      expect((await batch('admin', p, 'PARTIAL').expect(409)).body.code).toBe(
+        'WORK_SESSION_NOT_STARTED',
+      );
+      expect((await programOf('sup', id.pt1)).items[0].version).toBe(
+        p.items[0].version,
+      );
+    });
+
+    it('started (its time has passed, not completed yet): the supervisor, the assistant and the admin evaluate (one item and the whole program)', async () => {
+      // u1 is the lesson under way today (see «evaluation»); t1 ran yesterday
+      await startNow(id.t1, addDays(TODAY, -1));
+      let p = await programOf('sup', id.pt1);
+      expect(p.evaluation).toEqual({ allowed: true, blockedReason: null });
+      p = (await evaluate('sup', p, p.items[0].id, 'COMPLETED').expect(200))
+        .body;
+      p = (await evaluate('newcomer', p, p.items[1].id, 'PARTIAL').expect(200))
+        .body;
+      p = (await evaluate('admin', p, p.items[2].id, 'POSTPONED').expect(200))
+        .body;
+      expect(p.items.map((i) => i.status)).toEqual([
+        'COMPLETED',
+        'PARTIAL',
+        'POSTPONED',
+      ]);
+      p = (await batch('newcomer', p, 'COMPLETED').expect(200)).body;
+      expect(p.progress).toMatchObject({ completed: 3, pending: 0 });
+      // Outside the session's team: refused, whatever the time
+      await evaluate('other', p, p.items[0].id, 'COMPLETED').expect(403);
+      await batch('other', p, 'COMPLETED').expect(403);
+      // Optimistic concurrency unchanged: a stale version is refused
+      const stale = await api
+        .patch('sup', `work-items/${p.items[0].id}/evaluation`, {
+          status: 'PARTIAL',
+          version: p.items[0].version - 1,
+        })
+        .expect(409);
+      expect(stale.body.code).toBe('WORK_ITEM_CHANGED');
+    });
+
+    it('completed: corrections stay allowed (one item and the whole program)', async () => {
+      await startNow(id.t1, addDays(TODAY, -1));
+      await admin
+        .patch(`sessions/${id.t1}/status`, {
+          status: 'COMPLETED',
+          adminOverride: true,
+        })
+        .expect(200);
+      let p = await programOf('sup', id.pt1);
+      expect(p.session.status).toBe('COMPLETED');
+      expect(p.evaluation).toEqual({ allowed: true, blockedReason: null });
+      p = (
+        await evaluate('newcomer', p, p.items[1].id, 'NOT_COMPLETED').expect(
+          200,
+        )
+      ).body;
+      p = (await batch('admin', p, 'COMPLETED').expect(200)).body;
+      expect(p.items.every((i) => i.status === 'COMPLETED')).toBe(true);
+    });
+
+    it('cancelled: refused for everyone, one item and the whole program; nothing written', async () => {
+      await admin
+        .patch(`sessions/${id.t3}/status`, { status: 'CANCELLED' })
+        .expect(200);
+      const p = await programOf('sup', id.pt3);
+      expect(p.evaluation).toEqual({
+        allowed: false,
+        blockedReason: 'SESSION_CANCELLED',
+      });
+      for (const who of ['sup', 'newcomer', 'admin']) {
+        expect(
+          (await evaluate(who, p, p.items[0].id, 'CANCELLED').expect(409)).body,
+        ).toMatchObject({
+          code: 'WORK_SESSION_CANCELLED',
+          message: 'لا يمكن تقييم برنامج العمل لحصة ملغاة',
+        });
+        expect((await batch(who, p, 'POSTPONED').expect(409)).body.code).toBe(
+          'WORK_SESSION_CANCELLED',
+        );
+      }
+      await evaluate('other', p, p.items[0].id, 'COMPLETED').expect(403);
+      // Even once its time has passed, a cancelled lesson stays closed
+      await prisma.session.update({
+        where: { id: id.t3 },
+        data: { date: toDbDate(addDays(TODAY, -1)) },
+      });
+      expect(
+        (await evaluate('sup', p, p.items[0].id, 'COMPLETED').expect(409)).body
+          .code,
+      ).toBe('WORK_SESSION_CANCELLED');
+      await prisma.session.update({
+        where: { id: id.t3 },
+        data: { date: toDbDate(addDays(TODAY, 16)) },
+      });
+      const after = await programOf('sup', id.pt3);
+      expect(after.items.map((i) => [i.status, i.version])).toEqual(
+        p.items.map((i) => [i.status, i.version]),
+      );
+    });
+
+    it('cancelled: its unevaluated work is carried to an eligible later session, history kept', async () => {
+      const source = await programOf('sup', id.pt3);
+      const item = source.items[0];
+      // Eligible targets are listed for it (later, upcoming, the student's)
+      const eligible = (
+        await api
+          .get('newcomer', 'work-programs/eligible-sessions', {
+            studentId: id.s2,
+            afterSessionId: id.t3,
+          })
+          .expect(200)
+      ).body.map((x: { id: string }) => x.id);
+      expect(eligible).toContain(id.t4);
+      expect(eligible).not.toContain(id.t2);
+      const target = (
+        await api
+          .post('newcomer', `work-items/${item.id}/transfer`, {
+            targetSessionId: id.t4,
+          })
+          .expect(201)
+      ).body as Program;
+      expect(target.session.id).toBe(id.t4);
+      expect(target.items[0]).toMatchObject({
+        type: 'MEMORIZATION',
+        description: 'حفظ سورة النبأ',
+        status: 'NOT_EVALUATED',
+        carriedFrom: {
+          itemId: item.id,
+          sessionId: id.t3,
+          sessionDate: addDays(TODAY, 16),
+          status: 'NOT_EVALUATED',
+        },
+      });
+      // The source is untouched (status, version) and points to its copy
+      const kept = (await programOf('sup', id.pt3)).items[0];
+      expect(kept).toMatchObject({
+        status: 'NOT_EVALUATED',
+        version: item.version,
+      });
+      expect(kept.carriedTo.map((c) => c.sessionId)).toEqual([id.t4]);
+      // The new copy waits for ITS session to start
+      expect(target.evaluation.blockedReason).toBe('SESSION_NOT_STARTED');
+      // No duplicate: again, or twice at once
+      expect(
+        (
+          await api
+            .post('sup', `work-items/${item.id}/transfer`, {
+              targetSessionId: id.t4,
+            })
+            .expect(409)
+        ).body.code,
+      ).toBe('WORK_ITEM_ALREADY_TRANSFERRED');
+      const second = source.items[1];
+      const both = await Promise.all([
+        api.post('sup', `work-items/${second.id}/transfer`, {
+          targetSessionId: id.t4,
+        }),
+        api.post('admin', `work-items/${second.id}/transfer`, {
+          targetSessionId: id.t4,
+        }),
+      ]);
+      expect(both.map((r) => r.status).sort((a, b) => a - b)).toEqual([
+        201, 409,
+      ]);
+      expect(
+        await prisma.workItem.count({
+          where: { carriedFromItemId: second.id },
+        }),
+      ).toBe(1);
+    });
+
+    it('cancelled: targets stay eligible-only; other teachers refused; normal sessions unchanged', async () => {
+      const source = await programOf('sup', id.pt3);
+      const third = source.items[2];
+      const to = (who: string, targetSessionId: string) =>
+        api.post(who, `work-items/${third.id}/transfer`, { targetSessionId });
+      expect((await to('sup', id.t2).expect(400)).body.code).toBe(
+        'WORK_TARGET_SESSION_NOT_LATER',
+      );
+      expect((await to('sup', id.past).expect(409)).body.code).toBe(
+        'WORK_SESSION_NOT_UPCOMING',
+      );
+      expect((await to('sup', id.t1).expect(409)).body.code).toBe(
+        'WORK_SESSION_NOT_UPCOMING',
+      ); // completed
+      await to('other', id.t4).expect(403);
+      expect(
+        await prisma.workItem.count({ where: { carriedFromItemId: third.id } }),
+      ).toBe(0);
+      // A normal session: unevaluated work is still not carried
+      const pending = (
+        await create('sup', 's2', 't2', [
+          { type: 'EXAM', description: 'اختبار سورة عبس' },
+        ]).expect(201)
+      ).body as Program;
+      expect(
+        (
+          await api
+            .post('sup', `work-items/${pending.items[0].id}/transfer`, {
+              targetSessionId: id.t4,
+            })
+            .expect(409)
+        ).body.code,
+      ).toBe('WORK_ITEM_NOT_TRANSFERABLE');
     });
   });
 });

@@ -3,6 +3,7 @@ import { formatDate, formatDateLong } from '@/i18n/format';
 import { ApiError } from '@/services/api';
 
 import { platformClock } from './dashboard-model';
+import type { SessionStatus } from './types';
 import type {
   EvaluationLine,
   NewWorkItem,
@@ -46,9 +47,46 @@ export const WORK_STATUS_STYLE: Record<WorkStatus, { tone: PillTone; icon: IconN
   CANCELLED: { tone: 'muted', icon: 'ban' },
 };
 
-/** Results that may be continued in a later session («نقل إلى الحصة القادمة») — the API's TRANSFERABLE. */
-export const isTransferable = (status: WorkStatus) =>
-  status === 'NOT_COMPLETED' || status === 'PARTIAL' || status === 'POSTPONED' || status === 'CANCELLED';
+/**
+ * Results that may be continued in a later session («نقل إلى الحصة القادمة»)
+ * — the API's rule: an unfinished result, or — from a CANCELLED session,
+ * whose work is never evaluated — an item still unevaluated.
+ */
+export const isTransferable = (status: WorkStatus, sessionStatus?: SessionStatus) =>
+  status === 'NOT_COMPLETED' ||
+  status === 'PARTIAL' ||
+  status === 'POSTPONED' ||
+  status === 'CANCELLED' ||
+  (status === 'NOT_EVALUATED' && sessionStatus === 'CANCELLED');
+
+/** Why «تقييم الأعمال» is closed now (null: open). */
+export type EvaluationBlock = 'NOT_STARTED' | 'CANCELLED';
+
+/**
+ * Evaluation opens once the session has STARTED (its current date and start
+ * time, platform timezone) — during and after it, completed included — and
+ * never for a cancelled session. The server's verdict decides; the clock only
+ * OPENS a «not started yet» once the start minute has come while the screen
+ * stays open. A wrong phone clock never opens what the server closed for
+ * another reason, and the API refuses anything early (409) anyway.
+ */
+export function evaluationBlockOf(
+  program: Pick<WorkProgram, 'session' | 'evaluation'>,
+  timeZone: string | undefined,
+  now = new Date(),
+): EvaluationBlock | null {
+  const { session, evaluation } = program;
+  if (session.status === 'CANCELLED' || evaluation?.blockedReason === 'SESSION_CANCELLED') return 'CANCELLED';
+  const clock = platformClock(timeZone, now);
+  const started = session.date < clock.today || (session.date === clock.today && session.startTime <= clock.time);
+  // Without the server's verdict (an older API): the clock alone
+  if (!evaluation) return started ? null : 'NOT_STARTED';
+  return evaluation.blockedReason === 'SESSION_NOT_STARTED' && !started ? 'NOT_STARTED' : null;
+}
+
+/** The API refused an evaluation because of the session (not started / cancelled): reload its state. */
+export const isEvaluationClosedError = (error: unknown) =>
+  error instanceof ApiError && (error.code === 'WORK_SESSION_NOT_STARTED' || error.code === 'WORK_SESSION_CANCELLED');
 
 export type SessionPhase = 'UPCOMING' | 'ONGOING' | 'PAST';
 

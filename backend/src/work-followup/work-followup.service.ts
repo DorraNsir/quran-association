@@ -9,7 +9,7 @@ import {
 } from '../common/errors.js';
 import { PageSizeService } from '../common/page-size.service.js';
 import { paginationMeta } from '../common/pagination.js';
-import { platformTimezone } from '../common/platform-clock.js';
+import { notStartedAt, platformTimezone } from '../common/platform-clock.js';
 import { Prisma } from '../generated/prisma/client.js';
 import {
   SessionStatus,
@@ -34,6 +34,7 @@ import type {
   EligibleSessionsQueryDto,
   EvaluateWorkItemDto,
   EvaluateWorkProgramDto,
+  EvaluationBlock,
   NewWorkItemDto,
   NextRecitationDto,
   ScheduleWorkItemDto,
@@ -61,6 +62,19 @@ export const TRANSFERABLE: WorkStatus[] = [
   WorkStatus.POSTPONED,
   WorkStatus.CANCELLED,
 ];
+
+/**
+ * May this item be carried into a later session? An evaluated unfinished
+ * result — or, from a CANCELLED session (never evaluable), an item still
+ * unevaluated. Normal sessions keep the TRANSFERABLE rule.
+ */
+export const isTransferable = (
+  status: WorkStatus,
+  sessionStatus: SessionStatus,
+) =>
+  TRANSFERABLE.includes(status) ||
+  (status === WorkStatus.NOT_EVALUATED &&
+    sessionStatus === SessionStatus.CANCELLED);
 
 const ORDINALS = [
   'الأولى',
@@ -184,7 +198,29 @@ export function progressOf(statuses: WorkStatus[]) {
   };
 }
 
-function toDto(p: ProgramRow): WorkProgramDto {
+type Clock = { today: string; now: string };
+
+/**
+ * Evaluating a session's work: only once it has STARTED (its current date and
+ * start time — a rescheduled lesson counts from its new time — in the
+ * platform timezone), during and after it (a completed session stays open
+ * for corrections); never for a cancelled one. The attendance rule, shared by
+ * the evaluation endpoints and the `evaluation` flag the clients read.
+ */
+export function evaluationBlock(
+  session: { status: SessionStatus; date: Date; startTime: Date },
+  clock: Clock,
+): EvaluationBlock | null {
+  if (session.status === SessionStatus.CANCELLED) return 'SESSION_CANCELLED';
+  if (
+    notStartedAt(clock, fromDbDate(session.date), fromDbTime(session.startTime))
+  )
+    return 'SESSION_NOT_STARTED';
+  return null;
+}
+
+function toDto(p: ProgramRow, clock: Clock): WorkProgramDto {
+  const blockedReason = evaluationBlock(p.session, clock);
   return {
     id: p.id,
     version: p.version,
@@ -195,6 +231,7 @@ function toDto(p: ProgramRow): WorkProgramDto {
       photoUrl: p.student.person.photoUrl,
     },
     session: toSession(p.session),
+    evaluation: { allowed: blockedReason === null, blockedReason },
     generalNotes: p.generalNotes,
     lastEditedBy: fullName(p.updatedBy) ?? fullName(p.createdBy),
     createdAt: p.createdAt,
@@ -439,8 +476,9 @@ export class WorkFollowupService {
         take: pageSize,
       }),
     ]);
+    const clock = await this.clock(this.prisma);
     return {
-      data: rows.map(toDto),
+      data: rows.map((row) => toDto(row, clock)),
       meta: paginationMeta(query.page, pageSize, total),
     };
   }
@@ -711,7 +749,10 @@ export class WorkFollowupService {
     dto: EvaluateWorkProgramDto,
   ): Promise<WorkProgramDto> {
     await this.prisma.$transaction(async (tx) => {
+      // Access first (403 before anything about the session), then timing
       const program = await this.lockProgram(tx, actor, id);
+      const blocked = evaluationBlock(program.session, await this.clock(tx));
+      if (blocked) throw evaluationRefused(blocked);
       if (dto.generalNotes !== undefined) {
         if (dto.version === undefined)
           throw badRequest(
@@ -773,6 +814,8 @@ export class WorkFollowupService {
    * «نقل إلى الحصة القادمة»: the SAME task (type, description, number) into a
    * later upcoming session of the same student, unevaluated; the source is
    * untouched and keeps its result. Returns the target program.
+   * A CANCELLED session's work can never be evaluated: its unevaluated items
+   * may be carried as they are (carriedFromStatus NOT_EVALUATED).
    */
   async transfer(
     actor: WorkActor,
@@ -780,10 +823,10 @@ export class WorkFollowupService {
     dto: ScheduleWorkItemDto,
   ): Promise<WorkProgramDto> {
     return this.schedule(actor, itemId, dto.targetSessionId, (source) => {
-      if (!TRANSFERABLE.includes(source.status))
+      if (!isTransferable(source.status, source.sessionStatus))
         throw conflict(
           'WORK_ITEM_NOT_TRANSFERABLE',
-          'لا يُنقل إلا عمل غير منجز أو جزئي أو مؤجل أو ملغى',
+          'لا يُنقل إلا عمل غير منجز أو جزئي أو مؤجل أو ملغى، أو عمل لم يُقيَّم من حصة ملغاة',
         );
       return {
         type: source.type,
@@ -836,6 +879,7 @@ export class WorkFollowupService {
       description: string;
       status: WorkStatus;
       recitationNumber: number | null;
+      sessionStatus: SessionStatus;
     }) => Omit<Prisma.WorkItemCreateManyInput, 'workProgramId' | 'position'>,
   ): Promise<WorkProgramDto> {
     try {
@@ -851,7 +895,14 @@ export class WorkFollowupService {
             program: {
               select: {
                 studentId: true,
-                session: { select: { id: true, date: true, startTime: true } },
+                session: {
+                  select: {
+                    id: true,
+                    date: true,
+                    startTime: true,
+                    status: true,
+                  },
+                },
               },
             },
           },
@@ -863,7 +914,10 @@ export class WorkFollowupService {
           source.program.session.id,
           source.program.studentId,
         );
-        const fields = plan(source);
+        const fields = plan({
+          ...source,
+          sessionStatus: source.program.session.status,
+        });
         const target = await this.assertTarget(
           tx,
           actor,
@@ -1100,7 +1154,7 @@ export class WorkFollowupService {
         version: true,
         sessionId: true,
         studentId: true,
-        session: { select: { status: true } },
+        session: { select: { status: true, date: true, startTime: true } },
       },
     });
     if (!program) throw programNotFound();
@@ -1226,6 +1280,7 @@ export class WorkFollowupService {
         where: { id },
         include: programInclude,
       }),
+      await this.clock(db),
     );
   }
 }
@@ -1257,6 +1312,17 @@ const sessionCancelled = () =>
     'WORK_SESSION_CANCELLED',
     'هذه الحصة ملغاة: لا يُضاف إليها عمل جديد (يبقى عملها السابق محفوظًا)',
   );
+
+const evaluationRefused = (reason: EvaluationBlock) =>
+  reason === 'SESSION_CANCELLED'
+    ? conflict(
+        'WORK_SESSION_CANCELLED',
+        'لا يمكن تقييم برنامج العمل لحصة ملغاة',
+      )
+    : conflict(
+        'WORK_SESSION_NOT_STARTED',
+        'لا يمكن تقييم برنامج العمل قبل بداية الحصة',
+      );
 
 const alreadyScheduled = (carry: boolean) =>
   conflict(

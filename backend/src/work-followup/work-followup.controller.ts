@@ -51,7 +51,7 @@ import {
 const DOC = {
   conflict: {
     description:
-      'WORK_PROGRAM_EXISTS (body.programId), WORK_SESSION_CANCELLED, WORK_SESSION_NOT_UPCOMING, WORK_ITEM_NOT_TRANSFERABLE, WORK_ITEM_ALREADY_TRANSFERRED, WORK_RECITATION_ALREADY_PLANNED, WORK_ITEM_CHANGED / WORK_PROGRAM_CHANGED (stale version — reload)',
+      'WORK_PROGRAM_EXISTS (body.programId), WORK_SESSION_CANCELLED (no new work / no evaluation in a cancelled session), WORK_SESSION_NOT_STARTED (evaluation before the session starts), WORK_SESSION_NOT_UPCOMING, WORK_ITEM_NOT_TRANSFERABLE, WORK_ITEM_ALREADY_TRANSFERRED, WORK_RECITATION_ALREADY_PLANNED, WORK_ITEM_CHANGED / WORK_PROGRAM_CHANGED (stale version — reload)',
   },
   bad: {
     description:
@@ -210,7 +210,7 @@ abstract class WorkFollowupRoutes {
   @Post('work-items/:id/transfer')
   @ApiOperation({
     summary:
-      '«نقل إلى الحصة القادمة»: the same unfinished task into a later upcoming session (returns the target program)',
+      '«نقل إلى الحصة القادمة»: the same unfinished task into a later upcoming session (returns the target program). From a cancelled session, unevaluated items may be carried too',
   })
   @ApiCreatedResponse({ type: WorkProgramDto })
   @ApiBadRequestResponse(DOC.bad)

@@ -1,12 +1,14 @@
 import { ApiError } from '@/services/api';
 
-import { workItem, workProgram } from './__fixtures__/work';
+import { workItem, workProgram, workSession } from './__fixtures__/work';
 import {
   blankItem,
   classifyWorkError,
   evaluationBody,
   evaluationDraftOf,
+  evaluationBlockOf,
   existingProgramId,
+  isEvaluationClosedError,
   isTransferable,
   newItemsOf,
   nextRecitation,
@@ -31,9 +33,53 @@ describe('progress (the approved rule, same numbers as the server)', () => {
   });
 
   it('transferable results: not done, partial, postponed, cancelled (the API set)', () => {
-    expect((['NOT_COMPLETED', 'PARTIAL', 'POSTPONED', 'CANCELLED'] as const).every(isTransferable)).toBe(true);
+    expect((['NOT_COMPLETED', 'PARTIAL', 'POSTPONED', 'CANCELLED'] as const).every((s) => isTransferable(s))).toBe(true);
     expect(isTransferable('COMPLETED')).toBe(false);
     expect(isTransferable('NOT_EVALUATED')).toBe(false);
+    expect(isTransferable('NOT_EVALUATED', 'SCHEDULED')).toBe(false);
+    expect(isTransferable('NOT_EVALUATED', 'COMPLETED')).toBe(false);
+  });
+
+  it('a cancelled session: its unevaluated work may be carried too (it is never evaluated)', () => {
+    expect(isTransferable('NOT_EVALUATED', 'CANCELLED')).toBe(true);
+    expect(isTransferable('COMPLETED', 'CANCELLED')).toBe(false);
+  });
+});
+
+describe('evaluation follows the session (server verdict + platform clock)', () => {
+  // 18 Nov 2026, 15:00 in Tunis (UTC+1)
+  const now = new Date('2026-11-18T14:00:00Z');
+  const tz = 'Africa/Tunis';
+  const of = (
+    status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED',
+    date: string,
+    startTime: string,
+    blockedReason: 'SESSION_NOT_STARTED' | 'SESSION_CANCELLED' | null,
+  ) => workProgram('w1', { session: workSession('s', date, { status, startTime, endTime: '23:00' }), evaluation: { allowed: !blockedReason, blockedReason } });
+
+  it('before the start: closed', () => {
+    expect(evaluationBlockOf(of('SCHEDULED', '2026-11-18', '16:00', 'SESSION_NOT_STARTED'), tz, now)).toBe('NOT_STARTED');
+    expect(evaluationBlockOf(of('SCHEDULED', '2026-11-19', '08:00', 'SESSION_NOT_STARTED'), tz, now)).toBe('NOT_STARTED');
+  });
+
+  it('ongoing and completed: open', () => {
+    expect(evaluationBlockOf(of('SCHEDULED', '2026-11-18', '14:30', null), tz, now)).toBeNull();
+    expect(evaluationBlockOf(of('COMPLETED', '2026-11-10', '16:00', null), tz, now)).toBeNull();
+  });
+
+  it('the start minute came while the screen stayed open: the clock opens what the server said «not yet»', () => {
+    expect(evaluationBlockOf(of('SCHEDULED', '2026-11-18', '15:00', 'SESSION_NOT_STARTED'), tz, now)).toBeNull();
+  });
+
+  it('the server decides: a phone clock behind never closes an open session; a cancelled one never opens', () => {
+    expect(evaluationBlockOf(of('SCHEDULED', '2026-11-18', '16:00', null), tz, now)).toBeNull();
+    expect(evaluationBlockOf(of('CANCELLED', '2026-11-10', '16:00', 'SESSION_CANCELLED'), tz, now)).toBe('CANCELLED');
+  });
+
+  it('the API refusals that close evaluation', () => {
+    expect(isEvaluationClosedError(new ApiError(409, 'WORK_SESSION_NOT_STARTED', 'x'))).toBe(true);
+    expect(isEvaluationClosedError(new ApiError(409, 'WORK_SESSION_CANCELLED', 'x'))).toBe(true);
+    expect(isEvaluationClosedError(new ApiError(409, 'WORK_ITEM_CHANGED', 'x'))).toBe(false);
   });
 });
 

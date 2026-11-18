@@ -49,6 +49,8 @@ export function workProgram(id = 'w1', extra: Partial<WorkProgram> = {}): WorkPr
     createdAt: '2026-11-01T10:00:00.000Z',
     updatedAt: '2026-11-09T16:30:00.000Z',
     progress: progressOf(items),
+    // A lesson that has started (past): evaluation open
+    evaluation: { allowed: true, blockedReason: null },
     items,
     ...extra,
   };

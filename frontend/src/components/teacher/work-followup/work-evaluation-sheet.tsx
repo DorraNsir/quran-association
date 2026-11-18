@@ -1,5 +1,6 @@
 "use client"
 
+import { useQueryClient } from "@tanstack/react-query"
 import { CalendarDays } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
@@ -8,10 +9,18 @@ import { FormSection, FormSheet } from "@/components/shared/form"
 import { UserAvatar } from "@/components/shared/user-avatar"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { errorMessage } from "@/lib/api/errors"
-import { useEvaluateWorkProgram } from "@/lib/api/work-followup"
+import { ApiError, errorMessage } from "@/lib/api/errors"
+import { useEvaluateWorkProgram, workKeys } from "@/lib/api/work-followup"
 import { cn } from "@/lib/utils"
-import { cancelledLabel, progressLabel, progressOf, sessionLabel, WORK_STATUSES, workStatusLabel } from "@/lib/work-followup"
+import {
+  cancelledLabel,
+  EVALUATION_ERROR_CODES,
+  progressLabel,
+  progressOf,
+  sessionLabel,
+  WORK_STATUSES,
+  workStatusLabel,
+} from "@/lib/work-followup"
 import type { WorkProgram, WorkStatus } from "@/types/work-followup"
 
 import { WORK_STATUS_STYLE, WorkTypeBadge } from "./work-badges"
@@ -33,6 +42,7 @@ export function WorkEvaluationSheet({
   program: WorkProgram
 }) {
   const evaluate = useEvaluateWorkProgram()
+  const queryClient = useQueryClient()
   const [items, setItems] = useState(program.items)
   const [notes, setNotes] = useState(program.generalNotes ?? "")
   const [serverError, setServerError] = useState<string | null>(null)
@@ -62,6 +72,10 @@ export function WorkEvaluationSheet({
       toast.success("تم حفظ التقييم", { description: progressLabel(saved.progress) })
       onOpenChange(false)
     } catch (error) {
+      // «قبل بداية الحصة» / «حصة ملغاة»: the API's message; the program is
+      // reloaded so its buttons follow the server's state
+      if (error instanceof ApiError && (EVALUATION_ERROR_CODES as readonly string[]).includes(error.code))
+        void queryClient.invalidateQueries({ queryKey: workKeys.all })
       setServerError(errorMessage(error))
     }
   }

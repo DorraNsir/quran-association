@@ -71,7 +71,14 @@ export interface WorkProgram {
   createdAt: string;
   updatedAt: string;
   progress: WorkProgress;
+  /** The server's verdict (its clock, platform timezone) when the response was built; the evaluation endpoints enforce it (409) */
+  evaluation: WorkEvaluationState;
   items: WorkItem[];
+}
+
+export interface WorkEvaluationState {
+  allowed: boolean;
+  blockedReason: 'SESSION_NOT_STARTED' | 'SESSION_CANCELLED' | null;
 }
 
 export interface WorkProgramFilters {

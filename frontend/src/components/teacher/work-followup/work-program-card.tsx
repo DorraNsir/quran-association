@@ -7,8 +7,9 @@ import { UserAvatar } from "@/components/shared/user-avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { useEvaluationBlock } from "@/hooks/use-evaluation-block"
 import { cn } from "@/lib/utils"
-import { cancelledLabel, progressLabel, sessionLabel, sessionPhaseLabel, type SessionPhase } from "@/lib/work-followup"
+import { cancelledLabel, evaluationBlockMessage, progressLabel, sessionLabel, sessionPhaseLabel, type SessionPhase } from "@/lib/work-followup"
 import type { WorkProgram, WorkProgress, WorkSession } from "@/types/work-followup"
 
 import { WorkStatusBadge, WorkTypeBadge } from "./work-badges"
@@ -41,6 +42,8 @@ export function WorkProgramCard({
   const name = `${student.firstName} ${student.lastName}`
   const href = programHref(program.id)
   const more = program.items.length - PREVIEW
+  const blocked = useEvaluationBlock(program)
+  const blockedId = `wf-eval-${program.id}`
 
   return (
     <Card className="relative gap-0 overflow-hidden p-0 transition-colors hover:border-primary/40 hover:bg-muted/20 has-[a[data-card-link]:focus-visible]:ring-3 has-[a[data-card-link]:focus-visible]:ring-ring/50">
@@ -77,6 +80,12 @@ export function WorkProgramCard({
       </ol>
       {more > 0 && <p className="border-t px-4 py-2 text-xs text-muted-foreground">+ {more === 1 ? "عمل آخر" : `${more} أعمال أخرى`}</p>}
 
+      {blocked && (
+        <p id={blockedId} className="border-t px-4 py-2 text-xs text-muted-foreground">
+          {evaluationBlockMessage[blocked]}
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2.5">
         <p className="flex items-center gap-1 text-xs text-muted-foreground">
           <UserRoundPen className="size-3.5" aria-hidden />
@@ -88,7 +97,7 @@ export function WorkProgramCard({
             <Pencil />
             تعديل البرنامج
           </Button>
-          <Button variant="outline" size="sm" onClick={onEvaluate}>
+          <Button variant="outline" size="sm" onClick={onEvaluate} disabled={blocked !== null} aria-describedby={blocked ? blockedId : undefined}>
             <ClipboardCheck />
             تقييم الأعمال
           </Button>

@@ -49,6 +49,8 @@ type Roster = {
  * assistant A1). Students: a1 a2 t in A (t moves to B the day after the
  * past shared lesson), b1 b2 in B, x1 in X.
  */
+type WorkLine = { id: string; version: number };
+
 describe('Shared sessions — attendance & authorization (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
@@ -587,6 +589,34 @@ describe('Shared sessions — attendance & authorization (e2e)', () => {
     });
   });
 
+  describe('evaluating متابعة العمل in a shared lesson', () => {
+    const evaluate = (who: string, item: WorkLine) =>
+      teacher(who).patch(`work-items/${item.id}/evaluation`, {
+        status: 'COMPLETED',
+        version: item.version,
+      });
+    const firstItem = async (programId: string) =>
+      (await admin.get(`work-programs/${programId}`).expect(200)).body
+        .items[0] as WorkLine;
+
+    it('the student scope is checked first (403), then the lesson’s time (409 before it starts)', async () => {
+      const item = await firstItem(id.pb1);
+      expect((await evaluate('A1', item).expect(403)).body.code).toBe(
+        'TEACHER_STUDENT_ACCESS_DENIED',
+      );
+      await teacher('A1')
+        .patch(`work-programs/${id.pb1}/evaluation`, {
+          items: [{ id: item.id, status: 'COMPLETED', version: item.version }],
+        })
+        .expect(403);
+      for (const who of ['B1', 'D'])
+        expect((await evaluate(who, item).expect(409)).body.code).toBe(
+          'WORK_SESSION_NOT_STARTED',
+        );
+      expect((await firstItem(id.pb1)).version).toBe(item.version);
+    });
+  });
+
   // ───────────────────────── cancellation / generation ─────────────────────────
 
   describe('cancellation and generation visibility', () => {
@@ -600,6 +630,24 @@ describe('Shared sessions — attendance & authorization (e2e)', () => {
         await prisma.workProgram.count({ where: { sessionId: id.U } }),
       ).toBe(3);
       await save('D', id.U, mark(['a1'])).expect(409);
+      // Its work is never evaluated; another class's teacher still gets 403
+      const item = (await admin.get(`work-programs/${id.pb1}`).expect(200)).body
+        .items[0] as WorkLine;
+      const body = { status: 'COMPLETED', version: item.version };
+      expect(
+        (
+          await teacher('D')
+            .patch(`work-items/${item.id}/evaluation`, body)
+            .expect(409)
+        ).body.code,
+      ).toBe('WORK_SESSION_CANCELLED');
+      await teacher('A1')
+        .patch(`work-items/${item.id}/evaluation`, body)
+        .expect(403);
+      // …nor carries it elsewhere (scope checked on the source)
+      await teacher('A1')
+        .post(`work-items/${item.id}/transfer`, { targetSessionId: id.U })
+        .expect(403);
     });
 
     it('editing a weekly slot reports the dates its re-planning skipped (and why)', async () => {

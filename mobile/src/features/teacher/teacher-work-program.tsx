@@ -2,7 +2,7 @@ import { Stack, useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { EmptyState, QueryState } from '@/components/feedback';
-import { AppText, Button, Card, Icon, InitialsAvatar, LinkButton, Screen } from '@/components/ui';
+import { AlertBox, AppText, Button, Card, Icon, InitialsAvatar, LinkButton, Screen } from '@/components/ui';
 import { useSession } from '@/features/auth/auth-provider';
 import { usePreferences } from '@/features/preferences/preferences';
 import { ar } from '@/i18n/ar';
@@ -11,6 +11,7 @@ import { spacing, useAppTheme } from '@/theme';
 import { headerTitle } from '@/theme/navigation';
 
 import { platformDateOf } from './memorization-model';
+import { useEvaluationBlock } from './use-evaluation-block';
 import { usePullToRefresh } from './use-refresh';
 import { useWorkProgram, workProgramKey } from './use-work';
 import { WorkProgressView, WorkSessionLine, WorkStatusBadge, WorkTypeBadge } from './work-badges';
@@ -38,6 +39,7 @@ export function TeacherWorkProgramScreen({ programId }: { programId: string }) {
   const query = useWorkProgram(teacherId, programId);
   const { refreshing, onRefresh } = usePullToRefresh([workProgramKey(teacherId, programId)]);
   const program = query.data;
+  const blocked = useEvaluationBlock(program, timeZone);
 
   if (query.isError && isUnavailable(query.error))
     return (
@@ -52,24 +54,28 @@ export function TeacherWorkProgramScreen({ programId }: { programId: string }) {
     );
 
   const footer = program ? (
-    <View style={[styles.bar, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={styles.flex}>
-        <Button
-          variant="outline"
-          icon="edit"
-          label={w.edit}
-          fullWidth
-          onPress={() => router.push({ pathname: '/teacher/work/[id]/edit', params: { id: program.id } })}
-        />
-      </View>
-      <View style={styles.flex}>
-        <Button
-          icon="completed"
-          label={w.evaluate}
-          fullWidth
-          disabled={program.items.length === 0}
-          onPress={() => router.push({ pathname: '/teacher/work/[id]/evaluate', params: { id: program.id } })}
-        />
+    <View style={[styles.footer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      {blocked ? <AlertBox tone="info" message={w.evaluationBlocked[blocked]} /> : null}
+      <View style={styles.bar}>
+        <View style={styles.flex}>
+          <Button
+            variant="outline"
+            icon="edit"
+            label={w.edit}
+            fullWidth
+            onPress={() => router.push({ pathname: '/teacher/work/[id]/edit', params: { id: program.id } })}
+          />
+        </View>
+        <View style={styles.flex}>
+          <Button
+            icon="completed"
+            label={w.evaluate}
+            fullWidth
+            disabled={program.items.length === 0 || blocked !== null}
+            accessibilityHint={blocked ? w.evaluationBlocked[blocked] : undefined}
+            onPress={() => router.push({ pathname: '/teacher/work/[id]/evaluate', params: { id: program.id } })}
+          />
+        </View>
       </View>
     </View>
   ) : undefined;
@@ -109,6 +115,7 @@ export function TeacherWorkProgramScreen({ programId }: { programId: string }) {
                   item={item}
                   bordered={i > 0}
                   timeZone={timeZone}
+                  sessionStatus={program.session.status}
                   onOpen={open}
                   onSchedule={(mode) =>
                     router.push({ pathname: '/teacher/work/[id]/schedule', params: { id: program.id, itemId: item.id, mode } })
@@ -148,12 +155,14 @@ function ItemRow({
   item,
   bordered,
   timeZone,
+  sessionStatus,
   onOpen,
   onSchedule,
 }: {
   item: WorkItem;
   bordered: boolean;
   timeZone: string | undefined;
+  sessionStatus: WorkProgram['session']['status'];
   onOpen: (link: WorkItemLink) => void;
   onSchedule: (mode: 'carry' | 'next') => void;
 }) {
@@ -185,7 +194,11 @@ function ItemRow({
       ) : null}
       {item.carriedFrom ? (
         <LinkRow
-          label={w.carriedFrom(shortDate(item.carriedFrom.sessionDate), w.status[item.carriedFrom.status])}
+          label={
+            item.carriedFrom.status === 'NOT_EVALUATED'
+              ? w.carriedFromCancelled(shortDate(item.carriedFrom.sessionDate))
+              : w.carriedFrom(shortDate(item.carriedFrom.sessionDate), w.status[item.carriedFrom.status])
+          }
           onPress={() => onOpen(item.carriedFrom!)}
         />
       ) : null}
@@ -196,9 +209,9 @@ function ItemRow({
       {item.continuedBy.length ? (
         <LinkRow label={w.continuedBy(dates(item.continuedBy))} onPress={() => onOpen(item.continuedBy[0]!)} />
       ) : null}
-      {isTransferable(item.status) || item.type === 'RECITATION' ? (
+      {isTransferable(item.status, sessionStatus) || item.type === 'RECITATION' ? (
         <View style={styles.actions}>
-          {isTransferable(item.status) ? (
+          {isTransferable(item.status, sessionStatus) ? (
             <Button variant="outline" icon="transfer" label={w.carry} accessibilityLabel={`${w.carry}: ${item.description}`} onPress={() => onSchedule('carry')} />
           ) : null}
           {item.type === 'RECITATION' ? (
@@ -233,12 +246,12 @@ const styles = StyleSheet.create({
   inline: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, paddingTop: spacing.xs },
   notes: { gap: spacing.xs },
-  bar: {
-    flexDirection: 'row',
+  footer: {
     gap: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
+  bar: { flexDirection: 'row', gap: spacing.sm },
   flex: { flex: 1 },
 });

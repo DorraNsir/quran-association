@@ -569,3 +569,100 @@ describe('transfer / next recitation', () => {
     expect(screen.queryByLabelText(w.confirm)).toBeNull();
   });
 });
+
+describe('evaluation follows the session (server verdict + platform clock)', () => {
+  const upcoming = workProgram('w1', {
+    session: workSession('s9', '2099-11-09'),
+    evaluation: { allowed: false, blockedReason: 'SESSION_NOT_STARTED' },
+  });
+  const cancelled = workProgram('w1', {
+    session: workSession('s9', '2099-11-09', { status: 'CANCELLED' }),
+    evaluation: { allowed: false, blockedReason: 'SESSION_CANCELLED' },
+    items: [workItem('i1'), workItem('i2', { position: 1, status: 'COMPLETED', description: 'مراجعة جزء عمّ' })],
+  });
+
+  it('before the start: «تقييم الأعمال» disabled, the reason shown; planning stays available', async () => {
+    stub(undefined, upcoming);
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    const button = await screen.findByLabelText(w.evaluate);
+    expect(button.props.accessibilityState).toMatchObject({ disabled: true });
+    expect(screen.getByText(w.evaluationBlocked.NOT_STARTED)).toBeTruthy();
+    expect(w.evaluationBlocked.NOT_STARTED).toBe('لا يمكن تقييم برنامج العمل قبل بداية الحصة');
+    await fireEvent.press(button);
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(w.edit).props.accessibilityState).toMatchObject({ disabled: false });
+  });
+
+  it('cancelled session: evaluation disabled; its unevaluated work offers «نقل إلى الحصة القادمة»', async () => {
+    stub(undefined, cancelled);
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    expect((await screen.findByLabelText(w.evaluate)).props.accessibilityState).toMatchObject({ disabled: true });
+    expect(screen.getByText('لا يمكن تقييم برنامج العمل لحصة ملغاة')).toBeTruthy();
+    // i1 (unevaluated) only — the completed one is not carried
+    expect(screen.getAllByRole('button', { name: new RegExp(`^${w.carry}`) })).toHaveLength(1);
+    await fireEvent.press(screen.getByLabelText(`${w.carry}: حفظ صفحتين من سورة البقرة`));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/work/[id]/schedule', params: { id: 'w1', itemId: 'i1', mode: 'carry' } });
+  });
+
+  it('cancelled session: the transfer screen accepts the unevaluated item and POSTs it', async () => {
+    stub((c) => {
+      if (c.path.endsWith('/eligible-sessions')) return ok([eligible('s20', '2099-11-18')]);
+      if (c.method === 'POST') return { status: 201, body: workProgram('w3') };
+      return undefined;
+    }, cancelled);
+    await renderScreen(<TeacherWorkScheduleScreen programId="w1" itemId="i1" mode="carry" />);
+    await fireEvent.press(await screen.findByRole('radio', { name: /2099/ }));
+    await fireEvent.press(screen.getByLabelText(w.confirm));
+    await settle();
+    expect(writes()).toEqual([
+      expect.objectContaining({ method: 'POST', path: '/api/teacher/work-items/i1/transfer', body: { targetSessionId: 's20' } }),
+    ]);
+  });
+
+  it('a normal session: an unevaluated item is not offered for transfer', async () => {
+    stub(undefined, workProgram('w1', { items: [workItem('i1')] }));
+    await renderScreen(<TeacherWorkScheduleScreen programId="w1" itemId="i1" mode="carry" />);
+    expect(await screen.findByText(w.notFound)).toBeTruthy();
+  });
+
+  it('carried from a cancelled session: «منقول من حصة ملغاة»', async () => {
+    const carried = workProgram('w1', {
+      items: [workItem('i1', { carriedFrom: { itemId: 'x', programId: 'w0', sessionId: 's0', sessionDate: '2026-11-02', status: 'NOT_EVALUATED' } })],
+    });
+    stub(undefined, carried);
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    expect(await screen.findByText(w.carriedFromCancelled('2 نوفمبر 2026'))).toBeTruthy();
+  });
+
+  it('the evaluation screen opened early (a link): the reason and a way back, no form', async () => {
+    stub(undefined, upcoming);
+    await renderScreen(<TeacherWorkEvaluateScreen programId="w1" />);
+    expect(await screen.findByText(w.evaluationBlocked.NOT_STARTED)).toBeTruthy();
+    expect(screen.queryByLabelText(w.saveEvaluation)).toBeNull();
+    await fireEvent.press(screen.getByLabelText(w.backToProgram));
+    expect(mockReplace).toHaveBeenCalledWith({ pathname: '/teacher/work/[id]', params: { id: 'w1' } });
+  });
+
+  it('the API refuses (cancelled meanwhile): its message, the program reloaded, nothing else sent', async () => {
+    let current = workProgram('w1');
+    const message = 'لا يمكن تقييم برنامج العمل لحصة ملغاة';
+    stub((c) => {
+      if (c.method === 'PATCH') {
+        current = { ...current, session: { ...current.session, status: 'CANCELLED' }, evaluation: { allowed: false, blockedReason: 'SESSION_CANCELLED' } };
+        return { status: 409, body: { code: 'WORK_SESSION_CANCELLED', message } };
+      }
+      if (c.method === 'GET' && c.path.endsWith('/teacher/work-programs/w1')) return ok(current);
+      return undefined;
+    });
+    await renderScreen(<TeacherWorkEvaluateScreen programId="w1" />);
+    await screen.findByLabelText(w.saveEvaluation);
+    await fireEvent.press(radio(w.statusGroup('حفظ صفحتين من سورة البقرة'), w.status.COMPLETED));
+    await fireEvent.press(screen.getByLabelText(w.saveEvaluation));
+    await settle();
+    expect(writes()).toHaveLength(1);
+    // Reloaded: the screen now explains why there is nothing to evaluate
+    expect(await screen.findByText(message)).toBeTruthy();
+    expect(calls.filter((c) => c.method === 'GET' && c.path.endsWith('/teacher/work-programs/w1')).length).toBeGreaterThan(1);
+  });
+});
+

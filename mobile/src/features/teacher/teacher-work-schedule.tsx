@@ -36,7 +36,7 @@ export function TeacherWorkScheduleScreen({ programId, itemId, mode }: { program
   const query = useWorkProgram(teacherId, programId);
   const item = query.data?.items.find((i) => i.id === itemId);
   // The action must apply to this item (the server refuses otherwise anyway)
-  const allowed = item ? (mode === 'carry' ? isTransferable(item.status) : item.type === 'RECITATION') : false;
+  const allowed = item ? (mode === 'carry' ? isTransferable(item.status, query.data?.session.status) : item.type === 'RECITATION') : false;
 
   if ((query.isError && isUnavailable(query.error)) || (query.data && !allowed))
     return (

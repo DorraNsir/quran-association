@@ -5,11 +5,13 @@ import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { EmptyState, QueryState } from '@/components/feedback';
 import { AlertBox, AppText, Button, Card, Icon, pillColors, Screen, SuccessToast } from '@/components/ui';
 import { useSession } from '@/features/auth/auth-provider';
+import { usePreferences } from '@/features/preferences/preferences';
 import { ar } from '@/i18n/ar';
 import { errorMessage } from '@/services/api';
 import { fontFamilies, radius, spacing, touchTarget, useAppTheme } from '@/theme';
 
 import { useConfirmThenBack } from './use-confirm-then-back';
+import { useEvaluationBlock } from './use-evaluation-block';
 import { useEvaluateWorkProgram, useWorkProgram } from './use-work';
 import { WorkTypeBadge } from './work-badges';
 import { isUnavailable } from './teacher-work-program';
@@ -18,6 +20,7 @@ import {
   COMMENT_MAX,
   evaluationBody,
   evaluationDraftOf,
+  isEvaluationClosedError,
   NOTES_MAX,
   progressLabel,
   progressOf,
@@ -44,6 +47,8 @@ export function TeacherWorkEvaluateScreen({ programId }: { programId: string }) 
   const teacherId = user?.teacherId ?? '';
   const router = useRouter();
   const query = useWorkProgram(teacherId, programId);
+  const timeZone = usePreferences().data?.timezone;
+  const blocked = useEvaluationBlock(query.data, timeZone);
   // Bumped by «تحميل آخر القيم»: the form restarts from the server's latest values
   const [round, setRound] = useState(0);
 
@@ -58,12 +63,31 @@ export function TeacherWorkEvaluateScreen({ programId }: { programId: string }) 
         />
       </Screen>
     );
+  // Before the start, or a cancelled session: nothing to evaluate (also when opened by a link)
+  if (query.data && blocked)
+    return (
+      <Screen>
+        <Stack.Screen options={{ title: w.evaluateTitle }} />
+        <EmptyState
+          icon={blocked === 'CANCELLED' ? 'ban' : 'clock'}
+          title={w.evaluationBlocked[blocked]}
+          action={
+            <Button
+              variant="outline"
+              label={w.backToProgram}
+              onPress={() => router.replace({ pathname: '/teacher/work/[id]', params: { id: programId } })}
+            />
+          }
+        />
+      </Screen>
+    );
   if (query.data)
     return (
       <EvaluationForm
         key={`${query.data.id}:${round}`}
         teacherId={teacherId}
         program={query.data}
+        onSessionClosed={() => void query.refetch()}
         onReload={async () => {
           await query.refetch();
           setRound((r) => r + 1);
@@ -78,7 +102,17 @@ export function TeacherWorkEvaluateScreen({ programId }: { programId: string }) 
   );
 }
 
-function EvaluationForm({ teacherId, program, onReload }: { teacherId: string; program: WorkProgram; onReload: () => Promise<void> }) {
+function EvaluationForm({
+  teacherId,
+  program,
+  onReload,
+  onSessionClosed,
+}: {
+  teacherId: string;
+  program: WorkProgram;
+  onReload: () => Promise<void>;
+  onSessionClosed: () => void;
+}) {
   const { colors } = useAppTheme();
   const save = useEvaluateWorkProgram(teacherId, program.id);
   const { confirmation, confirm } = useConfirmThenBack({ pathname: '/teacher/work/[id]', params: { id: program.id } });
@@ -116,6 +150,11 @@ function EvaluationForm({ teacherId, program, onReload }: { teacherId: string; p
     } catch (e) {
       const kind = classifyWorkError(e);
       setError({ text: kind === 'offline' ? w.offlineSave : errorMessage(e), conflict: kind === 'conflict' });
+      // Rescheduled or cancelled meanwhile: the API's message, and the program's state reloaded
+      if (isEvaluationClosedError(e)) {
+        disablePrevention();
+        onSessionClosed();
+      }
     }
     submitting.current = false;
   }

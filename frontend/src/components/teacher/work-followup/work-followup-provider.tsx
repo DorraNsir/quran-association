@@ -9,6 +9,7 @@ import { errorMessage } from "@/lib/api/errors"
 import { workKeys } from "@/lib/api/work-followup"
 import { useTeacherWorkspace } from "@/lib/api/workspace"
 import { describeClass, indexLookups } from "@/lib/domain"
+import { evaluationBlockMessage, evaluationBlockOf } from "@/lib/work-followup"
 import type { ID } from "@/types/domain"
 import type { WorkItem, WorkProgram } from "@/types/work-followup"
 
@@ -94,7 +95,12 @@ export function WorkFollowupProvider({ children }: { children: React.ReactNode }
     classes,
     openCreate: () => openForm(),
     openEdit: (program) => openForm(program),
-    openEvaluate: (program) => setEvaluating((e) => ({ key: (e?.key ?? 0) + 1, open: true, program })),
+    openEvaluate: (program) => {
+      // The buttons are disabled then; a last guard for any other entry point
+      const blocked = evaluationBlockOf(program)
+      if (blocked) return void toast.error(evaluationBlockMessage[blocked])
+      setEvaluating((e) => ({ key: (e?.key ?? 0) + 1, open: true, program }))
+    },
     openSchedule: (mode, item, source) => setScheduling((s) => ({ key: (s?.key ?? 0) + 1, open: true, mode, item, source })),
   }
 
