@@ -68,6 +68,8 @@ const ICONS = {
   partial: { ios: 'circle.lefthalf.filled', android: 'pending' },
   notRecorded: { ios: 'circle.dashed', android: 'radio_button_unchecked' },
   cancelledSession: { ios: 'calendar.badge.exclamationmark', android: 'event_busy' },
+  bell: { ios: 'bell', android: 'notifications' },
+  markRead: { ios: 'checkmark.circle', android: 'done_all' },
 } as const satisfies Record<string, { ios: SFSymbol; android: AndroidSymbol }>;
 
 export type IconName = keyof typeof ICONS;

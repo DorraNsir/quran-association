@@ -14,6 +14,7 @@ import { resourceFixture, resourcePage } from './__fixtures__/resources';
 import { workPage, workProgram } from './__fixtures__/work';
 import { attendanceFixture, pageOf, sessionFixture } from './__fixtures__/sessions';
 import { workspaceFixture } from './__fixtures__/workspace';
+import { notificationFixture, notificationPage } from '@/features/notifications/__fixtures__/notifications';
 
 /*
  * The REAL route tree (src/app: root Stack.Protected guards + the nested
@@ -59,6 +60,10 @@ beforeEach(() => {
   const answers: [string, unknown][] = [
     ['/platform-preferences', { timezone: 'Africa/Tunis', dateFormat: 'DD/MM/YYYY', defaultCalendarView: 'week', defaultPageSize: 20, currentAcademicYear: null }],
     ['/teacher/workspace', workspaceFixture()],
+    // Most specific first: the count, a read, then the list
+    ['/notifications/unread-count', { count: 1 }],
+    ['/notifications/n1/read', notificationFixture('n1', { entityId: 'r1', isRead: true })],
+    ['/notifications', notificationPage([notificationFixture('n1', { entityId: 'r1' })])],
     ['/teacher/notes', notesPage(notesFixture())],
     ['/teacher/announcements/a0', announcementFixture('a0')],
     ['/teacher/announcements', announcementPage([announcementFixture('a0')])],
@@ -333,6 +338,27 @@ describe('teacher navigation through the real route tree', () => {
     expect(router).toHavePathname('/teacher/announcements/a0');
     expect(screen.queryByLabelText(ar.announcements.edit)).toBeNull();
     expect(methods.every((m) => m === 'GET')).toBe(true);
+  });
+
+  it('«الإشعارات»: the header bell (unread count) → the inbox → a resource notification: read, then the resource', async () => {
+    mockState = signedIn(user({}));
+    const router = await renderRouter(APP, { initialUrl: '/teacher' });
+    await tap(ar.notifications.bellLabel(1));
+    expect(router).toHavePathname('/teacher/notifications');
+    await tap(new RegExp(`^${ar.notifications.unread}، مورد جديد`));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10);
+    });
+    expect(router).toHavePathname('/teacher/resources/r1');
+    expect(methods.filter((m) => m === 'PATCH')).toHaveLength(1);
+    expect(requests.some((u) => u.includes('/notifications/n1/read'))).toBe(true);
+  });
+
+  it('a STUDENT cannot open the teacher notifications', async () => {
+    mockState = signedIn(user({ roles: ['STUDENT'], teacherId: null, studentId: 's1' }));
+    const router = await renderRouter(APP, { initialUrl: '/teacher/notifications' });
+    expect(router.getPathname().startsWith('/teacher')).toBe(false);
+    expect(requests.some((u) => u.includes('/notifications'))).toBe(false);
   });
 
   it('dashboard tools: the six tools, as an equal two-column grid, each opening its screen', async () => {

@@ -140,7 +140,7 @@ export function NotificationBell({ workspace }: { workspace: Workspace }) {
           <Bell className="size-[1.1rem]" />
           {unread > 0 && (
             <span data-testid="unread-count" className="absolute -top-0.5 -end-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[0.65rem] font-semibold text-white tabular-nums">
-              {unread > 9 ? "9+" : unread}
+              {unread > 99 ? "99+" : unread}
             </span>
           )}
         </Button>

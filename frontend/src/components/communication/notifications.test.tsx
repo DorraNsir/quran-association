@@ -10,7 +10,7 @@ import { authResponse, json } from "@/test/fetch-mock"
 import { renderWithClient } from "@/test/render"
 import type { UserNotification } from "@/types/domain"
 
-import { NotificationsPage } from "./notifications"
+import { NotificationBell, NotificationsPage } from "./notifications"
 
 const push = vi.hoisted(() => vi.fn())
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace: vi.fn(), refresh: vi.fn() }) }))
@@ -61,6 +61,39 @@ beforeEach(() => {
   setSession(authResponse("u1", ["STUDENT"]))
   push.mockClear()
   vi.mocked(toast.error).mockClear()
+})
+
+describe("notifications: the bell badge (same as the mobile app)", () => {
+  const renderBell = (count: number) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes("/notifications/unread-count")) return json(200, { count })
+        if (/\/notifications\?/.test(url)) return json(200, { data: [], meta: { page: 1, pageSize: 5, total: 0, totalPages: 0 } })
+        return json(200, {})
+      })
+    )
+    return renderWithClient(
+      <DirectionProvider dir="rtl">
+        <NotificationBell workspace="student" />
+      </DirectionProvider>
+    )
+  }
+
+  it("the exact count up to 99 (12 shows 12)", async () => {
+    renderBell(12)
+    expect((await screen.findByTestId("unread-count")).textContent).toBe("12")
+  })
+
+  it("«99+» beyond 99; no badge at 0", async () => {
+    const { unmount } = renderBell(150)
+    expect((await screen.findByTestId("unread-count")).textContent).toBe("99+")
+    unmount()
+    renderBell(0)
+    await screen.findByRole("button", { name: "الإشعارات" })
+    expect(screen.queryByTestId("unread-count")).toBeNull()
+  })
 })
 
 describe("notifications: deleted content and newer types", () => {

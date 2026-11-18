@@ -17,6 +17,7 @@ import {
 } from '@/components/ui';
 import { WorkspaceSwitcher } from '@/features/auth/account-components';
 import { useSession } from '@/features/auth/auth-provider';
+import { NotificationBell } from '@/features/notifications/notification-bell';
 import { ar } from '@/i18n/ar';
 import {
   formatCountOf,
@@ -70,7 +71,17 @@ export function TeacherDashboard() {
       refreshing={refreshing}
       onRefresh={onRefresh}
       edges={[]}
-      hero={<HeroHeader title={ar.workspace.teacher} action={<AccountButton onPress={() => router.push('/teacher/account')} />} />}>
+      hero={
+        <HeroHeader
+          title={ar.workspace.teacher}
+          action={
+            <View style={styles.headerActions}>
+              <NotificationBell userId={user.id} onPress={() => router.push('/teacher/notifications')} />
+              <AccountButton onPress={() => router.push('/teacher/account')} />
+            </View>
+          }
+        />
+      }>
       {/* Welcome: name first, the platform date on its own line */}
       <View style={styles.welcome}>
         <InitialsAvatar name={`${user.person.firstName} ${user.person.lastName}`} size={52} photoUrl={user.person.photoUrl} />
@@ -471,6 +482,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   toolIcon: { width: 40, height: 40, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   accountButton: {
     width: 44,
     height: 44,

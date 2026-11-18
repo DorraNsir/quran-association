@@ -27,6 +27,7 @@ export default function TeacherLayout() {
       <Stack.Screen name="work/[id]/schedule" options={{ title: ar.work.detailTitle }} />
       <Stack.Screen name="account" options={{ title: ar.account.title }} />
       <Stack.Screen name="password" options={{ title: ar.auth.changePasswordTitle }} />
+      <Stack.Screen name="notifications" options={{ title: ar.notifications.title }} />
       <Stack.Screen name="announcements/index" options={{ title: ar.announcements.title }} />
       <Stack.Screen name="announcements/new" options={{ title: ar.announcements.newTitle }} />
       <Stack.Screen name="announcements/[id]/index" options={{ title: ar.announcements.detailTitle }} />
