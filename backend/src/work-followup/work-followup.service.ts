@@ -13,10 +13,20 @@ import { notStartedAt, platformTimezone } from '../common/platform-clock.js';
 import { Prisma } from '../generated/prisma/client.js';
 import {
   SessionStatus,
+  WorkAssignmentKind,
   WorkStatus,
   WorkType,
 } from '../generated/prisma/enums.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import {
+  describeAssignment,
+  edition,
+  NO_ASSIGNMENT,
+  resolveAssignment,
+  sameAssignment,
+  type AssignmentInput,
+  type StoredAssignment,
+} from '../quran-reference/quran-assignment.js';
 import {
   sessionClassIdsSql,
   sessionOfClass,
@@ -107,6 +117,19 @@ const linkSelect = {
   program: {
     select: { id: true, session: { select: { id: true, date: true } } },
   },
+} as const;
+
+/** Structured Quranic assignment columns of a work item. */
+const ASSIGNMENT_SELECT = {
+  quranAssignmentKind: true,
+  quranEditionId: true,
+  quranFromSurah: true,
+  quranFromAyah: true,
+  quranToSurah: true,
+  quranToAyah: true,
+  quranFromPage: true,
+  quranToPage: true,
+  quranWorkload: true,
 } as const;
 
 const programInclude = {
@@ -260,6 +283,8 @@ function toDto(p: ProgramRow, clock: Clock): WorkProgramDto {
         : null,
       carriedTo: i.carriedTo.map(link),
       continuedBy: i.continuedBy.map(link),
+      assignment: assignmentOf(i),
+      workload: (i.quranWorkload as Record<string, unknown> | null) ?? null,
     })),
   };
 }
@@ -305,6 +330,7 @@ const studentInclude = {
           program: { select: { session: { select: { date: true } } } },
         },
       },
+      ...ASSIGNMENT_SELECT,
     },
   },
 } satisfies Prisma.WorkProgramInclude;
@@ -342,6 +368,8 @@ function toStudentDto(p: StudentProgramRow): StudentWorkProgramDto {
               status: i.carriedFromStatus,
             }
           : null,
+      // What to work on, structured (the workload stays with the teachers)
+      assignment: assignmentOf(i),
     })),
   };
 }
@@ -737,6 +765,7 @@ export class WorkFollowupService {
           type: dto.type,
           description: dto.description,
           recitationNumber: dto.recitationNumber,
+          assignment: dto.assignment,
         },
       ],
     });
@@ -832,6 +861,8 @@ export class WorkFollowupService {
         type: source.type,
         description: source.description,
         recitationNumber: source.recitationNumber,
+        // The same task: its structured assignment, edition and workload are copied as they are
+        ...copyAssignment(source),
         carriedFromItemId: source.id,
         carriedFromStatus: source.status,
       };
@@ -862,6 +893,8 @@ export class WorkFollowupService {
           dto.description ??
           nextRecitationDescription(source.description, number),
         recitationNumber: number,
+        // The same surah, recited again: assignment, edition and workload copied
+        ...copyAssignment(source),
         continuedFromItemId: source.id,
       };
     });
@@ -873,14 +906,16 @@ export class WorkFollowupService {
     actor: WorkActor,
     itemId: string,
     targetSessionId: string,
-    plan: (source: {
-      id: string;
-      type: WorkType;
-      description: string;
-      status: WorkStatus;
-      recitationNumber: number | null;
-      sessionStatus: SessionStatus;
-    }) => Omit<Prisma.WorkItemCreateManyInput, 'workProgramId' | 'position'>,
+    plan: (
+      source: {
+        id: string;
+        type: WorkType;
+        description: string;
+        status: WorkStatus;
+        recitationNumber: number | null;
+        sessionStatus: SessionStatus;
+      } & AssignmentColumns,
+    ) => Omit<Prisma.WorkItemCreateManyInput, 'workProgramId' | 'position'>,
   ): Promise<WorkProgramDto> {
     try {
       const targetProgramId = await this.prisma.$transaction(async (tx) => {
@@ -892,6 +927,7 @@ export class WorkFollowupService {
             description: true,
             status: true,
             recitationNumber: true,
+            ...ASSIGNMENT_SELECT,
             program: {
               select: {
                 studentId: true,
@@ -1177,6 +1213,7 @@ export class WorkFollowupService {
         description: true,
         recitationNumber: true,
         continuedFromItemId: true,
+        ...ASSIGNMENT_SELECT,
       },
     });
     if (!current) throw itemNotFound();
@@ -1197,11 +1234,37 @@ export class WorkFollowupService {
         'WORK_RECITATION_NUMBER_REQUIRED',
         'رقم العرضة مطلوب لعرضة تالية',
       );
-    const description = edit.description ?? current.description;
+    // Structured assignment: omitted = kept (re-validated if the type changes), null = removed
+    const before = storedOf(current);
+    let after: StoredAssignment | null;
+    if (edit.assignment === null) after = null;
+    else if (edit.assignment !== undefined)
+      after = resolveAssignment(type, edit.assignment);
+    else if (before && type !== current.type) {
+      const recheck = resolveAssignment(type, inputOf(before));
+      // Same task: keep the stored range, edition and workload when they still apply
+      after = sameAssignment(recheck, before) ? before : recheck;
+    } else after = before;
+    if (after && before && sameAssignment(after, before)) after = before;
+    // A server-written description follows its assignment unless the teacher wrote their own
+    const generated = (
+      a: StoredAssignment | null,
+      t: WorkType,
+      n: number | null,
+    ) => (a ? describeAssignment(t, a, n ? recitationOrdinal(n) : null) : null);
+    let description = edit.description ?? current.description;
+    if (
+      edit.description === undefined &&
+      after &&
+      current.description ===
+        generated(before, current.type, current.recitationNumber)
+    )
+      description = generated(after, type, recitationNumber) as string;
     if (
       type === current.type &&
       description === current.description &&
-      recitationNumber === current.recitationNumber
+      recitationNumber === current.recitationNumber &&
+      after === before
     )
       return 'ok';
     const { count } = await tx.workItem.updateMany({
@@ -1210,6 +1273,7 @@ export class WorkFollowupService {
         type,
         description,
         recitationNumber,
+        ...(after === before ? {} : assignmentData(after)),
         updatedByUserId: actor.userId,
         version: { increment: 1 },
       },
@@ -1286,18 +1350,112 @@ export class WorkFollowupService {
 }
 
 /** A new item: unevaluated; a number only for a recitation. */
+/** A new item: unevaluated; a number only for a recitation; a structured assignment if sent. */
 function newItem(item: NewWorkItemDto, userId: string) {
+  const recitationNumber =
+    item.type === WorkType.RECITATION ? (item.recitationNumber ?? null) : null;
+  const assignment = item.assignment
+    ? resolveAssignment(item.type, item.assignment)
+    : null;
+  const description =
+    item.description ||
+    (assignment
+      ? describeAssignment(
+          item.type,
+          assignment,
+          recitationNumber ? recitationOrdinal(recitationNumber) : null,
+        )
+      : item.description);
   return {
     type: item.type,
-    description: item.description,
+    description,
     status: WorkStatus.NOT_EVALUATED,
-    recitationNumber:
-      item.type === WorkType.RECITATION
-        ? (item.recitationNumber ?? null)
-        : null,
+    recitationNumber,
+    ...(assignment ? assignmentData(assignment) : {}),
     createdByUserId: userId,
     updatedByUserId: userId,
   };
+}
+
+type AssignmentColumns = Prisma.WorkItemGetPayload<{
+  select: typeof ASSIGNMENT_SELECT;
+}>;
+
+/** The stored assignment of a row, or null for a free-text item. */
+function storedOf(row: AssignmentColumns): StoredAssignment | null {
+  if (!row.quranAssignmentKind) return null;
+  return {
+    quranAssignmentKind: row.quranAssignmentKind,
+    quranEditionId: row.quranEditionId as string,
+    quranFromSurah: row.quranFromSurah as number,
+    quranFromAyah: row.quranFromAyah as number,
+    quranToSurah: row.quranToSurah as number,
+    quranToAyah: row.quranToAyah as number,
+    quranFromPage: row.quranFromPage,
+    quranToPage: row.quranToPage,
+    quranWorkload:
+      row.quranWorkload as unknown as StoredAssignment['quranWorkload'],
+  };
+}
+
+/** The references a stored assignment was made from (to re-validate it for another work type). */
+function inputOf(a: StoredAssignment): AssignmentInput {
+  if (a.quranAssignmentKind === WorkAssignmentKind.PAGE_RANGE)
+    return {
+      kind: a.quranAssignmentKind,
+      fromPage: a.quranFromPage,
+      toPage: a.quranToPage,
+    };
+  const whole =
+    a.quranFromAyah === 1 &&
+    a.quranToAyah ===
+      edition(a.quranEditionId).engine.ayahCount(a.quranToSurah);
+  return a.quranAssignmentKind === WorkAssignmentKind.SURAH_RANGE && whole
+    ? {
+        kind: a.quranAssignmentKind,
+        fromSurah: a.quranFromSurah,
+        toSurah: a.quranToSurah,
+      }
+    : {
+        kind: a.quranAssignmentKind,
+        fromSurah: a.quranFromSurah,
+        fromAyah: a.quranFromAyah,
+        toSurah: a.quranToSurah,
+        toAyah: a.quranToAyah,
+      };
+}
+
+/** A transferred / next item keeps its source's assignment verbatim (no recomputation). */
+function copyAssignment(source: AssignmentColumns) {
+  const a = storedOf(source);
+  return a ? assignmentData(a) : {};
+}
+
+/** Columns to write (an assignment, or all null). */
+function assignmentData(a: StoredAssignment | null) {
+  return a
+    ? {
+        ...a,
+        quranWorkload: a.quranWorkload as unknown as Prisma.InputJsonValue,
+      }
+    : { ...NO_ASSIGNMENT, quranWorkload: Prisma.DbNull };
+}
+
+/** The response form of an item's assignment (null: free text). */
+function assignmentOf(row: AssignmentColumns) {
+  const a = storedOf(row);
+  return a
+    ? {
+        kind: a.quranAssignmentKind,
+        editionId: a.quranEditionId,
+        fromSurah: a.quranFromSurah,
+        fromAyah: a.quranFromAyah,
+        toSurah: a.quranToSurah,
+        toAyah: a.quranToAyah,
+        fromPage: a.quranFromPage,
+        toPage: a.quranToPage,
+      }
+    : null;
 }
 
 const programExists = (programId: string | null) =>

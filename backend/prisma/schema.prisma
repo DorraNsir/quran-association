@@ -197,6 +197,16 @@ enum WorkType {
   EXAM
 }
 
+/// «متابعة العمل»: how a structured Quranic assignment was given (null on a work item = free text only)
+///  AYAH_RANGE  حفظ: one surah, from-ayah to-ayah
+///  PAGE_RANGE  حفظ: printed pages of the edition (from-page to-page)
+///  SURAH_RANGE مراجعة / اختبار: from-surah to-surah (optional ayah precision); عرضة: one whole surah
+enum WorkAssignmentKind {
+  AYAH_RANGE
+  PAGE_RANGE
+  SURAH_RANGE
+}
+
 /// «متابعة العمل»: the result of a work item. CANCELLED = this item was dropped (not a cancelled session)
 enum WorkStatus {
   NOT_EVALUATED
@@ -1633,6 +1643,20 @@ model WorkItem {
   continuedFromItemId String?     @db.Uuid
   /// Optimistic concurrency: a stale client never overwrites a newer value
   version             Int         @default(1)
+  /// Structured Quranic assignment (all null for a free-text item; CHECK in migration).
+  /// The verse range is canonical (derived by the server from the chosen references) and belongs
+  /// to the Mushaf edition `quranEditionId`; pages only for PAGE_RANGE.
+  quranAssignmentKind WorkAssignmentKind?
+  quranEditionId      String?
+  quranFromSurah      Int?        @db.SmallInt
+  quranFromAyah       Int?        @db.SmallInt
+  quranToSurah        Int?        @db.SmallInt
+  quranToAyah         Int?        @db.SmallInt
+  quranFromPage       Int?        @db.SmallInt
+  quranToPage         Int?        @db.SmallInt
+  /// Workload computed by the server when the assignment was saved (exact / bounded / unavailable
+  /// per unit, data reliability); never recomputed silently, never sent by clients
+  quranWorkload       Json?
   createdByUserId     String?     @db.Uuid
   updatedByUserId     String?     @db.Uuid
   evaluatedByUserId   String?     @db.Uuid

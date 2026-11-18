@@ -11,6 +11,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
   ValidateIf,
@@ -20,6 +21,7 @@ import {
 import { PaginationMetaDto, PaginationQueryDto } from '../common/pagination.js';
 import {
   SessionStatus,
+  WorkAssignmentKind,
   WorkStatus,
   WorkType,
 } from '../generated/prisma/enums.js';
@@ -38,6 +40,77 @@ const trimOrNull = ({ value }: { value: unknown }) =>
 
 // ───────────────────────── requests ─────────────────────────
 
+/**
+ * A structured Quranic assignment: REFERENCES ONLY (surahs, ayahs or pages of the active Mushaf
+ * edition). The server validates them, derives the canonical verse range and computes the
+ * workload itself — a client never sends a workload.
+ *  حفظ  AYAH_RANGE (fromSurah = toSurah, fromAyah, toAyah) or PAGE_RANGE (fromPage, toPage)
+ *  مراجعة / اختبار  SURAH_RANGE (fromSurah, toSurah; fromAyah / toAyah optional)
+ *  عرضة  SURAH_RANGE of one whole surah (fromSurah = toSurah, no ayahs)
+ */
+export class WorkAssignmentDto {
+  @ApiProperty({ enum: WorkAssignmentKind, enumName: 'WorkAssignmentKind' })
+  @IsEnum(WorkAssignmentKind)
+  kind!: WorkAssignmentKind;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    minimum: 1,
+    maximum: 114,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(114)
+  fromSurah?: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, minimum: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  fromAyah?: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    minimum: 1,
+    maximum: 114,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(114)
+  toSurah?: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, minimum: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  toAyah?: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    minimum: 1,
+    description: 'Printed page of the edition',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  fromPage?: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, minimum: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  toPage?: number | null;
+}
+
+/** Description required for a free-text item; optional with an assignment (the server writes one). */
+const descriptionRequired = (o: { assignment?: unknown }, v: unknown) =>
+  !o.assignment || (v !== undefined && v !== null && v !== '');
+
 export class NewWorkItemDto {
   @ApiProperty({ enum: WorkType, enumName: 'WorkType' })
   @IsEnum(WorkType)
@@ -45,13 +118,25 @@ export class NewWorkItemDto {
 
   @ApiProperty({
     maxLength: DESCRIPTION_MAX,
-    description: 'Multiline text kept as is (only the ends are trimmed)',
+    description:
+      'Multiline text kept as is (only the ends are trimmed). Optional when `assignment` is sent: the server then writes one',
   })
   @Transform(trim)
+  @ValidateIf(descriptionRequired)
   @IsString()
   @IsNotEmpty({ message: 'وصف العمل مطلوب' })
   @MaxLength(DESCRIPTION_MAX)
   description!: string;
+
+  @ApiPropertyOptional({
+    type: WorkAssignmentDto,
+    nullable: true,
+    description: 'Structured Quranic assignment (optional)',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WorkAssignmentDto)
+  assignment?: WorkAssignmentDto | null;
 
   @ApiPropertyOptional({
     type: Number,
@@ -114,6 +199,17 @@ export class WorkItemEditDto {
   @IsInt()
   @Min(1)
   recitationNumber?: number | null;
+
+  @ApiPropertyOptional({
+    type: WorkAssignmentDto,
+    nullable: true,
+    description:
+      'Omitted: unchanged · null: back to free text only · an object: the new assignment',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WorkAssignmentDto)
+  assignment?: WorkAssignmentDto | null;
 
   @ApiProperty({
     minimum: 1,
@@ -360,6 +456,25 @@ export class ContinuedFromDto extends WorkItemLinkDto {
   recitationNumber!: number | null;
 }
 
+export class WorkItemAssignmentDto {
+  @ApiProperty({ enum: WorkAssignmentKind, enumName: 'WorkAssignmentKind' })
+  kind!: WorkAssignmentKind;
+  @ApiProperty({ description: 'The Mushaf edition the range belongs to' })
+  editionId!: string;
+  @ApiProperty({ description: 'Canonical verse range (derived by the server)' })
+  fromSurah!: number;
+  @ApiProperty() fromAyah!: number;
+  @ApiProperty() toSurah!: number;
+  @ApiProperty() toAyah!: number;
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description: 'PAGE_RANGE only',
+  })
+  fromPage!: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true }) toPage!: number | null;
+}
+
 export class WorkItemDto {
   @ApiProperty() id!: string;
   @ApiProperty() version!: number;
@@ -392,6 +507,19 @@ export class WorkItemDto {
     description: 'Its next recitation(s)',
   })
   continuedBy!: WorkItemLinkDto[];
+  @ApiPropertyOptional({
+    type: WorkItemAssignmentDto,
+    nullable: true,
+    description: 'null: a free-text item',
+  })
+  assignment!: WorkItemAssignmentDto | null;
+  @ApiPropertyOptional({
+    type: Object,
+    nullable: true,
+    description:
+      'Server-computed workload stored when the assignment was saved: per unit exact | bounded (greaterThan < x < lessThan) | unavailable, with dataStatus; authoritative=false → not for ranking',
+  })
+  workload!: Record<string, unknown> | null;
 }
 
 export class WorkProgressDto {
@@ -492,6 +620,8 @@ export class StudentWorkItemDto {
       'Carried from an earlier session: its date and the result then',
   })
   carriedFrom!: { sessionDate: string; status: WorkStatus } | null;
+  @ApiPropertyOptional({ type: WorkItemAssignmentDto, nullable: true })
+  assignment!: WorkItemAssignmentDto | null;
 }
 
 /**

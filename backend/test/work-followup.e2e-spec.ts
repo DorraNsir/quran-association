@@ -1656,4 +1656,525 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
       ).toBe('WORK_ITEM_NOT_TRANSFERABLE');
     });
   });
+
+  // ───────────────────────── structured Quranic assignments (Work Program 2.0 — phase 3A) ─────────────────────────
+
+  describe('structured Quranic assignments (Qalun, Tunisian edition)', () => {
+    type Assigned = Item & {
+      assignment: {
+        kind: string;
+        editionId: string;
+        fromSurah: number;
+        fromAyah: number;
+        toSurah: number;
+        toAyah: number;
+        fromPage: number | null;
+        toPage: number | null;
+      } | null;
+      workload: {
+        editionId: string;
+        verses: number;
+        pages: {
+          kind: string;
+          value?: number;
+          greaterThan?: number;
+          lessThan?: number;
+        };
+        juz: { kind: string; value?: number };
+        surahs: { whole: number; touched: number };
+        dataStatus: string;
+        authoritative: boolean;
+      } | null;
+    };
+    const itemsOf = (p: Program) => p.items as unknown as Assigned[];
+    const memo = {
+      type: 'MEMORIZATION',
+      assignment: {
+        kind: 'AYAH_RANGE',
+        fromSurah: 2,
+        fromAyah: 6,
+        toSurah: 2,
+        toAyah: 20,
+      },
+    };
+    const pages = {
+      type: 'MEMORIZATION',
+      assignment: { kind: 'PAGE_RANGE', fromPage: 10, toPage: 12 },
+    };
+    const revision = {
+      type: 'REVISION',
+      description: 'مراجعة جزء عمّ مع التجويد',
+      assignment: { kind: 'SURAH_RANGE', fromSurah: 78, toSurah: 114 },
+    };
+    const exam = {
+      type: 'EXAM',
+      assignment: {
+        kind: 'SURAH_RANGE',
+        fromSurah: 2,
+        fromAyah: 142,
+        toSurah: 3,
+        toAyah: 91,
+      },
+    };
+    const recitation = {
+      type: 'RECITATION',
+      recitationNumber: 2,
+      assignment: { kind: 'SURAH_RANGE', fromSurah: 36, toSurah: 36 },
+    };
+    const legacy = { type: 'REVISION', description: 'مراجعة حرة بدون نطاق' };
+
+    beforeAll(async () => {
+      id.a1 = await session('C', addDays(TODAY, 20), '16:00');
+      id.a2 = await session('C', addDays(TODAY, 22), '16:00');
+      id.a3 = await session('C', addDays(TODAY, 24), '16:00');
+    });
+
+    it('creates the four types structured, next to a legacy free-text item; the server derives ranges, workload and text', async () => {
+      const p = (
+        await create('sup', 's1', 'a1', [
+          memo,
+          pages,
+          revision,
+          exam,
+          recitation,
+          legacy,
+        ]).expect(201)
+      ).body as Program;
+      id.pa1 = p.id;
+      const [m, pg, rev, ex, rec, free] = itemsOf(p);
+      expect(m.assignment).toMatchObject({
+        kind: 'AYAH_RANGE',
+        fromSurah: 2,
+        fromAyah: 6,
+        toSurah: 2,
+        toAyah: 20,
+        fromPage: null,
+      });
+      expect(m.description).toBe('سورة البقرة: من الآية 6 إلى الآية 20');
+      expect(m.workload).toMatchObject({ verses: 15, authoritative: false });
+      expect(m.workload!.pages.kind).toBe('bounded'); // partial pages are never exact
+      expect(pg.assignment).toMatchObject({
+        kind: 'PAGE_RANGE',
+        fromPage: 10,
+        toPage: 12,
+        fromSurah: 2,
+      });
+      expect(pg.workload!.pages).toMatchObject({ kind: 'exact', value: 3 });
+      expect(pg.description).toBe('من الصفحة 10 إلى الصفحة 12');
+      expect(rev.description).toBe('مراجعة جزء عمّ مع التجويد'); // the teacher's own text is kept
+      expect(rev.assignment).toMatchObject({
+        fromSurah: 78,
+        fromAyah: 1,
+        toSurah: 114,
+        toAyah: 6,
+      });
+      expect(rev.workload!.juz).toMatchObject({ kind: 'exact', value: 1 });
+      expect(ex.workload!.surahs).toEqual({ whole: 0, touched: 2 });
+      expect(rec.description).toBe('العرضة الثانية من سورة يس');
+      expect(rec.assignment).toMatchObject({
+        fromSurah: 36,
+        fromAyah: 1,
+        toSurah: 36,
+        toAyah: 83,
+      });
+      // One edition for every structured item; nothing is authoritative for ranking yet
+      const editions = new Set(
+        [m, pg, rev, ex, rec].map((i) =>
+          [i.assignment!.editionId, i.workload!.editionId].join(),
+        ),
+      );
+      expect(editions.size).toBe(1);
+      expect([...editions][0]).toMatch(/^qalun-/);
+      // Legacy item: unchanged shape, no assignment
+      expect([free.assignment, free.workload, free.description]).toEqual([
+        null,
+        null,
+        'مراجعة حرة بدون نطاق',
+      ]);
+    });
+
+    it('validation: format per type, conflicting formats, invalid and reversed references — nothing is created', async () => {
+      const bad = async (item: object, expected: string) =>
+        expect(
+          (await create('sup', 's2', 'a1', [legacy, item]).expect(400)).body
+            .code,
+        ).toBe(expected);
+      await bad(
+        {
+          type: 'MEMORIZATION',
+          assignment: {
+            kind: 'AYAH_RANGE',
+            fromSurah: 2,
+            fromAyah: 280,
+            toSurah: 3,
+            toAyah: 2,
+          },
+        },
+        'WORK_ASSIGNMENT_FORMAT',
+      );
+      await bad(
+        {
+          type: 'MEMORIZATION',
+          assignment: {
+            kind: 'PAGE_RANGE',
+            fromPage: 10,
+            toPage: 12,
+            fromSurah: 2,
+          },
+        },
+        'WORK_ASSIGNMENT_FORMAT',
+      );
+      await bad(
+        {
+          type: 'RECITATION',
+          assignment: {
+            kind: 'SURAH_RANGE',
+            fromSurah: 36,
+            fromAyah: 5,
+            toSurah: 36,
+          },
+        },
+        'WORK_ASSIGNMENT_FORMAT',
+      );
+      await bad(
+        {
+          type: 'RECITATION',
+          assignment: { kind: 'SURAH_RANGE', fromSurah: 36, toSurah: 37 },
+        },
+        'WORK_ASSIGNMENT_FORMAT',
+      );
+      await bad(
+        {
+          type: 'REVISION',
+          assignment: { kind: 'PAGE_RANGE', fromPage: 2, toPage: 5 },
+        },
+        'WORK_ASSIGNMENT_FORMAT',
+      );
+      await bad(
+        {
+          type: 'MEMORIZATION',
+          assignment: {
+            kind: 'AYAH_RANGE',
+            fromSurah: 2,
+            fromAyah: 1,
+            toSurah: 2,
+            toAyah: 287,
+          },
+        },
+        'WORK_ASSIGNMENT_REFERENCE',
+      );
+      await bad(
+        {
+          type: 'MEMORIZATION',
+          assignment: { kind: 'PAGE_RANGE', fromPage: 1, toPage: 2 },
+        },
+        'WORK_ASSIGNMENT_REFERENCE',
+      );
+      await bad(
+        {
+          type: 'EXAM',
+          assignment: { kind: 'SURAH_RANGE', fromSurah: 10, toSurah: 3 },
+        },
+        'WORK_ASSIGNMENT_REVERSED',
+      );
+      await bad(
+        {
+          type: 'MEMORIZATION',
+          assignment: { kind: 'PAGE_RANGE', fromPage: 12, toPage: 10 },
+        },
+        'WORK_ASSIGNMENT_REVERSED',
+      );
+      // DTO level: unknown kind, out-of-range surah, no description without an assignment
+      await create('sup', 's2', 'a1', [
+        { type: 'EXAM', assignment: { kind: 'JUZ', fromSurah: 1, toSurah: 2 } },
+      ]).expect(400);
+      await create('sup', 's2', 'a1', [
+        {
+          type: 'EXAM',
+          assignment: { kind: 'SURAH_RANGE', fromSurah: 0, toSurah: 2 },
+        },
+      ]).expect(400);
+      await create('sup', 's2', 'a1', [{ type: 'EXAM' }]).expect(400);
+      expect(
+        await prisma.workProgram.count({
+          where: { studentId: id.s2, sessionId: id.a1 },
+        }),
+      ).toBe(0);
+    });
+
+    it('a client-sent workload is ignored: the server computes its own', async () => {
+      const p = (
+        await api
+          .post('sup', `work-programs/${id.pa1}/items`, {
+            items: [
+              {
+                ...exam,
+                workload: { verses: 1, pages: { kind: 'exact', value: 99 } },
+              },
+            ],
+          })
+          .expect(400)
+      ) // unknown properties are refused by the global validation (whitelist)
+      .body;
+      expect(p.code ?? p.message).toBeTruthy();
+      const added = (
+        await api
+          .post('sup', `work-programs/${id.pa1}/items`, { items: [exam] })
+          .expect(201)
+      ).body as Program;
+      expect(itemsOf(added).at(-1)!.workload!.verses).toBe(
+        itemsOf(added)[3]!.workload!.verses,
+      );
+    });
+
+    it('editing: add, change and remove an assignment with optimistic concurrency; a server text follows its range', async () => {
+      let p = await programOf('sup', id.pa1);
+      const free = itemsOf(p)[5]!;
+      // Legacy item gains an assignment (its own text is kept)
+      p = (
+        await api
+          .patch('sup', `work-items/${free.id}`, {
+            version: free.version,
+            assignment: { kind: 'SURAH_RANGE', fromSurah: 67, toSurah: 67 },
+          })
+          .expect(200)
+      ).body;
+      const gained = itemsOf(p)[5]!;
+      expect([
+        gained.version,
+        gained.description,
+        gained.assignment!.fromSurah,
+      ]).toEqual([free.version + 1, 'مراجعة حرة بدون نطاق', 67]);
+      // A stale version is refused, nothing changes
+      expect(
+        (
+          await api
+            .patch('sup', `work-items/${free.id}`, {
+              version: free.version,
+              assignment: null,
+            })
+            .expect(409)
+        ).body.code,
+      ).toBe('WORK_ITEM_CHANGED');
+      // Changing the range of a server-written text rewrites the text
+      const m = itemsOf(p)[0]!;
+      p = (
+        await api
+          .patch('sup', `work-items/${m.id}`, {
+            version: m.version,
+            assignment: {
+              kind: 'AYAH_RANGE',
+              fromSurah: 2,
+              fromAyah: 21,
+              toSurah: 2,
+              toAyah: 29,
+            },
+          })
+          .expect(200)
+      ).body;
+      expect(itemsOf(p)[0]).toMatchObject({
+        description: 'سورة البقرة: من الآية 21 إلى الآية 29',
+        version: m.version + 1,
+      });
+      expect(itemsOf(p)[0]!.workload!.verses).toBe(9);
+      // Same assignment again: no change, no version bump
+      const same = itemsOf(p)[0]!;
+      p = (
+        await api
+          .patch('sup', `work-items/${same.id}`, {
+            version: same.version,
+            assignment: {
+              kind: 'AYAH_RANGE',
+              fromSurah: 2,
+              fromAyah: 21,
+              toSurah: 2,
+              toAyah: 29,
+            },
+          })
+          .expect(200)
+      ).body;
+      expect(itemsOf(p)[0]!.version).toBe(same.version);
+      // Type change: REVISION → EXAM keeps the same range and workload; → MEMORIZATION needs a new format
+      const rev = itemsOf(p)[2]!;
+      p = (
+        await api
+          .patch('sup', `work-items/${rev.id}`, {
+            version: rev.version,
+            type: 'EXAM',
+          })
+          .expect(200)
+      ).body;
+      expect(itemsOf(p)[2]).toMatchObject({
+        type: 'EXAM',
+        assignment: rev.assignment,
+        workload: rev.workload,
+      });
+      const exam2 = itemsOf(p)[2]!;
+      expect(
+        (
+          await api
+            .patch('sup', `work-items/${exam2.id}`, {
+              version: exam2.version,
+              type: 'MEMORIZATION',
+            })
+            .expect(400)
+        ).body.code,
+      ).toBe('WORK_ASSIGNMENT_FORMAT');
+      // Removing the assignment: back to free text, text kept
+      p = (
+        await api
+          .patch('sup', `work-items/${gained.id}`, {
+            version: gained.version,
+            assignment: null,
+          })
+          .expect(200)
+      ).body;
+      expect([
+        itemsOf(p)[5]!.assignment,
+        itemsOf(p)[5]!.workload,
+        itemsOf(p)[5]!.description,
+      ]).toEqual([null, null, 'مراجعة حرة بدون نطاق']);
+      // Batch edit through the program route validates too
+      const ex = itemsOf(p)[3]!;
+      expect(
+        (
+          await api
+            .patch('sup', `work-programs/${id.pa1}`, {
+              items: [
+                {
+                  id: ex.id,
+                  version: ex.version,
+                  assignment: { kind: 'SURAH_RANGE', fromSurah: 3, toSurah: 2 },
+                },
+              ],
+            })
+            .expect(400)
+        ).body.code,
+      ).toBe('WORK_ASSIGNMENT_REVERSED');
+    });
+
+    it('evaluation restrictions are unchanged, and an evaluation never touches the assignment', async () => {
+      let p = await programOf('sup', id.pa1);
+      const it0 = itemsOf(p)[0]!;
+      expect(
+        (await evaluate('sup', p, it0.id, 'COMPLETED').expect(409)).body.code,
+      ).toBe('WORK_SESSION_NOT_STARTED');
+      await startNow(id.a1, addDays(TODAY, -3));
+      p = (await evaluate('sup', p, it0.id, 'PARTIAL').expect(200)).body;
+      expect(itemsOf(p)[0]).toMatchObject({
+        status: 'PARTIAL',
+        assignment: it0.assignment,
+        workload: it0.workload,
+        description: it0.description,
+      });
+    });
+
+    it('transfer keeps the structured assignment, its edition and its stored workload; history untouched', async () => {
+      const p = await programOf('sup', id.pa1);
+      const src = itemsOf(p)[0]!; // PARTIAL
+      const target = (
+        await api
+          .post('sup', `work-items/${src.id}/transfer`, {
+            targetSessionId: id.a2,
+          })
+          .expect(201)
+      ).body as Program;
+      const copy = itemsOf(target).find(
+        (i) => i.carriedFrom?.itemId === src.id,
+      )!;
+      expect(copy).toMatchObject({
+        status: 'NOT_EVALUATED',
+        description: src.description,
+        assignment: src.assignment,
+        workload: src.workload,
+      });
+      expect(copy.carriedFrom!.status).toBe('PARTIAL');
+      expect(itemsOf(await programOf('sup', id.pa1))[0]).toMatchObject({
+        status: 'PARTIAL',
+        version: src.version,
+        assignment: src.assignment,
+      });
+      // Next recitation: the same surah, number + 1
+      const rec = itemsOf(p)[4]!;
+      const next = (
+        await api
+          .post('sup', `work-items/${rec.id}/next-recitation`, {
+            targetSessionId: id.a2,
+          })
+          .expect(201)
+      ).body as Program;
+      const n = itemsOf(next).find((i) => i.continuedFrom?.itemId === rec.id)!;
+      expect(n).toMatchObject({
+        recitationNumber: 3,
+        description: 'العرضة الثالثة من سورة يس',
+        assignment: rec.assignment,
+        workload: rec.workload,
+      });
+    });
+
+    it('cancelled session: its unevaluated structured work is carried with its assignment (phase 1 rule kept)', async () => {
+      const p = (await create('sup', 's1', 'a3', [memo]).expect(201))
+        .body as Program;
+      const [item] = itemsOf(p);
+      await admin
+        .patch(`sessions/${id.a3}/status`, { status: 'CANCELLED' })
+        .expect(200);
+      expect(
+        (await evaluate('sup', p, item!.id, 'COMPLETED').expect(409)).body.code,
+      ).toBe('WORK_SESSION_CANCELLED');
+      const later = await session('C', addDays(TODAY, 26), '16:00');
+      const target = (
+        await api
+          .post('sup', `work-items/${item!.id}/transfer`, {
+            targetSessionId: later,
+          })
+          .expect(201)
+      ).body as Program;
+      const copy = itemsOf(target).find(
+        (i) => i.carriedFrom?.itemId === item!.id,
+      )!;
+      expect(copy).toMatchObject({
+        assignment: item!.assignment,
+        workload: item!.workload,
+      });
+      expect(copy.carriedFrom!.status).toBe('NOT_EVALUATED');
+    });
+
+    it('the student sees the structured assignment (read-only), not the workload', async () => {
+      const mine = (
+        await http()
+          .get(`/api/student/work-programs/${id.pa1}`)
+          .set(as('pupil'))
+          .expect(200)
+      ).body;
+      expect(mine.items[0].assignment).toMatchObject({
+        kind: 'AYAH_RANGE',
+        fromSurah: 2,
+      });
+      expect(mine.items[0]).not.toHaveProperty('workload');
+      expect(mine.items[5].assignment).toBeNull();
+    });
+
+    it('the database refuses an inconsistent assignment even outside the API', async () => {
+      const p = await programOf('sup', id.pa1);
+      const row = itemsOf(p)[1]!;
+      await expect(
+        prisma.workItem.update({
+          where: { id: row.id },
+          data: { type: 'RECITATION' },
+        }), // pages on a recitation
+      ).rejects.toThrow(/work_items_quran_assignment_check/);
+      await expect(
+        prisma.workItem.update({
+          where: { id: row.id },
+          data: { quranFromPage: 20 },
+        }),
+      ).rejects.toThrow(/work_items_quran_assignment_check/);
+      // Untouched
+      expect(itemsOf(await programOf('sup', id.pa1))[1]).toMatchObject({
+        type: 'MEMORIZATION',
+        assignment: row.assignment,
+      });
+    });
+  });
 });
