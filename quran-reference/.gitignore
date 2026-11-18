@@ -1,0 +1,5 @@
+# Renders of the source PDF and local tools: never committed or published
+work/
+.venv/
+node_modules/
+__pycache__/

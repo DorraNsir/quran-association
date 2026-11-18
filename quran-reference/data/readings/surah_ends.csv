@@ -1,0 +1,142 @@
+surah,kind,value,pdf,evidence
+1,last_seen,7,3,verse 7 directly above al-Baqara title
+1,title_count,7,3,al-Fatiha title frame
+2,title_count,286,3,al-Baqara title frame
+4,last_seen,176,107,verse 176 directly above al-Maida title
+5,title_count,120,107,al-Maida title frame
+10,last_seen,109,222,verse 109 directly above Hud title
+11,title_count,123,222,Hud title frame
+11,last_seen,123,236,verse 123 directly above Yusuf title
+12,title_count,111,236,Yusuf title frame
+13,last_seen,43,256,verse 43 at top of page before Ibrahim title (title itself not in crop)
+15,last_seen,99,268,verse 99 before an-Nahl title (title itself not in crop)
+15,last_seen,99,268,verse 99 directly above an-Nahl title
+16,title_count,128,268,an-Nahl title frame
+17,last_seen,111,294,verse 111 directly above al-Kahf title
+18,title_count,110,294,al-Kahf title frame
+19,last_seen,98,313,verse 98 directly above Taha title
+20,title_count,135,313,Taha title frame
+24,last_seen,64,360,verse 64 directly above al-Furqan title
+25,title_count,77,360,al-Furqan title frame
+27,last_seen,93,386,verse 93 directly above al-Qasas title
+28,title_count,88,386,al-Qasas title frame
+28,last_seen,88,397,verse 88 directly above al-Ankabut title
+29,title_count,69,397,al-Ankabut title frame
+29,last_seen,69,405,verse 69 directly above ar-Rum title
+30,title_count,60,405,ar-Rum title frame
+34,last_seen,54,435,verse 54 directly above Fatir title
+35,title_count,45,435,Fatir title frame
+35,last_seen,45,441,verse 45 directly above Yasin title
+36,title_count,83,441,Yasin title frame
+38,last_seen,88,459,verse 88 directly above az-Zumar title
+39,title_count,75,459,az-Zumar title frame
+39,last_seen,75,468,verse 75 directly above Ghafir title
+40,title_count,85,468,Ghafir title frame
+45,last_seen,37,503,verse 37 directly above al-Ahqaf title
+46,title_count,35,503,al-Ahqaf title frame
+48,last_seen,29,516,verse 29 directly above al-Hujurat title
+49,title_count,18,516,al-Hujurat title frame
+50,last_seen,45,521,verse 45 is the line before adh-Dhariyat title (adjacent crops)
+51,title_count,60,521,adh-Dhariyat title frame
+51,last_seen,60,524,verse 60 is the line before at-Tur title (adjacent crops)
+52,title_count,49,524,at-Tur title frame
+53,last_seen,62,529,verse 62 before al-Qamar title (title itself not in crop)
+53,last_seen,62,529,verse 62 directly above al-Qamar title
+54,title_count,55,529,al-Qamar title frame
+54,last_seen,55,532,verse 55 directly above ar-Rahman title
+55,title_count,78,532,ar-Rahman title frame
+55,last_seen,78,535,verse 78 directly above al-Waqia title
+56,title_count,96,535,al-Waqia title frame
+56,last_seen,96,538,verse 96 directly above al-Hadid title
+57,title_count,29,538,al-Hadid title frame
+58,last_seen,22,546,verse 22 directly above al-Hashr title
+59,title_count,24,546,al-Hashr title frame
+60,last_seen,13,552,verse 13 directly above as-Saff title
+61,title_count,14,552,as-Saff title frame
+62,last_seen,11,555,verse 11 directly above al-Munafiqun title
+63,title_count,11,555,al-Munafiqun title frame
+67,last_seen,30,565,verse 30 is the line before al-Qalam title (adjacent crops)
+68,title_count,52,565,al-Qalam title frame
+68,last_seen,52,567,verse 52 directly above al-Haqqa title
+69,title_count,52,567,al-Haqqa title frame
+69,last_seen,52,569,verse 52 directly above al-Maarij title
+70,title_count,44,569,al-Maarij title frame
+70,last_seen,44,571,verse 44 directly above Nuh title
+71,title_count,28,571,Nuh title frame
+73,last_seen,20,576,verse 20 directly above al-Muddaththir title
+74,title_count,56,576,al-Muddaththir title frame
+74,last_seen,56,578,verse 56 directly above al-Qiyama title
+75,title_count,40,578,al-Qiyama title frame
+75,last_seen,40,579,verse 40 is the line before al-Insan title (adjacent crops)
+76,title_count,31,579,al-Insan title frame
+76,last_seen,31,581,verse 31 directly above al-Mursalat title
+77,title_count,50,581,al-Mursalat title frame
+78,last_seen,40,584,verse 40 directly above an-Naziat title
+79,title_count,46,584,an-Naziat title frame
+82,title_count,19,588,al-Infitar title frame
+82,last_seen,19,588,verse 19 directly above al-Mutaffifin title
+83,title_count,36,588,al-Mutaffifin title frame
+83,last_seen,36,590,verse 36 directly above al-Inshiqaq title
+84,title_count,25,590,al-Inshiqaq title frame
+86,title_count,17,592,at-Tariq title frame
+86,last_seen,17,592,verse 17 directly above al-Ala title
+87,title_count,19,592,al-Ala title frame
+87,last_seen,19,593,verse 19 directly above al-Ghashiya title
+88,title_count,26,593,al-Ghashiya title frame
+89,last_seen,30,595,verse 30 directly above al-Balad title
+90,title_count,20,595,al-Balad title frame
+91,title_count,15,596,ash-Shams title frame
+91,last_seen,15,596,verse 15 directly above al-Layl title
+92,title_count,21,596,al-Layl title frame
+92,last_seen,21,597,verse 21 directly above ad-Duha title
+93,title_count,11,597,ad-Duha title frame
+93,last_seen,11,597,verse 11 directly above ash-Sharh title
+94,title_count,8,597,ash-Sharh title frame
+95,title_count,8,598,at-Tin title frame
+95,last_seen,8,598,verse 8 directly above al-Alaq title
+96,title_count,19,598,al-Alaq title frame
+97,title_count,5,599,al-Qadr title frame
+97,last_seen,5,599,verse 5 directly above al-Bayyina title
+98,title_count,8,599,al-Bayyina title frame
+98,last_seen,8,600,verse 8 directly above az-Zalzala title
+99,title_count,8,600,az-Zalzala title frame
+99,last_seen,8,600,verse 8 is the line before al-Adiyat title (adjacent crops)
+100,title_count,11,600,al-Adiyat title frame
+100,last_seen,11,601,verse 11 directly above al-Qaria title
+101,title_count,11,601,al-Qaria title frame
+101,last_seen,11,601,verse 11 directly above at-Takathur title
+102,title_count,8,601,at-Takathur title frame
+103,title_count,3,602,al-Asr title frame
+103,last_seen,3,602,verse 3 directly above al-Humaza title
+104,title_count,9,602,al-Humaza title frame
+104,last_seen,9,602,verse 9 directly above al-Fil title
+105,title_count,5,602,al-Fil title frame
+106,title_count,4,603,Quraysh title frame
+106,last_seen,4,603,verse 4 directly above al-Maun title
+107,title_count,7,603,al-Maun title frame
+107,last_seen,7,603,verse 7 then next title (crop ends at verse 7; next title al-Kawthar seen in derive)
+109,title_count,6,604,al-Kafirun title frame
+109,last_seen,6,604,verse 6 directly above an-Nasr title
+110,title_count,3,604,an-Nasr title frame
+110,last_seen,3,604,verse 3 then next title (al-Masad) below
+112,title_count,4,605,al-Ikhlas title frame
+112,last_seen,4,605,verse 4 then next title (al-Falaq) below
+112,last_seen,4,605,verse 4 directly above al-Falaq title
+113,title_count,5,605,al-Falaq title frame
+113,last_seen,5,605,verse 5 at the line before the next title (an-Nas)
+19,title_count,98,306,Maryam title frame
+34,title_count,54,429,Saba title frame
+42,last_seen,53,490,verse 53 directly above az-Zukhruf title
+43,title_count,89,490,az-Zukhruf title frame
+80,title_count,42,586,Abasa title frame
+81,title_count,29,587,at-Takwir title frame
+85,title_count,22,591,al-Buruj title frame
+89,title_count,30,594,al-Fajr title frame
+107,last_seen,7,603,verse 7 directly above al-Kawthar title
+108,title_count,3,603,al-Kawthar title frame
+110,last_seen,3,604,verse 3 directly above al-Masad title
+111,title_count,5,604,al-Masad title frame
+13,last_seen,43,256,verse 43 directly above Ibrahim title (confirmed at 160 dpi)
+14,title_count,52,256,Ibrahim title frame
+33,title_count_partial,3,419,al-Ahzab title frame: tens digit missing in scan; only units digit 3 legible (unresolved)
+114,title_count,6,605,an-Nas title frame
