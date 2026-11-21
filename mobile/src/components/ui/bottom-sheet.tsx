@@ -56,7 +56,9 @@ export function BottomSheet({
               <Icon name="close" size={20} color={colors.mutedForeground} />
             </Pressable>
           </View>
-          <ScrollView contentContainerStyle={styles.content}>{children}</ScrollView>
+          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            {children}
+          </ScrollView>
           {footer ? <View style={[styles.footer, { borderColor: colors.border }]}>{footer}</View> : null}
         </View>
       </View>

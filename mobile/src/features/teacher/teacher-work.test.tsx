@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import type { SessionUser } from '@/features/auth/types';
+import { canonicalOf } from '@/features/quran-reference/work-assignment';
 import { ar } from '@/i18n/ar';
 
 import { eligible, workItem, workPage, workProgram, workSession } from './__fixtures__/work';
@@ -16,7 +17,7 @@ import { TeacherWorkScheduleScreen } from './teacher-work-schedule';
 import { CONFIRMATION_MS } from './use-confirm-then-back';
 import { workProgramKey } from './use-work';
 import { progressOf } from './work-model';
-import type { WorkProgram } from './work-types';
+import type { WorkItem, WorkProgram } from './work-types';
 
 /*
  * «متابعة برنامج العمل» screens against stubbed HTTP answers shaped like the
@@ -130,6 +131,13 @@ afterEach(async () => {
 
 const w = ar.work;
 const radio = (group: string, label: string) => within(screen.getByLabelText(group)).getByRole('radio', { name: label });
+const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Picks a surah in an item's bottom-sheet surah field («السورة — العمل 1: …»). */
+async function pickSurahIn(field: string, item: number, search: string, option: string) {
+  await fireEvent.press(screen.getByLabelText(new RegExp(`^${escapeRe(field)} — ${w.itemN(item)}: `)));
+  await fireEvent.changeText(screen.getByLabelText(w.searchSurahLabel), search);
+  await fireEvent.press(screen.getByRole('radio', { name: option }));
+}
 
 describe('list', () => {
   it('shows MY programs from the server with the session, phase, server progress and a preview', async () => {
@@ -421,12 +429,17 @@ describe('planning (create / edit)', () => {
     await fireEvent.press(screen.getByRole('radio', { name: 'محمد التونسي' }));
     await settle();
     expect(calls.find((c) => c.path.endsWith('/eligible-sessions'))!.params.get('studentId')).toBe('st1');
+    await fireEvent.press(await screen.findByLabelText(`${w.session}: ${w.pickSession}`));
     await fireEvent.press(screen.getByRole('radio', { name: /^الأربعاء 18 نوفمبر 2026/ }));
     await fireEvent.press(within(screen.getByLabelText(`${w.itemType} — ${w.itemN(1)}`)).getByRole('radio', { name: w.type.MEMORIZATION }));
-    await fireEvent.changeText(screen.getByLabelText(`${w.itemDescription} — ${w.itemN(1)}`), '  حفظ سورة الملك ');
+    // New items are structured only: no «نص حر», no text field
+    expect(within(screen.getByLabelText(`${w.assignmentMode} — ${w.itemN(1)}`)).queryByRole('radio', { name: w.mode.free })).toBeNull();
+    await pickSurahIn(w.surah, 1, 'الملك', '67. سورة الملك');
+    await fireEvent.changeText(screen.getByLabelText(`${w.fromAyah} — ${w.itemN(1)}`), '1');
+    await fireEvent.changeText(screen.getByLabelText(`${w.toAyahOptional} — ${w.itemN(1)}`), '30');
     await fireEvent.press(screen.getByLabelText(w.addItem));
     await fireEvent.press(within(screen.getByLabelText(`${w.itemType} — ${w.itemN(2)}`)).getByRole('radio', { name: w.type.RECITATION }));
-    await fireEvent.changeText(screen.getByLabelText(`${w.itemDescription} — ${w.itemN(2)}`), 'العرضة الأولى من سورة يس');
+    await pickSurahIn(w.surah, 2, 'يس', '36. سورة يس');
     await fireEvent.changeText(screen.getByLabelText(`${w.recitationNumber} — ${w.itemN(2)}`), '1');
     await fireEvent.press(screen.getByLabelText(w.savePlan));
     await settle();
@@ -439,8 +452,8 @@ describe('planning (create / edit)', () => {
           sessionId: 's20',
           generalNotes: null,
           items: [
-            { type: 'MEMORIZATION', description: 'حفظ سورة الملك', recitationNumber: null },
-            { type: 'RECITATION', description: 'العرضة الأولى من سورة يس', recitationNumber: 1 },
+            { type: 'MEMORIZATION', recitationNumber: null, assignment: { kind: 'AYAH_RANGE', fromSurah: 67, fromAyah: 1, toSurah: 67, toAyah: 30 } },
+            { type: 'RECITATION', recitationNumber: 1, assignment: { kind: 'SURAH_RANGE', fromSurah: 36, toSurah: 36 } },
           ],
         },
       }),
@@ -453,6 +466,7 @@ describe('planning (create / edit)', () => {
   it('a session where the student already has a program: offered for editing, never duplicated', async () => {
     stub((c) => (c.path.endsWith('/eligible-sessions') ? ok([eligible('s21', '2026-11-25', 'w6')]) : undefined));
     await renderScreen(<TeacherWorkFormScreen studentId="st1" />);
+    await fireEvent.press(await screen.findByLabelText(`${w.session}: ${w.pickSession}`));
     await fireEvent.press(await screen.findByRole('radio', { name: new RegExp(w.hasProgram) }));
     expect(screen.getByLabelText(w.savePlan).props.accessibilityState.disabled).toBe(true);
     await fireEvent.press(screen.getByLabelText(w.openExisting));
@@ -466,13 +480,15 @@ describe('planning (create / edit)', () => {
       return undefined;
     });
     await renderScreen(<TeacherWorkFormScreen studentId="st1" />);
+    await fireEvent.press(await screen.findByLabelText(`${w.session}: ${w.pickSession}`));
     await fireEvent.press(await screen.findByRole('radio', { name: /^الأربعاء 18 نوفمبر 2026/ }));
-    await fireEvent.changeText(screen.getByLabelText(`${w.itemDescription} — ${w.itemN(1)}`), 'مراجعة');
+    await pickSurahIn(w.fromSurah, 1, 'النبأ', '78. سورة النبأ');
+    await pickSurahIn(w.toSurah, 1, 'الناس', '114. سورة الناس');
     await fireEvent.press(screen.getByLabelText(w.savePlan));
     await settle();
     await fireEvent.press(screen.getByLabelText(w.openExisting));
     expect(mockReplace).toHaveBeenCalledWith({ pathname: '/teacher/work/[id]/edit', params: { id: 'w7' } });
-    expect(screen.getByLabelText(`${w.itemDescription} — ${w.itemN(1)}`).props.value).toBe('مراجعة');
+    expect(screen.getByLabelText(`${w.fromSurah} — ${w.itemN(1)}: سورة النبأ`)).toBeTruthy();
   });
 
   it('edit: saved items kept (not removable), only changes sent with versions, new items appended', async () => {
@@ -484,7 +500,8 @@ describe('planning (create / edit)', () => {
     expect(screen.getByLabelText(w.savePlan).props.accessibilityState.disabled).toBe(true); // nothing changed
     await fireEvent.changeText(screen.getByLabelText(`${w.itemDescription} — ${w.itemN(3)}`), 'مراجعة جزء عمّ وتبارك');
     await fireEvent.press(screen.getByLabelText(w.addItem));
-    await fireEvent.changeText(screen.getByLabelText(`${w.itemDescription} — ${w.itemN(4)}`), 'اختبار');
+    await pickSurahIn(w.fromSurah, 4, 'الملك', '67. سورة الملك');
+    await pickSurahIn(w.toSurah, 4, 'الملك', '67. سورة الملك');
     expect(screen.getByLabelText(w.removeItem(4))).toBeTruthy(); // a new, unsaved item can be removed
     await fireEvent.press(screen.getByLabelText(w.savePlan));
     await settle();
@@ -494,7 +511,7 @@ describe('planning (create / edit)', () => {
         path: '/api/teacher/work-programs/w1',
         body: {
           items: [{ id: 'i3', version: 2, type: 'REVISION', description: 'مراجعة جزء عمّ وتبارك', recitationNumber: null }],
-          newItems: [{ type: 'REVISION', description: 'اختبار', recitationNumber: null }],
+          newItems: [{ type: 'REVISION', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 67, toSurah: 67 } }],
         },
       }),
     );
@@ -506,11 +523,12 @@ describe('planning (create / edit)', () => {
     stub((c) => (c.method === 'PATCH' ? { status: 409, body: { code: 'WORK_SESSION_CANCELLED', message: 'هذه الحصة ملغاة' } } : undefined), p);
     await renderScreen(<TeacherWorkFormScreen programId="w1" />);
     await fireEvent.press(await screen.findByLabelText(w.addItem));
-    await fireEvent.changeText(screen.getByLabelText(`${w.itemDescription} — ${w.itemN(4)}`), 'عمل جديد');
+    await pickSurahIn(w.fromSurah, 4, 'الملك', '67. سورة الملك');
+    await pickSurahIn(w.toSurah, 4, 'القلم', '68. سورة القلم');
     await fireEvent.press(screen.getByLabelText(w.savePlan));
     await settle();
     expect(screen.getByRole('alert', { name: 'هذه الحصة ملغاة' })).toBeTruthy();
-    expect(screen.getByLabelText(`${w.itemDescription} — ${w.itemN(4)}`).props.value).toBe('عمل جديد');
+    expect(screen.getByLabelText(`${w.toSurah} — ${w.itemN(4)}: سورة القلم`)).toBeTruthy();
     expect(mockBack).not.toHaveBeenCalled();
   });
 });
@@ -666,3 +684,644 @@ describe('evaluation follows the session (server verdict + platform clock)', () 
   });
 });
 
+describe('structured Quranic assignments (Qalun, Tunisian edition)', () => {
+  const EDITION = 'qalun-abi-nashit-tn-hannibal-mualim-v1';
+  const exact = (value: number) => ({ kind: 'exact' as const, value, touched: value, dataStatus: 'structurally-consistent' });
+  const bounded = (greaterThan: number, lessThan: number) => ({
+    kind: 'bounded' as const,
+    greaterThan,
+    lessThan,
+    touched: lessThan,
+    partialAtStart: true,
+    partialAtEnd: true,
+    dataStatus: 'structurally-consistent',
+  });
+  const load = (p: Partial<NonNullable<WorkItem['workload']>> = {}): NonNullable<WorkItem['workload']> => ({
+    editionId: EDITION,
+    verses: 15,
+    surahs: { whole: 0, touched: 1 },
+    pages: exact(3),
+    juz: bounded(0, 1),
+    hizbs: bounded(0, 1),
+    quarters: exact(1),
+    eighths: exact(2),
+    dataStatus: 'structurally-consistent',
+    authoritative: false,
+    ...p,
+  });
+  const structured = workProgram('w1', {
+    items: [
+      workItem('a1', {
+        version: 3,
+        type: 'MEMORIZATION',
+        description: 'سورة البقرة: من الآية 6 إلى الآية 20',
+        assignment: { kind: 'AYAH_RANGE', editionId: EDITION, fromSurah: 2, fromAyah: 6, toSurah: 2, toAyah: 20, fromPage: null, toPage: null },
+        workload: load({ pages: bounded(0, 2) }),
+      }),
+      workItem('a2', {
+        position: 1,
+        type: 'EXAM',
+        description: 'مع التركيز على المتشابهات',
+        assignment: { kind: 'SURAH_RANGE', editionId: EDITION, fromSurah: 46, fromAyah: 1, toSurah: 114, toAyah: 6, fromPage: null, toPage: null },
+        workload: load({ hizbs: { kind: 'unavailable', reason: 'x' } }),
+      }),
+      workItem('a3', { position: 2, type: 'REVISION', description: 'مراجعة حرة كتبها المعلم' }),
+    ],
+  });
+  const item1 = w.itemN(1);
+  const surahField = (label: string, item = item1) => new RegExp(`^${escapeRe(label)} — ${item}: `);
+
+  async function startCreate(post: Answer = { status: 201, body: workProgram('w5') }) {
+    stub((c) => {
+      if (c.path.endsWith('/eligible-sessions')) return ok([eligible('s20', '2026-11-18')]);
+      if (c.method === 'POST') return post;
+      return undefined;
+    });
+    await renderScreen(<TeacherWorkFormScreen studentId="st1" />);
+    await fireEvent.press(await screen.findByLabelText(`${w.session}: ${w.pickSession}`));
+    await fireEvent.press(await screen.findByRole('radio', { name: /^الأربعاء 18 نوفمبر 2026/ }));
+  }
+  const chooseType = (label: string, item = item1) =>
+    fireEvent.press(within(screen.getByLabelText(`${w.itemType} — ${item}`)).getByRole('radio', { name: label }));
+  const chooseMode = (label: string, item = item1) =>
+    fireEvent.press(within(screen.getByLabelText(`${w.assignmentMode} — ${item}`)).getByRole('radio', { name: label }));
+  async function pickSurah(field: RegExp, search: string, option: string) {
+    await fireEvent.press(screen.getByLabelText(field));
+    if (search) await fireEvent.changeText(screen.getByLabelText(w.searchSurahLabel), search);
+    await fireEvent.press(screen.getByRole('radio', { name: option }));
+  }
+  const save = async () => {
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+  };
+  const postedItems = () => (writes().find((c) => c.method === 'POST')?.body as { items: unknown[] } | undefined)?.items;
+
+  it('حفظ by verses: bottom-sheet surah search, verse count shown; references only are sent', async () => {
+    await startCreate();
+    await chooseType(w.type.MEMORIZATION);
+    await pickSurah(surahField(w.surah), 'البقرة', '2. سورة البقرة');
+    expect(screen.getByText(w.ayahCountOf(286))).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText(`${w.fromAyah} — ${item1}`), '6');
+    await fireEvent.changeText(screen.getByLabelText(`${w.toAyahOptional} — ${item1}`), '20');
+    await save();
+    expect(postedItems()).toEqual([
+      { type: 'MEMORIZATION', recitationNumber: null, assignment: { kind: 'AYAH_RANGE', fromSurah: 2, fromAyah: 6, toSurah: 2, toAyah: 20 } },
+    ]);
+  });
+
+  it('the surah sheet lists all 114 surahs in order and the last ones are reachable', async () => {
+    await startCreate();
+    await chooseType(w.type.RECITATION);
+    await fireEvent.press(screen.getByLabelText(surahField(w.surah)));
+    const options = screen.getAllByRole('radio', { name: /^\d+\. سورة / });
+    expect(options).toHaveLength(114);
+    expect(screen.getByRole('radio', { name: '1. سورة الفاتحة' })).toBeTruthy();
+    await fireEvent.press(screen.getByRole('radio', { name: '114. سورة الناس' }));
+    expect(screen.getByLabelText(`${w.surah} — ${item1}: سورة الناس`)).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText(surahField(w.surah)));
+    await fireEvent.changeText(screen.getByLabelText(w.searchSurahLabel), 'zzz');
+    expect(screen.getByText(w.noSurah)).toBeTruthy();
+  });
+
+  it('verse and page validation before sending; pages are the edition numbering (2–604)', async () => {
+    await startCreate();
+    await chooseType(w.type.MEMORIZATION);
+    await pickSurah(surahField(w.surah), 'الفاتحة', '1. سورة الفاتحة');
+    await fireEvent.changeText(screen.getByLabelText(`${w.fromAyah} — ${item1}`), '1');
+    await fireEvent.changeText(screen.getByLabelText(`${w.toAyahOptional} — ${item1}`), '8');
+    await save();
+    expect(screen.getByText('آيات هذه السورة من 1 إلى 7')).toBeTruthy();
+    expect(screen.getByRole('alert', { name: w.errors.assignmentInvalid })).toBeTruthy();
+    await chooseMode(w.mode.pages);
+    await fireEvent.changeText(screen.getByLabelText(`${w.fromPage} — ${item1}`), '1');
+    await fireEvent.changeText(screen.getByLabelText(`${w.toPageOptional} — ${item1}`), '12');
+    await save();
+    expect(screen.getByText('صفحات القرآن في هذا المصحف من 2 إلى 604')).toBeTruthy();
+    expect(writes()).toHaveLength(0);
+    await fireEvent.changeText(screen.getByLabelText(`${w.fromPage} — ${item1}`), '10');
+    expect(screen.getByText(new RegExp(w.pagesCover('البقرة 62', 'البقرة 83')))).toBeTruthy();
+    await save();
+    expect(postedItems()).toEqual([{ type: 'MEMORIZATION', recitationNumber: null, assignment: { kind: 'PAGE_RANGE', fromPage: 10, toPage: 12 } }]);
+  });
+
+  it('مراجعة with optional verses and عرضة of one whole surah', async () => {
+    await startCreate();
+    await pickSurah(surahField(w.fromSurah), 'البقرة', '2. سورة البقرة');
+    await pickSurah(surahField(w.toSurah), 'آل عمران', '3. سورة آل عمران');
+    await fireEvent.press(screen.getByLabelText(`${w.preciseAyahs} — ${item1}`));
+    await fireEvent.changeText(screen.getByLabelText(`${w.fromAyah} (البقرة) — ${item1}`), '142');
+    await fireEvent.press(screen.getByLabelText(w.addItem));
+    await chooseType(w.type.RECITATION, w.itemN(2));
+    await pickSurah(surahField(w.surah, w.itemN(2)), 'الرحمن', '55. سورة الرحمن');
+    await save();
+    expect(postedItems()).toEqual([
+      { type: 'REVISION', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 2, toSurah: 3, fromAyah: 142 } },
+      { type: 'RECITATION', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 55, toSurah: 55 } },
+    ]);
+  });
+
+  it('an API refusal is shown in Arabic and the selection stays', async () => {
+    await startCreate({ status: 400, body: { code: 'WORK_ASSIGNMENT_REVERSED', message: 'بداية النطاق بعد نهايته' } });
+    await chooseType(w.type.RECITATION);
+    await pickSurah(surahField(w.surah), 'يس', '36. سورة يس');
+    await save();
+    expect(screen.getByText('بداية النطاق بعد نهايته')).toBeTruthy();
+    expect(screen.getByLabelText(`${w.surah} — ${item1}: سورة يس`)).toBeTruthy();
+  });
+
+  it('edit: prepopulated; only the changed assignment is sent; the legacy item stays free text', async () => {
+    stub((c) => (c.method === 'PATCH' ? ok(structured) : undefined), structured);
+    await renderScreen(<TeacherWorkFormScreen programId="w1" />);
+    expect(await screen.findByLabelText(`${w.surah} — ${item1}: سورة البقرة`)).toBeTruthy();
+    expect(screen.getByLabelText(`${w.fromAyah} — ${item1}`).props.value).toBe('6');
+    expect(screen.getByLabelText(`${w.toAyahOptional} — ${item1}`).props.value).toBe('20');
+    const legacy = within(screen.getByLabelText(`${w.assignmentMode} — ${w.itemN(3)}`)).getByRole('radio', { name: w.mode.free });
+    expect(legacy.props.accessibilityState.selected).toBe(true);
+    expect(screen.getByLabelText(`${w.itemDescription} — ${w.itemN(3)}`).props.value).toBe('مراجعة حرة كتبها المعلم');
+    await fireEvent.changeText(screen.getByLabelText(`${w.toAyahOptional} — ${item1}`), '25');
+    await save();
+    expect(writes()[0]!.body).toEqual({
+      items: [{ id: 'a1', version: 3, type: 'MEMORIZATION', recitationNumber: null, assignment: { kind: 'AYAH_RANGE', fromSurah: 2, fromAyah: 6, toSurah: 2, toAyah: 25 } }],
+    });
+  });
+
+  it('program screen: summary, workload with its precision, the teacher note; legacy text as written', async () => {
+    stub(undefined, structured);
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    expect(await screen.findByText('سورة البقرة: من الآية 6 إلى الآية 20')).toBeTruthy();
+    expect(screen.getAllByText(/من الآية 6 إلى الآية 20/)).toHaveLength(1); // the default text is not repeated
+    // one concise line under the summary; a bounded page count stays bounded (correct dual form)
+    expect(screen.getByText('15 آية · أقل من صفحتين')).toBeTruthy();
+    expect(screen.getByTestId('workload-bounded').props.children).toBe('15 آية · أقل من صفحتين');
+    // exact parts as such; the unavailable hizb count is left out, never shown as a number
+    expect(screen.getByTestId('workload-exact').props.children).toBe('15 آية · 3 صفحات');
+    expect(screen.getByText('من سورة الأحقاف إلى سورة الناس')).toBeTruthy();
+    expect(screen.queryByText('غير متاح')).toBeNull();
+    expect(screen.getByText('مع التركيز على المتشابهات')).toBeTruthy();
+    expect(screen.queryByText(/قيد التحقق من النسخة المطبوعة/)).toBeNull(); // no per-item verification sentence
+    expect(screen.getByText('مراجعة حرة كتبها المعلم')).toBeTruthy();
+  });
+
+  it('transfer keeps the item: the carried copy is shown with the same structured summary', async () => {
+    const carried = workProgram('w9', {
+      items: [{ ...structured.items[0]!, id: 'c1', carriedFrom: { itemId: 'a1', programId: 'w1', sessionId: 's9', sessionDate: '2026-11-09', status: 'PARTIAL' } }],
+    });
+    stub(undefined, carried);
+    await renderScreen(<TeacherWorkProgramScreen programId="w9" />);
+    expect(await screen.findByText('سورة البقرة: من الآية 6 إلى الآية 20')).toBeTruthy();
+    expect(screen.getByText(w.carriedFrom('9 نوفمبر 2026', w.status.PARTIAL))).toBeTruthy();
+  });
+});
+
+describe('mobile refinements: item notes, session selector, workload line', () => {
+  // Session labels wrap the times in LTR isolates: matched by their start
+  const sessionField = (label: string) => screen.getByLabelText(new RegExp(`^${w.session}: ${label}`));
+
+  it('the session selector opens, closes on choice, keeps the choice visible, and can change it — other fields untouched', async () => {
+    stub((c) => {
+      if (c.path.endsWith('/eligible-sessions')) return ok([eligible('s20', '2026-11-18'), eligible('s22', '2026-11-20')]);
+      if (c.method === 'POST') return { status: 201, body: workProgram('w5') };
+      return undefined;
+    });
+    await renderScreen(<TeacherWorkFormScreen studentId="st1" />);
+    await fireEvent.changeText(await screen.findByLabelText(w.generalNotes), 'ملاحظة الحصة');
+    // Collapsed: no session list inline
+    expect(screen.queryByRole('radio', { name: /^الأربعاء 18 نوفمبر 2026/ })).toBeNull();
+    await fireEvent.press(sessionField(w.pickSession));
+    await fireEvent.press(screen.getByRole('radio', { name: /^الأربعاء 18 نوفمبر 2026/ }));
+    // Closed at once; the choice stays visible in the compact field
+    expect(screen.queryByRole('radio', { name: /^الجمعة 20 نوفمبر 2026/ })).toBeNull();
+    expect(sessionField('الأربعاء 18 نوفمبر 2026 · ')).toBeTruthy();
+    // Reopen: the current one is marked selected; change it
+    await fireEvent.press(sessionField('الأربعاء 18 نوفمبر 2026 · '));
+    expect(screen.getByRole('radio', { name: /^الأربعاء 18 نوفمبر 2026/ }).props.accessibilityState.selected).toBe(true);
+    await fireEvent.press(screen.getByRole('radio', { name: /^الجمعة 20 نوفمبر 2026/ }));
+    expect(sessionField('الجمعة 20 نوفمبر 2026 · ')).toBeTruthy();
+    expect(screen.getByLabelText(w.generalNotes).props.value).toBe('ملاحظة الحصة');
+    // The chosen session is what is sent
+    await pickSurahIn(w.fromSurah, 1, 'النبأ', '78. سورة النبأ');
+    await pickSurahIn(w.toSurah, 1, 'الناس', '114. سورة الناس');
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(writes()[0]!.body).toMatchObject({ sessionId: 's22', generalNotes: 'ملاحظة الحصة' });
+  });
+
+  it('new items: structured only — no «نص حر», no text field; incomplete references refused, nothing sent', async () => {
+    stub((c) => (c.path.endsWith('/eligible-sessions') ? ok([eligible('s20', '2026-11-18')]) : undefined));
+    await renderScreen(<TeacherWorkFormScreen studentId="st1" />);
+    await fireEvent.press(await screen.findByLabelText(`${w.session}: ${w.pickSession}`));
+    await fireEvent.press(screen.getByRole('radio', { name: /^الأربعاء 18 نوفمبر 2026/ }));
+    for (const type of ['MEMORIZATION', 'REVISION', 'RECITATION', 'EXAM'] as const) {
+      await fireEvent.press(within(screen.getByLabelText(`${w.itemType} — ${w.itemN(1)}`)).getByRole('radio', { name: w.type[type] }));
+      expect(within(screen.getByLabelText(`${w.assignmentMode} — ${w.itemN(1)}`)).queryByRole('radio', { name: w.mode.free })).toBeNull();
+      expect(screen.queryByLabelText(`${w.itemDescription} — ${w.itemN(1)}`)).toBeNull();
+    }
+    expect(screen.queryByText(/مثال: مع التركيز على أحكام المد/)).toBeNull();
+    // Half a selection (a حفظ surah without its verses): a clear Arabic error, never free text
+    await fireEvent.press(within(screen.getByLabelText(`${w.itemType} — ${w.itemN(1)}`)).getByRole('radio', { name: w.type.MEMORIZATION }));
+    await pickSurahIn(w.surah, 1, 'النبأ', '78. سورة النبأ');
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(screen.getByText('حدّد الآية الأولى')).toBeTruthy();
+    expect(screen.getByRole('alert', { name: w.errors.assignmentInvalid })).toBeTruthy();
+    expect(writes()).toHaveLength(0);
+    // Program-level notes stay
+    expect(screen.getByLabelText(w.generalNotes)).toBeTruthy();
+  });
+
+  it('a structured saved item cannot go back to free text; its hidden description is kept and not resent', async () => {
+    const EDITION = 'qalun-abi-nashit-tn-hannibal-mualim-v1';
+    const p = workProgram('w1', {
+      items: [
+        workItem('a1', {
+          type: 'EXAM',
+          version: 4,
+          description: 'مع التركيز على المتشابهات',
+          assignment: { kind: 'SURAH_RANGE', editionId: EDITION, fromSurah: 46, fromAyah: 1, toSurah: 114, toAyah: 6, fromPage: null, toPage: null },
+        }),
+      ],
+    });
+    stub((c) => (c.method === 'PATCH' ? ok(p) : undefined), p);
+    await renderScreen(<TeacherWorkFormScreen programId="w1" />);
+    await screen.findByText(w.items);
+    expect(within(screen.getByLabelText(`${w.assignmentMode} — ${w.itemN(1)}`)).queryByRole('radio', { name: w.mode.free })).toBeNull();
+    expect(screen.queryByLabelText(`${w.itemDescription} — ${w.itemN(1)}`)).toBeNull();
+    await pickSurahIn(w.toSurah, 1, 'الملك', '67. سورة الملك');
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(writes()[0]!.body).toEqual({
+      items: [{ id: 'a1', version: 4, type: 'EXAM', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 46, toSurah: 67 } }],
+    });
+  });
+
+  it('a legacy free-text item: shown and editable as written; converted only by an explicit choice with valid references', async () => {
+    const p = workProgram('w1', { items: [workItem('l1', { type: 'EXAM', version: 5, description: 'اختبار حر قديم في جزء تبارك' })] });
+    stub((c) => (c.method === 'PATCH' ? ok(p) : undefined), p);
+    await renderScreen(<TeacherWorkFormScreen programId="w1" />);
+    await screen.findByText(w.items);
+    // Kept as free text by default, with its words
+    expect(radio(`${w.assignmentMode} — ${w.itemN(1)}`, w.mode.free).props.accessibilityState.selected).toBe(true);
+    expect(screen.getByLabelText(`${w.itemDescription} — ${w.itemN(1)}`).props.value).toBe('اختبار حر قديم في جزء تبارك');
+    expect(screen.getByLabelText(w.savePlan).props.accessibilityState.disabled).toBe(true); // nothing changed, nothing sent
+    // Explicit conversion: without a starting surah it is refused
+    await fireEvent.press(radio(`${w.assignmentMode} — ${w.itemN(1)}`, w.mode.surahs));
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(screen.getByText('اختر سورة البداية')).toBeTruthy();
+    expect(writes()).toHaveLength(0);
+    await pickSurahIn(w.fromSurah, 1, 'الملك', '67. سورة الملك');
+    await pickSurahIn(w.toSurah, 1, 'المرسلات', '77. سورة المرسلات');
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    // Only the assignment is sent: the legacy words stay in the record
+    expect(writes()[0]!.body).toEqual({
+      items: [{ id: 'l1', version: 5, type: 'EXAM', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 67, toSurah: 77 } }],
+    });
+  });
+
+  it('list card: the same concise workload line as the program screen', async () => {
+    const EDITION = 'qalun-abi-nashit-tn-hannibal-mualim-v1';
+    const bounded = { kind: 'bounded' as const, greaterThan: 2, lessThan: 3, touched: 3, partialAtStart: true, partialAtEnd: true, dataStatus: 'x' };
+    const exactOne = { kind: 'exact' as const, value: 1, touched: 1, dataStatus: 'x' };
+    const p = workProgram('w1', {
+      items: [
+        workItem('a1', {
+          type: 'MEMORIZATION',
+          description: 'سورة مريم: من الآية 12 إلى الآية 50',
+          assignment: { kind: 'AYAH_RANGE', editionId: EDITION, fromSurah: 19, fromAyah: 12, toSurah: 19, toAyah: 50, fromPage: null, toPage: null },
+          workload: { editionId: EDITION, verses: 39, surahs: { whole: 0, touched: 1 }, pages: bounded, juz: exactOne, hizbs: exactOne, quarters: exactOne, eighths: exactOne, dataStatus: 'x', authoritative: false },
+        }),
+      ],
+    });
+    stub(undefined, p);
+    await renderScreen(<TeacherWorkScreen />);
+    expect(await screen.findByText('سورة مريم: من الآية 12 إلى الآية 50')).toBeTruthy();
+    expect(screen.getByText('39 آية · بين صفحتين و3 صفحات')).toBeTruthy();
+    expect(screen.queryByText(/قيد التحقق/)).toBeNull(); // no per-item verification sentence
+  });
+});
+
+describe('optional ending surah and hizbs + pages (mobile)', () => {
+  const EDITION = 'qalun-abi-nashit-tn-hannibal-mualim-v1';
+  async function startNew() {
+    stub((c) => {
+      if (c.path.endsWith('/eligible-sessions')) return ok([eligible('s20', '2026-11-18')]);
+      if (c.method === 'POST') return { status: 201, body: workProgram('w5') };
+      return undefined;
+    });
+    await renderScreen(<TeacherWorkFormScreen studentId="st1" />);
+    await fireEvent.press(await screen.findByLabelText(`${w.session}: ${w.pickSession}`));
+    await fireEvent.press(screen.getByRole('radio', { name: /^الأربعاء 18 نوفمبر 2026/ }));
+  }
+  const posted = () => (writes().find((c) => c.method === 'POST')?.body as { items: unknown[] } | undefined)?.items;
+
+  it('مراجعة with only a starting surah: that whole surah; the ending surah is labelled optional', async () => {
+    await startNew();
+    expect(screen.getByText('إلى سورة (اختياري)')).toBeTruthy();
+    await pickSurahIn(w.fromSurah, 1, 'التوبة', '9. سورة التوبة');
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(posted()).toEqual([{ type: 'REVISION', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 9, toSurah: 9 } }]);
+  });
+
+  it('اختبار with two surahs, then the ending surah cleared: the single surah is sent', async () => {
+    await startNew();
+    await fireEvent.press(within(screen.getByLabelText(`${w.itemType} — ${w.itemN(1)}`)).getByRole('radio', { name: w.type.EXAM }));
+    await pickSurahIn(w.fromSurah, 1, 'التوبة', '9. سورة التوبة');
+    await pickSurahIn(w.toSurah, 1, 'النور', '24. سورة النور');
+    await fireEvent.press(screen.getByLabelText(`${w.clearToSurah} — ${w.itemN(1)}`));
+    expect(screen.getByLabelText(`${w.toSurah} — ${w.itemN(1)}: ${w.pickSurah}`)).toBeTruthy();
+    expect(screen.queryByLabelText(`${w.clearToSurah} — ${w.itemN(1)}`)).toBeNull();
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(posted()).toEqual([{ type: 'EXAM', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 9, toSurah: 9 } }]);
+  });
+
+  it('precision without an ending surah: the verses belong to the starting surah', async () => {
+    await startNew();
+    await pickSurahIn(w.fromSurah, 1, 'التوبة', '9. سورة التوبة');
+    await fireEvent.press(screen.getByLabelText(`${w.preciseAyahs} — ${w.itemN(1)}`));
+    await fireEvent.changeText(screen.getByLabelText(`${w.fromAyah} (التوبة) — ${w.itemN(1)}`), '10');
+    await fireEvent.changeText(screen.getByLabelText(`${w.toAyah} (التوبة) — ${w.itemN(1)}`), '40');
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(posted()).toEqual([{ type: 'REVISION', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 9, toSurah: 9, fromAyah: 10, toAyah: 40 } }]);
+  });
+
+  it('editing: single-surah item re-opens without an ending surah; multi-surah with it; clearing sends the single surah', async () => {
+    const a = (to: number, toAyah: number) => ({ kind: 'SURAH_RANGE' as const, editionId: EDITION, fromSurah: 9, fromAyah: 1, toSurah: to, toAyah, fromPage: null, toPage: null });
+    const p = workProgram('w1', {
+      items: [
+        workItem('s1', { type: 'REVISION', version: 2, description: 'سورة التوبة', assignment: a(9, 129) }),
+        workItem('s2', { position: 1, type: 'EXAM', version: 3, description: 'من سورة التوبة إلى سورة النور', assignment: a(24, 64) }),
+      ],
+    });
+    stub((c) => (c.method === 'PATCH' ? ok(p) : undefined), p);
+    await renderScreen(<TeacherWorkFormScreen programId="w1" />);
+    expect(await screen.findByLabelText(`${w.toSurah} — ${w.itemN(1)}: ${w.pickSurah}`)).toBeTruthy();
+    expect(screen.getByLabelText(`${w.toSurah} — ${w.itemN(2)}: سورة النور`)).toBeTruthy();
+    expect(screen.getByLabelText(w.savePlan).props.accessibilityState.disabled).toBe(true); // unchanged
+    await fireEvent.press(screen.getByLabelText(`${w.clearToSurah} — ${w.itemN(2)}`));
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(writes()[0]!.body).toEqual({
+      items: [{ id: 's2', version: 3, type: 'EXAM', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 9, toSurah: 9 } }],
+    });
+  });
+
+  it('cards and program screen, a snapshot without a size in hizbs: the page measure (no hizbs + pages breakdown); verse count below 100 only', async () => {
+    const hp = (hizbsAndPages: unknown, verses: number, pages: unknown) => ({
+      editionId: EDITION,
+      verses,
+      surahs: { whole: 1, touched: 1 },
+      pages: pages as NonNullable<WorkItem['workload']>['pages'],
+      juz: { kind: 'unavailable' as const, reason: 'x' },
+      hizbs: { kind: 'unavailable' as const, reason: 'x' },
+      quarters: { kind: 'unavailable' as const, reason: 'x' },
+      eighths: { kind: 'unavailable' as const, reason: 'x' },
+      hizbsAndPages: hizbsAndPages as NonNullable<WorkItem['workload']>['hizbsAndPages'],
+      dataStatus: 'x',
+      authoritative: false,
+    });
+    const a = (from: number, to: number, toAyah: number) => ({ kind: 'SURAH_RANGE' as const, editionId: EDITION, fromSurah: from, fromAyah: 1, toSurah: to, toAyah, fromPage: null, toPage: null });
+    const p = workProgram('w1', {
+      items: [
+        workItem('h1', { type: 'REVISION', description: 'سورة التوبة', assignment: a(9, 9, 129), workload: hp({ kind: 'bounded', hizbs: 1, pages: { greaterThan: 11, lessThan: 13 }, dataStatus: 'x' }, 129, { kind: 'bounded', greaterThan: 20, lessThan: 22, touched: 22, partialAtStart: true, partialAtEnd: true, dataStatus: 'x' }) }),
+        workItem('h2', { position: 1, type: 'EXAM', description: 'من سورة النبأ إلى سورة الناس', assignment: a(78, 114, 6), workload: hp({ kind: 'exact', hizbs: 2, pages: 0, dataStatus: 'x' }, 564, { kind: 'exact', value: 23, touched: 23, dataStatus: 'x' }) }),
+      ],
+    });
+    stub(undefined, p);
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    expect(await screen.findByText('بين 20 و22 صفحة')).toBeTruthy();
+    expect(screen.getByTestId('workload-bounded').props.children).toBe('بين 20 و22 صفحة');
+    expect(screen.getByTestId('workload-exact').props.children).toBe('23 صفحة');
+    expect(screen.queryByText(/حزب|129 آية|564 آية/)).toBeNull(); // no breakdown
+    expect(screen.queryByTestId('workload-page-hint')).toBeNull(); // pages already shown
+    expect(screen.getByText('سورة التوبة')).toBeTruthy();
+  });
+});
+
+describe('optional ending surah and hizbs + pages (mobile)', () => {
+  const EDITION = 'qalun-abi-nashit-tn-hannibal-mualim-v1';
+  async function startNew() {
+    stub((c) => {
+      if (c.path.endsWith('/eligible-sessions')) return ok([eligible('s20', '2026-11-18')]);
+      if (c.method === 'POST') return { status: 201, body: workProgram('w5') };
+      return undefined;
+    });
+    await renderScreen(<TeacherWorkFormScreen studentId="st1" />);
+    await fireEvent.press(await screen.findByLabelText(`${w.session}: ${w.pickSession}`));
+    await fireEvent.press(screen.getByRole('radio', { name: /^الأربعاء 18 نوفمبر 2026/ }));
+  }
+  const posted = () => (writes().find((c) => c.method === 'POST')?.body as { items: unknown[] } | undefined)?.items;
+
+  it('مراجعة with only a starting surah: that whole surah is sent; the ending surah is labelled optional', async () => {
+    await startNew();
+    expect(screen.getByText(w.toSurah)).toBeTruthy();
+    expect(w.toSurah).toBe('إلى سورة (اختياري)');
+    await pickSurahIn(w.fromSurah, 1, 'التوبة', '9. سورة التوبة');
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(posted()).toEqual([{ type: 'REVISION', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 9, toSurah: 9 } }]);
+  });
+
+  it('اختبار with two surahs, then the ending surah cleared: the single surah is sent', async () => {
+    await startNew();
+    await fireEvent.press(within(screen.getByLabelText(`${w.itemType} — ${w.itemN(1)}`)).getByRole('radio', { name: w.type.EXAM }));
+    await pickSurahIn(w.fromSurah, 1, 'التوبة', '9. سورة التوبة');
+    await pickSurahIn(w.toSurah, 1, 'النور', '24. سورة النور');
+    await fireEvent.press(screen.getByLabelText(`${w.clearToSurah} — ${w.itemN(1)}`));
+    expect(screen.getByLabelText(`${w.toSurah} — ${w.itemN(1)}: ${w.pickSurah}`)).toBeTruthy();
+    expect(screen.queryByLabelText(`${w.clearToSurah} — ${w.itemN(1)}`)).toBeNull();
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(posted()).toEqual([{ type: 'EXAM', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 9, toSurah: 9 } }]);
+  });
+
+  it('precision without an ending surah: the verses belong to the starting surah', async () => {
+    await startNew();
+    await pickSurahIn(w.fromSurah, 1, 'التوبة', '9. سورة التوبة');
+    await fireEvent.press(screen.getByLabelText(`${w.preciseAyahs} — ${w.itemN(1)}`));
+    await fireEvent.changeText(screen.getByLabelText(`${w.fromAyah} (التوبة) — ${w.itemN(1)}`), '10');
+    await fireEvent.changeText(screen.getByLabelText(`${w.toAyah} (التوبة) — ${w.itemN(1)}`), '40');
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(posted()).toEqual([
+      { type: 'REVISION', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 9, toSurah: 9, fromAyah: 10, toAyah: 40 } },
+    ]);
+  });
+
+  it('editing a single-surah item: no ending surah shown; adding one sends the range (version kept)', async () => {
+    const p = workProgram('w1', {
+      items: [
+        workItem('t1', {
+          type: 'REVISION',
+          version: 2,
+          description: 'سورة التوبة',
+          assignment: { kind: 'SURAH_RANGE', editionId: EDITION, fromSurah: 9, fromAyah: 1, toSurah: 9, toAyah: 129, fromPage: null, toPage: null },
+        }),
+      ],
+    });
+    stub((c) => (c.method === 'PATCH' ? ok(p) : undefined), p);
+    await renderScreen(<TeacherWorkFormScreen programId="w1" />);
+    expect(await screen.findByLabelText(`${w.fromSurah} — ${w.itemN(1)}: سورة التوبة`)).toBeTruthy();
+    expect(screen.getByLabelText(`${w.toSurah} — ${w.itemN(1)}: ${w.pickSurah}`)).toBeTruthy();
+    expect(screen.getByLabelText(w.savePlan).props.accessibilityState.disabled).toBe(true); // unchanged
+    await pickSurahIn(w.toSurah, 1, 'النور', '24. سورة النور');
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(writes()[0]!.body).toEqual({
+      items: [{ id: 't1', version: 2, type: 'REVISION', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 9, toSurah: 24 } }],
+    });
+  });
+
+  it('program screen: one size per item — in hizbs from one hizb (exact or «تقريبًا»), pages below; exact total page hint', async () => {
+    const snap = (extra: Record<string, unknown>, verses: number, pages: unknown) =>
+      ({
+        editionId: EDITION,
+        verses,
+        surahs: { whole: 1, touched: 1 },
+        pages,
+        juz: { kind: 'unavailable', reason: 'x' },
+        hizbs: { kind: 'unavailable', reason: 'x' },
+        quarters: { kind: 'unavailable', reason: 'x' },
+        eighths: { kind: 'unavailable', reason: 'x' },
+        dataStatus: 'x',
+        authoritative: false,
+        ...extra,
+      }) as unknown as NonNullable<WorkItem['workload']>;
+    const a = (from: number, to: number, toAyah: number) =>
+      ({ kind: 'SURAH_RANGE' as const, editionId: EDITION, fromSurah: from, fromAyah: 1, toSurah: to, toAyah, fromPage: null, toPage: null });
+    const exactPages = (value: number) => ({ kind: 'exact', value, touched: value, dataStatus: 'x' });
+    const bounded = (greaterThan: number, lessThan: number) => ({ kind: 'bounded', greaterThan, lessThan, touched: lessThan, partialAtStart: true, partialAtEnd: true, dataStatus: 'x' });
+    const approx = (hizbs: number) => ({ kind: 'approximate', hizbs, step: hizbs >= 10 ? 1 : 0.5, eighths: { greaterThan: 0, lessThan: 1 } });
+    const p = workProgram('w1', {
+      items: [
+        workItem('h1', { type: 'REVISION', description: 'سورة البقرة', assignment: a(2, 2, 286), workload: snap({ hizbsAndPages: { kind: 'bounded', hizbs: 3, pages: { greaterThan: 16, lessThan: 18 }, dataStatus: 'x' }, hizbEquivalent: approx(5) }, 286, bounded(47, 48)) }),
+        workItem('h2', { position: 1, type: 'REVISION', description: 'من سورة الصافات إلى سورة الناس', assignment: a(37, 114, 6), workload: snap({ hizbEquivalent: approx(16) }, 2448, exactPages(159)) }),
+        workItem('h3', { position: 2, type: 'EXAM', description: 'من سورة النبأ إلى سورة الناس', assignment: a(78, 114, 6), workload: snap({ hizbEquivalent: { kind: 'exact', hizbs: 2 } }, 564, exactPages(23)) }),
+        workItem('h4', { position: 3, type: 'EXAM', description: 'سورة الملك', assignment: a(67, 67, 30), workload: snap({ hizbEquivalent: approx(0.5) }, 30, bounded(2, 3)) }),
+      ],
+    });
+    stub(undefined, p);
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    expect(await screen.findByText('5 أحزاب تقريبًا')).toBeTruthy();
+    expect(screen.queryByText(/16 و18 صفحة|286 آية/)).toBeNull();
+    // the size, then the exact total pages, lighter, on the same line
+    expect(screen.getByText('16 حزبًا تقريبًا · 159 صفحة')).toBeTruthy();
+    expect(screen.getByLabelText(`${w.workload}: 16 حزبًا تقريبًا — ${w.totalPages}: 159 صفحة`)).toBeTruthy();
+    expect(screen.getByText('حزبان · 23 صفحة')).toBeTruthy();
+    expect(screen.getAllByTestId('workload-page-hint')).toHaveLength(2); // bounded pages: never a hint
+    expect(screen.getByText('30 آية · بين صفحتين و3 صفحات')).toBeTruthy();
+    expect(screen.queryByText(/قيد التحقق/)).toBeNull();
+  });
+});
+
+
+describe('حفظ modes (mobile): whole surah, verses (optional end), pages (optional end)', () => {
+  const EDITION = 'qalun-abi-nashit-tn-hannibal-mualim-v1';
+  async function startNew() {
+    stub((c) => {
+      if (c.path.endsWith('/eligible-sessions')) return ok([eligible('s20', '2026-11-18')]);
+      if (c.method === 'POST') return { status: 201, body: workProgram('w5') };
+      return undefined;
+    });
+    await renderScreen(<TeacherWorkFormScreen studentId="st1" />);
+    await fireEvent.press(await screen.findByLabelText(`${w.session}: ${w.pickSession}`));
+    await fireEvent.press(screen.getByRole('radio', { name: /^الأربعاء 18 نوفمبر 2026/ }));
+    await fireEvent.press(within(screen.getByLabelText(`${w.itemType} — ${w.itemN(1)}`)).getByRole('radio', { name: w.type.MEMORIZATION }));
+  }
+  const modeRow = () => within(screen.getByLabelText(`${w.assignmentMode} — ${w.itemN(1)}`));
+  const posted = () => (writes().find((c) => c.method === 'POST')?.body as { items: unknown[] } | undefined)?.items;
+
+  it('three modes; «سورة كاملة» shows the surah only and sends it alone (an-Nasr)', async () => {
+    await startNew();
+    expect(modeRow().getAllByRole('radio').map((r) => r.props.accessibilityLabel ?? '')).toHaveLength(3);
+    for (const m of [w.mode.wholeSurah, w.mode.ayahs, w.mode.pages]) expect(modeRow().getByRole('radio', { name: m })).toBeTruthy();
+    await fireEvent.press(modeRow().getByRole('radio', { name: w.mode.wholeSurah }));
+    await pickSurahIn(w.surah, 1, 'النصر', '110. سورة النصر');
+    expect(screen.getByText(/سورة النصر كاملة — عدد آيات السورة: 3/)).toBeTruthy();
+    expect(screen.queryByLabelText(`${w.fromAyah} — ${w.itemN(1)}`)).toBeNull();
+    expect(screen.queryByLabelText(`${w.fromPage} — ${w.itemN(1)}`)).toBeNull();
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(posted()).toEqual([{ type: 'MEMORIZATION', recitationNumber: null, assignment: { kind: 'AYAH_RANGE', fromSurah: 110, toSurah: 110 } }]);
+  });
+
+  it('a single verse: the ending verse is optional and can be cleared; switching to pages sends no stale verse', async () => {
+    await startNew();
+    await pickSurahIn(w.surah, 1, 'البقرة', '2. سورة البقرة');
+    await fireEvent.changeText(screen.getByLabelText(`${w.fromAyah} — ${w.itemN(1)}`), '255');
+    await fireEvent.changeText(screen.getByLabelText(`${w.toAyahOptional} — ${w.itemN(1)}`), '260');
+    await fireEvent.press(screen.getByLabelText(`${w.clearToAyah} — ${w.itemN(1)}`));
+    expect(screen.getByLabelText(`${w.toAyahOptional} — ${w.itemN(1)}`).props.value).toBe('');
+    expect(screen.queryByLabelText(`${w.clearToAyah} — ${w.itemN(1)}`)).toBeNull();
+    await fireEvent.press(modeRow().getByRole('radio', { name: w.mode.pages }));
+    expect(screen.queryByLabelText(`${w.fromAyah} — ${w.itemN(1)}`)).toBeNull();
+    await fireEvent.changeText(screen.getByLabelText(`${w.fromPage} — ${w.itemN(1)}`), '79');
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(posted()).toEqual([{ type: 'MEMORIZATION', recitationNumber: null, assignment: { kind: 'PAGE_RANGE', fromPage: 79 } }]);
+  });
+
+  it('back to verses: a single verse without pages; a missing starting verse / page is refused, nothing sent', async () => {
+    await startNew();
+    await fireEvent.press(modeRow().getByRole('radio', { name: w.mode.pages }));
+    await fireEvent.changeText(screen.getByLabelText(`${w.toPageOptional} — ${w.itemN(1)}`), '82');
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    expect(await screen.findByText('حدّد الصفحة الأولى')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText(`${w.clearToPage} — ${w.itemN(1)}`));
+    await fireEvent.press(modeRow().getByRole('radio', { name: w.mode.ayahs }));
+    await pickSurahIn(w.surah, 1, 'البقرة', '2. سورة البقرة');
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    expect(await screen.findByText('حدّد الآية الأولى')).toBeTruthy();
+    expect(posted()).toBeUndefined();
+    await fireEvent.changeText(screen.getByLabelText(`${w.fromAyah} — ${w.itemN(1)}`), '255');
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(posted()).toEqual([{ type: 'MEMORIZATION', recitationNumber: null, assignment: { kind: 'AYAH_RANGE', fromSurah: 2, fromAyah: 255, toSurah: 2 } }]);
+  });
+
+  it('re-opening: whole surah in «سورة كاملة», a single verse / page with an empty end; only the changed item is sent', async () => {
+    const a = (p: Record<string, unknown>) => ({ kind: 'AYAH_RANGE' as const, editionId: EDITION, fromSurah: 110, fromAyah: 1, toSurah: 110, toAyah: 3, fromPage: null, toPage: null, ...p });
+    const p = workProgram('w1', {
+      items: [
+        workItem('m1', { type: 'MEMORIZATION', version: 1, description: 'سورة النصر كاملة', assignment: a({}) }),
+        workItem('m2', { position: 1, type: 'MEMORIZATION', version: 1, description: 'سورة البقرة: الآية 255', assignment: a({ fromSurah: 2, toSurah: 2, fromAyah: 255, toAyah: 255 }) }),
+        // page 79 of the edition, its real first / last verses (from the reference)
+        workItem('m3', { position: 2, type: 'MEMORIZATION', version: 1, description: 'الصفحة 79', assignment: { ...canonicalOf({ kind: 'PAGE_RANGE', fromPage: 79, toPage: 79 })!, editionId: EDITION } }),
+      ],
+    });
+    stub((c) => (c.method === 'PATCH' ? ok(p) : undefined), p);
+    await renderScreen(<TeacherWorkFormScreen programId="w1" />);
+    const mode = (n: number, m: string) => within(screen.getByLabelText(`${w.assignmentMode} — ${w.itemN(n)}`)).getByRole('radio', { name: m }).props.accessibilityState;
+    expect((await screen.findByLabelText(`${w.surah} — ${w.itemN(1)}: سورة النصر`))).toBeTruthy();
+    expect(mode(1, w.mode.wholeSurah)).toMatchObject({ selected: true });
+    expect(mode(2, w.mode.ayahs)).toMatchObject({ selected: true });
+    expect(screen.getByLabelText(`${w.fromAyah} — ${w.itemN(2)}`).props.value).toBe('255');
+    expect(screen.getByLabelText(`${w.toAyahOptional} — ${w.itemN(2)}`).props.value).toBe('');
+    expect(screen.getByLabelText(`${w.fromPage} — ${w.itemN(3)}`).props.value).toBe('79');
+    expect(screen.getByLabelText(`${w.toPageOptional} — ${w.itemN(3)}`).props.value).toBe('');
+    expect(screen.getByLabelText(w.savePlan).props.accessibilityState.disabled).toBe(true); // unchanged
+    await fireEvent.changeText(screen.getByLabelText(`${w.toPageOptional} — ${w.itemN(3)}`), '82');
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    await settle();
+    expect(writes()[0]!.body).toEqual({
+      items: [{ id: 'm3', version: 1, type: 'MEMORIZATION', recitationNumber: null, assignment: { kind: 'PAGE_RANGE', fromPage: 79, toPage: 82 } }],
+    });
+  });
+
+  it('program screen: «سورة النصر كاملة» and the older wording of the same item are not shown as a teacher note', async () => {
+    const nasr = { kind: 'AYAH_RANGE' as const, editionId: EDITION, fromSurah: 110, fromAyah: 1, toSurah: 110, toAyah: 3, fromPage: null, toPage: null };
+    const p = workProgram('w1', {
+      items: [
+        workItem('m1', { type: 'MEMORIZATION', description: 'سورة النصر كاملة', assignment: nasr }),
+        workItem('m2', { position: 1, type: 'MEMORIZATION', description: 'سورة النصر: من الآية 1 إلى الآية 3', assignment: nasr }),
+      ],
+    });
+    stub(undefined, p);
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    expect(await screen.findAllByText('سورة النصر كاملة')).toHaveLength(2);
+    expect(screen.queryByText('سورة النصر: من الآية 1 إلى الآية 3')).toBeNull();
+  });
+});

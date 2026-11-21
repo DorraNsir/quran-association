@@ -15,6 +15,7 @@ import { useEvaluationBlock } from './use-evaluation-block';
 import { usePullToRefresh } from './use-refresh';
 import { useWorkProgram, workProgramKey } from './use-work';
 import { WorkProgressView, WorkSessionLine, WorkStatusBadge, WorkTypeBadge } from './work-badges';
+import { ownDescription, WorkAssignmentView } from './work-assignment-view';
 import { isTransferable, phaseOf, shortDate, studentName } from './work-model';
 import type { WorkItem, WorkItemLink, WorkProgram } from './work-types';
 
@@ -174,9 +175,13 @@ function ItemRow({
         <WorkTypeBadge type={item.type} recitationNumber={item.recitationNumber} />
         <WorkStatusBadge status={item.status} />
       </View>
-      <AppText variant="body" selectable style={styles.text}>
-        {item.description}
-      </AppText>
+      {item.assignment ? <WorkAssignmentView type={item.type} assignment={item.assignment} workload={item.workload} /> : null}
+      {/* Legacy free text as written; for a structured item, only the teacher's own note */}
+      {ownDescription(item) ? (
+        <AppText variant="body" selectable tone={item.assignment ? 'muted' : 'default'} style={styles.text}>
+          {ownDescription(item)}
+        </AppText>
+      ) : null}
       {item.evaluationComment ? (
         <View style={[styles.comment, { backgroundColor: colors.muted }]}>
           <AppText variant="small" selectable>

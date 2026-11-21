@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils"
 import { cancelledLabel, evaluationBlockMessage, progressLabel, sessionLabel, sessionPhaseLabel, type SessionPhase } from "@/lib/work-followup"
 import type { WorkProgram, WorkProgress, WorkSession } from "@/types/work-followup"
 
+import { WorkAssignmentView } from "./work-assignment-view"
 import { WorkStatusBadge, WorkTypeBadge } from "./work-badges"
 
 /** Wraps any text — long paragraphs, line breaks and unbroken strings — inside its box. */
@@ -73,7 +74,11 @@ export function WorkProgramCard({
           <li key={item.id} className="flex items-start gap-3 px-4 py-2.5">
             <WorkTypeBadge type={item.type} recitationNumber={item.recitationNumber ?? undefined} />
             {/* Two lines at most here — the full text is on the program's page */}
-            <p className={cn("line-clamp-2 flex-1 text-sm", WRAP)}>{item.description}</p>
+            {item.assignment ? (
+              <WorkAssignmentView type={item.type} assignment={item.assignment} workload={item.workload} compact className="flex-1" />
+            ) : (
+              <p className={cn("line-clamp-2 flex-1 text-sm", WRAP)}>{item.description}</p>
+            )}
             <WorkStatusBadge status={item.status} className="shrink-0" />
           </li>
         ))}

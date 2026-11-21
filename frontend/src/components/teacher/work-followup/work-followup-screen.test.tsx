@@ -5,6 +5,7 @@ import { DirectionProvider } from "@/components/ui/direction"
 import { clearSession, setSession } from "@/lib/api/session"
 import { authResponse, json } from "@/test/fetch-mock"
 import { renderWithClient } from "@/test/render"
+import { canonicalOf } from "@/lib/quran-reference/work-assignment"
 import type { WorkItem, WorkProgram, WorkSession } from "@/types/work-followup"
 
 import { WorkFollowupProvider } from "./work-followup-provider"
@@ -54,6 +55,8 @@ const item = (id: string, fields: Partial<WorkItem>): WorkItem => ({
   continuedFrom: null,
   carriedTo: [],
   continuedBy: [],
+  assignment: null,
+  workload: null,
   ...fields,
 })
 const program: WorkProgram = {
@@ -82,7 +85,7 @@ const program: WorkProgram = {
 }
 
 /** Answers like the API; records every request. */
-function routeFetch(overrides: { evaluation?: () => Response; get?: () => Response; list?: WorkProgram } = {}) {
+function routeFetch(overrides: { evaluation?: () => Response; get?: () => Response; list?: WorkProgram; create?: () => Response } = {}) {
   const calls: { method: string; path: string; search: URLSearchParams; body?: unknown }[] = []
   vi.stubGlobal(
     "fetch",
@@ -91,6 +94,7 @@ function routeFetch(overrides: { evaluation?: () => Response; get?: () => Respon
       const method = init?.method ?? "GET"
       calls.push({ method, path: url.pathname, search: url.searchParams, body: init?.body ? JSON.parse(String(init.body)) : undefined })
       const path = url.pathname.replace(/^\/api/, "")
+      if (path === "/teacher/work-programs" && method === "POST" && overrides.create) return overrides.create()
       if (path === "/teacher/work-programs")
         return json(200, { data: [overrides.list ?? program], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } })
       if (path === "/teacher/work-programs/session-options") return json(200, [program.session])
@@ -117,6 +121,12 @@ const renderIn = (ui: React.ReactNode) =>
 Element.prototype.scrollIntoView ??= () => {}
 Element.prototype.hasPointerCapture ??= () => false
 Element.prototype.releasePointerCapture ??= () => {}
+// …and what Radix Checkbox measures
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
 
 beforeEach(() => {
   clearSession()
@@ -185,12 +195,20 @@ describe("«متابعة العمل» — list (API)", () => {
     expect(within(sheet).queryByRole("button", { name: /حذف العمل/ })).toBeNull()
     fireEvent.change(fields[0], { target: { value: "مراجعة سورة الزمر" } })
     fireEvent.click(within(sheet).getByRole("button", { name: "إضافة عمل آخر" }))
-    fireEvent.change(within(sheet).getAllByLabelText("وصف العمل")[4], { target: { value: "اختبار جديد" } })
+    // A new item is structured only: no «نص حر», no text field — Quranic references are chosen
+    const added = within(sheet).getByRole("group", { name: "العمل 5" })
+    expect(within(added).queryByRole("radio", { name: "نص حر" })).toBeNull()
+    expect(within(added).queryByRole("textbox")).toBeNull()
+    for (const [field, option] of [[/^من سورة/, "سورة الملك"], [/^إلى سورة/, "سورة القلم"]] as const) {
+      fireEvent.click(within(added).getByRole("combobox", { name: field }))
+      fireEvent.change(await screen.findByPlaceholderText("ابحث باسم السورة أو رقمها…"), { target: { value: option.slice(5) } })
+      fireEvent.click(await screen.findByRole("option", { name: new RegExp(option) }))
+    }
     fireEvent.click(within(sheet).getByRole("button", { name: "حفظ برنامج العمل" }))
     await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true))
     expect(calls.find((c) => c.method === "PATCH")!.body).toEqual({
       items: [{ id: "i1", version: 2, type: "REVISION", description: "مراجعة سورة الزمر", recitationNumber: null }],
-      newItems: [{ type: "REVISION", description: "اختبار جديد", recitationNumber: null }],
+      newItems: [{ type: "REVISION", recitationNumber: null, assignment: { kind: "SURAH_RANGE", fromSurah: 67, toSurah: 68 } }],
     })
   })
 })
@@ -320,3 +338,463 @@ describe("«متابعة العمل» — evaluation follows the session (API)",
     await waitFor(() => expect(listCalls()).toBeGreaterThan(before))
   })
 })
+
+describe("«متابعة العمل» — structured Quranic assignments (Qalun, Tunisian edition)", () => {
+  const EDITION = "qalun-abi-nashit-tn-hannibal-mualim-v1"
+  const exact = (value: number) => ({ kind: "exact" as const, value, touched: value, dataStatus: "structurally-consistent" })
+  const bounded = (greaterThan: number, lessThan: number) => ({
+    kind: "bounded" as const,
+    greaterThan,
+    lessThan,
+    touched: lessThan,
+    partialAtStart: true,
+    partialAtEnd: true,
+    dataStatus: "structurally-consistent",
+  })
+  const workload = (p: Partial<NonNullable<WorkItem["workload"]>> = {}): NonNullable<WorkItem["workload"]> => ({
+    editionId: EDITION,
+    verses: 15,
+    surahs: { whole: 0, touched: 1 },
+    pages: exact(3),
+    juz: bounded(0, 1),
+    hizbs: bounded(0, 1),
+    quarters: exact(1),
+    eighths: exact(2),
+    dataStatus: "structurally-consistent",
+    authoritative: false,
+    ...p,
+  })
+  const ayahItem = item("s1", {
+    type: "MEMORIZATION",
+    version: 3,
+    description: "سورة البقرة: من الآية 6 إلى الآية 20",
+    assignment: { kind: "AYAH_RANGE", editionId: EDITION, fromSurah: 2, fromAyah: 6, toSurah: 2, toAyah: 20, fromPage: null, toPage: null },
+    workload: workload({ pages: bounded(0, 2) }),
+  })
+  const pagesItem = item("s2", {
+    type: "MEMORIZATION",
+    description: "من الصفحة 10 إلى الصفحة 12",
+    assignment: { kind: "PAGE_RANGE", editionId: EDITION, fromSurah: 2, fromAyah: 62, toSurah: 2, toAyah: 83, fromPage: 10, toPage: 12 },
+    workload: workload(),
+  })
+  const examItem = item("s3", {
+    type: "EXAM",
+    description: "مع التركيز على المتشابهات",
+    assignment: { kind: "SURAH_RANGE", editionId: EDITION, fromSurah: 46, fromAyah: 1, toSurah: 114, toAyah: 6, fromPage: null, toPage: null },
+    workload: workload({ hizbs: { kind: "unavailable", reason: "x" } }),
+  })
+  const legacyItem = item("s4", { description: "مراجعة حرة كتبها المعلم" })
+  const structuredProgram: WorkProgram = { ...program, items: [ayahItem, pagesItem, examItem, legacyItem] }
+
+  /** Opens «إضافة برنامج عمل» with a student and a free session chosen; returns the sheet. */
+  async function openCreate() {
+    renderIn(<WorkFollowupScreen />)
+    fireEvent.click(await screen.findByRole("button", { name: "إضافة برنامج عمل" }))
+    const sheet = screen.getByRole("dialog")
+    fireEvent.click(within(sheet).getByRole("combobox", { name: /الطالب/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "درة نصير" }))
+    fireEvent.click(await within(sheet).findByRole("combobox", { name: /الحصة القادمة/ }))
+    fireEvent.click((await screen.findAllByRole("option")).find((o) => !/يوجد برنامج/.test(o.textContent ?? ""))!)
+    return sheet
+  }
+  async function chooseType(sheet: HTMLElement, label: string) {
+    fireEvent.click(within(sheet).getByRole("combobox", { name: "نوع العمل" }))
+    fireEvent.click(await screen.findByRole("option", { name: label }))
+  }
+  async function pickSurah(sheet: HTMLElement, field: RegExp, search: string, option: string) {
+    fireEvent.click(within(sheet).getByRole("combobox", { name: field }))
+    fireEvent.change(await screen.findByPlaceholderText("ابحث باسم السورة أو رقمها…"), { target: { value: search } })
+    fireEvent.click(await screen.findByRole("option", { name: new RegExp(option) }))
+  }
+  const posted = (calls: ReturnType<typeof routeFetch>) => calls.find((c) => c.method === "POST")?.body as { items: unknown[] } | undefined
+  const save = (sheet: HTMLElement) => fireEvent.click(within(sheet).getByRole("button", { name: "حفظ برنامج العمل" }))
+
+  it("حفظ by verses: searchable surah, verses limited to the surah; the request carries references only", async () => {
+    const calls = routeFetch()
+    const sheet = await openCreate()
+    await chooseType(sheet, "حفظ")
+    expect(within(sheet).getByRole("radio", { name: "بالآيات" })).toHaveProperty("ariaChecked", "true")
+    await pickSurah(sheet, /^السورة/, "البقرة", "سورة البقرة")
+    expect(within(sheet).getByText("عدد آيات السورة: 286")).toBeTruthy()
+    fireEvent.change(within(sheet).getByLabelText("من الآية"), { target: { value: "6" } })
+    fireEvent.change(within(sheet).getByLabelText("إلى الآية (اختياري)"), { target: { value: "20" } })
+    save(sheet)
+    await waitFor(() => expect(posted(calls)).toBeTruthy())
+    expect(posted(calls)!.items).toEqual([
+      { type: "MEMORIZATION", recitationNumber: null, assignment: { kind: "AYAH_RANGE", fromSurah: 2, fromAyah: 6, toSurah: 2, toAyah: 20 } },
+    ])
+  })
+
+  it("the surah list holds all 114 surahs in order; search reaches the last ones", async () => {
+    routeFetch()
+    const sheet = await openCreate()
+    await chooseType(sheet, "عرضة")
+    fireEvent.click(within(sheet).getByRole("combobox", { name: /^السورة/ }))
+    const options = await screen.findAllByRole("option")
+    expect(options).toHaveLength(114)
+    expect(options.at(-1)!.textContent).toContain("سورة الناس")
+    fireEvent.change(screen.getByPlaceholderText("ابحث باسم السورة أو رقمها…"), { target: { value: "الفلق" } })
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual(["113سورة الفلق"])
+  })
+
+  it("verse validation: a verse beyond the surah is refused before sending", async () => {
+    const calls = routeFetch()
+    const sheet = await openCreate()
+    await chooseType(sheet, "حفظ")
+    await pickSurah(sheet, /^السورة/, "الفاتحة", "سورة الفاتحة")
+    fireEvent.change(within(sheet).getByLabelText("من الآية"), { target: { value: "1" } })
+    fireEvent.change(within(sheet).getByLabelText("إلى الآية (اختياري)"), { target: { value: "8" } })
+    save(sheet)
+    expect(await within(sheet).findByText("آيات هذه السورة من 1 إلى 7")).toBeTruthy()
+    fireEvent.change(within(sheet).getByLabelText("من الآية"), { target: { value: "7" } })
+    fireEvent.change(within(sheet).getByLabelText("إلى الآية (اختياري)"), { target: { value: "3" } })
+    expect(await within(sheet).findByText("الآية الأولى بعد الآية الأخيرة")).toBeTruthy()
+    expect(posted(calls)).toBeUndefined()
+  })
+
+  it("حفظ by pages: the edition's printed pages (2–604), the verses they hold shown; page 1 refused", async () => {
+    const calls = routeFetch()
+    const sheet = await openCreate()
+    await chooseType(sheet, "حفظ")
+    fireEvent.click(within(sheet).getByRole("radio", { name: "بالصفحات" }))
+    fireEvent.change(within(sheet).getByLabelText("من الصفحة"), { target: { value: "1" } })
+    fireEvent.change(within(sheet).getByLabelText("إلى الصفحة (اختياري)"), { target: { value: "12" } })
+    save(sheet)
+    expect(await within(sheet).findByText("صفحات القرآن في هذا المصحف من 2 إلى 604")).toBeTruthy()
+    fireEvent.change(within(sheet).getByLabelText("من الصفحة"), { target: { value: "10" } })
+    expect(within(sheet).getByText(/من سورة البقرة 62 إلى سورة البقرة 83/)).toBeTruthy()
+    save(sheet)
+    await waitFor(() => expect(posted(calls)).toBeTruthy())
+    expect(posted(calls)!.items).toEqual([{ type: "MEMORIZATION", recitationNumber: null, assignment: { kind: "PAGE_RANGE", fromPage: 10, toPage: 12 } }])
+  })
+
+  it("حفظ — three modes: «سورة كاملة» sends the surah only (an-Nasr), «بالآيات» one verse without an end, «بالصفحات» one page without an end", async () => {
+    const calls = routeFetch()
+    const sheet = await openCreate()
+    await chooseType(sheet, "حفظ")
+    const modes = within(sheet).getAllByRole("radio").map((r) => r.textContent)
+    expect(modes.slice(0, 3)).toEqual(["سورة كاملة", "بالآيات", "بالصفحات"])
+    // whole surah: only the surah selector; no verse or page field
+    fireEvent.click(within(sheet).getByRole("radio", { name: "سورة كاملة" }))
+    expect(within(sheet).getByRole("radio", { name: "سورة كاملة" })).toHaveProperty("ariaChecked", "true")
+    await pickSurah(sheet, /^السورة/, "النصر", "سورة النصر")
+    expect(within(sheet).getByText(/سورة النصر كاملة — عدد آيات السورة: 3/)).toBeTruthy()
+    expect(within(sheet).queryByLabelText("من الآية")).toBeNull()
+    expect(within(sheet).queryByLabelText("من الصفحة")).toBeNull()
+    save(sheet)
+    await waitFor(() => expect(posted(calls)).toBeTruthy())
+    expect(posted(calls)!.items).toEqual([{ type: "MEMORIZATION", recitationNumber: null, assignment: { kind: "AYAH_RANGE", fromSurah: 110, toSurah: 110 } }])
+  })
+
+  it("حفظ — a single verse, the ending verse cleared, then pages typed after verses: no stale field is sent", async () => {
+    const calls = routeFetch()
+    const sheet = await openCreate()
+    await chooseType(sheet, "حفظ")
+    await pickSurah(sheet, /^السورة/, "البقرة", "سورة البقرة")
+    fireEvent.change(within(sheet).getByLabelText("من الآية"), { target: { value: "255" } })
+    fireEvent.change(within(sheet).getByLabelText("إلى الآية (اختياري)"), { target: { value: "260" } })
+    fireEvent.click(within(sheet).getByRole("button", { name: "إزالة آية النهاية" }))
+    expect((within(sheet).getByLabelText("إلى الآية (اختياري)") as HTMLInputElement).value).toBe("")
+    expect(within(sheet).queryByRole("button", { name: "إزالة آية النهاية" })).toBeNull()
+    // switch to pages: the verse fields are hidden and not sent
+    fireEvent.click(within(sheet).getByRole("radio", { name: "بالصفحات" }))
+    expect(within(sheet).queryByLabelText("من الآية")).toBeNull()
+    fireEvent.change(within(sheet).getByLabelText("من الصفحة"), { target: { value: "79" } })
+    save(sheet)
+    await waitFor(() => expect(posted(calls)).toBeTruthy())
+    expect(posted(calls)!.items).toEqual([{ type: "MEMORIZATION", recitationNumber: null, assignment: { kind: "PAGE_RANGE", fromPage: 79 } }])
+  })
+
+  it("حفظ — back to verses after pages: the single verse is sent without pages; a missing starting page is refused", async () => {
+    const calls = routeFetch()
+    const sheet = await openCreate()
+    await chooseType(sheet, "حفظ")
+    fireEvent.click(within(sheet).getByRole("radio", { name: "بالصفحات" }))
+    fireEvent.change(within(sheet).getByLabelText("إلى الصفحة (اختياري)"), { target: { value: "82" } })
+    save(sheet)
+    expect(await within(sheet).findByText("حدّد الصفحة الأولى")).toBeTruthy()
+    fireEvent.change(within(sheet).getByLabelText("من الصفحة"), { target: { value: "79" } })
+    fireEvent.click(within(sheet).getByRole("button", { name: "إزالة صفحة النهاية" }))
+    fireEvent.click(within(sheet).getByRole("radio", { name: "بالآيات" }))
+    await pickSurah(sheet, /^السورة/, "البقرة", "سورة البقرة")
+    fireEvent.change(within(sheet).getByLabelText("من الآية"), { target: { value: "255" } })
+    save(sheet)
+    await waitFor(() => expect(posted(calls)).toBeTruthy())
+    expect(posted(calls)!.items).toEqual([
+      { type: "MEMORIZATION", recitationNumber: null, assignment: { kind: "AYAH_RANGE", fromSurah: 2, fromAyah: 255, toSurah: 2 } },
+    ])
+  })
+
+  it("حفظ — re-opening: a whole surah in «سورة كاملة», a single verse / page with an empty end; untouched items are not resent", async () => {
+    const e = "qalun-abi-nashit-tn-hannibal-mualim-v1"
+    const items = [
+      item("m1", { type: "MEMORIZATION", version: 1, description: "سورة النصر كاملة", assignment: { kind: "AYAH_RANGE", editionId: e, fromSurah: 110, fromAyah: 1, toSurah: 110, toAyah: 3, fromPage: null, toPage: null } }),
+      item("m2", { position: 1, type: "MEMORIZATION", version: 1, description: "سورة البقرة: الآية 255", assignment: { kind: "AYAH_RANGE", editionId: e, fromSurah: 2, fromAyah: 255, toSurah: 2, toAyah: 255, fromPage: null, toPage: null } }),
+      item("m3", { position: 2, type: "MEMORIZATION", version: 1, description: "الصفحة 79", assignment: { ...canonicalOf({ kind: "PAGE_RANGE", fromPage: 79, toPage: 79 })!, editionId: e } }),
+    ]
+    const calls = routeFetch({ list: { ...program, items } })
+    renderIn(<WorkFollowupScreen />)
+    fireEvent.click(await screen.findByRole("button", { name: "تعديل البرنامج" }))
+    const sheet = screen.getByRole("dialog")
+    const [whole, verse, page] = [1, 2, 3].map((n) => within(sheet).getByRole("group", { name: `العمل ${n}` }))
+    expect(within(whole!).getByRole("radio", { name: "سورة كاملة" })).toHaveProperty("ariaChecked", "true")
+    expect(within(whole!).getByRole("combobox", { name: /^السورة/ }).textContent).toContain("سورة النصر")
+    expect(within(verse!).getByRole("radio", { name: "بالآيات" })).toHaveProperty("ariaChecked", "true")
+    expect((within(verse!).getByLabelText("من الآية") as HTMLInputElement).value).toBe("255")
+    expect((within(verse!).getByLabelText("إلى الآية (اختياري)") as HTMLInputElement).value).toBe("")
+    expect((within(page!).getByLabelText("من الصفحة") as HTMLInputElement).value).toBe("79")
+    expect((within(page!).getByLabelText("إلى الصفحة (اختياري)") as HTMLInputElement).value).toBe("")
+    // a real change to the page item only: the two re-opened, untouched items are not resent
+    fireEvent.change(within(page!).getByLabelText("إلى الصفحة (اختياري)"), { target: { value: "82" } })
+    save(sheet)
+    await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true))
+    expect(calls.find((c) => c.method === "PATCH")!.body).toEqual({
+      items: [{ id: "m3", version: 1, type: "MEMORIZATION", recitationNumber: null, assignment: { kind: "PAGE_RANGE", fromPage: 79, toPage: 82 } }],
+    })
+  })
+
+  it("مراجعة with optional verses, and عرضة of one whole surah", async () => {
+    const calls = routeFetch()
+    const sheet = await openCreate()
+    await pickSurah(sheet, /^من سورة/, "البقرة", "سورة البقرة")
+    await pickSurah(sheet, /^إلى سورة/, "آل عمران", "سورة آل عمران")
+    fireEvent.click(within(sheet).getByRole("checkbox"))
+    fireEvent.change(within(sheet).getByLabelText(/^من الآية/), { target: { value: "142" } })
+    fireEvent.click(within(sheet).getByRole("button", { name: "إضافة عمل آخر" }))
+    const types = within(sheet).getAllByRole("combobox", { name: "نوع العمل" })
+    fireEvent.click(types[1]!)
+    fireEvent.click(await screen.findByRole("option", { name: "عرضة" }))
+    await pickSurah(sheet, /^السورة/, "الرحمن", "سورة الرحمن")
+    save(sheet)
+    await waitFor(() => expect(posted(calls)).toBeTruthy())
+    expect(posted(calls)!.items).toEqual([
+      { type: "REVISION", recitationNumber: null, assignment: { kind: "SURAH_RANGE", fromSurah: 2, toSurah: 3, fromAyah: 142 } },
+      { type: "RECITATION", recitationNumber: null, assignment: { kind: "SURAH_RANGE", fromSurah: 55, toSurah: 55 } },
+    ])
+  })
+
+  it("edit: structured fields prepopulated; only the changed assignment is sent (no description, no other item)", async () => {
+    const calls = routeFetch({ list: structuredProgram })
+    renderIn(<WorkFollowupScreen />)
+    fireEvent.click(await screen.findByRole("button", { name: "تعديل البرنامج" }))
+    const sheet = screen.getByRole("dialog")
+    const first = within(sheet).getByRole("group", { name: "العمل 1" })
+    expect(within(first).getByRole("combobox", { name: /^السورة/ }).textContent).toContain("سورة البقرة")
+    expect((within(first).getByLabelText("من الآية") as HTMLInputElement).value).toBe("6")
+    expect((within(first).getByLabelText("إلى الآية (اختياري)") as HTMLInputElement).value).toBe("20")
+    const pages = within(sheet).getByRole("group", { name: "العمل 2" })
+    expect(within(pages).getByRole("radio", { name: "بالصفحات" })).toHaveProperty("ariaChecked", "true")
+    // The legacy item stays free text with its words
+    const legacy = within(sheet).getByRole("group", { name: "العمل 4" })
+    expect(within(legacy).getByRole("radio", { name: "نص حر" })).toHaveProperty("ariaChecked", "true")
+    expect((within(legacy).getByLabelText("وصف العمل") as HTMLTextAreaElement).value).toBe("مراجعة حرة كتبها المعلم")
+    fireEvent.change(within(first).getByLabelText("إلى الآية (اختياري)"), { target: { value: "25" } })
+    save(sheet)
+    await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true))
+    expect(calls.find((c) => c.method === "PATCH")!.body).toEqual({
+      items: [
+        {
+          id: "s1",
+          version: 3,
+          type: "MEMORIZATION",
+          recitationNumber: null,
+          assignment: { kind: "AYAH_RANGE", fromSurah: 2, fromAyah: 6, toSurah: 2, toAyah: 25 },
+        },
+      ],
+    })
+  })
+
+  it("edit: a legacy item is kept as written, converted only explicitly with valid references; a structured item never goes back to free text", async () => {
+    const calls = routeFetch({ list: structuredProgram })
+    renderIn(<WorkFollowupScreen />)
+    fireEvent.click(await screen.findByRole("button", { name: "تعديل البرنامج" }))
+    const sheet = screen.getByRole("dialog")
+    // Structured items: no «نص حر», no text field (their saved text stays untouched)
+    const exam = within(sheet).getByRole("group", { name: "العمل 3" })
+    expect(within(exam).queryByRole("radio", { name: "نص حر" })).toBeNull()
+    expect(within(exam).queryByLabelText("وصف العمل")).toBeNull()
+    // The legacy item: free text kept, with its words
+    const legacy = within(sheet).getByRole("group", { name: "العمل 4" })
+    expect(within(legacy).getByRole("radio", { name: "نص حر" })).toHaveProperty("ariaChecked", "true")
+    // Explicit conversion: no starting surah is refused, nothing is sent
+    fireEvent.click(within(legacy).getByRole("radio", { name: "من سورة إلى سورة" }))
+    save(sheet)
+    expect(await within(legacy).findByText("اختر سورة البداية")).toBeTruthy()
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false)
+    // A starting surah alone is enough (the ending surah is optional): that surah
+    await pickSurah(legacy, /^من سورة/, "الملك", "سورة الملك")
+    save(sheet)
+    await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true))
+    const body = calls.find((c) => c.method === "PATCH")!.body as { items: Record<string, unknown>[] }
+    // Only the assignment: the legacy words are not resent, so they stay in the record
+    expect(body.items).toEqual([
+      { id: "s4", version: 1, type: "REVISION", recitationNumber: null, assignment: { kind: "SURAH_RANGE", fromSurah: 67, toSurah: 67 } },
+    ])
+  })
+
+  it("new items: structured only for the four types; incomplete references are refused, never sent as free text", async () => {
+    const calls = routeFetch()
+    const sheet = await openCreate()
+    const first = within(sheet).getByRole("group", { name: "العمل 1" })
+    for (const label of ["حفظ", "مراجعة", "عرضة", "اختبار"]) {
+      await chooseType(sheet, label)
+      expect(within(first).queryByRole("radio", { name: "نص حر" })).toBeNull()
+      expect(within(first).queryByRole("textbox")).toBeNull()
+    }
+    await chooseType(sheet, "حفظ")
+    await pickSurah(first, /^السورة/, "النبأ", "سورة النبأ")
+    save(sheet)
+    expect(await within(first).findByText("حدّد الآية الأولى")).toBeTruthy()
+    expect(posted(calls)).toBeUndefined()
+  })
+
+  it("a refusal of the API (e.g. a reversed range) is shown in Arabic; the form keeps its input", async () => {
+    const message = "بداية النطاق بعد نهايته"
+    routeFetch({ create: () => json(400, { code: "WORK_ASSIGNMENT_REVERSED", message }) })
+    const sheet = await openCreate()
+    await chooseType(sheet, "عرضة")
+    await pickSurah(sheet, /^السورة/, "يس", "سورة يس")
+    save(sheet)
+    expect(await within(sheet).findByText(message)).toBeTruthy()
+    expect(within(sheet).getByRole("combobox", { name: /^السورة/ }).textContent).toContain("سورة يس")
+  })
+
+  it("program page: summary, workload with its precision, the teacher's own note; legacy text as written", async () => {
+    routeFetch({ get: () => json(200, structuredProgram) })
+    renderIn(<WorkProgramDetails programId="p1" />)
+    const rows = await screen.findAllByRole("listitem")
+    const memo = rows.find((r) => r.textContent?.includes("من الآية 6"))!
+    expect(within(memo).getByText("سورة البقرة: من الآية 6 إلى الآية 20")).toBeTruthy()
+    // bounded pages are never shown as a number
+    expect(within(memo).getByText("أقل من صفحتين").dataset.precision).toBe("bounded")
+    expect(within(memo).getByText("15 آية").dataset.precision).toBe("exact")
+    // the server's default wording is not repeated as a note
+    expect(within(memo).getAllByText(/من الآية 6 إلى الآية 20/)).toHaveLength(1)
+    const pages = rows.find((r) => r.textContent?.includes("من الصفحة 10"))!
+    expect(within(pages).getByText("من الصفحة 10 إلى الصفحة 12 (البقرة 62 – البقرة 83)")).toBeTruthy()
+    expect(within(pages).getByText("3 صفحات").dataset.precision).toBe("exact")
+    const exam = rows.find((r) => r.textContent?.includes("الأحقاف"))!
+    expect(within(exam).getByText("من سورة الأحقاف إلى سورة الناس")).toBeTruthy()
+    expect(within(exam).queryByText("غير متاح")).toBeNull() // unavailable: no fabricated value
+    expect(within(exam).getByText("مع التركيز على المتشابهات")).toBeTruthy()
+    // the general verification sentence is no longer repeated under each item
+    expect(screen.queryByText(/قيد التحقق من النسخة المطبوعة/)).toBeNull()
+    expect(screen.getByText("مراجعة حرة كتبها المعلم")).toBeTruthy()
+  })
+})
+
+describe("«متابعة العمل» — optional ending surah and hizbs + pages (web)", () => {
+  const EDITION = "qalun-abi-nashit-tn-hannibal-mualim-v1"
+  async function openNew() {
+    renderIn(<WorkFollowupScreen />)
+    fireEvent.click(await screen.findByRole("button", { name: "إضافة برنامج عمل" }))
+    const sheet = screen.getByRole("dialog")
+    fireEvent.click(within(sheet).getByRole("combobox", { name: /الطالب/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "درة نصير" }))
+    fireEvent.click(await within(sheet).findByRole("combobox", { name: /الحصة القادمة/ }))
+    fireEvent.click((await screen.findAllByRole("option")).find((o) => !/يوجد برنامج/.test(o.textContent ?? ""))!)
+    return sheet
+  }
+  async function pick(scope: HTMLElement, field: RegExp, search: string, option: string) {
+    fireEvent.click(within(scope).getByRole("combobox", { name: field }))
+    fireEvent.change(await screen.findByPlaceholderText("ابحث باسم السورة أو رقمها…"), { target: { value: search } })
+    fireEvent.click(await screen.findByRole("option", { name: new RegExp(option) }))
+  }
+  const postedItems = (calls: ReturnType<typeof routeFetch>) => (calls.find((c) => c.method === "POST")?.body as { items: unknown[] } | undefined)?.items
+
+  it("مراجعة with only a starting surah: that whole surah; the ending surah is labelled optional", async () => {
+    const calls = routeFetch()
+    const sheet = await openNew()
+    const first = within(sheet).getByRole("group", { name: "العمل 1" })
+    expect(within(first).getByText("إلى سورة (اختياري)")).toBeTruthy()
+    await pick(first, /^من سورة/, "التوبة", "سورة التوبة")
+    fireEvent.click(within(sheet).getByRole("button", { name: "حفظ برنامج العمل" }))
+    await waitFor(() => expect(postedItems(calls)).toBeTruthy())
+    expect(postedItems(calls)).toEqual([{ type: "REVISION", recitationNumber: null, assignment: { kind: "SURAH_RANGE", fromSurah: 9, toSurah: 9 } }])
+  })
+
+  it("اختبار with two surahs, then the ending surah cleared: the single surah is sent", async () => {
+    const calls = routeFetch()
+    const sheet = await openNew()
+    fireEvent.click(within(sheet).getByRole("combobox", { name: "نوع العمل" }))
+    fireEvent.click(await screen.findByRole("option", { name: "اختبار" }))
+    const first = within(sheet).getByRole("group", { name: "العمل 1" })
+    await pick(first, /^من سورة/, "التوبة", "سورة التوبة")
+    await pick(first, /^إلى سورة/, "النور", "سورة النور")
+    fireEvent.click(within(first).getByRole("button", { name: "إزالة سورة النهاية" }))
+    expect(within(first).getByRole("combobox", { name: /^إلى سورة/ }).textContent).toContain("اختر السورة")
+    expect(within(first).queryByRole("button", { name: "إزالة سورة النهاية" })).toBeNull()
+    fireEvent.click(within(sheet).getByRole("button", { name: "حفظ برنامج العمل" }))
+    await waitFor(() => expect(postedItems(calls)).toBeTruthy())
+    expect(postedItems(calls)).toEqual([{ type: "EXAM", recitationNumber: null, assignment: { kind: "SURAH_RANGE", fromSurah: 9, toSurah: 9 } }])
+  })
+
+  it("editing a single-surah item: no ending surah shown; adding one sends the range", async () => {
+    const single = item("t1", {
+      type: "REVISION",
+      version: 2,
+      description: "سورة التوبة",
+      assignment: { kind: "SURAH_RANGE", editionId: EDITION, fromSurah: 9, fromAyah: 1, toSurah: 9, toAyah: 129, fromPage: null, toPage: null },
+    })
+    const calls = routeFetch({ list: { ...program, items: [single] } })
+    renderIn(<WorkFollowupScreen />)
+    fireEvent.click(await screen.findByRole("button", { name: "تعديل البرنامج" }))
+    const sheet = screen.getByRole("dialog")
+    const first = within(sheet).getByRole("group", { name: "العمل 1" })
+    expect(within(first).getByRole("combobox", { name: /^من سورة/ }).textContent).toContain("سورة التوبة")
+    expect(within(first).getByRole("combobox", { name: /^إلى سورة/ }).textContent).toContain("اختر السورة")
+    await pick(first, /^إلى سورة/, "النور", "سورة النور")
+    fireEvent.click(within(sheet).getByRole("button", { name: "حفظ برنامج العمل" }))
+    await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true))
+    expect(calls.find((c) => c.method === "PATCH")!.body).toEqual({
+      items: [{ id: "t1", version: 2, type: "REVISION", recitationNumber: null, assignment: { kind: "SURAH_RANGE", fromSurah: 9, toSurah: 24 } }],
+    })
+  })
+
+  it("program page: one size per item — in hizbs from one hizb (exact or «تقريبًا»), pages below; verse count below 100; exact page hint; no verification sentence", async () => {
+    const snap = (extra: Record<string, unknown>, verses: number, pages: unknown = { kind: "exact", value: 21, touched: 21, dataStatus: "x" }) =>
+      ({
+        editionId: EDITION,
+        verses,
+        surahs: { whole: 1, touched: 1 },
+        pages,
+        juz: { kind: "unavailable", reason: "x" },
+        hizbs: { kind: "unavailable", reason: "x" },
+        quarters: { kind: "unavailable", reason: "x" },
+        eighths: { kind: "unavailable", reason: "x" },
+        dataStatus: "x",
+        authoritative: false,
+        ...extra,
+      }) as NonNullable<WorkItem["workload"]>
+    const a = (from: number, to: number, toAyah: number) => ({ kind: "SURAH_RANGE" as const, editionId: EDITION, fromSurah: from, fromAyah: 1, toSurah: to, toAyah, fromPage: null, toPage: null })
+    const bounded = (greaterThan: number, lessThan: number) => ({ kind: "bounded", greaterThan, lessThan, touched: lessThan, partialAtStart: true, partialAtEnd: false, dataStatus: "x" })
+    const approx = (hizbs: number) => ({ kind: "approximate", hizbs, step: hizbs >= 10 ? 1 : 0.5, eighths: { greaterThan: 0, lessThan: 1 } })
+    routeFetch({
+      get: () =>
+        json(200, {
+          ...program,
+          items: [
+            item("h1", { type: "REVISION", description: "سورة البقرة", assignment: a(2, 2, 286), workload: snap({ hizbsAndPages: { kind: "bounded", hizbs: 3, pages: { greaterThan: 16, lessThan: 18 }, dataStatus: "x" }, hizbEquivalent: approx(5) }, 286, bounded(47, 48)) }),
+            item("h2", { type: "REVISION", description: "من سورة الصافات إلى سورة الناس", assignment: a(37, 114, 6), workload: snap({ hizbEquivalent: approx(16) }, 2448, { kind: "exact", value: 159, touched: 159, dataStatus: "x" }) }),
+            item("h3", { type: "EXAM", description: "من سورة النبأ إلى سورة الناس", assignment: a(78, 114, 6), workload: snap({ hizbEquivalent: { kind: "exact", hizbs: 2 } }, 564, { kind: "exact", value: 23, touched: 23, dataStatus: "x" }) }),
+            item("h4", { type: "EXAM", description: "سورة الملك", assignment: a(67, 67, 30), workload: snap({ hizbEquivalent: approx(0.5) }, 30, bounded(2, 3)) }),
+          ],
+        }),
+    })
+    renderIn(<WorkProgramDetails programId="p1" />)
+    expect((await screen.findByText("5 أحزاب تقريبًا")).dataset.precision).toBe("approximate")
+    expect(screen.queryByText(/16 و18 صفحة|286 آية/)).toBeNull() // no breakdown, no verse count from 100
+    expect(screen.getByText("16 حزبًا تقريبًا").dataset.precision).toBe("approximate")
+    const hint = screen.getByText("159 صفحة")
+    expect(hint.dataset.hint).toBe("pages")
+    expect(hint.getAttribute("aria-label")).toBe("مجموع الصفحات: 159 صفحة")
+    expect(screen.getByText("حزبان").dataset.precision).toBe("exact")
+    expect(screen.getByText("23 صفحة").dataset.hint).toBe("pages")
+    expect(screen.getByText("30 آية")).toBeTruthy()
+    expect(screen.getByText("بين صفحتين و3 صفحات").dataset.precision).toBe("bounded")
+    expect(document.querySelectorAll("[data-hint]")).toHaveLength(2) // bounded pages are never a hint
+    expect(screen.queryByText(/قيد التحقق/)).toBeNull()
+    expect(document.body.textContent).not.toMatch(/undefined|NaN/)
+  })
+})
+

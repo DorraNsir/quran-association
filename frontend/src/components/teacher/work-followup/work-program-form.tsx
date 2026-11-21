@@ -11,12 +11,23 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { ApiError, errorMessage } from "@/lib/api/errors"
-import { useCreateWorkProgram, useEligibleSessions, useUpdateWorkProgram } from "@/lib/api/work-followup"
+import { useCreateWorkProgram, useEligibleSessions, useUpdateWorkProgram, type NewWorkItemInput } from "@/lib/api/work-followup"
+import {
+  adaptDraft,
+  draftFromAssignment,
+  emptyDraft,
+  isBlankDraft,
+  sameAssignment,
+  toPayload,
+  validateItemDraft,
+  type AssignmentDraft,
+} from "@/lib/quran-reference/work-assignment"
 import { sessionLabel, WORK_TYPES, workTypeLabel } from "@/lib/work-followup"
 import type { ID } from "@/types/domain"
-import type { WorkItem, WorkProgram, WorkType } from "@/types/work-followup"
+import type { AssignmentPayload, WorkItem, WorkProgram, WorkType } from "@/types/work-followup"
 
 import { AutoTextarea } from "./auto-textarea"
+import { QuranAssignmentFields } from "./quran-assignment-fields"
 import { WorkStatusBadge } from "./work-badges"
 import type { WorkClassOption, WorkStudentOption } from "./work-followup-provider"
 
@@ -27,16 +38,50 @@ interface DraftItem {
   type: WorkType
   description: string
   recitationNumber: string
+  /** Structured Quranic assignment, or free text (mode 'free') */
+  assignment: AssignmentDraft
 }
 
 let draftSeq = 0
-const blankItem = (): DraftItem => ({ key: `d${++draftSeq}`, type: "REVISION", description: "", recitationNumber: "" })
+const blankItem = (): DraftItem => ({
+  key: `d${++draftSeq}`,
+  type: "REVISION",
+  description: "",
+  recitationNumber: "",
+  assignment: emptyDraft("REVISION"),
+})
 const toDraft = (i: WorkItem): DraftItem => ({
   key: i.id,
   saved: i,
   type: i.type,
   description: i.description,
   recitationNumber: i.recitationNumber ? String(i.recitationNumber) : "",
+  // A legacy item stays free text: its description is never parsed into references
+  assignment: draftFromAssignment(i.type, i.assignment),
+})
+/*
+ * New items are structured only (no free-text fallback); free text exists only for items saved as
+ * free text before Work Program 2.0 — kept as written, converted only by an explicit choice.
+ * The same rules as mobile (shared module + mobile work-model.ts).
+ */
+const structured = (d: DraftItem) => d.assignment.mode !== "free"
+/** An item saved as free text (legacy): it may stay free text. */
+const legacyFreeText = (d: DraftItem) => Boolean(d.saved && !d.saved.assignment)
+/** A new item with nothing selected yet: ignored on save (an extra blank item never blocks it). */
+const untouched = (d: DraftItem) => !d.saved && structured(d) && isBlankDraft(d.assignment)
+/** The problem of an item's assignment, if any (structured references, or legacy free text). */
+const assignmentError = (d: DraftItem) => (untouched(d) ? null : validateItemDraft(d.type, d.assignment, legacyFreeText(d)))
+/** What is wrong with one item (null: it can be sent). */
+function itemError(d: DraftItem): string | null {
+  const e = assignmentError(d)
+  if (e) return e.message
+  return !structured(d) && !d.description.trim() ? "اكتب وصف العمل" : null
+}
+/** A new item: structured references only — the server writes its description. */
+const newItemOf = (d: DraftItem): NewWorkItemInput => ({
+  type: d.type,
+  recitationNumber: numberOf(d),
+  assignment: toPayload(d.assignment) as AssignmentPayload,
 })
 const numberOf = (d: DraftItem) =>
   d.type === "RECITATION" && Number(d.recitationNumber) > 0 ? Math.floor(Number(d.recitationNumber)) : null
@@ -80,11 +125,17 @@ export function WorkProgramForm({
   const options = eligible.data ?? []
   const chosen = options.find((s) => s.id === sessionId)
   const existingId = raced ?? (!editing && chosen?.programId) ?? null
-  const filled = items.filter((i) => i.description.trim())
+  const filled = items.filter((i) => !untouched(i))
+  const itemErrors = new Map(filled.map((i) => [i.key, itemError(i)] as const))
   const errors = {
     student: !studentId ? "اختر الطالب" : undefined,
     session: !sessionId ? "اختر حصة قادمة" : undefined,
-    items: filled.length === 0 ? "أضف عملًا واحدًا على الأقل مع وصفه" : undefined,
+    items:
+      filled.length === 0
+        ? "أضف عملًا واحدًا على الأقل"
+        : [...itemErrors.values()].some(Boolean)
+          ? "صحّح الأعمال المشار إليها"
+          : undefined,
   }
   const show = (error?: string) => (submitted ? error : undefined)
   const pending = create.isPending || update.isPending
@@ -96,9 +147,7 @@ export function WorkProgramForm({
     setSubmitted(true)
     setServerError(null)
     if (pending || errors.student || errors.session || errors.items || existingId) return
-    const newItems = filled
-      .filter((d) => !d.saved)
-      .map((d) => ({ type: d.type, description: d.description.trim(), recitationNumber: numberOf(d) }))
+    const newItems = filled.filter((d) => !d.saved).map(newItemOf)
     const generalNotes = notes.trim() || null
     try {
       if (!program) {
@@ -108,8 +157,25 @@ export function WorkProgramForm({
         // Only what changed, each with the version it was edited from
         const changed = items
           .filter((d): d is DraftItem & { saved: WorkItem } => Boolean(d.saved))
-          .filter((d) => d.type !== d.saved.type || d.description.trim() !== d.saved.description || numberOf(d) !== d.saved.recitationNumber)
-          .map((d) => ({ id: d.saved.id, version: d.saved.version, type: d.type, description: d.description.trim(), recitationNumber: numberOf(d) }))
+          .map((d) => {
+            const assignment = toPayload(d.assignment)
+            const description = d.description.trim()
+            // Only what really changed: an unchanged text is not resent, so the server can keep
+            // its default description in step with a changed range
+            const descriptionChanged = description !== d.saved.description && description !== ""
+            const assignmentChanged = !sameAssignment(d.saved.assignment, assignment)
+            const typeOrNumberChanged = d.type !== d.saved.type || numberOf(d) !== d.saved.recitationNumber
+            if (!descriptionChanged && !assignmentChanged && !typeOrNumberChanged) return null
+            return {
+              id: d.saved.id,
+              version: d.saved.version,
+              type: d.type,
+              recitationNumber: numberOf(d),
+              ...(descriptionChanged ? { description } : {}),
+              ...(assignmentChanged ? { assignment } : {}),
+            }
+          })
+          .filter((c) => c !== null)
         const notesChanged = generalNotes !== program.generalNotes
         await update.mutateAsync({
           id: program.id,
@@ -252,7 +318,12 @@ export function WorkProgramForm({
               <div className="space-y-3">
                 <div className="space-y-1.5">
                   <label htmlFor={`${item.key}-type`} className="text-xs text-muted-foreground">نوع العمل</label>
-                  <Select value={item.type} onValueChange={(type) => updateDraft(item.key, { type: type as WorkType })}>
+                  <Select
+                    value={item.type}
+                    onValueChange={(type) =>
+                      updateDraft(item.key, { type: type as WorkType, assignment: adaptDraft(item.assignment, type as WorkType) })
+                    }
+                  >
                     <SelectTrigger id={`${item.key}-type`} className="w-full sm:w-56">
                       <SelectValue />
                     </SelectTrigger>
@@ -265,16 +336,39 @@ export function WorkProgramForm({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
-                  <label htmlFor={`${item.key}-desc`} className="text-xs text-muted-foreground">وصف العمل</label>
-                  <AutoTextarea
-                    id={`${item.key}-desc`}
-                    value={item.description}
-                    onChange={(e) => updateDraft(item.key, { description: e.target.value })}
-                    placeholder={PLACEHOLDER[item.type]}
-                    maxLength={2000}
-                  />
-                </div>
+                <QuranAssignmentFields
+                  id={item.key}
+                  type={item.type}
+                  draft={item.assignment}
+                  onChange={(assignment) => updateDraft(item.key, { assignment })}
+                  error={submitted ? assignmentError(item) : null}
+                  allowFree={legacyFreeText(item)}
+                />
+                {/*
+                  Free text only for a legacy item kept as written. A structured item has no text
+                  field: the server writes its description, and a saved one is never resent.
+                  Session notes go in «ملاحظات المعلم».
+                */}
+                {!structured(item) && (
+                  <div className="space-y-1.5">
+                    <label htmlFor={`${item.key}-desc`} className="text-xs text-muted-foreground">
+                      وصف العمل
+                    </label>
+                    <AutoTextarea
+                      id={`${item.key}-desc`}
+                      value={item.description}
+                      onChange={(e) => updateDraft(item.key, { description: e.target.value })}
+                      placeholder={PLACEHOLDER[item.type]}
+                      maxLength={2000}
+                      aria-invalid={(submitted && !item.description.trim()) || undefined}
+                    />
+                  </div>
+                )}
+                {submitted && !structured(item) && itemErrors.get(item.key) && (
+                  <p role="alert" className="text-sm text-destructive">
+                    {itemErrors.get(item.key)}
+                  </p>
+                )}
                 {item.type === "RECITATION" && (
                   <div className="space-y-1.5">
                     <label htmlFor={`${item.key}-num`} className="text-xs text-muted-foreground">رقم العرضة (اختياري)</label>

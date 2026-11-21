@@ -21,7 +21,9 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import {
   describeAssignment,
   edition,
+  isGeneratedDescription,
   NO_ASSIGNMENT,
+  presentWorkload,
   resolveAssignment,
   sameAssignment,
   type AssignmentInput,
@@ -284,7 +286,9 @@ function toDto(p: ProgramRow, clock: Clock): WorkProgramDto {
       carriedTo: i.carriedTo.map(link),
       continuedBy: i.continuedBy.map(link),
       assignment: assignmentOf(i),
-      workload: (i.quranWorkload as Record<string, unknown> | null) ?? null,
+      workload: presentWorkload(
+        (i.quranWorkload as Record<string, unknown> | null) ?? null,
+      ),
     })),
   };
 }
@@ -1253,11 +1257,24 @@ export class WorkFollowupService {
       n: number | null,
     ) => (a ? describeAssignment(t, a, n ? recitationOrdinal(n) : null) : null);
     let description = edit.description ?? current.description;
+    const unchanged =
+      after === before &&
+      type === current.type &&
+      recitationNumber === current.recitationNumber;
+    // (an older default wording is recognised too, but never rewritten by a no-op edit)
     if (
       edit.description === undefined &&
       after &&
-      current.description ===
-        generated(before, current.type, current.recitationNumber)
+      before &&
+      !unchanged &&
+      isGeneratedDescription(
+        current.description,
+        current.type,
+        before,
+        current.recitationNumber
+          ? recitationOrdinal(current.recitationNumber)
+          : null,
+      )
     )
       description = generated(after, type, recitationNumber) as string;
     if (

@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils"
 import { carriedFromLabel, evaluationBlockMessage, isTransferable, phaseOf } from "@/lib/work-followup"
 import type { WorkProgram } from "@/types/work-followup"
 
+import { ownDescription, WorkAssignmentView } from "./work-assignment-view"
 import { WorkStatusBadge, WorkTypeBadge } from "./work-badges"
 import { useWorkFollowup } from "./work-followup-provider"
 import { ProgramProgress, SessionLine, WRAP } from "./work-program-card"
@@ -115,7 +116,13 @@ function ProgramView({ program }: { program: WorkProgram }) {
                     <WorkStatusBadge status={item.status} />
                   </div>
                   {/* Complete description: paragraphs, line breaks and unbroken strings all wrap */}
-                  <p className={cn("text-sm leading-relaxed whitespace-pre-wrap", WRAP)}>{item.description}</p>
+                  {item.assignment && <WorkAssignmentView type={item.type} assignment={item.assignment} workload={item.workload} />}
+                  {/* Legacy free text as written; for a structured item, only the teacher's own note */}
+                  {ownDescription(item) && (
+                    <p className={cn("text-sm leading-relaxed whitespace-pre-wrap", WRAP, item.assignment && "text-muted-foreground")}>
+                      {ownDescription(item)}
+                    </p>
+                  )}
                   {item.evaluationComment && (
                     <p className={cn("rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap", WRAP)}>
                       <span className="font-medium text-foreground">تعليق التقييم: </span>

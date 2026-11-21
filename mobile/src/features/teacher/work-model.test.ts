@@ -1,7 +1,9 @@
 import { ApiError } from '@/services/api';
 
 import { workItem, workProgram, workSession } from './__fixtures__/work';
+import { emptyDraft } from '../quran-reference/work-assignment';
 import {
+  assignmentError,
   blankItem,
   classifyWorkError,
   evaluationBody,
@@ -9,6 +11,7 @@ import {
   evaluationBlockOf,
   existingProgramId,
   isEvaluationClosedError,
+  isLegacyFreeText,
   isTransferable,
   newItemsOf,
   nextRecitation,
@@ -19,6 +22,7 @@ import {
   updateBody,
   validateEvaluation,
   validatePlan,
+  type DraftItem,
 } from './work-model';
 
 describe('progress (the approved rule, same numbers as the server)', () => {
@@ -134,31 +138,68 @@ describe('evaluation body: only what changed, with the versions it was loaded at
 });
 
 describe('planning', () => {
-  it('validation follows the DTO', () => {
-    const item = { ...blankItem(), description: 'حفظ' };
+  // A complete structured item of each type (new items are structured only)
+  const surahs = (type: 'REVISION' | 'EXAM', from: number, to: number): DraftItem => ({
+    ...blankItem(),
+    type,
+    assignment: { ...emptyDraft(type), fromSurah: from, toSurah: to },
+  });
+  const recitation = (surah: number, n = ''): DraftItem => ({
+    ...blankItem(),
+    type: 'RECITATION',
+    recitationNumber: n,
+    assignment: { ...emptyDraft('RECITATION'), fromSurah: surah, toSurah: surah },
+  });
+
+  it('validation follows the DTO; new items must carry valid Quranic references', () => {
+    const item = surahs('REVISION', 78, 114);
     expect(validatePlan({ studentId: '', sessionId: 's', items: [item], notes: '' })).toBe('studentRequired');
     expect(validatePlan({ studentId: 'st', sessionId: '', items: [item], notes: '' })).toBe('sessionRequired');
     expect(validatePlan({ studentId: 'st', sessionId: 's', items: [blankItem()], notes: '' })).toBe('itemsRequired');
-    expect(validatePlan({ studentId: 'st', sessionId: 's', items: [{ ...item, description: 'ا'.repeat(2001) }], notes: '' })).toBe('descriptionTooLong');
-    expect(validatePlan({ studentId: 'st', sessionId: 's', items: [{ ...item, type: 'RECITATION', recitationNumber: '0' }], notes: '' })).toBe('numberInvalid');
+    expect(validatePlan({ studentId: 'st', sessionId: 's', items: [recitation(36, '0')], notes: '' })).toBe('numberInvalid');
     expect(validatePlan({ studentId: 'st', sessionId: 's', items: [item], notes: 'ا'.repeat(2001) })).toBe('notesTooLong');
     expect(validatePlan({ studentId: 'st', sessionId: 's', items: [item, blankItem()], notes: '' })).toBeNull();
+    // Incomplete references are refused, never turned into free text
+    // only an ending surah (the starting one is required)
+    const halfDone = { ...blankItem(), assignment: { ...emptyDraft('REVISION'), toSurah: 9 } };
+    expect(validatePlan({ studentId: 'st', sessionId: 's', items: [halfDone], notes: '' })).toBe('assignmentInvalid');
+    expect(assignmentError(halfDone)?.code).toBe('SURAHS_REQUIRED');
+    // a starting surah alone is complete: that surah (the ending surah is optional)
+    const single = { ...blankItem(), assignment: { ...emptyDraft('REVISION'), fromSurah: 9 } };
+    expect(assignmentError(single)).toBeNull();
+    expect(newItemsOf([single])).toEqual([{ type: 'REVISION', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 9, toSurah: 9 } }]);
+    const typedOnly = { ...blankItem(), description: 'مراجعة جزء عمّ', assignment: { ...emptyDraft('REVISION'), toSurah: 3 } };
+    expect(validatePlan({ studentId: 'st', sessionId: 's', items: [typedOnly], notes: '' })).toBe('assignmentInvalid');
+    // A new item cannot be free text
+    const free = { ...blankItem(), description: 'نص', assignment: { ...emptyDraft('REVISION'), mode: 'free' as const } };
+    expect(assignmentError(free)?.code).toBe('STRUCTURE_REQUIRED');
     // A next recitation keeps a number (WORK_RECITATION_NUMBER_REQUIRED)
     const locked = toDraft(workItem('x', { type: 'RECITATION', recitationNumber: 3, continuedFrom: { itemId: 'y', programId: 'p', sessionId: 's', sessionDate: '2026-11-01', recitationNumber: 2 } }));
     expect(validatePlan({ studentId: 'st', sessionId: 's', items: [{ ...locked, recitationNumber: '' }], notes: '' })).toBe('numberRequired');
   });
 
-  it('new items: trimmed, blank ones dropped, number only for عرضة', () => {
+  it('legacy free-text items stay valid as written; emptied text is refused; descriptions stay limited', () => {
+    const legacy = toDraft(workItem('l1', { description: 'حفظ حر قديم' }));
+    expect(isLegacyFreeText(legacy)).toBe(true);
+    expect(assignmentError(legacy)).toBeNull();
+    expect(validatePlan({ studentId: 'st', sessionId: 's', items: [legacy], notes: '' })).toBeNull();
+    expect(validatePlan({ studentId: 'st', sessionId: 's', items: [{ ...legacy, description: ' ' }], notes: '' })).toBe('descriptionRequired');
+    expect(validatePlan({ studentId: 'st', sessionId: 's', items: [{ ...legacy, description: 'ا'.repeat(2001) }], notes: '' })).toBe('descriptionTooLong');
+  });
+
+  it('new items: structured requests only, blank ones dropped, number only for عرضة', () => {
     const items = [
-      { ...blankItem(), description: '  حفظ سورة الملك  ' },
-      { ...blankItem(), description: '   ' },
-      { ...blankItem(), type: 'RECITATION' as const, description: 'العرضة الأولى', recitationNumber: '1' },
-      { ...blankItem(), type: 'EXAM' as const, description: 'اختبار', recitationNumber: '4' },
+      { ...blankItem(), type: 'MEMORIZATION' as const, assignment: { ...emptyDraft('MEMORIZATION'), fromSurah: 67, toSurah: 67, fromAyah: '1', toAyah: '30' } },
+      blankItem(),
+      recitation(36, '1'),
+      { ...surahs('EXAM', 46, 114), recitationNumber: '4' },
+      { ...blankItem(), type: 'MEMORIZATION' as const, assignment: { ...emptyDraft('MEMORIZATION'), mode: 'pages' as const, fromPage: '10', toPage: '12' } },
     ];
     expect(newItemsOf(items)).toEqual([
-      { type: 'REVISION', description: 'حفظ سورة الملك', recitationNumber: null },
-      { type: 'RECITATION', description: 'العرضة الأولى', recitationNumber: 1 },
-      { type: 'EXAM', description: 'اختبار', recitationNumber: null },
+      { type: 'MEMORIZATION', recitationNumber: null, assignment: { kind: 'AYAH_RANGE', fromSurah: 67, fromAyah: 1, toSurah: 67, toAyah: 30 } },
+      { type: 'RECITATION', recitationNumber: 1, assignment: { kind: 'SURAH_RANGE', fromSurah: 36, toSurah: 36 } },
+      { type: 'EXAM', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 46, toSurah: 114 } },
+      { type: 'MEMORIZATION', recitationNumber: null, assignment: { kind: 'PAGE_RANGE', fromPage: 10, toPage: 12 } },
     ]);
   });
 
@@ -167,15 +208,27 @@ describe('planning', () => {
     const drafts = p.items.map(toDraft);
     expect(updateBody(p, drafts, p.generalNotes!)).toEqual({ body: {}, changed: false });
     drafts[1] = { ...drafts[1]!, description: 'العرضة الثانية من سورة التوبة كاملة' };
-    const added = { ...blankItem(), description: 'اختبار قصير', type: 'EXAM' as const };
-    expect(updateBody(p, [...drafts, added], '')).toEqual({
+    expect(updateBody(p, [...drafts, surahs('EXAM', 67, 67)], '')).toEqual({
       body: {
         version: 1,
         generalNotes: null,
         items: [{ id: 'i2', version: 3, type: 'RECITATION', description: 'العرضة الثانية من سورة التوبة كاملة', recitationNumber: 2 }],
-        newItems: [{ type: 'EXAM', description: 'اختبار قصير', recitationNumber: null }],
+        newItems: [{ type: 'EXAM', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 67, toSurah: 67 } }],
       },
       changed: true,
+    });
+  });
+
+  it('explicit conversion of a legacy item: valid references required, its words are not resent', () => {
+    const p = workProgram('w1', { items: [workItem('l1', { type: 'EXAM', description: 'اختبار حر قديم', version: 5 })] });
+    const [legacy] = p.items.map(toDraft);
+    const converted = { ...legacy!, assignment: { ...emptyDraft('EXAM'), fromSurah: 2 } };
+    expect(assignmentError({ ...converted, assignment: emptyDraft('EXAM') })?.code).toBe('SURAHS_REQUIRED');
+    expect(assignmentError(converted)).toBeNull(); // the starting surah alone is a complete choice
+    const done = { ...converted, assignment: { ...converted.assignment, toSurah: 3 } };
+    expect(assignmentError(done)).toBeNull();
+    expect(updateBody(p, [done], p.generalNotes!).body).toEqual({
+      items: [{ id: 'l1', version: 5, type: 'EXAM', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 2, toSurah: 3 } }],
     });
   });
 });

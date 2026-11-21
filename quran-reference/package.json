@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/dataset.test.mjs tests/golden.test.mjs engine/engine.test.ts"
+    "test": "node --test tests/dataset.test.mjs tests/golden.test.mjs engine/engine.test.ts clients/work-assignment.test.ts",
+    "sync:clients": "node scripts/sync-clients.mjs",
+    "contract:backend": "node scripts/backend-contract.mjs"
   }
 }

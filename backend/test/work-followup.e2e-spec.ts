@@ -1687,6 +1687,9 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
       } | null;
     };
     const itemsOf = (p: Program) => p.items as unknown as Assigned[];
+    const eighthsOf = (i: Assigned) =>
+      (i.workload as unknown as { hizbsAndEighths?: unknown } | null)
+        ?.hizbsAndEighths;
     const memo = {
       type: 'MEMORIZATION',
       assignment: {
@@ -2153,6 +2156,356 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
       });
       expect(mine.items[0]).not.toHaveProperty('workload');
       expect(mine.items[5].assignment).toBeNull();
+    });
+
+    it('مراجعة / اختبار with only a starting surah: the whole surah; then edited to a range, transferred intact', async () => {
+      const day = await session('C', addDays(TODAY, 28), '16:00');
+      const later = await session('C', addDays(TODAY, 30), '16:00');
+      const p = (
+        await create(
+          'sup',
+          's2',
+          'a1x',
+          [
+            {
+              type: 'REVISION',
+              assignment: { kind: 'SURAH_RANGE', fromSurah: 9 },
+            },
+            { type: 'EXAM', assignment: { kind: 'SURAH_RANGE', fromSurah: 9 } },
+          ],
+          { sessionId: day },
+        ).expect(201)
+      ).body as Program;
+      const [rev, ex] = itemsOf(p);
+      for (const i of [rev!, ex!]) {
+        expect(i.assignment).toMatchObject({
+          kind: 'SURAH_RANGE',
+          fromSurah: 9,
+          fromAyah: 1,
+          toSurah: 9,
+          toAyah: 129,
+        });
+        expect(i.description).toBe('سورة التوبة');
+        expect(i.workload!.verses).toBe(129);
+        expect(
+          (
+            i.workload as unknown as {
+              hizbsAndPages: { kind: string; hizbs: number };
+            }
+          ).hizbsAndPages,
+        ).toMatchObject({ kind: 'bounded', hizbs: 1 });
+        expect(
+          (i.workload as unknown as { hizbEquivalent: unknown }).hizbEquivalent,
+        ).toMatchObject({ kind: 'approximate', hizbs: 2 });
+        // the preferred form, stored with every new assignment (exact here in eighths)
+        expect(eighthsOf(i)).toMatchObject({
+          kind: 'exact',
+          hizbs: 1,
+          eighths: 9,
+        });
+      }
+      // Edited to a multi-surah range (version checked); the default text follows
+      const edited = (
+        await api
+          .patch('sup', `work-items/${rev!.id}`, {
+            version: rev!.version,
+            assignment: { kind: 'SURAH_RANGE', fromSurah: 9, toSurah: 24 },
+          })
+          .expect(200)
+      ).body as Program;
+      expect(itemsOf(edited)[0]).toMatchObject({
+        description: 'من سورة التوبة إلى سورة النور',
+        assignment: { fromSurah: 9, toSurah: 24, toAyah: 64 },
+        version: rev!.version + 1,
+      });
+      // the range changed: its derived workload is recomputed, eighths included
+      expect(eighthsOf(itemsOf(edited)[0]!)).toMatchObject({
+        kind: 'exact',
+        hizbs: 16,
+        eighths: 10,
+      });
+      // Reversed is still refused
+      expect(
+        (
+          await api
+            .patch('sup', `work-items/${ex!.id}`, {
+              version: ex!.version,
+              assignment: { kind: 'SURAH_RANGE', fromSurah: 24, toSurah: 9 },
+            })
+            .expect(400)
+        ).body.code,
+      ).toBe('WORK_ASSIGNMENT_REVERSED');
+      // Transfer keeps the single-surah assignment and its workload as they are
+      await startNow(day, addDays(TODAY, -4));
+      let q = await programOf('sup', p.id);
+      q = (await evaluate('sup', q, itemsOf(q)[1]!.id, 'POSTPONED').expect(200))
+        .body;
+      const target = (
+        await api
+          .post('sup', `work-items/${itemsOf(q)[1]!.id}/transfer`, {
+            targetSessionId: later,
+          })
+          .expect(201)
+      ).body as Program;
+      const copy = itemsOf(target).find(
+        (i) => i.carriedFrom?.itemId === ex!.id,
+      )!;
+      expect(copy).toMatchObject({
+        assignment: ex!.assignment,
+        workload: ex!.workload,
+        description: 'سورة التوبة',
+      });
+    });
+
+    it('a snapshot stored before the eighths form is kept as it is: viewing, unrelated edits and transfers never recompute it', async () => {
+      const day = await session('C', addDays(TODAY, 32), '16:00');
+      const later = await session('C', addDays(TODAY, 34), '16:00');
+      const p = (
+        await create(
+          'sup',
+          's2',
+          'a1x',
+          [
+            {
+              type: 'REVISION',
+              assignment: { kind: 'SURAH_RANGE', fromSurah: 9 },
+            },
+            {
+              type: 'EXAM',
+              assignment: { kind: 'SURAH_RANGE', fromSurah: 78, toSurah: 114 },
+            },
+          ],
+          { sessionId: day },
+        ).expect(201)
+      ).body as Program;
+      const [rev, ex] = itemsOf(p);
+      // An older snapshot: written before hizbsAndEighths existed
+      for (const i of [rev!, ex!]) {
+        const row = await prisma.workItem.findUniqueOrThrow({
+          where: { id: i.id },
+        });
+        const { hizbsAndEighths, hizbEquivalent, ...legacy } =
+          row.quranWorkload as Record<string, unknown>;
+        expect(hizbsAndEighths).toBeTruthy();
+        expect(hizbEquivalent).toBeTruthy();
+        await prisma.workItem.update({
+          where: { id: i.id },
+          data: { quranWorkload: legacy as object },
+        });
+      }
+      const stored = async (itemId: string) =>
+        (await prisma.workItem.findUniqueOrThrow({ where: { id: itemId } }))
+          .quranWorkload as Record<string, unknown>;
+      const legacyRev = await stored(rev!.id);
+      // Viewing: served as stored, nothing written
+      let q = await programOf('sup', p.id);
+      expect(itemsOf(q)[0]!.workload).not.toHaveProperty('hizbsAndEighths');
+      // …but the display size is derived from its stored measures at read time (not written)
+      expect(
+        (itemsOf(q)[0]!.workload as unknown as { hizbEquivalent: unknown })
+          .hizbEquivalent,
+      ).toMatchObject({ kind: 'approximate', hizbs: 2 });
+      expect(await stored(rev!.id)).not.toHaveProperty('hizbEquivalent');
+      expect(itemsOf(q)[0]!.workload).toMatchObject({
+        hizbsAndPages: { kind: 'bounded', hizbs: 1 },
+      });
+      expect(await stored(rev!.id)).toEqual(legacyRev);
+      // An edit of the text only, and the same assignment sent again: the snapshot is kept
+      q = (
+        await api
+          .patch('sup', `work-items/${rev!.id}`, {
+            version: itemsOf(q)[0]!.version,
+            description: 'مراجعة التوبة مع التجويد',
+          })
+          .expect(200)
+      ).body as Program;
+      q = (
+        await api
+          .patch('sup', `work-items/${rev!.id}`, {
+            version: itemsOf(q)[0]!.version,
+            assignment: { kind: 'SURAH_RANGE', fromSurah: 9 },
+          })
+          .expect(200)
+      ).body as Program;
+      expect(await stored(rev!.id)).toEqual(legacyRev);
+      // The other item of the program is untouched by these edits
+      expect(await stored(ex!.id)).not.toHaveProperty('hizbsAndEighths');
+      // Transfer copies the older snapshot verbatim (no recomputation)
+      await startNow(day, addDays(TODAY, -6));
+      q = await programOf('sup', p.id);
+      q = (await evaluate('sup', q, itemsOf(q)[1]!.id, 'POSTPONED').expect(200))
+        .body;
+      const target = (
+        await api
+          .post('sup', `work-items/${itemsOf(q)[1]!.id}/transfer`, {
+            targetSessionId: later,
+          })
+          .expect(201)
+      ).body as Program;
+      const copy = itemsOf(target).find(
+        (i) => i.carriedFrom?.itemId === ex!.id,
+      )!;
+      expect(copy.workload).not.toHaveProperty('hizbsAndEighths');
+      expect(
+        (copy.workload as unknown as { hizbEquivalent: unknown })
+          .hizbEquivalent,
+      ).toEqual({ kind: 'exact', hizbs: 2 }); // juz 30, derived at read time
+      expect(await stored(copy.id)).toEqual(await stored(ex!.id));
+      // A real change of range: the new snapshot gets the eighths form
+      const changed = (
+        await api
+          .patch('sup', `work-items/${rev!.id}`, {
+            version: itemsOf(q)[0]!.version,
+            assignment: { kind: 'SURAH_RANGE', fromSurah: 9, toSurah: 10 },
+          })
+          .expect(200)
+      ).body as Program;
+      expect(eighthsOf(itemsOf(changed)[0]!)).toMatchObject({
+        hizbs: expect.any(Number),
+      });
+    });
+
+    it('حفظ modes: whole surah, a single verse, a single page — resolved by the server; older wording kept on a no-op edit and followed on a real change; transfer intact', async () => {
+      const day = await session('C', addDays(TODAY, 36), '16:00');
+      const later = await session('C', addDays(TODAY, 38), '16:00');
+      const p = (
+        await create(
+          'sup',
+          's2',
+          'a1x',
+          [
+            {
+              type: 'MEMORIZATION',
+              assignment: { kind: 'AYAH_RANGE', fromSurah: 110, toSurah: 110 },
+            },
+            {
+              type: 'MEMORIZATION',
+              assignment: {
+                kind: 'AYAH_RANGE',
+                fromSurah: 2,
+                fromAyah: 255,
+                toSurah: 2,
+              },
+            },
+            {
+              type: 'MEMORIZATION',
+              assignment: { kind: 'PAGE_RANGE', fromPage: 79 },
+            },
+          ],
+          { sessionId: day },
+        ).expect(201)
+      ).body as Program;
+      const [whole, verse, page] = itemsOf(p);
+      expect(whole).toMatchObject({
+        description: 'سورة النصر كاملة',
+        assignment: {
+          kind: 'AYAH_RANGE',
+          fromSurah: 110,
+          fromAyah: 1,
+          toSurah: 110,
+          toAyah: 3,
+          fromPage: null,
+          toPage: null,
+        },
+      });
+      expect(whole!.workload!.verses).toBe(3);
+      expect(verse).toMatchObject({
+        description: 'سورة البقرة: الآية 255',
+        assignment: { fromAyah: 255, toAyah: 255 },
+      });
+      expect(verse!.workload!.verses).toBe(1);
+      expect(page).toMatchObject({
+        description: 'الصفحة 79',
+        assignment: { kind: 'PAGE_RANGE', fromPage: 79, toPage: 79 },
+      });
+      expect(page!.workload!.pages).toMatchObject({ kind: 'exact', value: 1 });
+      // Missing starting fields and reversed ranges are refused
+      for (const [assignment, code] of [
+        [
+          { kind: 'AYAH_RANGE', fromSurah: 2, toSurah: 2, toAyah: 5 },
+          'WORK_ASSIGNMENT_FORMAT',
+        ],
+        [{ kind: 'PAGE_RANGE', toPage: 80 }, 'WORK_ASSIGNMENT_FORMAT'],
+        [
+          { kind: 'PAGE_RANGE', fromPage: 82, toPage: 79 },
+          'WORK_ASSIGNMENT_REVERSED',
+        ],
+        [
+          { kind: 'AYAH_RANGE', fromSurah: 110, fromAyah: 4, toSurah: 110 },
+          'WORK_ASSIGNMENT_REFERENCE',
+        ],
+      ] as const)
+        expect(
+          (
+            await api
+              .patch('sup', `work-items/${verse!.id}`, {
+                version: verse!.version,
+                assignment,
+              })
+              .expect(400)
+          ).body.code,
+        ).toBe(code);
+      // An item saved with the older default wording of a whole surah
+      const oldText = 'سورة النصر: من الآية 1 إلى الآية 3';
+      await prisma.workItem.update({
+        where: { id: whole!.id },
+        data: { description: oldText },
+      });
+      const before = await prisma.workItem.findUniqueOrThrow({
+        where: { id: whole!.id },
+      });
+      // the same whole surah sent again: nothing rewritten (text, version, snapshot)
+      await api
+        .patch('sup', `work-items/${whole!.id}`, {
+          version: before.version,
+          assignment: { kind: 'AYAH_RANGE', fromSurah: 110, toSurah: 110 },
+        })
+        .expect(200);
+      const same = await prisma.workItem.findUniqueOrThrow({
+        where: { id: whole!.id },
+      });
+      expect(same.description).toBe(oldText);
+      expect(same.version).toBe(before.version);
+      expect(same.quranWorkload).toEqual(before.quranWorkload);
+      // a real change: the server text follows its assignment (the older wording is recognised)
+      const changed = (
+        await api
+          .patch('sup', `work-items/${whole!.id}`, {
+            version: before.version,
+            assignment: {
+              kind: 'AYAH_RANGE',
+              fromSurah: 110,
+              fromAyah: 1,
+              toSurah: 110,
+              toAyah: 2,
+            },
+          })
+          .expect(200)
+      ).body as Program;
+      expect(itemsOf(changed)[0]).toMatchObject({
+        description: 'سورة النصر: من الآية 1 إلى الآية 2',
+        version: before.version + 1,
+      });
+      // Transfer keeps a single-page assignment as it is
+      await startNow(day, addDays(TODAY, -8));
+      let q = await programOf('sup', p.id);
+      q = (await evaluate('sup', q, itemsOf(q)[2]!.id, 'POSTPONED').expect(200))
+        .body;
+      const target = (
+        await api
+          .post('sup', `work-items/${itemsOf(q)[2]!.id}/transfer`, {
+            targetSessionId: later,
+          })
+          .expect(201)
+      ).body as Program;
+      const copy = itemsOf(target).find(
+        (i) => i.carriedFrom?.itemId === page!.id,
+      )!;
+      expect(copy).toMatchObject({
+        description: 'الصفحة 79',
+        assignment: page!.assignment,
+        workload: page!.workload,
+      });
     });
 
     it('the database refuses an inconsistent assignment even outside the API', async () => {

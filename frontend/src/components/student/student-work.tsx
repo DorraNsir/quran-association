@@ -16,6 +16,7 @@ import { formatDate } from "@/lib/format"
 import { usePlatformSettings } from "@/lib/store/settings"
 import { cn } from "@/lib/utils"
 import { phaseOf, workStatusLabel } from "@/lib/work-followup"
+import { ownDescription, WorkAssignmentView } from "@/components/teacher/work-followup/work-assignment-view"
 import type { StudentWorkProgram } from "@/types/work-followup"
 
 type Period = "upcoming" | "past" | "all"
@@ -114,7 +115,10 @@ function StudentWorkCard({ program, phase }: { program: StudentWorkProgram; phas
               <WorkStatusBadge status={item.status} />
             </div>
             {/* The full text: line breaks and very long words wrap inside the card */}
-            <p className={cn("text-sm whitespace-pre-wrap", WRAP)}>{item.description}</p>
+            {item.assignment && <WorkAssignmentView type={item.type} assignment={item.assignment} workload={null} />}
+            {ownDescription(item) && (
+              <p className={cn("text-sm whitespace-pre-wrap", WRAP, item.assignment && "text-muted-foreground")}>{ownDescription(item)}</p>
+            )}
             {item.evaluationComment && (
               <p className={cn("flex items-start gap-1.5 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap", WRAP)}>
                 <MessageSquareText className="mt-0.5 size-3.5 shrink-0" aria-hidden />

@@ -17,9 +17,15 @@ import { useConfirmThenBack } from './use-confirm-then-back';
 import { useTeacherWorkspace } from './use-teacher-dashboard';
 import { useCreateWorkProgram, useEligibleSessions, useUpdateWorkProgram, useWorkProgram } from './use-work';
 import { WorkStatusBadge } from './work-badges';
+import { adaptDraft } from '../quran-reference/work-assignment';
+import { QuranAssignmentEditor } from './quran-assignment-editor';
 import {
+  assignmentError,
   blankItem,
   classifyWorkError,
+  isLegacyFreeText,
+  isStructured,
+  isUntouched,
   DESCRIPTION_MAX,
   existingProgramId,
   newItemsOf,
@@ -118,6 +124,7 @@ function PlanForm({
   const [items, setItems] = useState<DraftItem[]>(() => (program ? program.items.map(toDraft) : [blankItem()]));
   const [notes, setNotes] = useState(program?.generalNotes ?? '');
   const [picking, setPicking] = useState(false);
+  const [pickingSession, setPickingSession] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // A program created meanwhile by someone else (409 WORK_PROGRAM_EXISTS)
@@ -136,7 +143,7 @@ function PlanForm({
   const existingId = raced ?? (!program && chosen?.programId) ?? null;
   const invalid = validatePlan({ studentId, sessionId, items, notes });
   const edit = program ? updateBody(program, items, notes) : null;
-  const dirty = program ? edit!.changed : Boolean(studentId || sessionId || notes.trim() || items.some((i) => i.description.trim()));
+  const dirty = program ? edit!.changed : Boolean(studentId || sessionId || notes.trim() || items.some((i) => !isUntouched(i)));
   const saving = create.isPending || update.isPending;
   const locked = saving || Boolean(confirmation);
   const studentLabel = program
@@ -238,21 +245,18 @@ function PlanForm({
             {w.noEligible}
           </AppText>
         ) : (
-          <View accessibilityRole="radiogroup" accessibilityLabel={w.session} style={styles.options}>
-            {options.map((s) => (
-              <OptionRow
-                key={s.id}
-                label={sessionOptionLabel(s)}
-                selected={s.id === sessionId}
-                onPress={() => {
-                  if (locked) return;
-                  setSessionId(s.id);
-                  setRaced(null);
-                  setError(null);
-                }}
-              />
-            ))}
-          </View>
+          // Compact field: the chosen session stays visible; the list opens in a sheet and closes on choice
+          <Pressable
+            onPress={() => setPickingSession(true)}
+            disabled={locked}
+            accessibilityRole="button"
+            accessibilityLabel={`${w.session}: ${chosen ? sessionOptionLabel(chosen) : w.pickSession}`}
+            style={[styles.picker, { borderColor: submitted && !sessionId ? colors.destructive : colors.input }]}>
+            <AppText variant="body" tone={chosen ? 'default' : 'muted'} style={styles.flex}>
+              {chosen ? sessionOptionLabel(chosen) : w.pickSession}
+            </AppText>
+            <Icon name="forward" size={16} color={colors.mutedForeground} />
+          </Pressable>
         )}
         {existingId ? (
           <View style={styles.section}>
@@ -275,6 +279,7 @@ function PlanForm({
           key={item.key}
           index={index}
           item={item}
+          submitted={submitted}
           disabled={locked}
           removable={!item.saved && items.length > 1}
           onChange={(p) => patch(item.key, p)}
@@ -301,6 +306,26 @@ function PlanForm({
           style={[styles.input, styles.multiline, { color: colors.foreground, borderColor: colors.input }]}
         />
       </Card>
+
+      {!program ? (
+        <BottomSheet visible={pickingSession} title={w.session} closeLabel={w.closePicker} onClose={() => setPickingSession(false)}>
+          <View accessibilityRole="radiogroup" accessibilityLabel={w.session} style={styles.options}>
+            {options.map((s) => (
+              <OptionRow
+                key={s.id}
+                label={sessionOptionLabel(s)}
+                selected={s.id === sessionId}
+                onPress={() => {
+                  setSessionId(s.id);
+                  setRaced(null);
+                  setError(null);
+                  setPickingSession(false);
+                }}
+              />
+            ))}
+          </View>
+        </BottomSheet>
+      ) : null}
 
       {!program ? (
         <BottomSheet visible={picking} title={w.pickStudent} closeLabel={w.closePicker} onClose={() => setPicking(false)}>
@@ -333,6 +358,7 @@ function PlanForm({
 function ItemEditor({
   index,
   item,
+  submitted,
   disabled,
   removable,
   onChange,
@@ -340,6 +366,8 @@ function ItemEditor({
 }: {
   index: number;
   item: DraftItem;
+  /** A save was attempted: show this item's problems */
+  submitted: boolean;
   disabled: boolean;
   removable: boolean;
   onChange: (p: Partial<DraftItem>) => void;
@@ -368,22 +396,45 @@ function ItemEditor({
         <ChipRow
           label={`${w.itemType} — ${w.itemN(index + 1)}`}
           value={item.type}
-          onChange={(type) => !disabled && onChange({ type })}
+          onChange={(type) => !disabled && onChange({ type, assignment: adaptDraft(item.assignment, type) })}
           options={WORK_TYPES.map((t) => ({ value: t, label: w.type[t] }))}
         />
       )}
-      <TextInput
-        value={item.description}
-        onChangeText={(description) => onChange({ description })}
-        editable={!disabled}
-        multiline
-        textAlignVertical="top"
-        maxLength={DESCRIPTION_MAX + 1}
-        placeholder={w.placeholder[item.type]}
-        placeholderTextColor={colors.mutedForeground}
-        accessibilityLabel={`${w.itemDescription} — ${w.itemN(index + 1)}`}
-        style={[styles.input, styles.multiline, { color: colors.foreground, borderColor: colors.input }]}
+      <QuranAssignmentEditor
+        itemLabel={w.itemN(index + 1)}
+        type={item.type}
+        draft={item.assignment}
+        onChange={(assignment) => onChange({ assignment })}
+        error={submitted ? assignmentError(item) : null}
+        disabled={disabled}
+        allowFree={isLegacyFreeText(item)}
       />
+      {/*
+        Free text only (legacy items, or a teacher's choice). A structured item has no text field:
+        its description is written by the server, and a saved one is kept as it is (never resent).
+        Notes about the session go in «ملاحظات المعلم» of the program.
+      */}
+      {!isStructured(item) ? (
+        <TextInput
+          value={item.description}
+          onChangeText={(description) => onChange({ description })}
+          editable={!disabled}
+          multiline
+          textAlignVertical="top"
+          maxLength={DESCRIPTION_MAX + 1}
+          placeholder={w.placeholder[item.type]}
+          placeholderTextColor={colors.mutedForeground}
+          accessibilityLabel={`${w.itemDescription} — ${w.itemN(index + 1)}`}
+          style={[
+            styles.input,
+            styles.multiline,
+            {
+              color: colors.foreground,
+              borderColor: submitted && !item.description.trim() ? colors.destructive : colors.input,
+            },
+          ]}
+        />
+      ) : null}
       {item.type === 'RECITATION' ? (
         <TextInput
           value={item.recitationNumber}

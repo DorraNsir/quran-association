@@ -1,4 +1,8 @@
+import type { AssignmentPayload, WorkAssignment, WorkloadSnapshot } from '@/features/quran-reference/work-assignment';
+
 import type { SessionStatus } from './types';
+
+export type { AssignmentPayload, WorkAssignment, WorkloadSnapshot } from '@/features/quran-reference/work-assignment';
 
 /*
  * «متابعة برنامج العمل» DTOs — backend work-followup.dto.ts (teacher routes).
@@ -48,6 +52,10 @@ export interface WorkItem {
   continuedFrom: (WorkItemLink & { recitationNumber: number | null }) | null;
   carriedTo: WorkItemLink[];
   continuedBy: WorkItemLink[];
+  /** Structured Quranic assignment (null: a free-text item, e.g. every item saved before Work Program 2.0) */
+  assignment: WorkAssignment | null;
+  /** Computed and stored by the server when the assignment was saved — never computed here */
+  workload: WorkloadSnapshot | null;
 }
 
 /** Computed by the server: only COMPLETED is done, CANCELLED is out of the active total. */
@@ -92,8 +100,11 @@ export interface WorkProgramFilters {
 
 export interface NewWorkItem {
   type: WorkType;
-  description: string;
+  /** Optional with an assignment: the server then writes the default description */
+  description?: string;
   recitationNumber?: number | null;
+  /** References only; the server validates them and computes the workload */
+  assignment?: AssignmentPayload;
 }
 
 export interface WorkItemPatch {
@@ -102,6 +113,8 @@ export interface WorkItemPatch {
   type?: WorkType;
   description?: string;
   recitationNumber?: number | null;
+  /** Omitted: unchanged · null: back to free text · an object: the new assignment */
+  assignment?: AssignmentPayload | null;
 }
 
 export interface EvaluationLine {

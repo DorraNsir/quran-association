@@ -1,5 +1,15 @@
 import type { IconName, PillTone } from '@/components/ui';
 import { formatDate, formatDateLong } from '@/i18n/format';
+import {
+  draftFromAssignment,
+  emptyDraft,
+  isBlankDraft,
+  sameAssignment,
+  toPayload,
+  validateItemDraft,
+  type AssignmentPayload,
+  type AssignmentDraft,
+} from '@/features/quran-reference/work-assignment';
 import { ApiError } from '@/services/api';
 
 import { platformClock } from './dashboard-model';
@@ -183,29 +193,65 @@ export interface DraftItem {
   type: WorkType;
   description: string;
   recitationNumber: string;
+  /** Structured Quranic assignment, or free text (mode 'free') */
+  assignment: AssignmentDraft;
 }
 
 let draftSeq = 0;
-export const blankItem = (): DraftItem => ({ key: `d${++draftSeq}`, type: 'REVISION', description: '', recitationNumber: '' });
+export const blankItem = (): DraftItem => ({
+  key: `d${++draftSeq}`,
+  type: 'REVISION',
+  description: '',
+  recitationNumber: '',
+  assignment: emptyDraft('REVISION'),
+});
 export const toDraft = (i: WorkItem): DraftItem => ({
   key: i.id,
   saved: i,
   type: i.type,
   description: i.description,
   recitationNumber: i.recitationNumber ? String(i.recitationNumber) : '',
+  // A legacy item stays free text: its description is never parsed into references
+  assignment: draftFromAssignment(i.type, i.assignment),
 });
+
+/*
+ * The web form's rules (frontend work-program-form.tsx), on the shared generated module.
+ * New items are structured only (no free-text fallback); free text exists only for items saved as
+ * free text before Work Program 2.0 — kept as written, converted only by an explicit choice.
+ */
+export const isStructured = (d: DraftItem) => d.assignment.mode !== 'free';
+/** An item saved as free text (legacy): it may stay free text. */
+export const isLegacyFreeText = (d: DraftItem) => Boolean(d.saved && !d.saved.assignment);
+/** A new item with nothing selected yet: ignored on save (an extra blank item never blocks it). */
+export const isUntouched = (d: DraftItem) => !d.saved && isStructured(d) && isBlankDraft(d.assignment);
+/** The problem of an item's assignment, if any (structured references, or legacy free text). */
+export const assignmentError = (d: DraftItem) => (isUntouched(d) ? null : validateItemDraft(d.type, d.assignment, isLegacyFreeText(d)));
 
 /** عرضة only: a positive whole number, else none (the web's numberOf). */
 export const numberOf = (d: DraftItem) =>
   d.type === 'RECITATION' && /^\d+$/.test(d.recitationNumber.trim()) && Number(d.recitationNumber) > 0 ? Number(d.recitationNumber) : null;
 
-export type PlanError = 'studentRequired' | 'sessionRequired' | 'itemsRequired' | 'descriptionTooLong' | 'notesTooLong' | 'tooManyItems' | 'numberInvalid' | 'numberRequired';
+export type PlanError =
+  | 'studentRequired'
+  | 'sessionRequired'
+  | 'itemsRequired'
+  | 'descriptionRequired'
+  | 'assignmentInvalid'
+  | 'descriptionTooLong'
+  | 'notesTooLong'
+  | 'tooManyItems'
+  | 'numberInvalid'
+  | 'numberRequired';
 
 export function validatePlan(input: { studentId: string; sessionId: string; items: readonly DraftItem[]; notes: string }): PlanError | null {
   if (!input.studentId) return 'studentRequired';
   if (!input.sessionId) return 'sessionRequired';
-  const filled = input.items.filter((i) => i.description.trim());
+  const filled = input.items.filter((i) => !isUntouched(i));
   if (filled.length === 0) return 'itemsRequired';
+  if (filled.some((i) => assignmentError(i))) return 'assignmentInvalid';
+  // A legacy free-text item kept as free text keeps a description
+  if (filled.some((i) => !isStructured(i) && !i.description.trim())) return 'descriptionRequired';
   if (input.items.length > ITEMS_MAX) return 'tooManyItems';
   if (input.items.some((i) => i.description.trim().length > DESCRIPTION_MAX)) return 'descriptionTooLong';
   if (input.items.some((i) => i.type === 'RECITATION' && i.recitationNumber.trim() && numberOf(i) === null)) return 'numberInvalid';
@@ -217,15 +263,33 @@ export function validatePlan(input: { studentId: string; sessionId: string; item
 
 export const newItemsOf = (items: readonly DraftItem[]): NewWorkItem[] =>
   items
-    .filter((d) => !d.saved && d.description.trim())
-    .map((d) => ({ type: d.type, description: d.description.trim(), recitationNumber: numberOf(d) }));
+    .filter((d) => !d.saved && !isUntouched(d))
+    // Structured only: the server writes the description from the references
+    .map((d) => ({ type: d.type, recitationNumber: numberOf(d), assignment: toPayload(d.assignment) as AssignmentPayload }));
 
 /** Edit: only what changed, each saved item with the version it was edited from (the web's rule). */
 export function updateBody(program: WorkProgram, items: readonly DraftItem[], notes: string) {
   const changed: WorkItemPatch[] = items
     .filter((d): d is DraftItem & { saved: WorkItem } => Boolean(d.saved))
-    .filter((d) => d.type !== d.saved.type || d.description.trim() !== d.saved.description || numberOf(d) !== d.saved.recitationNumber)
-    .map((d) => ({ id: d.saved.id, version: d.saved.version, type: d.type, description: d.description.trim(), recitationNumber: numberOf(d) }));
+    .flatMap((d) => {
+      const assignment = toPayload(d.assignment);
+      const description = d.description.trim();
+      // Only what really changed: an unchanged text is not resent, so the server keeps its
+      // default description in step with a changed range
+      const descriptionChanged = description !== d.saved.description && description !== '';
+      const assignmentChanged = !sameAssignment(d.saved.assignment, assignment);
+      if (!descriptionChanged && !assignmentChanged && d.type === d.saved.type && numberOf(d) === d.saved.recitationNumber) return [];
+      return [
+        {
+          id: d.saved.id,
+          version: d.saved.version,
+          type: d.type,
+          recitationNumber: numberOf(d),
+          ...(descriptionChanged ? { description } : {}),
+          ...(assignmentChanged ? { assignment } : {}),
+        },
+      ];
+    });
   const newItems = newItemsOf(items);
   const generalNotes = notes.trim() || null;
   const notesChanged = generalNotes !== program.generalNotes;

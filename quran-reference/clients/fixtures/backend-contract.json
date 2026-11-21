@@ -1,0 +1,1978 @@
+[
+ {
+  "type": "MEMORIZATION",
+  "payload": {
+   "kind": "AYAH_RANGE",
+   "fromSurah": 2,
+   "fromAyah": 6,
+   "toSurah": 2,
+   "toAyah": 20
+  },
+  "assignment": {
+   "kind": "AYAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 2,
+   "fromAyah": 6,
+   "toSurah": 2,
+   "toAyah": 20,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 15,
+   "startIndex": 13,
+   "endIndex": 27,
+   "surahs": {
+    "whole": 0,
+    "touched": 1
+   },
+   "pages": {
+    "kind": "bounded",
+    "greaterThan": 1,
+    "lessThan": 2,
+    "touched": 2,
+    "partialAtStart": false,
+    "partialAtEnd": true,
+    "dataStatus": "pdf-independent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 2,
+    "touched": 2,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbsAndEighths": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 0,
+    "step": 0.5,
+    "eighths": {
+     "greaterThan": 0,
+     "lessThan": 2
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "سورة البقرة: من الآية 6 إلى الآية 20"
+ },
+ {
+  "type": "MEMORIZATION",
+  "payload": {
+   "kind": "AYAH_RANGE",
+   "fromSurah": 67,
+   "fromAyah": 1,
+   "toSurah": 67,
+   "toAyah": 30
+  },
+  "assignment": {
+   "kind": "AYAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 67,
+   "fromAyah": 1,
+   "toSurah": 67,
+   "toAyah": 30,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 30,
+   "startIndex": 5242,
+   "endIndex": 5271,
+   "surahs": {
+    "whole": 1,
+    "touched": 1
+   },
+   "pages": {
+    "kind": "bounded",
+    "greaterThan": 2,
+    "lessThan": 3,
+    "touched": 3,
+    "partialAtStart": false,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": false,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": false,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "quarters": {
+    "kind": "exact",
+    "value": 1,
+    "touched": 1,
+    "dataStatus": "cross-checked"
+   },
+   "eighths": {
+    "kind": "exact",
+    "value": 2,
+    "touched": 2,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbsAndEighths": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 0.5,
+    "step": 0.5,
+    "eighths": {
+     "exact": 2
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "سورة الملك كاملة"
+ },
+ {
+  "type": "MEMORIZATION",
+  "payload": {
+   "kind": "PAGE_RANGE",
+   "fromPage": 10,
+   "toPage": 12
+  },
+  "assignment": {
+   "kind": "PAGE_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 2,
+   "fromAyah": 62,
+   "toSurah": 2,
+   "toAyah": 83,
+   "fromPage": 10,
+   "toPage": 12
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 22,
+   "startIndex": 69,
+   "endIndex": 90,
+   "surahs": {
+    "whole": 0,
+    "touched": 1
+   },
+   "pages": {
+    "kind": "exact",
+    "value": 3,
+    "touched": 3,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 2,
+    "touched": 2,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 2,
+    "touched": 2,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "bounded",
+    "greaterThan": 2,
+    "lessThan": 3,
+    "touched": 3,
+    "partialAtStart": true,
+    "partialAtEnd": false,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbsAndEighths": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 0.5,
+    "step": 0.5,
+    "eighths": {
+     "greaterThan": 2,
+     "lessThan": 3
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "من الصفحة 10 إلى الصفحة 12"
+ },
+ {
+  "type": "MEMORIZATION",
+  "payload": {
+   "kind": "PAGE_RANGE",
+   "fromPage": 48,
+   "toPage": 52
+  },
+  "assignment": {
+   "kind": "PAGE_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 2,
+   "fromAyah": 282,
+   "toSurah": 3,
+   "toAyah": 22,
+   "fromPage": 48,
+   "toPage": 52
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 27,
+   "startIndex": 289,
+   "endIndex": 315,
+   "surahs": {
+    "whole": 0,
+    "touched": 2
+   },
+   "pages": {
+    "kind": "exact",
+    "value": 5,
+    "touched": 5,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 2,
+    "touched": 2,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 1,
+    "lessThan": 3,
+    "touched": 3,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "exact",
+    "value": 4,
+    "touched": 4,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbsAndEighths": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 0.5,
+    "step": 0.5,
+    "eighths": {
+     "exact": 4
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "من الصفحة 48 إلى الصفحة 52"
+ },
+ {
+  "type": "MEMORIZATION",
+  "payload": {
+   "kind": "PAGE_RANGE",
+   "fromPage": 592,
+   "toPage": 592
+  },
+  "assignment": {
+   "kind": "PAGE_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 87,
+   "fromAyah": 15,
+   "toSurah": 88,
+   "toAyah": 26,
+   "fromPage": 592,
+   "toPage": 592
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 31,
+   "startIndex": 5963,
+   "endIndex": 5993,
+   "surahs": {
+    "whole": 1,
+    "touched": 2
+   },
+   "pages": {
+    "kind": "exact",
+    "value": 1,
+    "touched": 1,
+    "dataStatus": "pdf-independent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "eighths": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": false,
+    "dataStatus": "cross-checked"
+   },
+   "hizbsAndPages": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbsAndEighths": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 0,
+    "step": 0.5,
+    "eighths": {
+     "greaterThan": 0,
+     "lessThan": 1
+    }
+   },
+   "dataStatus": "cross-checked",
+   "authoritative": false
+  },
+  "defaultDescription": "الصفحة 592"
+ },
+ {
+  "type": "MEMORIZATION",
+  "payload": {
+   "kind": "AYAH_RANGE",
+   "fromSurah": 110,
+   "toSurah": 110
+  },
+  "assignment": {
+   "kind": "AYAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 110,
+   "fromAyah": 1,
+   "toSurah": 110,
+   "toAyah": 3,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 3,
+   "startIndex": 6214,
+   "endIndex": 6216,
+   "surahs": {
+    "whole": 1,
+    "touched": 1
+   },
+   "pages": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "pdf-independent"
+   },
+   "eighths": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbsAndPages": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbsAndEighths": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 0,
+    "step": 0.5,
+    "eighths": {
+     "greaterThan": 0,
+     "lessThan": 1
+    }
+   },
+   "dataStatus": "cross-checked",
+   "authoritative": false
+  },
+  "defaultDescription": "سورة النصر كاملة"
+ },
+ {
+  "type": "MEMORIZATION",
+  "payload": {
+   "kind": "AYAH_RANGE",
+   "fromSurah": 2,
+   "toSurah": 2
+  },
+  "assignment": {
+   "kind": "AYAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 2,
+   "fromAyah": 1,
+   "toSurah": 2,
+   "toAyah": 286,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 286,
+   "startIndex": 8,
+   "endIndex": 293,
+   "surahs": {
+    "whole": 1,
+    "touched": 1
+   },
+   "pages": {
+    "kind": "bounded",
+    "greaterThan": 47,
+    "lessThan": 48,
+    "touched": 48,
+    "partialAtStart": true,
+    "partialAtEnd": false,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 1,
+    "lessThan": 3,
+    "touched": 3,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 3,
+    "lessThan": 5,
+    "touched": 5,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 18,
+    "lessThan": 20,
+    "touched": 20,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "bounded",
+    "greaterThan": 38,
+    "lessThan": 39,
+    "touched": 39,
+    "partialAtStart": true,
+    "partialAtEnd": false,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "bounded",
+    "hizbs": 3,
+    "pages": {
+     "greaterThan": 16,
+     "lessThan": 18
+    },
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndEighths": {
+    "kind": "bounded",
+    "hizbs": 3,
+    "eighths": {
+     "greaterThan": 14,
+     "lessThan": 15
+    },
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 5,
+    "step": 0.5,
+    "eighths": {
+     "greaterThan": 38,
+     "lessThan": 39
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "سورة البقرة كاملة"
+ },
+ {
+  "type": "MEMORIZATION",
+  "payload": {
+   "kind": "AYAH_RANGE",
+   "fromSurah": 2,
+   "fromAyah": 255,
+   "toSurah": 2
+  },
+  "assignment": {
+   "kind": "AYAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 2,
+   "fromAyah": 255,
+   "toSurah": 2,
+   "toAyah": 255,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 1,
+   "startIndex": 262,
+   "endIndex": 262,
+   "surahs": {
+    "whole": 0,
+    "touched": 1
+   },
+   "pages": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbsAndEighths": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 0,
+    "step": 0.5,
+    "eighths": {
+     "greaterThan": 0,
+     "lessThan": 1
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "سورة البقرة: الآية 255"
+ },
+ {
+  "type": "MEMORIZATION",
+  "payload": {
+   "kind": "AYAH_RANGE",
+   "fromSurah": 2,
+   "fromAyah": 255,
+   "toSurah": 2,
+   "toAyah": 260
+  },
+  "assignment": {
+   "kind": "AYAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 2,
+   "fromAyah": 255,
+   "toSurah": 2,
+   "toAyah": 260,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 6,
+   "startIndex": 262,
+   "endIndex": 267,
+   "surahs": {
+    "whole": 0,
+    "touched": 1
+   },
+   "pages": {
+    "kind": "bounded",
+    "greaterThan": 1,
+    "lessThan": 3,
+    "touched": 3,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 2,
+    "touched": 2,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbsAndEighths": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 0,
+    "step": 0.5,
+    "eighths": {
+     "greaterThan": 0,
+     "lessThan": 2
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "سورة البقرة: من الآية 255 إلى الآية 260"
+ },
+ {
+  "type": "MEMORIZATION",
+  "payload": {
+   "kind": "PAGE_RANGE",
+   "fromPage": 79
+  },
+  "assignment": {
+   "kind": "PAGE_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 4,
+   "fromAyah": 12,
+   "toSurah": 4,
+   "toAyah": 14,
+   "fromPage": 79,
+   "toPage": 79
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 3,
+   "startIndex": 505,
+   "endIndex": 507,
+   "surahs": {
+    "whole": 0,
+    "touched": 1
+   },
+   "pages": {
+    "kind": "exact",
+    "value": 1,
+    "touched": 1,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": false,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "eighths": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": false,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbsAndEighths": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 0,
+    "step": 0.5,
+    "eighths": {
+     "greaterThan": 0,
+     "lessThan": 1
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "الصفحة 79"
+ },
+ {
+  "type": "MEMORIZATION",
+  "payload": {
+   "kind": "PAGE_RANGE",
+   "fromPage": 79,
+   "toPage": 82
+  },
+  "assignment": {
+   "kind": "PAGE_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 4,
+   "fromAyah": 12,
+   "toSurah": 4,
+   "toAyah": 26,
+   "fromPage": 79,
+   "toPage": 82
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 15,
+   "startIndex": 505,
+   "endIndex": 519,
+   "surahs": {
+    "whole": 0,
+    "touched": 1
+   },
+   "pages": {
+    "kind": "exact",
+    "value": 4,
+    "touched": 4,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 2,
+    "touched": 2,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 2,
+    "touched": 2,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 1,
+    "lessThan": 2,
+    "touched": 2,
+    "partialAtStart": false,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "bounded",
+    "greaterThan": 2,
+    "lessThan": 3,
+    "touched": 3,
+    "partialAtStart": false,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbsAndEighths": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 0.5,
+    "step": 0.5,
+    "eighths": {
+     "greaterThan": 2,
+     "lessThan": 3
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "من الصفحة 79 إلى الصفحة 82"
+ },
+ {
+  "type": "REVISION",
+  "payload": {
+   "kind": "SURAH_RANGE",
+   "fromSurah": 78,
+   "toSurah": 114
+  },
+  "assignment": {
+   "kind": "SURAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 78,
+   "fromAyah": 1,
+   "toSurah": 114,
+   "toAyah": 6,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 564,
+   "startIndex": 5673,
+   "endIndex": 6236,
+   "surahs": {
+    "whole": 37,
+    "touched": 37
+   },
+   "pages": {
+    "kind": "exact",
+    "value": 23,
+    "touched": 23,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "exact",
+    "value": 1,
+    "touched": 1,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "exact",
+    "value": 2,
+    "touched": 2,
+    "dataStatus": "cross-checked"
+   },
+   "quarters": {
+    "kind": "exact",
+    "value": 8,
+    "touched": 8,
+    "dataStatus": "cross-checked"
+   },
+   "eighths": {
+    "kind": "exact",
+    "value": 16,
+    "touched": 16,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "exact",
+    "hizbs": 2,
+    "pages": 0,
+    "dataStatus": "cross-checked"
+   },
+   "hizbsAndEighths": {
+    "kind": "exact",
+    "hizbs": 2,
+    "eighths": 0,
+    "dataStatus": "cross-checked"
+   },
+   "hizbEquivalent": {
+    "kind": "exact",
+    "hizbs": 2
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "من سورة النبأ إلى سورة الناس"
+ },
+ {
+  "type": "REVISION",
+  "payload": {
+   "kind": "SURAH_RANGE",
+   "fromSurah": 2,
+   "toSurah": 3
+  },
+  "assignment": {
+   "kind": "SURAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 2,
+   "fromAyah": 1,
+   "toSurah": 3,
+   "toAyah": 200,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 486,
+   "startIndex": 8,
+   "endIndex": 493,
+   "surahs": {
+    "whole": 2,
+    "touched": 2
+   },
+   "pages": {
+    "kind": "bounded",
+    "greaterThan": 74,
+    "lessThan": 75,
+    "touched": 75,
+    "partialAtStart": true,
+    "partialAtEnd": false,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 2,
+    "lessThan": 4,
+    "touched": 4,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 6,
+    "lessThan": 8,
+    "touched": 8,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 29,
+    "lessThan": 30,
+    "touched": 30,
+    "partialAtStart": true,
+    "partialAtEnd": false,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "bounded",
+    "greaterThan": 59,
+    "lessThan": 60,
+    "touched": 60,
+    "partialAtStart": true,
+    "partialAtEnd": false,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "bounded",
+    "hizbs": 6,
+    "pages": {
+     "greaterThan": 12,
+     "lessThan": 15
+    },
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndEighths": {
+    "kind": "bounded",
+    "hizbs": 6,
+    "eighths": {
+     "greaterThan": 11,
+     "lessThan": 12
+    },
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 7.5,
+    "step": 0.5,
+    "eighths": {
+     "greaterThan": 59,
+     "lessThan": 60
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "من سورة البقرة إلى سورة آل عمران"
+ },
+ {
+  "type": "EXAM",
+  "payload": {
+   "kind": "SURAH_RANGE",
+   "fromSurah": 46,
+   "toSurah": 114
+  },
+  "assignment": {
+   "kind": "SURAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 46,
+   "fromAyah": 1,
+   "toSurah": 114,
+   "toAyah": 6,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 1726,
+   "startIndex": 4511,
+   "endIndex": 6236,
+   "surahs": {
+    "whole": 69,
+    "touched": 69
+   },
+   "pages": {
+    "kind": "bounded",
+    "greaterThan": 102,
+    "lessThan": 103,
+    "touched": 103,
+    "partialAtStart": true,
+    "partialAtEnd": false,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "exact",
+    "value": 5,
+    "touched": 5,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "exact",
+    "value": 10,
+    "touched": 10,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "exact",
+    "value": 40,
+    "touched": 40,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "exact",
+    "value": 80,
+    "touched": 80,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "exact",
+    "hizbs": 10,
+    "pages": 0,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndEighths": {
+    "kind": "exact",
+    "hizbs": 10,
+    "eighths": 0,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbEquivalent": {
+    "kind": "exact",
+    "hizbs": 10
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "من سورة الأحقاف إلى سورة الناس"
+ },
+ {
+  "type": "EXAM",
+  "payload": {
+   "kind": "SURAH_RANGE",
+   "fromSurah": 2,
+   "fromAyah": 142,
+   "toSurah": 3,
+   "toAyah": 91
+  },
+  "assignment": {
+   "kind": "SURAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 2,
+   "fromAyah": 142,
+   "toSurah": 3,
+   "toAyah": 91,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 236,
+   "startIndex": 149,
+   "endIndex": 384,
+   "surahs": {
+    "whole": 0,
+    "touched": 2
+   },
+   "pages": {
+    "kind": "exact",
+    "value": 40,
+    "touched": 40,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "exact",
+    "value": 2,
+    "touched": 2,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "exact",
+    "value": 4,
+    "touched": 4,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "exact",
+    "value": 16,
+    "touched": 16,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "exact",
+    "value": 32,
+    "touched": 32,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "exact",
+    "hizbs": 4,
+    "pages": 0,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndEighths": {
+    "kind": "exact",
+    "hizbs": 4,
+    "eighths": 0,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbEquivalent": {
+    "kind": "exact",
+    "hizbs": 4
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "من سورة البقرة الآية 142 إلى سورة آل عمران الآية 91"
+ },
+ {
+  "type": "REVISION",
+  "payload": {
+   "kind": "SURAH_RANGE",
+   "fromSurah": 9
+  },
+  "assignment": {
+   "kind": "SURAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 9,
+   "fromAyah": 1,
+   "toSurah": 9,
+   "toAyah": 129,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 129,
+   "startIndex": 1236,
+   "endIndex": 1364,
+   "surahs": {
+    "whole": 1,
+    "touched": 1
+   },
+   "pages": {
+    "kind": "exact",
+    "value": 21,
+    "touched": 21,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 2,
+    "touched": 2,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 1,
+    "lessThan": 3,
+    "touched": 3,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 8,
+    "lessThan": 9,
+    "touched": 9,
+    "partialAtStart": false,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "exact",
+    "value": 17,
+    "touched": 17,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "bounded",
+    "hizbs": 1,
+    "pages": {
+     "greaterThan": 11,
+     "lessThan": 13
+    },
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndEighths": {
+    "kind": "exact",
+    "hizbs": 1,
+    "eighths": 9,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 2,
+    "step": 0.5,
+    "eighths": {
+     "exact": 17
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "سورة التوبة"
+ },
+ {
+  "type": "EXAM",
+  "payload": {
+   "kind": "SURAH_RANGE",
+   "fromSurah": 9,
+   "toSurah": 24
+  },
+  "assignment": {
+   "kind": "SURAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 9,
+   "fromAyah": 1,
+   "toSurah": 24,
+   "toAyah": 64,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 1620,
+   "startIndex": 1236,
+   "endIndex": 2855,
+   "surahs": {
+    "whole": 16,
+    "touched": 16
+   },
+   "pages": {
+    "kind": "bounded",
+    "greaterThan": 172,
+    "lessThan": 173,
+    "touched": 173,
+    "partialAtStart": false,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 7,
+    "lessThan": 9,
+    "touched": 9,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 16,
+    "lessThan": 18,
+    "touched": 18,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "exact",
+    "value": 69,
+    "touched": 69,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "exact",
+    "value": 138,
+    "touched": 138,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "bounded",
+    "hizbs": 16,
+    "pages": {
+     "greaterThan": 12,
+     "lessThan": 14
+    },
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndEighths": {
+    "kind": "exact",
+    "hizbs": 16,
+    "eighths": 10,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 17,
+    "step": 1,
+    "eighths": {
+     "exact": 138
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "من سورة التوبة إلى سورة النور"
+ },
+ {
+  "type": "EXAM",
+  "payload": {
+   "kind": "SURAH_RANGE",
+   "fromSurah": 9,
+   "fromAyah": 10,
+   "toAyah": 40
+  },
+  "assignment": {
+   "kind": "SURAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 9,
+   "fromAyah": 10,
+   "toSurah": 9,
+   "toAyah": 40,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 31,
+   "startIndex": 1245,
+   "endIndex": 1275,
+   "surahs": {
+    "whole": 0,
+    "touched": 1
+   },
+   "pages": {
+    "kind": "bounded",
+    "greaterThan": 5,
+    "lessThan": 6,
+    "touched": 6,
+    "partialAtStart": true,
+    "partialAtEnd": false,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 2,
+    "touched": 2,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 1,
+    "lessThan": 3,
+    "touched": 3,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "bounded",
+    "greaterThan": 4,
+    "lessThan": 6,
+    "touched": 6,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbsAndEighths": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 0.5,
+    "step": 0.5,
+    "eighths": {
+     "greaterThan": 4,
+     "lessThan": 6
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "من سورة التوبة الآية 10 إلى سورة التوبة الآية 40"
+ },
+ {
+  "type": "REVISION",
+  "payload": {
+   "kind": "SURAH_RANGE",
+   "fromSurah": 2,
+   "toSurah": 18
+  },
+  "assignment": {
+   "kind": "SURAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 2,
+   "fromAyah": 1,
+   "toSurah": 18,
+   "toAyah": 110,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 2243,
+   "startIndex": 8,
+   "endIndex": 2250,
+   "surahs": {
+    "whole": 17,
+    "touched": 17
+   },
+   "pages": {
+    "kind": "bounded",
+    "greaterThan": 302,
+    "lessThan": 303,
+    "touched": 303,
+    "partialAtStart": true,
+    "partialAtEnd": false,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 14,
+    "lessThan": 16,
+    "touched": 16,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 29,
+    "lessThan": 31,
+    "touched": 31,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 120,
+    "lessThan": 122,
+    "touched": 122,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "bounded",
+    "greaterThan": 242,
+    "lessThan": 243,
+    "touched": 243,
+    "partialAtStart": true,
+    "partialAtEnd": false,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "bounded",
+    "hizbs": 29,
+    "pages": {
+     "greaterThan": 11,
+     "lessThan": 13
+    },
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndEighths": {
+    "kind": "bounded",
+    "hizbs": 29,
+    "eighths": {
+     "greaterThan": 10,
+     "lessThan": 11
+    },
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 30,
+    "step": 1,
+    "eighths": {
+     "greaterThan": 242,
+     "lessThan": 243
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "من سورة البقرة إلى سورة الكهف"
+ },
+ {
+  "type": "RECITATION",
+  "payload": {
+   "kind": "SURAH_RANGE",
+   "fromSurah": 55,
+   "toSurah": 55
+  },
+  "assignment": {
+   "kind": "SURAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 55,
+   "fromAyah": 1,
+   "toSurah": 55,
+   "toAyah": 78,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 78,
+   "startIndex": 4902,
+   "endIndex": 4979,
+   "surahs": {
+    "whole": 1,
+    "touched": 1
+   },
+   "pages": {
+    "kind": "bounded",
+    "greaterThan": 2,
+    "lessThan": 4,
+    "touched": 4,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 1,
+    "touched": 1,
+    "partialAtStart": false,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "quarters": {
+    "kind": "exact",
+    "value": 1,
+    "touched": 1,
+    "dataStatus": "cross-checked"
+   },
+   "eighths": {
+    "kind": "exact",
+    "value": 2,
+    "touched": 2,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbsAndEighths": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 0.5,
+    "step": 0.5,
+    "eighths": {
+     "exact": 2
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "العرضة الثانية من سورة الرحمن"
+ },
+ {
+  "type": "RECITATION",
+  "payload": {
+   "kind": "SURAH_RANGE",
+   "fromSurah": 36,
+   "toSurah": 36
+  },
+  "assignment": {
+   "kind": "SURAH_RANGE",
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "fromSurah": 36,
+   "fromAyah": 1,
+   "toSurah": 36,
+   "toAyah": 83,
+   "fromPage": null,
+   "toPage": null
+  },
+  "workload": {
+   "schemaVersion": 1,
+   "editionId": "qalun-abi-nashit-tn-hannibal-mualim-v1",
+   "datasetSha256": "1a54472920b40d89cdeff8439549ff6946e551a3ca3f625b79523d74c81e46a3",
+   "engineSha256": "74472363772fa41984cd5d4e7b2dc35545f4664c0985f6cd947291c9eeed50d3",
+   "verses": 83,
+   "startIndex": 3706,
+   "endIndex": 3788,
+   "surahs": {
+    "whole": 1,
+    "touched": 1
+   },
+   "pages": {
+    "kind": "bounded",
+    "greaterThan": 5,
+    "lessThan": 6,
+    "touched": 6,
+    "partialAtStart": true,
+    "partialAtEnd": false,
+    "dataStatus": "structurally-consistent"
+   },
+   "juz": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 2,
+    "touched": 2,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "cross-checked"
+   },
+   "hizbs": {
+    "kind": "bounded",
+    "greaterThan": 0,
+    "lessThan": 2,
+    "touched": 2,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "quarters": {
+    "kind": "bounded",
+    "greaterThan": 1,
+    "lessThan": 3,
+    "touched": 3,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "eighths": {
+    "kind": "bounded",
+    "greaterThan": 4,
+    "lessThan": 6,
+    "touched": 6,
+    "partialAtStart": true,
+    "partialAtEnd": true,
+    "dataStatus": "structurally-consistent"
+   },
+   "hizbsAndPages": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbsAndEighths": {
+    "kind": "unavailable",
+    "reason": "no complete hizb lies inside this range"
+   },
+   "hizbEquivalent": {
+    "kind": "approximate",
+    "hizbs": 0.5,
+    "step": 0.5,
+    "eighths": {
+     "greaterThan": 4,
+     "lessThan": 6
+    }
+   },
+   "dataStatus": "structurally-consistent",
+   "authoritative": false
+  },
+  "defaultDescription": "العرضة الثانية من سورة يس"
+ }
+]

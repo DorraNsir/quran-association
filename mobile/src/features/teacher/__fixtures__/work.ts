@@ -30,6 +30,8 @@ export const workItem = (id: string, extra: Partial<WorkItem> = {}): WorkItem =>
   continuedFrom: null,
   carriedTo: [],
   continuedBy: [],
+  assignment: null,
+  workload: null,
   ...extra,
 });
 

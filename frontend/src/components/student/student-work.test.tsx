@@ -24,9 +24,9 @@ const program: StudentWorkProgram = {
   teacherName: "مريم بن علي",
   progress: { total: 3, active: 3, completed: 1, pending: 1, unfinished: 1, cancelled: 0, rate: 33.3 },
   items: [
-    { id: "i1", type: "REVISION", description: "مراجعة من سورة الزمر\nإلى سورة الناس", status: "COMPLETED", recitationNumber: null, evaluationComment: "أداء متقن", carriedFrom: null },
-    { id: "i2", type: "RECITATION", description: "العرضة الثانية من سورة التوبة", status: "NOT_EVALUATED", recitationNumber: 2, evaluationComment: null, carriedFrom: { sessionDate: "2099-10-15", status: "POSTPONED" } },
-    { id: "i3", type: "EXAM", description: "اختبار من سورة الروم", status: "PARTIAL", recitationNumber: null, evaluationComment: null, carriedFrom: null },
+    { id: "i1", type: "REVISION", description: "مراجعة من سورة الزمر\nإلى سورة الناس", status: "COMPLETED", recitationNumber: null, evaluationComment: "أداء متقن", carriedFrom: null, assignment: null },
+    { id: "i2", type: "RECITATION", description: "العرضة الثانية من سورة التوبة", status: "NOT_EVALUATED", recitationNumber: 2, evaluationComment: null, carriedFrom: { sessionDate: "2099-10-15", status: "POSTPONED" }, assignment: null },
+    { id: "i3", type: "EXAM", description: "اختبار من سورة الروم", status: "PARTIAL", recitationNumber: null, evaluationComment: null, carriedFrom: null, assignment: null },
   ],
 }
 

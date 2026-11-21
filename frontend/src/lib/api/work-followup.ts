@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 
-import type { StudentWorkProgram, WorkProgram, WorkSession, WorkStatus, WorkType } from "@/types/work-followup"
+import type { AssignmentPayload, StudentWorkProgram, WorkProgram, WorkSession, WorkStatus, WorkType } from "@/types/work-followup"
 
 import { api, useApiMutation } from "./academic"
 import type { Page, Query } from "./client"
@@ -73,8 +73,11 @@ export function useEligibleSessions(studentId: string | undefined, afterSessionI
 
 export interface NewWorkItemInput {
   type: WorkType
-  description: string
+  /** Optional with an assignment: the server then writes the default description */
+  description?: string
   recitationNumber?: number | null
+  /** References only; the server validates them and computes the workload */
+  assignment?: AssignmentPayload | null
 }
 
 export function useCreateWorkProgram() {
@@ -95,7 +98,15 @@ export function useUpdateWorkProgram() {
       id: string
       version?: number
       generalNotes?: string | null
-      items?: { id: string; version: number; type?: WorkType; description?: string; recitationNumber?: number | null }[]
+      items?: {
+        id: string
+        version: number
+        type?: WorkType
+        description?: string
+        recitationNumber?: number | null
+        /** Omitted: unchanged · null: back to free text · an object: the new assignment */
+        assignment?: AssignmentPayload | null
+      }[]
       newItems?: NewWorkItemInput[]
     }) => api<WorkProgram>(`${BASE}/${id}`, { method: "PATCH", body }),
     [workKeys.all]

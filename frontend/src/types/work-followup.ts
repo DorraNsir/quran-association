@@ -3,7 +3,10 @@
  * Student → Session → Work program (one per student per session) → Work items.
  * The program's date, time, class and branch always come from its session.
  */
+import type { WorkAssignment, WorkloadSnapshot } from "@/lib/quran-reference/work-assignment"
 import type { ID, ISODate, SessionStatus } from "@/types/domain"
+
+export type { AssignmentPayload, WorkAssignment, WorkloadSnapshot } from "@/lib/quran-reference/work-assignment"
 
 export type WorkType = "MEMORIZATION" | "REVISION" | "RECITATION" | "EXAM"
 
@@ -50,6 +53,10 @@ export interface WorkItem {
   carriedTo: WorkItemLink[]
   /** Its next recitation(s) */
   continuedBy: WorkItemLink[]
+  /** Structured Quranic assignment (null: a free-text item, e.g. every item saved before Work Program 2.0) */
+  assignment: WorkAssignment | null
+  /** Computed and stored by the server when the assignment was saved — never computed here */
+  workload: WorkloadSnapshot | null
 }
 
 export interface WorkProgress {
@@ -110,5 +117,7 @@ export interface StudentWorkProgram {
     evaluationComment: string | null
     /** Carried from an earlier session: its date and the result then */
     carriedFrom: { sessionDate: ISODate; status: WorkStatus } | null
+    /** What to work on, structured (null: free text) — students do not receive the workload */
+    assignment: WorkAssignment | null
   }[]
 }

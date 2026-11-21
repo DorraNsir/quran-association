@@ -16,6 +16,7 @@ import { useWorkProgramPages, workKey } from './use-work';
 import { WorkProgressView, WorkSessionLine, WorkStatusBadge, WorkTypeBadge } from './work-badges';
 import { phaseOf, studentName } from './work-model';
 import type { WorkPeriod, WorkProgram, WorkProgramFilters, WorkProgramState } from './work-types';
+import { WorkAssignmentView } from './work-assignment-view';
 
 const w = ar.work;
 const ALL = 'ALL';
@@ -208,9 +209,15 @@ function ProgramCard({ program: p, timeZone, onPress }: { program: WorkProgram; 
         {p.items.slice(0, PREVIEW).map((item) => (
           <View key={item.id} style={[styles.item, { borderColor: colors.border }]}>
             <WorkTypeBadge type={item.type} recitationNumber={item.recitationNumber} />
-            <AppText variant="small" numberOfLines={2} style={styles.flex}>
-              {item.description}
-            </AppText>
+            {item.assignment ? (
+              <View style={styles.flex}>
+                <WorkAssignmentView type={item.type} assignment={item.assignment} workload={item.workload} compact />
+              </View>
+            ) : (
+              <AppText variant="small" numberOfLines={2} style={styles.flex}>
+                {item.description}
+              </AppText>
+            )}
             <WorkStatusBadge status={item.status} />
           </View>
         ))}
