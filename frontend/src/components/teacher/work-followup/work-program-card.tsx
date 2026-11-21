@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils"
 import { cancelledLabel, evaluationBlockMessage, progressLabel, sessionLabel, sessionPhaseLabel, type SessionPhase } from "@/lib/work-followup"
 import type { WorkProgram, WorkProgress, WorkSession } from "@/types/work-followup"
 
+import { RecitationCycleLine } from "./recitation-cycle-line"
 import { WorkAssignmentView } from "./work-assignment-view"
 import { WorkStatusBadge, WorkTypeBadge } from "./work-badges"
 
@@ -75,7 +76,10 @@ export function WorkProgramCard({
             <WorkTypeBadge type={item.type} recitationNumber={item.recitationNumber ?? undefined} />
             {/* Two lines at most here — the full text is on the program's page */}
             {item.assignment ? (
-              <WorkAssignmentView type={item.type} assignment={item.assignment} workload={item.workload} compact className="flex-1" />
+              <div className="min-w-0 flex-1 space-y-1">
+                <WorkAssignmentView type={item.type} assignment={item.assignment} workload={item.workload} compact />
+                {item.recitationCycle && <RecitationCycleLine cycle={item.recitationCycle} studentId={program.student.id} compact />}
+              </div>
             ) : (
               <p className={cn("line-clamp-2 flex-1 text-sm", WRAP)}>{item.description}</p>
             )}

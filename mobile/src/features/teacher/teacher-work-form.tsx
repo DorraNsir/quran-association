@@ -17,13 +17,14 @@ import { useConfirmThenBack } from './use-confirm-then-back';
 import { useTeacherWorkspace } from './use-teacher-dashboard';
 import { useCreateWorkProgram, useEligibleSessions, useUpdateWorkProgram, useWorkProgram } from './use-work';
 import { WorkStatusBadge } from './work-badges';
-import { adaptDraft } from '../quran-reference/work-assignment';
+import { adaptDraft, cycleName } from '../quran-reference/work-assignment';
 import { QuranAssignmentEditor } from './quran-assignment-editor';
 import {
   assignmentError,
   blankItem,
   classifyWorkError,
   isLegacyFreeText,
+  isManagedNumber,
   isStructured,
   isUntouched,
   DESCRIPTION_MAX,
@@ -435,7 +436,15 @@ function ItemEditor({
           ]}
         />
       ) : null}
-      {item.type === 'RECITATION' ? (
+      {/* «متابعة العرضات»: a structured عرضة is numbered by the server (no number field, nothing sent) */}
+      {item.type === 'RECITATION' && isManagedNumber(item) ? (
+        <AppText variant="small" tone="muted" testID="recitation-auto-number">
+          {item.saved?.recitationCycle?.attemptNumber
+            ? w.managedRecitationNumber(item.saved.recitationCycle.attemptNumber, cycleName(item.saved.recitationCycle.number))
+            : w.autoRecitationNumber}
+        </AppText>
+      ) : null}
+      {item.type === 'RECITATION' && !isManagedNumber(item) ? (
         <TextInput
           value={item.recitationNumber}
           onChangeText={(recitationNumber) => onChange({ recitationNumber })}

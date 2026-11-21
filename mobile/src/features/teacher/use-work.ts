@@ -5,8 +5,10 @@ import {
   evaluateWorkProgram,
   fetchEligibleSessions,
   fetchWorkProgram,
+  fetchRecitationHistory,
   fetchWorkPrograms,
   scheduleWorkItem,
+  startRecitationCycle,
   updateWorkProgram,
 } from './teacher.api';
 import { teacherKey } from './use-teacher-dashboard';
@@ -82,6 +84,28 @@ export const useEvaluateWorkProgram = (teacherId: string, id: string) =>
   useWorkMutation(teacherId, `evaluate-${id}`, (b: { items: EvaluationLine[]; version?: number; generalNotes?: string | null }) =>
     evaluateWorkProgram(id, b),
   );
+
+/** «متابعة العرضات» of a student (all surahs). Under «work»: every work change refreshes it. */
+export function useRecitationHistory(teacherId: string, studentId: string) {
+  return useQuery({
+    queryKey: [...workKey(teacherId), 'recitations', studentId],
+    queryFn: ({ signal }) => fetchRecitationHistory(studentId, signal),
+    enabled: !!teacherId && studentId.length > 0,
+  });
+}
+
+/** «بدء دورة جديدة»: explicit; the server refuses it until the current cycle is complete. */
+export function useStartRecitationCycle(teacherId: string, studentId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['work', 'cycle', studentId],
+    mutationFn: (surah: number) => startRecitationCycle(studentId, surah),
+    onSuccess: (saved) => {
+      queryClient.setQueryData([...workKey(teacherId), 'recitations', studentId], saved);
+      return queryClient.invalidateQueries({ queryKey: workKey(teacherId) });
+    },
+  });
+}
 
 export const useScheduleWorkItem = (teacherId: string, itemId: string, mode: 'carry' | 'next') =>
   useWorkMutation(teacherId, `${mode}-${itemId}`, (b: { targetSessionId: string; description?: string }) =>

@@ -571,3 +571,39 @@ export function workloadSummary(type: WorkType, w: WorkloadSnapshot): { text: st
   const { lines, hint } = workloadLines(type, w);
   return { text: lines.map((l) => l.text).join(' · '), exact: lines.every((l) => l.precision === 'exact'), hint };
 }
+
+// ───────────────────────── «متابعة العرضات» (display only) ─────────────────────────
+// The server tracks cycles (four successful recitations per surah and cycle) from the evaluations;
+// these helpers only word what it returned, identically on the web and the mobile app.
+
+/** What an item is for its surah's cycle (server value). */
+export type RecitationEntry = 'SUCCESS' | 'FAILED' | 'PENDING' | 'POSTPONED' | 'DROPPED' | 'SESSION_CANCELLED';
+
+const FEMININE_ORDINALS = ['الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة', 'الثامنة', 'التاسعة', 'العاشرة'];
+
+/** «الدورة الأولى», «الدورة الثانية» … «الدورة رقم 11» */
+export const cycleName = (n: number) => `الدورة ${FEMININE_ORDINALS[n - 1] ?? `رقم ${n}`}`;
+
+/** Compact progress «3/4 ناجحة» (cards) and the long form «3 من 4 ناجحة» (history). */
+export const cycleProgress = (successes: number, required: number) => `${successes}/${required} ناجحة`;
+export const cycleProgressLong = (successes: number, required: number) => `${successes} من ${required} ناجحة`;
+
+/** Status words of an entry — always shown as text (never colour alone). */
+export const RECITATION_ENTRY_LABEL: Record<RecitationEntry, string> = {
+  SUCCESS: 'ناجحة',
+  FAILED: 'غير ناجحة',
+  PENDING: 'قيد الانتظار',
+  POSTPONED: 'مؤجلة — لا تُحتسب',
+  DROPPED: 'ملغاة — لا تُحتسب',
+  SESSION_CANCELLED: 'حصة ملغاة — لا تُحتسب',
+};
+
+/** «عرضة 3 — غير ناجحة»: the number is the CHRONOLOGICAL attempt number, not a count of successes. */
+export function attemptLabel(attemptNumber: number | null, entry: RecitationEntry): string {
+  return attemptNumber ? `عرضة ${attemptNumber} — ${RECITATION_ENTRY_LABEL[entry]}` : RECITATION_ENTRY_LABEL[entry];
+}
+
+/** One compact line for a Work Program item: «الدورة الأولى · 3/4 ناجحة» (+ «· مكتملة»). */
+export function cycleSummaryText(c: { number: number; successes: number; required: number; completed: boolean }): string {
+  return `${cycleName(c.number)} · ${cycleProgress(c.successes, c.required)}${c.completed ? ' · مكتملة' : ''}`;
+}

@@ -409,6 +409,34 @@ describe("«متابعة العمل» — structured Quranic assignments (Qalun,
   const posted = (calls: ReturnType<typeof routeFetch>) => calls.find((c) => c.method === "POST")?.body as { items: unknown[] } | undefined
   const save = (sheet: HTMLElement) => fireEvent.click(within(sheet).getByRole("button", { name: "حفظ برنامج العمل" }))
 
+  it("«متابعة العرضات»: a structured عرضة is numbered by the server — no number field, a short hint instead; nothing numbered is sent", async () => {
+    const calls = routeFetch()
+    const sheet = await openCreate()
+    await chooseType(sheet, "عرضة")
+    expect(within(sheet).queryByLabelText("رقم العرضة (اختياري)")).toBeNull()
+    expect(within(sheet).getByText(/يُحدَّد رقم العرضة تلقائيًا حسب دورة السورة/)).toBeTruthy()
+    await pickSurah(sheet, /^السورة/, "البقرة", "سورة البقرة")
+    save(sheet)
+    await waitFor(() => expect(posted(calls)).toBeTruthy())
+    expect(posted(calls)!.items).toEqual([{ type: "RECITATION", recitationNumber: null, assignment: { kind: "SURAH_RANGE", fromSurah: 2, toSurah: 2 } }])
+  })
+
+  it("«متابعة العرضات» on the program page: the surah's current cycle, compact, with a link to its history", async () => {
+    const tracked = item("r1", {
+      type: "RECITATION",
+      recitationNumber: 5,
+      description: "العرضة الخامسة من سورة البقرة",
+      assignment: { kind: "SURAH_RANGE", editionId: "qalun-abi-nashit-tn-hannibal-mualim-v1", fromSurah: 2, fromAyah: 1, toSurah: 2, toAyah: 286, fromPage: null, toPage: null },
+      recitationCycle: { cycleId: "c1", surah: 2, number: 1, successes: 3, required: 4, completed: false, attemptNumber: 5, entry: "PENDING" },
+    })
+    routeFetch({ get: () => json(200, { ...program, items: [tracked] }) })
+    renderIn(<WorkProgramDetails programId="p1" />)
+    expect(await screen.findByText("الدورة الأولى · 3/4 ناجحة")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "سجل العرضات" }).getAttribute("href")).toBe(`/teacher/students/${program.student.id}?tab=recitations&surah=2`)
+    // no attempt table inside the item
+    expect(document.querySelectorAll("[data-entry]")).toHaveLength(0)
+  })
+
   it("حفظ by verses: searchable surah, verses limited to the surah; the request carries references only", async () => {
     const calls = routeFetch()
     const sheet = await openCreate()

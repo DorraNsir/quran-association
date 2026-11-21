@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils"
 import { carriedFromLabel, evaluationBlockMessage, isTransferable, phaseOf } from "@/lib/work-followup"
 import type { WorkProgram } from "@/types/work-followup"
 
+import { RecitationCycleLine } from "./recitation-cycle-line"
 import { ownDescription, WorkAssignmentView } from "./work-assignment-view"
 import { WorkStatusBadge, WorkTypeBadge } from "./work-badges"
 import { useWorkFollowup } from "./work-followup-provider"
@@ -117,6 +118,8 @@ function ProgramView({ program }: { program: WorkProgram }) {
                   </div>
                   {/* Complete description: paragraphs, line breaks and unbroken strings all wrap */}
                   {item.assignment && <WorkAssignmentView type={item.type} assignment={item.assignment} workload={item.workload} />}
+                  {/* «متابعة العرضات»: this surah's current cycle, and a way to its full history */}
+                  {item.recitationCycle && <RecitationCycleLine cycle={item.recitationCycle} studentId={student.id} />}
                   {/* Legacy free text as written; for a structured item, only the teacher's own note */}
                   {ownDescription(item) && (
                     <p className={cn("text-sm leading-relaxed whitespace-pre-wrap", WRAP, item.assignment && "text-muted-foreground")}>

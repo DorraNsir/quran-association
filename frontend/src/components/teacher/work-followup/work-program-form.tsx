@@ -1,6 +1,6 @@
 "use client"
 
-import { CalendarDays, Info, Plus, Trash2 } from "lucide-react"
+import { CalendarDays, Info, Plus, Repeat, Trash2 } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 
@@ -14,6 +14,7 @@ import { ApiError, errorMessage } from "@/lib/api/errors"
 import { useCreateWorkProgram, useEligibleSessions, useUpdateWorkProgram, type NewWorkItemInput } from "@/lib/api/work-followup"
 import {
   adaptDraft,
+  cycleName,
   draftFromAssignment,
   emptyDraft,
   isBlankDraft,
@@ -65,6 +66,11 @@ const toDraft = (i: WorkItem): DraftItem => ({
  * The same rules as mobile (shared module + mobile work-model.ts).
  */
 const structured = (d: DraftItem) => d.assignment.mode !== "free"
+/**
+ * «متابعة العرضات»: the server numbers a structured عرضة (a new one, or one already in a cycle);
+ * a legacy item keeps its own number field.
+ */
+const managedNumber = (d: DraftItem) => structured(d) && (!d.saved || Boolean(d.saved.recitationCycle))
 /** An item saved as free text (legacy): it may stay free text. */
 const legacyFreeText = (d: DraftItem) => Boolean(d.saved && !d.saved.assignment)
 /** A new item with nothing selected yet: ignored on save (an extra blank item never blocks it). */
@@ -369,7 +375,16 @@ export function WorkProgramForm({
                     {itemErrors.get(item.key)}
                   </p>
                 )}
-                {item.type === "RECITATION" && (
+                {/* «متابعة العرضات»: a structured عرضة is numbered by the server, in its surah's cycle */}
+                {item.type === "RECITATION" && managedNumber(item) && (
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Repeat className="size-3.5 shrink-0 text-primary" aria-hidden />
+                    {item.saved?.recitationCycle?.attemptNumber
+                      ? `العرضة ${item.saved.recitationCycle.attemptNumber} في ${cycleName(item.saved.recitationCycle.number)} — يُحدَّد الرقم تلقائيًا`
+                      : "يُحدَّد رقم العرضة تلقائيًا حسب دورة السورة (أربع عرضات ناجحة لكل دورة)"}
+                  </p>
+                )}
+                {item.type === "RECITATION" && !managedNumber(item) && (
                   <div className="space-y-1.5">
                     <label htmlFor={`${item.key}-num`} className="text-xs text-muted-foreground">رقم العرضة (اختياري)</label>
                     <Input

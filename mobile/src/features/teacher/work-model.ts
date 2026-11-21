@@ -221,6 +221,11 @@ export const toDraft = (i: WorkItem): DraftItem => ({
  * free text before Work Program 2.0 — kept as written, converted only by an explicit choice.
  */
 export const isStructured = (d: DraftItem) => d.assignment.mode !== 'free';
+/**
+ * «متابعة العرضات»: the server numbers a structured عرضة (a new one, or one already in a cycle);
+ * a legacy item keeps its own number field (the web's rule).
+ */
+export const isManagedNumber = (d: DraftItem) => isStructured(d) && (!d.saved || Boolean(d.saved.recitationCycle));
 /** An item saved as free text (legacy): it may stay free text. */
 export const isLegacyFreeText = (d: DraftItem) => Boolean(d.saved && !d.saved.assignment);
 /** A new item with nothing selected yet: ignored on save (an extra blank item never blocks it). */

@@ -10,6 +10,7 @@ import {
   LayoutGrid,
   MapPin,
   Phone,
+  Repeat,
   ShieldCheck,
   UserPlus,
 } from "lucide-react"
@@ -18,6 +19,7 @@ import Link from "next/link"
 import { ExtraSessionButton } from "@/components/calendar/scheduling-actions"
 import { StudentAttendanceHistory } from "@/components/attendance/student-attendance-history"
 import { StudentMemorization } from "@/components/memorization/student-memorization"
+import { StudentRecitations } from "@/components/teacher/work-followup/student-recitations"
 import { StatusBadge } from "@/components/shared/badges"
 import { InfoList, PhoneLink, SectionCard } from "@/components/shared/info-list"
 import { NoAccess } from "@/components/shared/no-access"
@@ -166,10 +168,10 @@ export function TeacherNotesScreen() {
   )
 }
 
-const TABS = ["overview", "attendance", "memorization"]
+const TABS = ["overview", "attendance", "memorization", "recitations"]
 
 /** A student of one of the teacher's current classes — anyone else is "no access". */
-export function TeacherStudentScreen({ id, tab }: { id: string; tab?: string }) {
+export function TeacherStudentScreen({ id, tab, surah }: { id: string; tab?: string; surah?: number }) {
   const today = todayInTunis()
   return (
     <WithTeacherWorkspace>
@@ -232,6 +234,16 @@ export function TeacherStudentScreen({ id, tab }: { id: string; tab?: string }) 
                   label: "متابعة الحفظ",
                   icon: <BookOpenCheck aria-hidden />,
                   content: <StudentMemorization studentId={student.id} lookups={lookups} students={students} today={today} scope="teacher" />,
+                },
+                {
+                  value: "recitations",
+                  label: "متابعة العرضات",
+                  icon: <Repeat aria-hidden />,
+                  content: (
+                    <SectionCard title="متابعة العرضات" icon={Repeat}>
+                      <StudentRecitations studentId={student.id} initialSurah={surah} />
+                    </SectionCard>
+                  ),
                 },
               ]}
             />

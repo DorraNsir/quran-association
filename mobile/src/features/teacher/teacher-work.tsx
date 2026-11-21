@@ -16,6 +16,7 @@ import { useWorkProgramPages, workKey } from './use-work';
 import { WorkProgressView, WorkSessionLine, WorkStatusBadge, WorkTypeBadge } from './work-badges';
 import { phaseOf, studentName } from './work-model';
 import type { WorkPeriod, WorkProgram, WorkProgramFilters, WorkProgramState } from './work-types';
+import { RecitationCycleLine } from './recitation-cycle-line';
 import { WorkAssignmentView } from './work-assignment-view';
 
 const w = ar.work;
@@ -212,6 +213,7 @@ function ProgramCard({ program: p, timeZone, onPress }: { program: WorkProgram; 
             {item.assignment ? (
               <View style={styles.flex}>
                 <WorkAssignmentView type={item.type} assignment={item.assignment} workload={item.workload} compact />
+                {item.recitationCycle ? <RecitationCycleLine cycle={item.recitationCycle} studentId={p.student.id} compact /> : null}
               </View>
             ) : (
               <AppText variant="small" numberOfLines={2} style={styles.flex}>

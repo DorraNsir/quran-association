@@ -337,6 +337,7 @@ model User {
   createdWorkItems          WorkItem[]             @relation("WorkItemCreator")
   updatedWorkItems          WorkItem[]             @relation("WorkItemUpdater")
   evaluatedWorkItems        WorkItem[]             @relation("WorkItemEvaluator")
+  startedRecitationCycles   RecitationCycle[]      @relation("RecitationCycleStarter")
   createdOnboardingLinks    OnboardingLink[]
   reviewedOnboardings       OnboardingSubmission[]
   recordedEnrollments       StudentEnrollment[]
@@ -408,6 +409,7 @@ model Student {
   memorization          MemorizationProgress[]
   teacherNotes          TeacherNote[]
   workPrograms          WorkProgram[]
+  recitationCycles      RecitationCycle[]
   /// TEMPORARY onboarding submissions approved as this student (optional back-link)
   onboardingSubmissions OnboardingSubmission[]
   paymentObligations    PaymentObligation[]
@@ -1641,6 +1643,9 @@ model WorkItem {
   carriedFromStatus   WorkStatus?
   /// The previous numbered recitation this one follows (number + 1)
   continuedFromItemId String?     @db.Uuid
+  /// «متابعة العرضات»: the cycle this عرضة is an attempt of (null: not a tracked recitation —
+  /// another type, free text, or a recitation planned before cycles existed)
+  recitationCycleId   String?     @db.Uuid
   /// Optimistic concurrency: a stale client never overwrites a newer value
   version             Int         @default(1)
   /// Structured Quranic assignment (all null for a free-text item; CHECK in migration).
@@ -1672,13 +1677,41 @@ model WorkItem {
   createdBy     User?       @relation("WorkItemCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   updatedBy     User?       @relation("WorkItemUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
   evaluatedBy   User?       @relation("WorkItemEvaluator", fields: [evaluatedByUserId], references: [id], onDelete: SetNull)
+  recitationCycle RecitationCycle? @relation(fields: [recitationCycleId], references: [id], onDelete: Restrict)
 
   /// The same item is carried at most once into a given program (= student + session)
   @@unique([carriedFromItemId, workProgramId])
   /// The next recitation of an item is planned at most once into a given program
   @@unique([continuedFromItemId, workProgramId])
   @@index([workProgramId, position])
+  @@index([recitationCycleId])
   @@map("work_items")
+}
+
+/// «متابعة العرضات»: one cycle of one student's recitations of one surah. It is complete after
+/// FOUR successful recitations (work items COMPLETED); its attempts are the work items linked to
+/// it — their evaluation stays the only source of truth (no copy of the results here). A new
+/// cycle is only ever started by an explicit action, once the latest one is complete.
+model RecitationCycle {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  studentId       String    @db.Uuid
+  /// Surah number (1–114)
+  surah           Int       @db.SmallInt
+  /// 1, 2, 3… per student and surah
+  number          Int
+  /// When the fourth successful recitation was recorded (cleared if a correction reopens the
+  /// latest cycle); derived from the attempts and kept in step in the same transaction
+  completedAt     DateTime? @db.Timestamptz(3)
+  startedByUserId String?   @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
+
+  student   Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  startedBy User?      @relation("RecitationCycleStarter", fields: [startedByUserId], references: [id], onDelete: SetNull)
+  attempts  WorkItem[]
+
+  @@unique([studentId, surah, number])
+  @@map("recitation_cycles")
 }
 
 // ─────────────── TEMPORARY: «استكمال بيانات الطلبة» (student onboarding) ───────────────

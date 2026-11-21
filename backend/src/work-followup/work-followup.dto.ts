@@ -475,6 +475,107 @@ export class WorkItemAssignmentDto {
   @ApiPropertyOptional({ type: Number, nullable: true }) toPage!: number | null;
 }
 
+const CYCLE_ENTRY = [
+  'SUCCESS',
+  'FAILED',
+  'PENDING',
+  'POSTPONED',
+  'DROPPED',
+  'SESSION_CANCELLED',
+];
+
+/** «متابعة العرضات»: an item's cycle (structured عرضة of one surah only). */
+export class RecitationCycleSummaryDto {
+  @ApiProperty({ format: 'uuid' }) cycleId!: string;
+  @ApiProperty({ minimum: 1, maximum: 114 }) surah!: number;
+  @ApiProperty({
+    description: 'Cycle number for this student and surah (1, 2, …)',
+  })
+  number!: number;
+  @ApiProperty({
+    description: 'Successful recitations (COMPLETED) in the cycle',
+  })
+  successes!: number;
+  @ApiProperty({ example: 4 }) required!: number;
+  @ApiProperty() completed!: boolean;
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description:
+      "This item's chronological attempt number in the cycle (null: not an attempt — postponed, dropped, or its session was cancelled)",
+  })
+  attemptNumber!: number | null;
+  @ApiProperty({ enum: CYCLE_ENTRY }) entry!: string;
+}
+
+/** One entry of a cycle's history: a work item (its evaluation is the source of truth). */
+export class RecitationAttemptDto {
+  @ApiProperty({ format: 'uuid' }) itemId!: string;
+  @ApiProperty({ format: 'uuid' }) programId!: string;
+  @ApiProperty({ format: 'uuid' }) sessionId!: string;
+  @ApiProperty({ example: '2026-11-18' }) sessionDate!: string;
+  @ApiPropertyOptional({ type: Number, nullable: true }) attemptNumber!:
+    number | null;
+  @ApiProperty({ enum: CYCLE_ENTRY }) entry!: string;
+  @ApiProperty({ enum: WorkStatus, enumName: 'WorkStatus' })
+  status!: WorkStatus;
+  @ApiPropertyOptional({ type: String, nullable: true })
+  evaluationComment!: string | null;
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  evaluatedAt!: Date | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) evaluatedBy!:
+    string | null;
+}
+
+export class RecitationCycleDto {
+  @ApiProperty({ format: 'uuid' }) id!: string;
+  @ApiProperty() number!: number;
+  @ApiProperty() successes!: number;
+  @ApiProperty({ example: 4 }) required!: number;
+  @ApiProperty() attempts!: number;
+  @ApiProperty() completed!: boolean;
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  completedAt!: Date | null;
+  @ApiProperty() startedAt!: Date;
+  @ApiProperty({
+    type: RecitationAttemptDto,
+    isArray: true,
+    description: 'Chronological',
+  })
+  entries!: RecitationAttemptDto[];
+}
+
+export class RecitationSurahHistoryDto {
+  @ApiProperty({ minimum: 1, maximum: 114 }) surah!: number;
+  @ApiProperty({
+    type: RecitationCycleDto,
+    isArray: true,
+    description: 'Oldest first; the last one is the current cycle',
+  })
+  cycles!: RecitationCycleDto[];
+  @ApiProperty({
+    type: RecitationAttemptDto,
+    isArray: true,
+    description:
+      'Recitations of this surah planned before cycles existed: shown as they are, never counted',
+  })
+  earlier!: RecitationAttemptDto[];
+  @ApiProperty({
+    description: 'The current cycle is complete: a new one may be started',
+  })
+  canStartNewCycle!: boolean;
+}
+
+export class RecitationHistoryDto {
+  @ApiProperty({ format: 'uuid' }) studentId!: string;
+  @ApiProperty({
+    type: RecitationSurahHistoryDto,
+    isArray: true,
+    description: 'By surah number',
+  })
+  surahs!: RecitationSurahHistoryDto[];
+}
+
 export class WorkItemDto {
   @ApiProperty() id!: string;
   @ApiProperty() version!: number;
@@ -520,6 +621,13 @@ export class WorkItemDto {
       'Server-computed workload stored when the assignment was saved: per unit exact | bounded (greaterThan < x < lessThan) | unavailable, with dataStatus; authoritative=false → not for ranking',
   })
   workload!: Record<string, unknown> | null;
+  @ApiPropertyOptional({
+    type: RecitationCycleSummaryDto,
+    nullable: true,
+    description:
+      '«متابعة العرضات»: the cycle of a tracked recitation (null otherwise)',
+  })
+  recitationCycle!: RecitationCycleSummaryDto | null;
 }
 
 export class WorkProgressDto {

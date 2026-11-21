@@ -11,6 +11,7 @@ import type {
   EvaluationLine,
   NewWorkItem,
   WorkItemPatch,
+  RecitationHistory,
   WorkProgram,
   WorkProgramFilters,
 } from './work-types';
@@ -209,6 +210,14 @@ export const scheduleWorkItem = (itemId: string, mode: 'carry' | 'next', targetS
     method: 'POST',
     body: mode === 'carry' ? { targetSessionId } : { targetSessionId, description },
   });
+
+/** GET students/:id/recitations — «متابعة العرضات» by surah (403 for a student I do not teach). */
+export const fetchRecitationHistory = (studentId: string, signal?: AbortSignal) =>
+  api<RecitationHistory>(`/teacher/students/${encodeURIComponent(studentId)}/recitations`, { signal });
+
+/** POST students/:id/recitations/:surah/cycles — «بدء دورة جديدة» (409 until the current cycle is complete). */
+export const startRecitationCycle = (studentId: string, surah: number) =>
+  api<RecitationHistory>(`/teacher/students/${encodeURIComponent(studentId)}/recitations/${surah}/cycles`, { method: 'POST' });
 
 /*
  * «الموارد التعليمية» — /api/teacher/resources (TeacherResourcesController):

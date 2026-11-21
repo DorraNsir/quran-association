@@ -310,6 +310,9 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
       },
     });
     await prisma.workItem.deleteMany({ where: programs });
+    await prisma.recitationCycle.deleteMany({
+      where: { student: { personId: { in: persons } } },
+    });
     await prisma.workProgram.deleteMany({
       where: { session: { groupClass: classes } },
     });
@@ -1773,7 +1776,21 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
       });
       expect(rev.workload!.juz).toMatchObject({ kind: 'exact', value: 1 });
       expect(ex.workload!.surahs).toEqual({ whole: 0, touched: 2 });
-      expect(rec.description).toBe('العرضة الثانية من سورة يس');
+      // «متابعة العرضات»: a tracked recitation's number is the server's — the first attempt of
+      // the student's first cycle of Ya-Sin, whatever number the client sent
+      expect(rec.description).toBe('العرضة الأولى من سورة يس');
+      expect(rec.recitationNumber).toBe(1);
+      expect(
+        (rec as unknown as { recitationCycle: unknown }).recitationCycle,
+      ).toMatchObject({
+        surah: 36,
+        number: 1,
+        successes: 0,
+        required: 4,
+        completed: false,
+        attemptNumber: 1,
+        entry: 'PENDING',
+      });
       expect(rec.assignment).toMatchObject({
         fromSurah: 36,
         fromAyah: 1,
@@ -2097,22 +2114,18 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
         version: src.version,
         assignment: src.assignment,
       });
-      // Next recitation: the same surah, number + 1
+      // Next recitation while this one still waits for its evaluation: refused (one pending
+      // attempt per cycle) — the next attempt is planned once this one has a result
       const rec = itemsOf(p)[4]!;
-      const next = (
-        await api
-          .post('sup', `work-items/${rec.id}/next-recitation`, {
-            targetSessionId: id.a2,
-          })
-          .expect(201)
-      ).body as Program;
-      const n = itemsOf(next).find((i) => i.continuedFrom?.itemId === rec.id)!;
-      expect(n).toMatchObject({
-        recitationNumber: 3,
-        description: 'العرضة الثالثة من سورة يس',
-        assignment: rec.assignment,
-        workload: rec.workload,
-      });
+      expect(
+        (
+          await api
+            .post('sup', `work-items/${rec.id}/next-recitation`, {
+              targetSessionId: id.a2,
+            })
+            .expect(409)
+        ).body,
+      ).toMatchObject({ code: 'RECITATION_ATTEMPT_PENDING', surah: 36 });
     });
 
     it('cancelled session: its unevaluated structured work is carried with its assignment (phase 1 rule kept)', async () => {
@@ -2528,6 +2541,527 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
         type: 'MEMORIZATION',
         assignment: row.assignment,
       });
+    });
+  });
+
+  // ───────────────────── «متابعة العرضات» (Phase 4) ─────────────────────
+
+  describe('«متابعة العرضات»: four successful recitations per surah and cycle', () => {
+    type Summary = {
+      cycleId: string;
+      surah: number;
+      number: number;
+      successes: number;
+      required: number;
+      completed: boolean;
+      attemptNumber: number | null;
+      entry: string;
+    } | null;
+    type Entry = {
+      itemId: string;
+      attemptNumber: number | null;
+      entry: string;
+      status: string;
+    };
+    type Cycle = {
+      id: string;
+      number: number;
+      successes: number;
+      attempts: number;
+      completed: boolean;
+      completedAt: string | null;
+      entries: Entry[];
+    };
+    type History = {
+      surahs: {
+        surah: number;
+        cycles: Cycle[];
+        earlier: Entry[];
+        canStartNewCycle: boolean;
+      }[];
+    };
+    const cycleOf = (i: Item) =>
+      (i as unknown as { recitationCycle: Summary }).recitationCycle;
+    const recite = (surah: number) => ({
+      type: 'RECITATION',
+      assignment: { kind: 'SURAH_RANGE', fromSurah: surah },
+    });
+    let day = 60;
+    const upcoming = () => session('C', addDays(TODAY, day++), '16:00');
+    // Started lessons: each on its own past day (a class has no two lessons at once), in order
+    let past = -300;
+    const started = (sessionId: string) =>
+      startNow(sessionId, addDays(TODAY, past++));
+    const history = async (who = 'sup', student = 's2') =>
+      (await api.get(who, `students/${id[student]}/recitations`).expect(200))
+        .body as History;
+    const surahIn = (h: History, surah: number) =>
+      h.surahs.find((x) => x.surah === surah)!;
+
+    /** One attempt at a time: plan → session starts → result → next recitation. */
+    class Chain {
+      program!: Program;
+      item!: Item;
+      static async start(student: string, surah: number) {
+        const c = new Chain();
+        c.program = (
+          await create('sup', student, '', [recite(surah)], {
+            sessionId: await upcoming(),
+          }).expect(201)
+        ).body as Program;
+        c.item = c.program.items[0]!;
+        return c;
+      }
+      async result(status: string) {
+        await started(this.program.session.id);
+        const fresh = await programOf('sup', this.program.id);
+        this.program = (
+          await evaluate('sup', fresh, this.item.id, status).expect(200)
+        ).body as Program;
+        this.item = this.program.items.find((i) => i.id === this.item.id)!;
+        return cycleOf(this.item)!;
+      }
+      async next(expected = 201) {
+        const res = await api
+          .post('sup', `work-items/${this.item.id}/next-recitation`, {
+            targetSessionId: await upcoming(),
+          })
+          .expect(expected);
+        if (expected !== 201) return res.body as { code: string };
+        this.program = res.body as Program;
+        this.item = this.program.items.find(
+          (i) => i.continuedFrom?.itemId === this.item.id,
+        )!;
+        return res.body as { code: string };
+      }
+    }
+
+    it('S, S, F, S, pending, S: progress counts successes only; numbers are chronological; complete on the 5th attempt', async () => {
+      const c = await Chain.start('s2', 2);
+      expect(c.item.description).toBe('العرضة الأولى من سورة البقرة');
+      expect(cycleOf(c.item)).toMatchObject({
+        surah: 2,
+        number: 1,
+        successes: 0,
+        attemptNumber: 1,
+        entry: 'PENDING',
+        required: 4,
+      });
+      expect(await c.result('COMPLETED')).toMatchObject({ successes: 1 });
+      await c.next();
+      expect(c.item).toMatchObject({
+        recitationNumber: 2,
+        description: 'العرضة الثانية من سورة البقرة',
+      });
+      expect(await c.result('COMPLETED')).toMatchObject({
+        successes: 2,
+        attemptNumber: 2,
+      });
+      await c.next();
+      expect(await c.result('NOT_COMPLETED')).toMatchObject({
+        successes: 2,
+        attemptNumber: 3,
+        entry: 'FAILED',
+      });
+      await c.next();
+      expect(await c.result('COMPLETED')).toMatchObject({
+        successes: 3,
+        attemptNumber: 4,
+      });
+      await c.next();
+      expect(cycleOf(c.item)).toMatchObject({
+        successes: 3,
+        attemptNumber: 5,
+        entry: 'PENDING',
+        completed: false,
+      });
+      // a second pending attempt of the same surah is refused (another session, nothing created)
+      const blocked = await create('sup', 's2', '', [recite(2)], {
+        sessionId: await upcoming(),
+      }).expect(409);
+      expect(blocked.body).toMatchObject({
+        code: 'RECITATION_ATTEMPT_PENDING',
+        surah: 2,
+      });
+      expect(await c.result('COMPLETED')).toMatchObject({
+        successes: 4,
+        attemptNumber: 5,
+        completed: true,
+      });
+
+      const h = surahIn(await history(), 2);
+      expect(h.cycles).toHaveLength(1);
+      expect(h.cycles[0]).toMatchObject({
+        number: 1,
+        successes: 4,
+        attempts: 5,
+        completed: true,
+      });
+      expect(h.cycles[0]!.completedAt).not.toBeNull();
+      expect(
+        h.cycles[0]!.entries.map((e) => [e.attemptNumber, e.entry]),
+      ).toEqual([
+        [1, 'SUCCESS'],
+        [2, 'SUCCESS'],
+        [3, 'FAILED'],
+        [4, 'SUCCESS'],
+        [5, 'SUCCESS'],
+      ]);
+      expect(h.canStartNewCycle).toBe(true);
+      id.baqaraLast = c.item.id;
+      id.baqaraThird = h.cycles[0]!.entries[2]!.itemId;
+      id.baqaraSecond = h.cycles[0]!.entries[1]!.itemId;
+    });
+
+    it('a complete cycle takes no further attempt (next recitation, new program); never a new cycle automatically', async () => {
+      const next = await api
+        .post('sup', `work-items/${id.baqaraLast}/next-recitation`, {
+          targetSessionId: await upcoming(),
+        })
+        .expect(409);
+      expect(next.body).toMatchObject({
+        code: 'RECITATION_CYCLE_COMPLETED',
+        surah: 2,
+      });
+      expect(
+        (
+          await create('sup', 's2', '', [recite(2)], {
+            sessionId: await upcoming(),
+          }).expect(409)
+        ).body.code,
+      ).toBe('RECITATION_CYCLE_COMPLETED');
+      expect(surahIn(await history(), 2).cycles).toHaveLength(1);
+    });
+
+    it('evaluation corrections: a 5th success is refused; undoing a success reopens the latest cycle, redoing completes it again', async () => {
+      const itemOf = async (itemId: string) => {
+        const row = await prisma.workItem.findUniqueOrThrow({
+          where: { id: itemId },
+          select: { workProgramId: true },
+        });
+        return programOf('sup', row.workProgramId);
+      };
+      const third = await itemOf(id.baqaraThird);
+      expect(
+        (await evaluate('sup', third, id.baqaraThird, 'COMPLETED').expect(409))
+          .body.code,
+      ).toBe('RECITATION_CYCLE_COMPLETED');
+      const second = await itemOf(id.baqaraSecond);
+      await evaluate('sup', second, id.baqaraSecond, 'PARTIAL').expect(200);
+      let h = surahIn(await history(), 2);
+      expect(h.cycles[0]).toMatchObject({
+        successes: 3,
+        completed: false,
+        completedAt: null,
+      });
+      expect(h.canStartNewCycle).toBe(false);
+      await evaluate(
+        'sup',
+        await itemOf(id.baqaraSecond),
+        id.baqaraSecond,
+        'COMPLETED',
+      ).expect(200);
+      h = surahIn(await history(), 2);
+      expect(h.cycles[0]).toMatchObject({ successes: 4, completed: true });
+    });
+
+    it('a new cycle only by an explicit action, once complete; the closed cycle stays complete; numbering restarts', async () => {
+      const begun = (
+        await api
+          .post('sup', `students/${id.s2}/recitations/2/cycles`)
+          .expect(201)
+      ).body as History;
+      const h = surahIn(begun, 2);
+      expect(h.cycles.map((c) => [c.number, c.successes, c.completed])).toEqual(
+        [
+          [1, 4, true],
+          [2, 0, false],
+        ],
+      );
+      expect(h.canStartNewCycle).toBe(false);
+      expect(
+        (
+          await api
+            .post('sup', `students/${id.s2}/recitations/2/cycles`)
+            .expect(409)
+        ).body.code,
+      ).toBe('RECITATION_CYCLE_NOT_COMPLETED');
+      // the closed cycle keeps its four successes
+      const row = await prisma.workItem.findUniqueOrThrow({
+        where: { id: id.baqaraSecond },
+        select: { workProgramId: true },
+      });
+      expect(
+        (
+          await evaluate(
+            'sup',
+            await programOf('sup', row.workProgramId),
+            id.baqaraSecond,
+            'NOT_COMPLETED',
+          ).expect(409)
+        ).body.code,
+      ).toBe('RECITATION_CYCLE_CLOSED');
+      // the next attempt joins cycle 2 as its first attempt
+      const next = (
+        await api
+          .post('sup', `work-items/${id.baqaraLast}/next-recitation`, {
+            targetSessionId: await upcoming(),
+          })
+          .expect(201)
+      ).body as Program;
+      const n = next.items.find(
+        (i) => i.continuedFrom?.itemId === id.baqaraLast,
+      )!;
+      expect(n).toMatchObject({
+        recitationNumber: 1,
+        description: 'العرضة الأولى من سورة البقرة',
+      });
+      expect(cycleOf(n)).toMatchObject({
+        number: 2,
+        successes: 0,
+        attemptNumber: 1,
+      });
+      // a surah never started cannot get a "new" cycle either
+      expect(
+        (
+          await api
+            .post('sup', `students/${id.s2}/recitations/2/cycles`)
+            .expect(409)
+        ).body.code,
+      ).toBe('RECITATION_CYCLE_NOT_COMPLETED');
+      expect(
+        (
+          await api
+            .post('sup', `students/${id.s2}/recitations/115/cycles`)
+            .expect(400)
+        ).body.code,
+      ).toBe('RECITATION_SURAH_INVALID');
+    });
+
+    it('transfers: a postponed attempt keeps its number; a failed one is carried as the next attempt; a cancelled session frees the slot', async () => {
+      const c = await Chain.start('s2', 18); // al-Kahf
+      expect(await c.result('POSTPONED')).toMatchObject({
+        attemptNumber: null,
+        entry: 'POSTPONED',
+        successes: 0,
+      });
+      const t1 = (
+        await api
+          .post('sup', `work-items/${c.item.id}/transfer`, {
+            targetSessionId: await upcoming(),
+          })
+          .expect(201)
+      ).body as Program;
+      c.program = t1;
+      c.item = t1.items.find((i) => i.carriedFrom?.itemId === c.item.id)!;
+      expect(c.item).toMatchObject({
+        recitationNumber: 1,
+        description: 'العرضة الأولى من سورة الكهف',
+      });
+      expect(cycleOf(c.item)).toMatchObject({
+        attemptNumber: 1,
+        entry: 'PENDING',
+      });
+      expect(await c.result('NOT_COMPLETED')).toMatchObject({
+        attemptNumber: 1,
+        entry: 'FAILED',
+      });
+      const t2 = (
+        await api
+          .post('sup', `work-items/${c.item.id}/transfer`, {
+            targetSessionId: await upcoming(),
+          })
+          .expect(201)
+      ).body as Program;
+      const again = t2.items.find((i) => i.carriedFrom?.itemId === c.item.id)!;
+      expect(again).toMatchObject({
+        recitationNumber: 2,
+        description: 'العرضة الثانية من سورة الكهف',
+      });
+      expect(cycleOf(again)).toMatchObject({
+        attemptNumber: 2,
+        entry: 'PENDING',
+      });
+      // its session is cancelled: not an attempt any more — another recitation can be planned
+      await admin
+        .patch(`sessions/${t2.session.id}/status`, { status: 'CANCELLED' })
+        .expect(200);
+      const free = (
+        await create('sup', 's2', '', [recite(18)], {
+          sessionId: await upcoming(),
+        }).expect(201)
+      ).body as Program;
+      expect(cycleOf(free.items[0]!)).toMatchObject({
+        attemptNumber: 2,
+        entry: 'PENDING',
+      });
+      const h = surahIn(await history(), 18);
+      expect(
+        h.cycles[0]!.entries.map((e) => [e.attemptNumber, e.entry]),
+      ).toEqual([
+        [null, 'POSTPONED'],
+        [1, 'FAILED'],
+        [null, 'SESSION_CANCELLED'],
+        [2, 'PENDING'],
+      ]);
+    });
+
+    it('edits: a pending attempt may change surah (its cycle follows); an evaluated one may not; the number is the server’s', async () => {
+      const p = (
+        await create('sup', 's2', '', [recite(19)], {
+          sessionId: await upcoming(),
+        }).expect(201)
+      ).body as Program;
+      const item = p.items[0]!;
+      expect(
+        (
+          await api
+            .patch('sup', `work-items/${item.id}`, {
+              version: item.version,
+              recitationNumber: 7,
+            })
+            .expect(400)
+        ).body.code,
+      ).toBe('WORK_RECITATION_NUMBER_MANAGED');
+      const moved = (
+        await api
+          .patch('sup', `work-items/${item.id}`, {
+            version: item.version,
+            assignment: { kind: 'SURAH_RANGE', fromSurah: 20 },
+          })
+          .expect(200)
+      ).body as Program;
+      expect(cycleOf(moved.items[0]!)).toMatchObject({
+        surah: 20,
+        attemptNumber: 1,
+      });
+      expect(moved.items[0]!.description).toBe('العرضة الأولى من سورة طه');
+      expect(surahIn(await history(), 19).cycles[0]!.entries).toEqual([]); // left Maryam's cycle
+      await started(p.session.id);
+      const evaluated = (
+        await evaluate(
+          'sup',
+          await programOf('sup', p.id),
+          item.id,
+          'COMPLETED',
+        ).expect(200)
+      ).body as Program;
+      const e = evaluated.items[0]!;
+      expect(
+        (
+          await api
+            .patch('sup', `work-items/${item.id}`, {
+              version: e.version,
+              assignment: { kind: 'SURAH_RANGE', fromSurah: 21 },
+            })
+            .expect(409)
+        ).body.code,
+      ).toBe('RECITATION_ATTEMPT_EVALUATED');
+      expect(
+        (
+          await api
+            .patch('sup', `work-items/${item.id}`, {
+              version: e.version,
+              type: 'REVISION',
+            })
+            .expect(409)
+        ).body.code,
+      ).toBe('RECITATION_ATTEMPT_EVALUATED');
+    });
+
+    it('duplicates and concurrency: two recitations of a surah in one program, or two programs at once — one pending attempt only', async () => {
+      const both = await create('sup', 's2', '', [recite(55), recite(55)], {
+        sessionId: await upcoming(),
+      }).expect(409);
+      expect(both.body.code).toBe('RECITATION_ATTEMPT_PENDING');
+      expect(
+        await prisma.recitationCycle.count({
+          where: { studentId: id.s2, surah: 55 },
+        }),
+      ).toBe(0); // rolled back
+      const [a, b] = await Promise.all([upcoming(), upcoming()]);
+      const results = await Promise.all([
+        create('sup', 's2', '', [recite(56)], { sessionId: a }),
+        create('sup', 's2', '', [recite(56)], { sessionId: b }),
+      ]);
+      expect(results.map((r) => r.status).sort((x, y) => x - y)).toEqual([
+        201, 409,
+      ]);
+      expect(results.find((r) => r.status === 409)!.body.code).toBe(
+        'RECITATION_ATTEMPT_PENDING',
+      );
+      expect(
+        await prisma.recitationCycle.count({
+          where: { studentId: id.s2, surah: 56 },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.workItem.count({
+          where: { recitationCycle: { studentId: id.s2, surah: 56 } },
+        }),
+      ).toBe(1);
+    });
+
+    it('recitations planned before cycles existed: shown apart, as recorded, never counted; tracking starts with the next attempt', async () => {
+      const p = (
+        await create('sup', 's2', '', [recite(67)], {
+          sessionId: await upcoming(),
+        }).expect(201)
+      ).body as Program;
+      const legacy = p.items[0]!;
+      // the state of an item saved before Phase 4: no cycle
+      await prisma.workItem.update({
+        where: { id: legacy.id },
+        data: { recitationCycleId: null },
+      });
+      await prisma.recitationCycle.deleteMany({
+        where: { studentId: id.s2, surah: 67 },
+      });
+      await started(p.session.id);
+      const evaluated = (
+        await evaluate(
+          'sup',
+          await programOf('sup', p.id),
+          legacy.id,
+          'COMPLETED',
+        ).expect(200)
+      ).body as Program;
+      expect(cycleOf(evaluated.items[0]!)).toBeNull();
+      let h = surahIn(await history(), 67);
+      expect(h.cycles).toEqual([]);
+      expect(
+        h.earlier.map((e) => [e.itemId, e.status, e.attemptNumber]),
+      ).toEqual([[legacy.id, 'COMPLETED', null]]);
+      const fresh = (
+        await create('sup', 's2', '', [recite(67)], {
+          sessionId: await upcoming(),
+        }).expect(201)
+      ).body as Program;
+      expect(cycleOf(fresh.items[0]!)).toMatchObject({
+        number: 1,
+        successes: 0,
+        attemptNumber: 1,
+      });
+      h = surahIn(await history(), 67);
+      expect(h.earlier).toHaveLength(1);
+      expect(h.cycles[0]!.entries).toHaveLength(1);
+    });
+
+    it('access: the student’s teacher and admins; another teacher 403; unknown student 404', async () => {
+      await history('sup');
+      expect(
+        (
+          await http()
+            .get(`/api/admin/students/${id.s2}/recitations`)
+            .set(as('admin'))
+            .expect(200)
+        ).body.surahs.length,
+      ).toBeGreaterThan(0);
+      await api.get('other', `students/${id.s2}/recitations`).expect(403);
+      await api
+        .post('other', `students/${id.s2}/recitations/2/cycles`)
+        .expect(403);
+      await api.get('sup', `students/${randomUUID()}/recitations`).expect(404);
     });
   });
 });

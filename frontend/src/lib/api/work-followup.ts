@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 
-import type { AssignmentPayload, StudentWorkProgram, WorkProgram, WorkSession, WorkStatus, WorkType } from "@/types/work-followup"
+import type { AssignmentPayload, RecitationHistory, StudentWorkProgram, WorkProgram, WorkSession, WorkStatus, WorkType } from "@/types/work-followup"
 
 import { api, useApiMutation } from "./academic"
 import type { Page, Query } from "./client"
@@ -18,6 +18,7 @@ export const workKeys = {
   one: (id: string) => ["work-followup", "program", id] as const,
   sessionOptions: ["work-followup", "session-options"] as const,
   eligible: (studentId: string, afterSessionId?: string) => ["work-followup", "eligible", studentId, afterSessionId ?? null] as const,
+  recitations: (studentId: string) => ["work-followup", "recitations", studentId] as const,
 }
 
 const BASE = "/teacher/work-programs"
@@ -141,6 +142,24 @@ export function useScheduleWorkItem() {
   )
 }
 
+
+/** «متابعة العرضات»: a student's recitation cycles by surah (the API checks the teacher may see the student). */
+export function useRecitationHistory(studentId: string) {
+  return useQuery({
+    queryKey: workKeys.recitations(studentId),
+    queryFn: ({ signal }) => api<RecitationHistory>(`/teacher/students/${studentId}/recitations`, { signal }),
+    retry: false,
+  })
+}
+
+/** «بدء دورة جديدة»: only once the surah's current cycle is complete (the API refuses otherwise). */
+export function useStartRecitationCycle() {
+  return useApiMutation(
+    ({ studentId, surah }: { studentId: string; surah: number }) =>
+      api<RecitationHistory>(`/teacher/students/${studentId}/recitations/${surah}/cycles`, { method: "POST" }),
+    [workKeys.all]
+  )
+}
 
 /** The signed-in student's OWN programs (read-only: the API offers no write for students). */
 export function useMyWorkPrograms(period: "upcoming" | "past" | undefined, page: number, pageSize: number) {

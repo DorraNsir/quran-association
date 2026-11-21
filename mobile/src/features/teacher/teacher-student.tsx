@@ -107,6 +107,18 @@ export function TeacherStudentScreen({ studentId }: { studentId: string }) {
               </PressableRow>
             </Card>
 
+            <Card>
+              <PressableRow
+                bordered={false}
+                accessibilityLabel={`${ar.work.recitations} — ${profile.name}`}
+                onPress={() => router.push({ pathname: '/teacher/students/[id]/recitations', params: { id: profile.student.id } })}>
+                <AppText variant="bodyStrong">{ar.work.recitations}</AppText>
+                <AppText variant="small" tone="muted">
+                  {ar.work.recitationsIntro}
+                </AppText>
+              </PressableRow>
+            </Card>
+
             <SectionCard title={ar.student.info} icon="info">
               <InfoRow icon="location" label={ar.student.branch}>
                 {profile.groupClass.branchName}

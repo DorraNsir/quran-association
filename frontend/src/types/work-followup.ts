@@ -32,6 +32,66 @@ export interface WorkItemLink {
   sessionDate: ISODate
 }
 
+/**
+ * «متابعة العرضات»: what an item is for its surah's cycle. Attempts: SUCCESS (counts), FAILED, PENDING;
+ * not attempts (kept in the history, unnumbered): POSTPONED, DROPPED (item cancelled), SESSION_CANCELLED.
+ */
+export type RecitationEntry = "SUCCESS" | "FAILED" | "PENDING" | "POSTPONED" | "DROPPED" | "SESSION_CANCELLED"
+
+/** A tracked عرضة's cycle (four successful recitations per surah and cycle). */
+export interface RecitationCycleSummary {
+  cycleId: ID
+  surah: number
+  /** 1, 2, … for this student and surah */
+  number: number
+  successes: number
+  required: number
+  completed: boolean
+  /** This item's chronological attempt number (null: not an attempt) */
+  attemptNumber: number | null
+  entry: RecitationEntry
+}
+
+export interface RecitationAttempt {
+  itemId: ID
+  programId: ID
+  sessionId: ID
+  sessionDate: ISODate
+  attemptNumber: number | null
+  entry: RecitationEntry
+  status: WorkStatus
+  evaluationComment: string | null
+  evaluatedAt: string | null
+  evaluatedBy: string | null
+}
+
+export interface RecitationCycle {
+  id: ID
+  number: number
+  successes: number
+  required: number
+  attempts: number
+  completed: boolean
+  completedAt: string | null
+  startedAt: string
+  /** Chronological */
+  entries: RecitationAttempt[]
+}
+
+export interface RecitationSurahHistory {
+  surah: number
+  /** Oldest first; the last one is the current cycle */
+  cycles: RecitationCycle[]
+  /** Recitations planned before cycles existed: shown as recorded, never counted */
+  earlier: RecitationAttempt[]
+  canStartNewCycle: boolean
+}
+
+export interface RecitationHistory {
+  studentId: ID
+  surahs: RecitationSurahHistory[]
+}
+
 export interface WorkItem {
   id: ID
   /** Optimistic concurrency: sent back with every change */
@@ -57,6 +117,8 @@ export interface WorkItem {
   assignment: WorkAssignment | null
   /** Computed and stored by the server when the assignment was saved — never computed here */
   workload: WorkloadSnapshot | null
+  /** «متابعة العرضات»: the cycle of a tracked عرضة (null: another type, free text, or planned before cycles) */
+  recitationCycle?: RecitationCycleSummary | null
 }
 
 export interface WorkProgress {

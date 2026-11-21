@@ -6,6 +6,11 @@ import { readFileSync } from 'node:fs';
 import {
   adaptDraft,
   assignmentSummary,
+  attemptLabel,
+  cycleName,
+  cycleProgressLong,
+  cycleSummaryText,
+  RECITATION_ENTRY_LABEL,
   ayahCount,
   canonicalOf,
   countLabel,
@@ -501,5 +506,21 @@ describe('حفظ modes: whole surah, verses (optional end), pages (optional end)
     assert.equal(isDefaultDescription('سورة النصر كاملة', 'MEMORIZATION', nasr, name, null), true);
     assert.equal(isDefaultDescription('سورة النصر: من الآية 1 إلى الآية 3', 'MEMORIZATION', nasr, name, null), true);
     assert.equal(isDefaultDescription('حفظ مع التجويد', 'MEMORIZATION', nasr, name, null), false);
+  });
+});
+
+describe('«متابعة العرضات» wording (display only)', () => {
+  test('cycle names, compact and long progress, completion', () => {
+    assert.deepEqual([1, 2, 10, 11].map(cycleName), ['الدورة الأولى', 'الدورة الثانية', 'الدورة العاشرة', 'الدورة رقم 11']);
+    assert.equal(cycleSummaryText({ number: 1, successes: 3, required: 4, completed: false }), 'الدورة الأولى · 3/4 ناجحة');
+    assert.equal(cycleSummaryText({ number: 2, successes: 4, required: 4, completed: true }), 'الدورة الثانية · 4/4 ناجحة · مكتملة');
+    assert.equal(cycleProgressLong(3, 4), '3 من 4 ناجحة');
+  });
+  test('attempt labels: chronological number + words; non-attempts unnumbered and marked as not counted', () => {
+    assert.equal(attemptLabel(1, 'SUCCESS'), 'عرضة 1 — ناجحة');
+    assert.equal(attemptLabel(3, 'FAILED'), 'عرضة 3 — غير ناجحة');
+    assert.equal(attemptLabel(5, 'PENDING'), 'عرضة 5 — قيد الانتظار');
+    assert.equal(attemptLabel(null, 'POSTPONED'), 'مؤجلة — لا تُحتسب');
+    for (const k of ['POSTPONED', 'DROPPED', 'SESSION_CANCELLED'] as const) assert.match(RECITATION_ENTRY_LABEL[k], /لا تُحتسب/);
   });
 });

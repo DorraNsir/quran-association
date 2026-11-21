@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Patch,
   Post,
@@ -32,6 +33,7 @@ import {
   EvaluateWorkItemDto,
   EvaluateWorkProgramDto,
   NextRecitationDto,
+  RecitationHistoryDto,
   ScheduleWorkItemDto,
   StudentWorkProgramDto,
   StudentWorkProgramListDto,
@@ -51,11 +53,11 @@ import {
 const DOC = {
   conflict: {
     description:
-      'WORK_PROGRAM_EXISTS (body.programId), WORK_SESSION_CANCELLED (no new work / no evaluation in a cancelled session), WORK_SESSION_NOT_STARTED (evaluation before the session starts), WORK_SESSION_NOT_UPCOMING, WORK_ITEM_NOT_TRANSFERABLE, WORK_ITEM_ALREADY_TRANSFERRED, WORK_RECITATION_ALREADY_PLANNED, WORK_ITEM_CHANGED / WORK_PROGRAM_CHANGED (stale version — reload)',
+      'RECITATION_CYCLE_COMPLETED (the surah’s cycle has its 4 successful recitations — start a new cycle), RECITATION_ATTEMPT_PENDING (a recitation of this surah still waits for its evaluation), RECITATION_CYCLE_CLOSED (a newer cycle exists: the older one stays complete), RECITATION_ATTEMPT_EVALUATED (an evaluated attempt keeps its type and surah); body.cycleId / body.surah given, WORK_PROGRAM_EXISTS (body.programId), WORK_SESSION_CANCELLED (no new work / no evaluation in a cancelled session), WORK_SESSION_NOT_STARTED (evaluation before the session starts), WORK_SESSION_NOT_UPCOMING, WORK_ITEM_NOT_TRANSFERABLE, WORK_ITEM_ALREADY_TRANSFERRED, WORK_RECITATION_ALREADY_PLANNED, WORK_ITEM_CHANGED / WORK_PROGRAM_CHANGED (stale version — reload)',
   },
   bad: {
     description:
-      'Validation, WORK_STUDENT_NOT_IN_SESSION, WORK_TARGET_SESSION_NOT_LATER, WORK_ITEM_NOT_RECITATION, WORK_RECITATION_NUMBER_REQUIRED, WORK_ITEM_TYPE_LOCKED, WORK_PROGRAM_VERSION_REQUIRED',
+      'Validation, WORK_STUDENT_NOT_IN_SESSION, WORK_TARGET_SESSION_NOT_LATER, WORK_ITEM_NOT_RECITATION, WORK_RECITATION_NUMBER_REQUIRED, WORK_RECITATION_NUMBER_MANAGED (a tracked recitation’s number is assigned by the server), RECITATION_SURAH_INVALID, WORK_ITEM_TYPE_LOCKED, WORK_PROGRAM_VERSION_REQUIRED',
   },
   missing: {
     description:
@@ -239,6 +241,39 @@ abstract class WorkFollowupRoutes {
     @Body() dto: NextRecitationDto,
   ) {
     return this.work.nextRecitation(this.actor(user), id, dto);
+  }
+
+  @Get('students/:studentId/recitations')
+  @ApiOperation({
+    summary:
+      '«متابعة العرضات»: the student’s recitation cycles by surah (4 successful recitations each), with every attempt',
+  })
+  @ApiOkResponse({ type: RecitationHistoryDto })
+  @ApiNotFoundResponse(DOC.missing)
+  recitations(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+  ) {
+    return this.work.recitationHistory(this.actor(user), studentId);
+  }
+
+  @Post('students/:studentId/recitations/:surah/cycles')
+  @ApiOperation({
+    summary:
+      '«بدء دورة جديدة»: start the next cycle of a surah — only once the current one is complete (never automatic)',
+  })
+  @ApiCreatedResponse({ type: RecitationHistoryDto })
+  @ApiConflictResponse({
+    description:
+      'RECITATION_CYCLE_NOT_COMPLETED (the current cycle has fewer than 4 successful recitations)',
+  })
+  @ApiNotFoundResponse(DOC.missing)
+  startRecitationCycle(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+    @Param('surah', ParseIntPipe) surah: number,
+  ) {
+    return this.work.startRecitationCycle(this.actor(user), studentId, surah);
   }
 }
 
