@@ -1060,6 +1060,18 @@ describe('Settings & file storage (e2e)', () => {
       expect(
         (await admin.get(`students/${id['student:s1']}`)).body.person.photoUrl,
       ).toBe(`/api/files/${photo}`);
+      // The teacher workspace (the source of the work-program student picker) carries it
+      const ws = (
+        await http()
+          .get('/api/teacher/workspace')
+          .set(as(token.sup))
+          .expect(200)
+      ).body as { students: { id: string; photoUrl: string | null }[] };
+      expect(
+        ws.students.find((st) => st.id === id['student:s1'])?.photoUrl,
+      ).toBe(`/api/files/${photo}`);
+      // the field is always present: null for a student without a photo
+      expect(ws.students.every((st) => 'photoUrl' in st)).toBe(true);
       await fetchFile('s1', photo).expect(200);
       await fetchFile('sup', photo).expect(200);
       await fetchFile('asst', photo).expect(200);
@@ -1158,7 +1170,7 @@ describe('Settings & file storage (e2e)', () => {
     });
   });
 
-  describe('a teacher\'s OWN photo (/api/teacher/profile/photo)', () => {
+  describe("a teacher's OWN photo (/api/teacher/profile/photo)", () => {
     it('an active teacher uploads and sets their own photo; nobody else can use that file', async () => {
       const mine = await uploadOk(
         'asst',

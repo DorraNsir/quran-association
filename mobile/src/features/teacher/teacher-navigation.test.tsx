@@ -69,6 +69,7 @@ beforeEach(() => {
     ['/teacher/announcements', announcementPage([announcementFixture('a0')])],
     ['/teacher/resources/r1', resourceFixture('r1')],
     ['/teacher/resources', resourcePage([resourceFixture('r1')])],
+    ['/teacher/work-programs/session-options', [workProgram().session]],
     ['/teacher/work-programs/w1', workProgram()],
     ['/teacher/work-programs', workPage([workProgram()])],
     // Most specific first: a session's details, then the paginated list

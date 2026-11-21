@@ -5,8 +5,9 @@ import { DirectionProvider } from "@/components/ui/direction"
 import { clearSession, setSession } from "@/lib/api/session"
 import { authResponse, json } from "@/test/fetch-mock"
 import { renderWithClient } from "@/test/render"
-import { canonicalOf } from "@/lib/quran-reference/work-assignment"
-import type { WorkItem, WorkProgram, WorkSession } from "@/types/work-followup"
+import { canonicalOf, programStatus, workTypesSummary, WORKLOAD_ORDER } from "@/lib/quran-reference/work-assignment"
+import { sessionLabel } from "@/lib/work-followup"
+import type { WorkItem, WorkloadOrder, WorkProgram, WorkSession } from "@/types/work-followup"
 
 import { WorkFollowupProvider } from "./work-followup-provider"
 import { WorkFollowupScreen } from "./work-followup-screen"
@@ -134,18 +135,22 @@ beforeEach(() => {
 })
 
 describe("«متابعة العمل» — list (API)", () => {
-  it("one clickable card per program: two-item preview, the rest counted, the API's progress", async () => {
+  it("one compact row per program: photo or initial, name linking to the program, kinds of work, evaluation state — no item previews", async () => {
     routeFetch()
     renderIn(<WorkFollowupScreen />)
     const link = await screen.findByRole("link", { name: /برنامج عمل درة نصير/ })
     expect(link.getAttribute("href")).toBe("/teacher/work-followup/p1")
-    const card = link.closest("[data-slot=card]") as HTMLElement
-    expect(within(card).getAllByRole("listitem")).toHaveLength(2)
-    expect(within(card).getByText("+ 2 أعمال أخرى")).toBeTruthy()
-    expect(within(card).getByText("تم إنجاز 1 من أصل 3 أعمال نشطة")).toBeTruthy()
-    expect(within(card).getByText(/عمل ملغى واحد/)).toBeTruthy()
-    const preview = within(card).getByText(/مراجعة من سورة الزمر/)
-    expect(preview.className).toMatch(/line-clamp-2.*\[overflow-wrap:anywhere\]/)
+    const row = link.closest("li[data-program]") as HTMLElement
+    expect(row.getAttribute("data-program")).toBe("p1")
+    expect(within(row).getByText(workTypesSummary(program.items.map((i) => i.type)))).toBeTruthy()
+    const status = programStatus(program.progress)
+    expect(within(row).getByText(status.text).closest("[data-status]")!.getAttribute("data-status")).toBe(status.kind)
+    expect(within(row).getByText("د")).toBeTruthy() // no photo: the first letter of the name
+    // no item list in the row, no repeated workload or verification sentence
+    expect(within(row).queryAllByRole("listitem")).toHaveLength(0)
+    expect(within(row).queryByText(/مراجعة من سورة الزمر|قيد التحقق/)).toBeNull()
+    // the session is shown while the list spans several sessions
+    expect(row.textContent).toContain(sessionLabel(program.session))
   })
 
   it("filters are sent to the server (period tab → ?period=past, page reset)", async () => {
@@ -160,7 +165,7 @@ describe("«متابعة العمل» — list (API)", () => {
   it("evaluation sends only the changed item, with the version it was loaded at", async () => {
     const calls = routeFetch()
     renderIn(<WorkFollowupScreen />)
-    fireEvent.click(await screen.findByRole("button", { name: "تقييم الأعمال" }))
+    fireEvent.click(await screen.findByRole("button", { name: /^تقييم الأعمال/ }))
     const sheet = screen.getByRole("dialog")
     const group = within(sheet).getByRole("radiogroup", { name: /حفظ صفحتين/ })
     expect(within(group).getAllByRole("radio").map((r) => r.textContent)).toEqual(["لم يُقيّم بعد", "منجز", "غير منجز", "جزئي", "مؤجل", "ملغى"])
@@ -177,7 +182,7 @@ describe("«متابعة العمل» — list (API)", () => {
     const message = "عدّل مستخدم آخر هذا العمل في الأثناء: أعد تحميل الصفحة لرؤية آخر القيم ثم أعد المحاولة"
     routeFetch({ evaluation: () => json(409, { code: "WORK_ITEM_CHANGED", message }) })
     renderIn(<WorkFollowupScreen />)
-    fireEvent.click(await screen.findByRole("button", { name: "تقييم الأعمال" }))
+    fireEvent.click(await screen.findByRole("button", { name: /^تقييم الأعمال/ }))
     const sheet = screen.getByRole("dialog")
     fireEvent.click(within(within(sheet).getByRole("radiogroup", { name: /حفظ صفحتين/ })).getByRole("radio", { name: "منجز" }))
     fireEvent.click(within(sheet).getByRole("button", { name: "حفظ التقييم" }))
@@ -187,7 +192,7 @@ describe("«متابعة العمل» — list (API)", () => {
   it("editing: saved items cannot be removed; only changed items are sent, with their versions", async () => {
     const calls = routeFetch()
     renderIn(<WorkFollowupScreen />)
-    fireEvent.click(await screen.findByRole("button", { name: "تعديل البرنامج" }))
+    fireEvent.click(await screen.findByRole("button", { name: /^تعديل البرنامج/ }))
     const sheet = screen.getByRole("dialog")
     const fields = within(sheet).getAllByLabelText("وصف العمل")
     expect(fields).toHaveLength(4)
@@ -281,23 +286,23 @@ describe("«متابعة العمل» — evaluation follows the session (API)",
   it("before the session starts: «تقييم الأعمال» is disabled with the reason (list and program page)", async () => {
     routeFetch({ list: upcoming, get: () => json(200, upcoming) })
     const { unmount } = renderIn(<WorkFollowupScreen />)
-    const button = await screen.findByRole("button", { name: "تقييم الأعمال" })
+    const button = await screen.findByRole("button", { name: /^تقييم الأعمال/ })
     expect(button).toHaveProperty("disabled", true)
     expect(screen.getByText("لا يمكن تقييم برنامج العمل قبل بداية الحصة")).toBeTruthy()
     fireEvent.click(button)
     expect(screen.queryByRole("dialog")).toBeNull()
     unmount()
     renderIn(<WorkProgramDetails programId="p1" />)
-    expect(await screen.findByRole("button", { name: "تقييم الأعمال" })).toHaveProperty("disabled", true)
+    expect(await screen.findByRole("button", { name: /^تقييم الأعمال/ })).toHaveProperty("disabled", true)
     expect(screen.getByRole("status").textContent).toBe("لا يمكن تقييم برنامج العمل قبل بداية الحصة")
     // Editing (planning) stays available
-    expect(screen.getByRole("button", { name: "تعديل البرنامج" })).toHaveProperty("disabled", false)
+    expect(screen.getByRole("button", { name: /^تعديل البرنامج/ })).toHaveProperty("disabled", false)
   })
 
   it("cancelled session: evaluation disabled; its unevaluated work can still be carried", async () => {
     const calls = routeFetch({ list: cancelled, get: () => json(200, cancelled) })
     renderIn(<WorkProgramDetails programId="p1" />)
-    expect(await screen.findByRole("button", { name: "تقييم الأعمال" })).toHaveProperty("disabled", true)
+    expect(await screen.findByRole("button", { name: /^تقييم الأعمال/ })).toHaveProperty("disabled", true)
     expect(screen.getByRole("status").textContent).toBe("لا يمكن تقييم برنامج العمل لحصة ملغاة")
     const pending = screen.getByText("حفظ سورة الملك").closest("li")!
     fireEvent.click(within(pending).getByRole("button", { name: "نقل إلى الحصة القادمة" }))
@@ -328,7 +333,7 @@ describe("«متابعة العمل» — evaluation follows the session (API)",
     const message = "لا يمكن تقييم برنامج العمل قبل بداية الحصة"
     const calls = routeFetch({ evaluation: () => json(409, { code: "WORK_SESSION_NOT_STARTED", message }) })
     renderIn(<WorkFollowupScreen />)
-    fireEvent.click(await screen.findByRole("button", { name: "تقييم الأعمال" }))
+    fireEvent.click(await screen.findByRole("button", { name: /^تقييم الأعمال/ }))
     const sheet = screen.getByRole("dialog")
     fireEvent.click(within(within(sheet).getByRole("radiogroup", { name: /حفظ صفحتين/ })).getByRole("radio", { name: "منجز" }))
     const listCalls = () => calls.filter((c) => c.method === "GET" && c.path === "/api/teacher/work-programs").length
@@ -562,7 +567,7 @@ describe("«متابعة العمل» — structured Quranic assignments (Qalun,
     ]
     const calls = routeFetch({ list: { ...program, items } })
     renderIn(<WorkFollowupScreen />)
-    fireEvent.click(await screen.findByRole("button", { name: "تعديل البرنامج" }))
+    fireEvent.click(await screen.findByRole("button", { name: /^تعديل البرنامج/ }))
     const sheet = screen.getByRole("dialog")
     const [whole, verse, page] = [1, 2, 3].map((n) => within(sheet).getByRole("group", { name: `العمل ${n}` }))
     expect(within(whole!).getByRole("radio", { name: "سورة كاملة" })).toHaveProperty("ariaChecked", "true")
@@ -604,7 +609,7 @@ describe("«متابعة العمل» — structured Quranic assignments (Qalun,
   it("edit: structured fields prepopulated; only the changed assignment is sent (no description, no other item)", async () => {
     const calls = routeFetch({ list: structuredProgram })
     renderIn(<WorkFollowupScreen />)
-    fireEvent.click(await screen.findByRole("button", { name: "تعديل البرنامج" }))
+    fireEvent.click(await screen.findByRole("button", { name: /^تعديل البرنامج/ }))
     const sheet = screen.getByRole("dialog")
     const first = within(sheet).getByRole("group", { name: "العمل 1" })
     expect(within(first).getByRole("combobox", { name: /^السورة/ }).textContent).toContain("سورة البقرة")
@@ -635,7 +640,7 @@ describe("«متابعة العمل» — structured Quranic assignments (Qalun,
   it("edit: a legacy item is kept as written, converted only explicitly with valid references; a structured item never goes back to free text", async () => {
     const calls = routeFetch({ list: structuredProgram })
     renderIn(<WorkFollowupScreen />)
-    fireEvent.click(await screen.findByRole("button", { name: "تعديل البرنامج" }))
+    fireEvent.click(await screen.findByRole("button", { name: /^تعديل البرنامج/ }))
     const sheet = screen.getByRole("dialog")
     // Structured items: no «نص حر», no text field (their saved text stays untouched)
     const exam = within(sheet).getByRole("group", { name: "العمل 3" })
@@ -766,7 +771,7 @@ describe("«متابعة العمل» — optional ending surah and hizbs + page
     })
     const calls = routeFetch({ list: { ...program, items: [single] } })
     renderIn(<WorkFollowupScreen />)
-    fireEvent.click(await screen.findByRole("button", { name: "تعديل البرنامج" }))
+    fireEvent.click(await screen.findByRole("button", { name: /^تعديل البرنامج/ }))
     const sheet = screen.getByRole("dialog")
     const first = within(sheet).getByRole("group", { name: "العمل 1" })
     expect(within(first).getByRole("combobox", { name: /^من سورة/ }).textContent).toContain("سورة التوبة")
@@ -826,3 +831,101 @@ describe("«متابعة العمل» — optional ending surah and hizbs + page
   })
 })
 
+
+describe("«متابعة العمل» — «ترتيب حسب البرنامج» (web)", () => {
+  const student = (id: string, firstName: string) => ({ id, firstName, lastName: "التونسي", photoUrl: null })
+  const order = (group: number | null, reason: WorkloadOrder["reason"] = null): WorkloadOrder =>
+    group === null
+      ? { comparable: false, group: null, pages: null, examPages: null, reason }
+      : { comparable: true, group, pages: { lo: 10, hi: 12, exact: false }, examPages: { lo: 0, hi: 0, exact: true }, reason: null }
+  const base = [
+    { ...program, id: "a", student: student("sa", "أمين") },
+    { ...program, id: "b", student: student("sb", "بلال") },
+    { ...program, id: "c", student: student("sc", "جميلة") },
+    { ...program, id: "d", student: student("sd", "دينا") },
+  ]
+  // the server's advisory order: c (alone), then a ≈ d, then b not comparable (free text)
+  const ordered: WorkProgram[] = [
+    { ...base[2]!, workloadOrder: order(0) },
+    { ...base[0]!, workloadOrder: order(1) },
+    { ...base[3]!, workloadOrder: order(1) },
+    { ...base[1]!, workloadOrder: order(null, "FREE_TEXT") },
+  ]
+
+  function stub() {
+    const calls: URLSearchParams[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input))
+        const path = url.pathname.replace(/^\/api/, "")
+        if (path === "/teacher/work-programs") {
+          calls.push(url.searchParams)
+          const data = url.searchParams.get("order") === "workload" ? ordered : base
+          return json(200, { data, meta: { page: 1, pageSize: 10, total: data.length, totalPages: 1 } })
+        }
+        if (path === "/teacher/work-programs/session-options") return json(200, [program.session])
+        return json(404, { code: "NOT_FOUND", message: "غير موجود" })
+      })
+    )
+    return calls
+  }
+  const names = () => [...document.querySelectorAll("li[data-program]")].map((li) => li.getAttribute("data-program"))
+  async function chooseSession() {
+    fireEvent.click(screen.getByRole("combobox", { name: /^الحصة/ }))
+    fireEvent.click(await screen.findByRole("option", { name: new RegExp(program.session.groupName) }))
+  }
+
+  it("off by default; needs a session; on request the server's order with its groups, then back to the original order", async () => {
+    const calls = stub()
+    renderIn(<WorkFollowupScreen />)
+    await screen.findByRole("link", { name: /برنامج عمل أمين/ })
+    expect(names()).toEqual(["a", "b", "c", "d"])
+    const original = screen.getByRole("radio", { name: WORKLOAD_ORDER.original })
+    const byWork = screen.getByRole("radio", { name: WORKLOAD_ORDER.workload })
+    expect(original.getAttribute("aria-checked")).toBe("true")
+    expect(byWork).toHaveProperty("disabled", true)
+    expect(screen.getByText(WORKLOAD_ORDER.needsSession)).toBeTruthy()
+    expect(calls.every((c) => !c.has("order"))).toBe(true)
+
+    await chooseSession()
+    await waitFor(() => expect(calls.at(-1)!.get("sessionId")).toBe(program.session.id))
+    fireEvent.click(screen.getByRole("radio", { name: WORKLOAD_ORDER.workload }))
+    await waitFor(() => expect(names()).toEqual(["c", "a", "d", "b"]))
+    expect([calls.at(-1)!.get("order"), calls.at(-1)!.get("sessionId"), calls.at(-1)!.get("page")]).toEqual(["workload", program.session.id, "1"])
+    expect(screen.getByRole("status").textContent).toContain(WORKLOAD_ORDER.active)
+    // groups: a ≈ d labelled comparable; b apart, never "last" as less; no rank numbers
+    const sections = [...document.querySelectorAll("[data-section]")].map((s) => [s.getAttribute("data-section"), s.textContent])
+    expect(sections).toEqual([
+      ["group", WORKLOAD_ORDER.comparable],
+      ["unavailable", `${WORKLOAD_ORDER.unavailable} — ${WORKLOAD_ORDER.unavailableHint}`],
+    ])
+    expect(document.body.textContent).not.toMatch(/الأول|الثاني|الثالث|رتبة/)
+    // the session is not repeated in every row once one session is chosen
+    expect(screen.getByRole("link", { name: /برنامج عمل جميلة/ }).closest("li")!.textContent).not.toContain(sessionLabel(program.session))
+
+    // the choice holds when the list is reloaded (another filter)
+    fireEvent.click(screen.getByRole("tab", { name: "الحصص السابقة" }))
+    await waitFor(() => expect(calls.at(-1)!.get("period")).toBe("past"))
+    expect(calls.at(-1)!.get("order")).toBe("workload")
+
+    fireEvent.click(screen.getByRole("radio", { name: WORKLOAD_ORDER.original }))
+    await waitFor(() => expect(names()).toEqual(["a", "b", "c", "d"]))
+    expect(calls.at(-1)!.has("order")).toBe(false)
+    expect(document.querySelectorAll("[data-section]")).toHaveLength(0)
+  })
+
+  it("another session is never reordered without being asked", async () => {
+    const calls = stub()
+    renderIn(<WorkFollowupScreen />)
+    await screen.findByRole("link", { name: /برنامج عمل أمين/ })
+    await chooseSession()
+    fireEvent.click(await screen.findByRole("radio", { name: WORKLOAD_ORDER.workload }))
+    await waitFor(() => expect(calls.at(-1)!.get("order")).toBe("workload"))
+    fireEvent.click(screen.getByRole("combobox", { name: /^الحصة/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "كل الحصص" }))
+    await waitFor(() => expect(calls.at(-1)!.has("sessionId")).toBe(false))
+    expect(calls.at(-1)!.has("order")).toBe(false)
+    expect(screen.getByRole("radio", { name: WORKLOAD_ORDER.original }).getAttribute("aria-checked")).toBe("true")
+  })
+})

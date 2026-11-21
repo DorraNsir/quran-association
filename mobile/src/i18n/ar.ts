@@ -456,6 +456,11 @@ export const ar = {
     planHint: 'برنامج عمل طالب لحصة واحدة: يمكن أن يضم عدة أعمال (حفظ، مراجعة، عرضة، اختبار).',
     student: 'الطالب',
     pickStudent: 'اختر الطالب',
+    searchStudent: 'البحث عن طالب...',
+    searchStudentLabel: 'البحث عن طالب بالاسم',
+    noStudentMatch: 'لا يوجد طالب بهذا الاسم',
+    noStudentMatchHint: 'جرّب جزءًا من الاسم أو امسح البحث.',
+    clearStudentSearch: 'مسح البحث',
     closePicker: 'إغلاق',
     session: 'الحصة القادمة',
     pickSession: 'اختر من الحصص القادمة',
@@ -501,6 +506,11 @@ export const ar = {
     noSurah: 'لا توجد سورة بهذا الاسم',
     workload: 'مقدار العمل',
     totalPages: 'مجموع الصفحات',
+    // compact list + «ترتيب حسب البرنامج» (the wording itself is shared with the web)
+    sessionFilter: 'الحصة',
+    allSessions: 'كل الحصص',
+    pickOrder: 'ترتيب الطلبة',
+    closeSessions: 'إغلاق قائمة الحصص',
     // «متابعة العرضات» (four successful recitations per surah and cycle; numbers from the server)
     recitations: 'متابعة العرضات',
     recitationsOf: (surah: string) => `${surah} — متابعة العرضات`,

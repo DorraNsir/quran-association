@@ -1,6 +1,6 @@
 "use client"
 
-import { ClipboardList, Plus, SearchX } from "lucide-react"
+import { ArrowDownWideNarrow, ClipboardList, Info, ListOrdered, Plus, SearchX } from "lucide-react"
 import { useState } from "react"
 
 import { EmptyState } from "@/components/shared/empty-state"
@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/shared/page-header"
 import { Pager } from "@/components/shared/pager"
 import { QueryState } from "@/components/shared/query-state"
 import { Button } from "@/components/ui/button"
+import { workloadSections, WORKLOAD_ORDER } from "@/lib/quran-reference/work-assignment"
 import { useWorkPrograms, useWorkSessionOptions, type WorkProgramFilters } from "@/lib/api/work-followup"
 import { todayInTunis } from "@/lib/dates"
 import { usePlatformSettings } from "@/lib/store/settings"
@@ -16,7 +17,7 @@ import { cn } from "@/lib/utils"
 import { phaseOf, sessionLabel } from "@/lib/work-followup"
 
 import { useWorkFollowup } from "./work-followup-provider"
-import { WorkProgramCard } from "./work-program-card"
+import { WorkProgramRow } from "./work-program-row"
 
 type Period = "all" | "upcoming" | "past"
 type ProgramState = NonNullable<WorkProgramFilters["state"]>
@@ -29,8 +30,11 @@ const PERIODS: [Period, string][] = [
 
 /**
  * «متابعة العمل»: the teacher's work programs (the API returns only those of
- * sessions they teach), filtered and paginated on the server. Compact cards:
+ * sessions they teach), filtered and paginated on the server. Compact rows:
  * one per student and session; the full program is on its own page.
+ * «ترتيب حسب البرنامج»: on request only, for one selected session — the
+ * server orders the whole session (advisory, never a rank); the teacher's
+ * choice holds across pages and refreshes until «الترتيب الأصلي».
  */
 export function WorkFollowupScreen() {
   const { students, classes, openCreate, openEdit, openEvaluate } = useWorkFollowup()
@@ -43,6 +47,7 @@ export function WorkFollowupScreen() {
   const [state, setState] = useState(ALL)
   const [period, setPeriod] = useState<Period>("all")
   const [page, setPage] = useState(1)
+  const [order, setOrder] = useState<"original" | "workload">("original")
   const reset = <T,>(set: (v: T) => void) => (v: T) => {
     set(v)
     setPage(1)
@@ -55,7 +60,10 @@ export function WorkFollowupScreen() {
     sessionId: sessionId === ALL ? undefined : sessionId,
     period: period === "all" ? undefined : period,
     state: state === ALL ? undefined : (state as ProgramState),
+    // Only with a session: without one, the usual order
+    order: order === "workload" && sessionId !== ALL ? "workload" : undefined,
   }
+  const ordered = filters.order === "workload"
   const list = useWorkPrograms(filters, page, pageSize)
   const sessions = useWorkSessionOptions()
   const programs = list.data?.data ?? []
@@ -73,6 +81,11 @@ export function WorkFollowupScreen() {
     setSessionId(ALL)
     setState(ALL)
     setPeriod("all")
+    setOrder("original")
+    setPage(1)
+  }
+  const chooseOrder = (next: "original" | "workload") => {
+    setOrder(next)
     setPage(1)
   }
 
@@ -121,6 +134,7 @@ export function WorkFollowupScreen() {
             setClassId(v)
             setStudentId(ALL)
             setSessionId(ALL)
+            setOrder("original")
             setPage(1)
           }}
           options={classes.map((c) => ({ value: c.id, label: c.label }))}
@@ -134,7 +148,18 @@ export function WorkFollowupScreen() {
             .filter((s) => classId === ALL || s.groupClassId === classId)
             .map((s) => ({ value: s.id, label: `${s.firstName} ${s.lastName}` }))}
         />
-        <FilterSelect label="الحصة" allLabel="كل الحصص" value={sessionId} onValueChange={reset(setSessionId)} options={sessionOptions} />
+        <FilterSelect
+          label="الحصة"
+          allLabel="كل الحصص"
+          value={sessionId}
+          onValueChange={(v) => {
+            // another session is never reordered without being asked
+            setSessionId(v)
+            setOrder("original")
+            setPage(1)
+          }}
+          options={sessionOptions}
+        />
         <FilterSelect
           label="حالة البرنامج"
           allLabel="كل الحالات"
@@ -148,6 +173,12 @@ export function WorkFollowupScreen() {
           ]}
         />
       </FilterBar>
+
+      <OrderControl
+        order={ordered ? "workload" : "original"}
+        sessionChosen={sessionId !== ALL}
+        onChange={chooseOrder}
+      />
 
       <QueryState query={list}>
         {programs.length === 0 ? (
@@ -169,21 +200,82 @@ export function WorkFollowupScreen() {
             )}
           </div>
         ) : (
-          // Natural heights: a short card never stretches to match its neighbour
-          <div className="grid items-start gap-4 xl:grid-cols-2">
-            {programs.map((program) => (
-              <WorkProgramCard
-                key={program.id}
-                program={program}
-                phase={phaseOf(program.session, today)}
-                onEdit={() => openEdit(program)}
-                onEvaluate={() => openEvaluate(program)}
-              />
+          <div className="space-y-3">
+            {workloadSections(programs, ordered).map((section) => (
+              <section key={section.key} aria-label={section.label ?? undefined} className="overflow-hidden rounded-xl border bg-card">
+                {section.label && (
+                  <p className="border-b bg-muted/40 px-4 py-1.5 text-xs text-muted-foreground" data-section={section.kind}>
+                    <span className="font-medium text-foreground">{section.label}</span>
+                    {section.hint && ` — ${section.hint}`}
+                  </p>
+                )}
+                <ol className="divide-y">
+                  {section.programs.map((program) => (
+                    <WorkProgramRow
+                      key={program.id}
+                      program={program}
+                      phase={phaseOf(program.session, today)}
+                      showSession={sessionId === ALL}
+                      onEdit={() => openEdit(program)}
+                      onEvaluate={() => openEvaluate(program)}
+                    />
+                  ))}
+                </ol>
+              </section>
             ))}
           </div>
         )}
         <Pager page={page} totalPages={list.data?.meta.totalPages ?? 1} onPage={setPage} />
       </QueryState>
     </>
+  )
+}
+
+/** «الترتيب الأصلي» | «ترتيب حسب البرنامج» — on request, for one chosen session. */
+function OrderControl({
+  order,
+  sessionChosen,
+  onChange,
+}: {
+  order: "original" | "workload"
+  sessionChosen: boolean
+  onChange: (order: "original" | "workload") => void
+}) {
+  const choices: ["original" | "workload", string, typeof ListOrdered][] = [
+    ["original", WORKLOAD_ORDER.original, ListOrdered],
+    ["workload", WORKLOAD_ORDER.workload, ArrowDownWideNarrow],
+  ]
+  return (
+    <div className="mb-4 space-y-1.5">
+      <div role="radiogroup" aria-label="ترتيب الطلبة" className="inline-flex rounded-lg border bg-card p-1">
+        {choices.map(([value, label, Icon]) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={order === value}
+            disabled={value === "workload" && !sessionChosen}
+            onClick={() => onChange(value)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+              order === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+            )}
+          >
+            <Icon className="size-4" aria-hidden />
+            {label}
+          </button>
+        ))}
+      </div>
+      {order === "workload" ? (
+        <p className="flex items-start gap-1.5 text-xs text-muted-foreground" role="status">
+          <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          <span>
+            <span className="font-medium text-foreground">{WORKLOAD_ORDER.active}</span> — {WORKLOAD_ORDER.explanation}
+          </span>
+        </p>
+      ) : (
+        !sessionChosen && <p className="text-xs text-muted-foreground">{WORKLOAD_ORDER.needsSession}</p>
+      )}
+    </div>
   )
 }

@@ -19,6 +19,7 @@ import {
 } from '../generated/prisma/enums.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
+  ACTIVE_EDITION_ID,
   describeAssignment,
   edition,
   isGeneratedDescription,
@@ -34,6 +35,7 @@ import {
   sessionOfClass,
 } from '../scheduling/participants.js';
 import { expectedOnDate } from '../scheduling/roster.sql.js';
+import { orderByWorkload, type OrderedProgram } from './workload-order.js';
 import {
   cycleForNewAttempt,
   cycleState,
@@ -261,6 +263,25 @@ export function evaluationBlock(
   )
     return 'SESSION_NOT_STARTED';
   return null;
+}
+
+/** «ترتيب حسب البرنامج»: where a program stands in the advisory order (no rank, no score). */
+function workloadOrderOf(o: OrderedProgram<string>) {
+  return o.size.kind === 'comparable'
+    ? {
+        comparable: true as const,
+        group: o.group as number,
+        pages: o.size.primary,
+        examPages: o.size.exam,
+        reason: null,
+      }
+    : {
+        comparable: false as const,
+        group: null,
+        pages: null,
+        examPages: null,
+        reason: o.size.reason,
+      };
 }
 
 /** «متابعة العرضات» of an item: its cycle's progress and its own attempt number. */
@@ -568,22 +589,61 @@ export class WorkFollowupService {
     };
     // Upcoming: soonest first; past and "all": most recent first
     const direction = query.period === 'upcoming' ? 'asc' : 'desc';
+    const orderBy: Prisma.WorkProgramOrderByWithRelationInput[] = [
+      { session: { date: direction } },
+      { session: { startTime: direction } },
+      { student: { person: { lastName: 'asc' } } },
+      { id: 'asc' },
+    ];
+    const clock = await this.clock(this.prisma);
+    if (query.order === 'workload') {
+      // «ترتيب حسب البرنامج» (advisory): one session, ordered as a WHOLE before paginating
+      if (!query.sessionId)
+        throw badRequest(
+          'WORK_ORDER_SESSION_REQUIRED',
+          'اختر حصة لترتيب طلبتها حسب البرنامج',
+        );
+      const all = await this.prisma.workProgram.findMany({
+        where,
+        orderBy,
+        select: {
+          id: true,
+          items: { select: { type: true, quranWorkload: true } },
+        },
+      });
+      const ordered = orderByWorkload(
+        all.map((p) => ({ value: p.id, items: p.items })),
+        ACTIVE_EDITION_ID,
+      );
+      const page = ordered.slice(
+        (query.page - 1) * pageSize,
+        query.page * pageSize,
+      );
+      const rows = await this.prisma.workProgram.findMany({
+        where: { id: { in: page.map((o) => o.value) } },
+        include: programInclude,
+      });
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      const cycles = await cycleSummaries(this.prisma, ...rows);
+      return {
+        data: page.map((o) => {
+          const dto = toDto(byId.get(o.value)!, clock, cycles);
+          dto.workloadOrder = workloadOrderOf(o);
+          return dto;
+        }),
+        meta: paginationMeta(query.page, pageSize, all.length),
+      };
+    }
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.workProgram.count({ where }),
       this.prisma.workProgram.findMany({
         where,
         include: programInclude,
-        orderBy: [
-          { session: { date: direction } },
-          { session: { startTime: direction } },
-          { student: { person: { lastName: 'asc' } } },
-          { id: 'asc' },
-        ],
+        orderBy,
         skip: (query.page - 1) * pageSize,
         take: pageSize,
       }),
     ]);
-    const clock = await this.clock(this.prisma);
     const cycles = await cycleSummaries(this.prisma, ...rows);
     return {
       data: rows.map((row) => toDto(row, clock, cycles)),

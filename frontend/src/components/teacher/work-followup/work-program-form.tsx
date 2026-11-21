@@ -8,7 +8,8 @@ import { FormField, FormSection, FormSheet } from "@/components/shared/form"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { UserAvatar } from "@/components/shared/user-avatar"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { ApiError, errorMessage } from "@/lib/api/errors"
 import { useCreateWorkProgram, useEligibleSessions, useUpdateWorkProgram, type NewWorkItemInput } from "@/lib/api/work-followup"
@@ -30,6 +31,7 @@ import type { AssignmentPayload, WorkItem, WorkProgram, WorkType } from "@/types
 import { AutoTextarea } from "./auto-textarea"
 import { QuranAssignmentFields } from "./quran-assignment-fields"
 import { WorkStatusBadge } from "./work-badges"
+import { StudentCombobox } from "./student-combobox"
 import type { WorkClassOption, WorkStudentOption } from "./work-followup-provider"
 
 interface DraftItem {
@@ -214,34 +216,27 @@ export function WorkProgramForm({
       <FormSection title="الطالب والحصة">
         <FormField label="الطالب" required className="sm:col-span-2" error={show(errors.student)} id="wf-student">
           {editing ? (
-            <p className="flex h-9 items-center rounded-lg border bg-muted/40 px-2.5 text-sm">{program && `${program.student.firstName} ${program.student.lastName}`}</p>
+            <p className="flex min-h-9 items-center gap-2 rounded-lg border bg-muted/40 px-2.5 py-1 text-sm">
+              {program && (
+                <>
+                  <UserAvatar name={`${program.student.firstName} ${program.student.lastName}`} photoUrl={program.student.photoUrl ?? undefined} size="sm" />
+                  {program.student.firstName} {program.student.lastName}
+                </>
+              )}
+            </p>
           ) : (
-            <Select
+            <StudentCombobox
+              id="wf-student"
               value={studentId}
-              onValueChange={(id) => {
+              students={students}
+              classes={classes}
+              invalid={Boolean(show(errors.student))}
+              onChange={(id) => {
                 setStudentId(id)
                 setSessionId("")
                 setRaced(null)
               }}
-            >
-              <SelectTrigger id="wf-student" className="w-full" aria-invalid={Boolean(show(errors.student)) || undefined}>
-                <SelectValue placeholder="اختر الطالب" />
-              </SelectTrigger>
-              <SelectContent position="popper">
-                {classes.map((c) => (
-                  <SelectGroup key={c.id}>
-                    <SelectLabel>{c.label}</SelectLabel>
-                    {students
-                      .filter((s) => s.groupClassId === c.id)
-                      .map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.firstName} {s.lastName}
-                        </SelectItem>
-                      ))}
-                  </SelectGroup>
-                ))}
-              </SelectContent>
-            </Select>
+            />
           )}
         </FormField>
 

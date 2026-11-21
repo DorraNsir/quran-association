@@ -3,25 +3,37 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { EmptyState, QueryState } from '@/components/feedback';
-import { AppText, Button, Card, ChipRow, Icon, InitialsAvatar, PressableRow, Screen } from '@/components/ui';
+import { AppText, BottomSheet, Button, Card, ChipRow, Icon, InitialsAvatar, OptionRow, PressableRow, Screen, type IconName } from '@/components/ui';
 import { useSession } from '@/features/auth/auth-provider';
 import { usePreferences } from '@/features/preferences/preferences';
 import { ar } from '@/i18n/ar';
 import { fontFamilies, radius, spacing, touchTarget, useAppTheme } from '@/theme';
 
+import {
+  programStatus,
+  rowCycleText,
+  workloadSections,
+  WORKLOAD_ORDER,
+  workTypesSummary,
+  type ProgramStatusKind,
+} from '../quran-reference/work-assignment';
 import { teacherClasses } from './dashboard-model';
 import { useTeacherWorkspace } from './use-teacher-dashboard';
 import { usePullToRefresh } from './use-refresh';
-import { useWorkProgramPages, workKey } from './use-work';
-import { WorkProgressView, WorkSessionLine, WorkStatusBadge, WorkTypeBadge } from './work-badges';
-import { phaseOf, studentName } from './work-model';
+import { useWorkProgramPages, useWorkSessionOptions, workKey } from './use-work';
+import { phaseOf, sessionDay, studentName } from './work-model';
 import type { WorkPeriod, WorkProgram, WorkProgramFilters, WorkProgramState } from './work-types';
-import { RecitationCycleLine } from './recitation-cycle-line';
-import { WorkAssignmentView } from './work-assignment-view';
 
 const w = ar.work;
 const ALL = 'ALL';
-const PREVIEW = 2;
+type Order = 'original' | 'workload';
+const STATUS_ICON: Record<ProgramStatusKind, IconName> = {
+  pending: 'pending',
+  partial: 'partial',
+  unfinished: 'partial',
+  done: 'success',
+  cancelled: 'ban',
+};
 const STATES: readonly WorkProgramState[] = ['pending', 'unfinished', 'cancelled', 'done'];
 
 /** Typing pauses this long before the (server-side) student search is sent. */
@@ -32,7 +44,10 @@ export const SEARCH_DELAY_MS = 400;
  * /teacher/work-programs — the server keeps only sessions of my team snapshot
  * and, in shared sessions, students of classes I manage there), filtered and
  * paginated ON THE SERVER as on the web: period, program state, class,
- * student name. One compact card per student × session.
+ * session, student name. One compact row per student × session.
+ * «ترتيب حسب البرنامج»: on request, for one chosen session — the server orders
+ * the whole session (advisory, never a rank); the choice holds across pages
+ * and refreshes until «الترتيب الأصلي» or another session.
  */
 export function TeacherWorkScreen({ initialClassId, studentId }: { initialClassId?: string; studentId?: string }) {
   const { user } = useSession();
@@ -46,7 +61,20 @@ export function TeacherWorkScreen({ initialClassId, studentId }: { initialClassI
 
   const [period, setPeriod] = useState<WorkPeriod | typeof ALL>(ALL);
   const [state, setState] = useState<WorkProgramState | typeof ALL>(ALL);
-  const [classId, setClassId] = useState<string>(initialClassId ?? ALL);
+  const [classId, setClassIdRaw] = useState<string>(initialClassId ?? ALL);
+  const [sessionId, setSessionIdRaw] = useState<string>(ALL);
+  const [order, setOrder] = useState<Order>('original');
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const sessionOptions = useWorkSessionOptions(teacherId);
+  // Another session (or class) is never reordered without being asked
+  const setSessionId = (v: string) => {
+    setSessionIdRaw(v);
+    setOrder('original');
+  };
+  const setClassId = (v: string) => {
+    setClassIdRaw(v);
+    setSessionId(ALL);
+  };
   const [studentOnly, setStudentOnly] = useState(Boolean(studentId));
   const [text, setText] = useState('');
   const [q, setQ] = useState('');
@@ -63,8 +91,14 @@ export function TeacherWorkScreen({ initialClassId, studentId }: { initialClassI
     ...(classId !== ALL ? { groupClassId: classId } : {}),
     ...(period !== ALL ? { period } : {}),
     ...(state !== ALL ? { state } : {}),
+    ...(sessionId !== ALL ? { sessionId } : {}),
+    ...(sessionId !== ALL && order === 'workload' ? { order: 'workload' as const } : {}),
   };
-  const filtered = Object.keys(filters).length > 0;
+  const ordered = filters.order === 'workload';
+  const sessions = (sessionOptions.data ?? []).filter((s) => classId === ALL || s.groupClassId === classId);
+  const chosenSession = sessions.find((s) => s.id === sessionId);
+  const sessionText = (s: (typeof sessions)[number]) => `${s.groupName} · ${sessionDay(s)} · ${s.startTime}`;
+  const filtered = Object.keys(filters).some((k) => k !== 'order');
   const pages = useWorkProgramPages(teacherId, filters);
   const { refreshing, onRefresh } = usePullToRefresh([workKey(teacherId)]);
   const programs = pages.data?.pages.flatMap((p) => p.data) ?? [];
@@ -75,6 +109,7 @@ export function TeacherWorkScreen({ initialClassId, studentId }: { initialClassI
     setState(ALL);
     setClassId(ALL);
     setStudentOnly(false);
+    setOrder('original');
     setText('');
     setQ('');
   };
@@ -115,6 +150,53 @@ export function TeacherWorkScreen({ initialClassId, studentId }: { initialClassI
             onChange={setClassId}
             options={[{ value: ALL, label: w.allClasses }, ...classes.map((c) => ({ value: c.id, label: c.groupName }))]}
           />
+        ) : null}
+        <Pressable
+          onPress={() => setSessionsOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`${w.sessionFilter}: ${chosenSession ? sessionText(chosenSession) : w.allSessions}`}
+          style={[styles.picker, { borderColor: colors.input, backgroundColor: colors.card }]}>
+          <Icon name="calendar" size={16} color={colors.mutedForeground} />
+          <AppText variant="body" numberOfLines={1} style={styles.flex}>
+            {chosenSession ? sessionText(chosenSession) : w.allSessions}
+          </AppText>
+          <Icon name="forward" size={16} color={colors.mutedForeground} />
+        </Pressable>
+        <BottomSheet visible={sessionsOpen} title={w.sessionFilter} closeLabel={w.closeSessions} onClose={() => setSessionsOpen(false)}>
+          {[{ id: ALL, label: w.allSessions }, ...sessions.map((s) => ({ id: s.id, label: sessionText(s) }))].map((o) => (
+            <OptionRow
+              key={o.id}
+              label={o.label}
+              selected={o.id === sessionId}
+              onPress={() => {
+                setSessionId(o.id);
+                setSessionsOpen(false);
+              }}
+            />
+          ))}
+        </BottomSheet>
+        {sessionId !== ALL ? (
+          <ChipRow
+            label={w.pickOrder}
+            value={ordered ? 'workload' : 'original'}
+            onChange={(v: Order) => setOrder(v)}
+            options={[
+              { value: 'original', label: WORKLOAD_ORDER.original },
+              { value: 'workload', label: WORKLOAD_ORDER.workload },
+            ]}
+          />
+        ) : (
+          <AppText variant="caption" tone="muted">
+            {WORKLOAD_ORDER.needsSession}
+          </AppText>
+        )}
+        {ordered ? (
+          <View style={styles.note} accessibilityLiveRegion="polite">
+            <Icon name="info" size={14} color={colors.mutedForeground} />
+            <AppText variant="caption" tone="muted" style={styles.flex}>
+              <AppText variant="caption">{WORKLOAD_ORDER.active}</AppText> — {WORKLOAD_ORDER.explanation}
+            </AppText>
+          </View>
         ) : null}
         {studentOnly && studentId ? (
           <View style={styles.inline}>
@@ -164,13 +246,25 @@ export function TeacherWorkScreen({ initialClassId, studentId }: { initialClassI
             )}
           </Card>
         ) : (
-          programs.map((p) => (
-            <ProgramCard
-              key={p.id}
-              program={p}
-              timeZone={timeZone}
-              onPress={() => router.push({ pathname: '/teacher/work/[id]', params: { id: p.id } })}
-            />
+          workloadSections(programs, ordered).map((section) => (
+            <Card key={section.key} style={styles.section}>
+              {section.label ? (
+                <AppText variant="caption" tone="muted" testID={`section-${section.kind}`} style={styles.sectionLabel}>
+                  {section.label}
+                  {section.hint ? ` — ${section.hint}` : ''}
+                </AppText>
+              ) : null}
+              {section.programs.map((p, i) => (
+                <ProgramRow
+                  key={p.id}
+                  program={p}
+                  bordered={i > 0 || Boolean(section.label)}
+                  showSession={sessionId === ALL}
+                  timeZone={timeZone}
+                  onPress={() => router.push({ pathname: '/teacher/work/[id]', params: { id: p.id } })}
+                />
+              ))}
+            </Card>
           ))
         )}
         {pages.hasNextPage ? (
@@ -186,55 +280,70 @@ export function TeacherWorkScreen({ initialClassId, studentId }: { initialClassI
   );
 }
 
-/** ONE student + ONE session: who, when, the server's progress and the first two items. */
-function ProgramCard({ program: p, timeZone, onPress }: { program: WorkProgram; timeZone: string | undefined; onPress: () => void }) {
+/**
+ * ONE student + ONE session as one compact row: photo (or initial), name, class (+ the session
+ * unless one session is chosen), the kinds of work and the evaluation state — icon and words.
+ * The whole row opens that program; everything else is on its screen.
+ */
+function ProgramRow({
+  program: p,
+  bordered,
+  showSession,
+  timeZone,
+  onPress,
+}: {
+  program: WorkProgram;
+  bordered: boolean;
+  showSession: boolean;
+  timeZone: string | undefined;
+  onPress: () => void;
+}) {
   const { colors } = useAppTheme();
   const name = studentName(p);
-  const more = p.items.length - PREVIEW;
+  const status = programStatus(p.progress);
+  const types = workTypesSummary(p.items.map((i) => i.type));
+  const cycles = rowCycleText(p.items);
+  const context = showSession ? `${p.session.groupName} · ${sessionDay(p.session)} · ${w.phase[phaseOf(p.session, timeZone)]}` : p.session.groupName;
+  const tone = status.kind === 'done' ? colors.primary : status.kind === 'pending' || status.kind === 'cancelled' ? colors.mutedForeground : colors.warning;
   return (
-    <Card style={styles.card}>
-      <PressableRow bordered={false} onPress={onPress} accessibilityLabel={`${w.detailTitle} ${name} — ${p.session.groupName}، ${p.session.date}`}>
-        <View style={styles.head}>
-          <InitialsAvatar name={name} size={40} photoUrl={p.student.photoUrl} />
-          <View style={styles.flex}>
-            <AppText variant="bodyStrong" numberOfLines={1}>
-              {name}
-            </AppText>
-            <AppText variant="small" tone="muted" numberOfLines={1}>
-              {p.session.groupName} — {p.session.branchName}
-            </AppText>
-          </View>
-        </View>
-        <WorkSessionLine session={p.session} phase={phaseOf(p.session, timeZone)} />
-        <WorkProgressView progress={p.progress} />
-        {p.items.slice(0, PREVIEW).map((item) => (
-          <View key={item.id} style={[styles.item, { borderColor: colors.border }]}>
-            <WorkTypeBadge type={item.type} recitationNumber={item.recitationNumber} />
-            {item.assignment ? (
-              <View style={styles.flex}>
-                <WorkAssignmentView type={item.type} assignment={item.assignment} workload={item.workload} compact />
-                {item.recitationCycle ? <RecitationCycleLine cycle={item.recitationCycle} studentId={p.student.id} compact /> : null}
-              </View>
-            ) : (
-              <AppText variant="small" numberOfLines={2} style={styles.flex}>
-                {item.description}
+    <PressableRow
+      bordered={bordered}
+      onPress={onPress}
+      accessibilityLabel={`${w.detailTitle} ${name} — ${context} — ${types} — ${status.text}${cycles ? ` — ${cycles}` : ''}`}>
+      <View style={styles.row} testID={`program-${p.id}`}>
+        <InitialsAvatar name={name} size={44} photoUrl={p.student.photoUrl} />
+        <View style={styles.flex}>
+          <AppText variant="bodyStrong" numberOfLines={1}>
+            {name}
+          </AppText>
+          <AppText variant="caption" tone="muted" numberOfLines={1}>
+            {context}
+          </AppText>
+          <View style={styles.meta}>
+            {types ? (
+              <AppText variant="small" numberOfLines={1}>
+                {types}
               </AppText>
-            )}
-            <WorkStatusBadge status={item.status} />
+            ) : null}
+            <View style={styles.inline}>
+              <Icon name={STATUS_ICON[status.kind]} size={14} color={tone} />
+              <AppText variant="small" style={{ color: tone }} testID={`status-${status.kind}`}>
+                {status.text}
+              </AppText>
+            </View>
           </View>
-        ))}
-        {more > 0 ? (
-          <AppText variant="small" tone="muted">
-            {w.more(more)}
-          </AppText>
-        ) : null}
-        {p.lastEditedBy ? (
-          <AppText variant="small" tone="muted" numberOfLines={1}>
-            {w.lastEditedBy(p.lastEditedBy)}
-          </AppText>
-        ) : null}
-      </PressableRow>
-    </Card>
+          {/* «متابعة العرضات»: tracked recitations only, one line */}
+          {cycles ? (
+            <View style={styles.inline}>
+              <Icon name="revision" size={12} color={colors.primary} />
+              <AppText variant="caption" tone="muted" numberOfLines={1} style={styles.flex} testID="row-cycles">
+                {cycles}
+              </AppText>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </PressableRow>
   );
 }
 
@@ -251,8 +360,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   searchInput: { flex: 1, minHeight: touchTarget, fontFamily: fontFamilies.regular, fontSize: 15, textAlign: 'right', writingDirection: 'rtl' },
-  card: { paddingVertical: 0 },
-  head: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  item: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: spacing.xs },
-  flex: { flex: 1 },
+  picker: {
+    minHeight: touchTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+  },
+  note: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs },
+  section: { paddingVertical: 0, gap: 0 },
+  sectionLabel: { paddingTop: spacing.sm },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  meta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: spacing.md, rowGap: 2 },
+  flex: { flex: 1, minWidth: 0 },
 });

@@ -7,6 +7,7 @@ import {
   fetchWorkProgram,
   fetchRecitationHistory,
   fetchWorkPrograms,
+  fetchWorkSessionOptions,
   scheduleWorkItem,
   startRecitationCycle,
   updateWorkProgram,
@@ -36,6 +37,15 @@ export function useWorkProgram(teacherId: string, id: string) {
     queryKey: workProgramKey(teacherId, id),
     queryFn: ({ signal }) => fetchWorkProgram(id, signal),
     enabled: !!teacherId && id.length > 0,
+  });
+}
+
+/** Sessions that have programs (the «الحصة» filter). */
+export function useWorkSessionOptions(teacherId: string) {
+  return useQuery({
+    queryKey: [...workKey(teacherId), 'session-options'],
+    queryFn: ({ signal }) => fetchWorkSessionOptions(signal),
+    enabled: !!teacherId,
   });
 }
 

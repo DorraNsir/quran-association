@@ -22,8 +22,7 @@ import {
   updateBody,
   validateEvaluation,
   validatePlan,
-  type DraftItem,
-} from './work-model';
+  type DraftItem, filterStudentGroups } from './work-model';
 
 describe('progress (the approved rule, same numbers as the server)', () => {
   it('only COMPLETED is done; CANCELLED is out of the active total; never a misleading %', () => {
@@ -247,4 +246,20 @@ describe('errors', () => {
     expect(existingProgramId(exists)).toBe('w7');
     expect(existingProgramId(new ApiError(409, 'WORK_ITEM_CHANGED', 'x'))).toBeNull();
   });
+});
+
+describe('«البحث عن طالب» (filterStudentGroups)', () => {
+  const groups = [
+    { id: 'c1', label: 'مجموعة الفجر', students: [{ id: 'a', name: 'آمنة التونسي', photoUrl: null }, { id: 'b', name: 'مُحَمَّد بن علي', photoUrl: null }] },
+    { id: 'c2', label: 'مجموعة الأمل', students: [{ id: 'c', name: 'Sara Ben Ali', photoUrl: '/api/files/x' }] },
+    { id: 'c3', label: 'قسم فارغ', students: [] },
+  ];
+  const ids = (q: string) => filterStudentGroups(groups, q).map((g) => [g.id, g.students.map((s) => s.id)]);
+  it('empty query: every group with students', () => expect(ids('  ')).toEqual([['c1', ['a', 'b']], ['c2', ['c']]]));
+  it('Arabic: hamza, tashkeel and tatweel ignored', () => {
+    expect(ids('امنه')).toEqual([['c1', ['a']]]);
+    expect(ids('محمد')).toEqual([['c1', ['b']]]);
+  });
+  it('Latin: case-insensitive, partial', () => expect(ids('BEN a')).toEqual([['c2', ['c']]]));
+  it('no match: nothing', () => expect(ids('زكرياء')).toEqual([]));
 });

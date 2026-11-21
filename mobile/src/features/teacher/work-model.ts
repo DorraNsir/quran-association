@@ -12,6 +12,7 @@ import {
 } from '@/features/quran-reference/work-assignment';
 import { ApiError } from '@/services/api';
 
+import { normalizeArabic } from '../quran/surahs';
 import { platformClock } from './dashboard-model';
 import type { SessionStatus } from './types';
 import type {
@@ -330,4 +331,29 @@ export function existingProgramId(error: unknown): string | null {
   if (!(error instanceof ApiError) || error.code !== 'WORK_PROGRAM_EXISTS') return null;
   const body = error.body as { programId?: unknown } | undefined;
   return typeof body?.programId === 'string' ? body.programId : null;
+}
+
+/** A student of the «اختر الطالب» sheet (photo from the teacher workspace). */
+export interface StudentOption {
+  id: string;
+  name: string;
+  photoUrl: string | null;
+}
+export interface StudentGroup {
+  id: string;
+  label: string;
+  students: StudentOption[];
+}
+
+/**
+ * «البحث عن طالب»: the groups whose students match the query (the web's rule: Latin case,
+ * tashkeel and tatweel ignored, أ/إ/آ → ا, ة → ه, ى → ي), each with its matching students only;
+ * groups without a match are left out. An empty query keeps everything.
+ */
+export function filterStudentGroups(groups: readonly StudentGroup[], query: string): StudentGroup[] {
+  const needle = normalizeArabic(query);
+  if (!needle) return groups.filter((g) => g.students.length > 0);
+  return groups
+    .map((g) => ({ ...g, students: g.students.filter((s) => normalizeArabic(s.name).includes(needle)) }))
+    .filter((g) => g.students.length > 0);
 }

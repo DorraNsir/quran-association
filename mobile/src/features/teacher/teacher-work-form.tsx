@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { EmptyState, LoadingState, QueryState } from '@/components/feedback';
-import { AlertBox, AppText, BottomSheet, Button, Card, ChipRow, Icon, OptionRow, Screen, SuccessToast } from '@/components/ui';
+import { AlertBox, AppText, BottomSheet, Button, Card, ChipRow, Icon, InitialsAvatar, OptionRow, Screen, SuccessToast } from '@/components/ui';
 import { useSession } from '@/features/auth/auth-provider';
 import { ar } from '@/i18n/ar';
 import { ltr } from '@/i18n/format';
@@ -19,6 +19,7 @@ import { useCreateWorkProgram, useEligibleSessions, useUpdateWorkProgram, useWor
 import { WorkStatusBadge } from './work-badges';
 import { adaptDraft, cycleName } from '../quran-reference/work-assignment';
 import { QuranAssignmentEditor } from './quran-assignment-editor';
+import { StudentOptionRow } from './student-option-row';
 import {
   assignmentError,
   blankItem,
@@ -29,6 +30,7 @@ import {
   isUntouched,
   DESCRIPTION_MAX,
   existingProgramId,
+  filterStudentGroups,
   newItemsOf,
   NOTES_MAX,
   sessionDay,
@@ -37,6 +39,7 @@ import {
   validatePlan,
   WORK_TYPES,
   type DraftItem,
+  type StudentGroup,
 } from './work-model';
 import type { EligibleSession, WorkProgram } from './work-types';
 
@@ -47,14 +50,15 @@ export const sessionOptionLabel = (s: EligibleSession) =>
   `${sessionDay(s)} · ${ltr(s.startTime)} – ${ltr(s.endTime)}${s.programId ? ` · ${w.hasProgram}` : ''}`;
 
 /** Students I may plan for: current, active students of my classes (the web's options; the server re-checks). */
-function studentOptions(ws: TeacherWorkspace) {
+function studentOptions(ws: TeacherWorkspace): StudentGroup[] {
   const classes = teacherClasses(ws);
   return classes.map((c) => ({
     id: c.id,
     label: c.groupName,
     students: ws.students
       .filter((s) => s.groupClassId === c.id && s.status === 'ACTIVE')
-      .map((s) => ({ id: s.id, name: `${s.firstName} ${s.lastName}` }))
+      // the workspace's own photo URL (private file, shown with the token by InitialsAvatar)
+      .map((s) => ({ id: s.id, name: `${s.firstName} ${s.lastName}`, photoUrl: s.photoUrl }))
       .sort((a, b) => a.name.localeCompare(b.name, 'ar')),
   }));
 }
@@ -124,7 +128,14 @@ function PlanForm({
   const [sessionId, setSessionId] = useState(program?.session.id ?? '');
   const [items, setItems] = useState<DraftItem[]>(() => (program ? program.items.map(toDraft) : [blankItem()]));
   const [notes, setNotes] = useState(program?.generalNotes ?? '');
-  const [picking, setPicking] = useState(false);
+  const [picking, setPickingRaw] = useState(false);
+  const [studentQuery, setStudentQuery] = useState('');
+  // A fresh search each time the sheet opens
+  const setPicking = (open: boolean) => {
+    setPickingRaw(open);
+    if (!open) setStudentQuery('');
+  };
+  const shownGroups = filterStudentGroups(groups, studentQuery);
   const [pickingSession, setPickingSession] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -150,6 +161,7 @@ function PlanForm({
   const studentLabel = program
     ? `${program.student.firstName} ${program.student.lastName}`
     : allStudents.find((s) => s.id === studentId)?.name;
+  const studentPhoto = program ? program.student.photoUrl : (allStudents.find((s) => s.id === studentId)?.photoUrl ?? null);
 
   const disablePrevention = usePreventRemove(dirty && !saving && !confirmation, ({ repeat }) => {
     Alert.alert(w.leaveTitle, w.leaveMessage, [
@@ -215,7 +227,10 @@ function PlanForm({
       <Card style={styles.section}>
         <AppText variant="label">{w.student}</AppText>
         {program ? (
-          <AppText variant="body">{studentLabel}</AppText>
+          <View style={styles.chosen}>
+            <InitialsAvatar name={studentLabel ?? ''} size={36} photoUrl={studentPhoto} />
+            <AppText variant="body">{studentLabel}</AppText>
+          </View>
         ) : (
           <Pressable
             onPress={() => setPicking(true)}
@@ -223,7 +238,8 @@ function PlanForm({
             accessibilityRole="button"
             accessibilityLabel={`${w.student}: ${studentLabel ?? w.pickStudent}`}
             style={[styles.picker, { borderColor: submitted && !studentId ? colors.destructive : colors.input }]}>
-            <AppText variant="body" tone={studentLabel ? 'default' : 'muted'} style={styles.flex}>
+            {studentLabel ? <InitialsAvatar name={studentLabel} size={32} photoUrl={studentPhoto} /> : null}
+            <AppText variant="body" tone={studentLabel ? 'default' : 'muted'} style={styles.flex} numberOfLines={1}>
               {studentLabel ?? w.pickStudent}
             </AppText>
             <Icon name="forward" size={16} color={colors.mutedForeground} />
@@ -329,27 +345,58 @@ function PlanForm({
       ) : null}
 
       {!program ? (
-        <BottomSheet visible={picking} title={w.pickStudent} closeLabel={w.closePicker} onClose={() => setPicking(false)}>
-          {groups.map((g) => (
-            <View key={g.id} style={styles.options}>
-              <AppText variant="small" tone="muted" accessibilityRole="header">
-                {g.label}
-              </AppText>
-              {g.students.map((s) => (
-                <OptionRow
-                  key={s.id}
-                  label={s.name}
-                  selected={s.id === studentId}
-                  onPress={() => {
-                    setStudentId(s.id);
-                    setSessionId('');
-                    setRaced(null);
-                    setPicking(false);
-                  }}
-                />
-              ))}
+        <BottomSheet
+          visible={picking}
+          title={w.pickStudent}
+          closeLabel={w.closePicker}
+          onClose={() => setPicking(false)}
+          header={
+            // stays above the scrolling list
+            <View style={[styles.search, { borderColor: colors.input, backgroundColor: colors.background }]}>
+              <Icon name="search" size={16} color={colors.mutedForeground} />
+              <TextInput
+                value={studentQuery}
+                onChangeText={setStudentQuery}
+                placeholder={w.searchStudent}
+                placeholderTextColor={colors.mutedForeground}
+                accessibilityLabel={w.searchStudentLabel}
+                autoCorrect={false}
+                returnKeyType="search"
+                style={[styles.searchInput, { color: colors.foreground }]}
+              />
+              {studentQuery ? (
+                <Pressable onPress={() => setStudentQuery('')} accessibilityRole="button" accessibilityLabel={w.clearStudentSearch} hitSlop={8}>
+                  <Icon name="close" size={16} color={colors.mutedForeground} />
+                </Pressable>
+              ) : null}
             </View>
-          ))}
+          }>
+          {shownGroups.length === 0 ? (
+            <EmptyState icon="search" title={w.noStudentMatch} description={studentQuery ? w.noStudentMatchHint : undefined} />
+          ) : (
+            shownGroups.map((g) => (
+              <View key={g.id} accessibilityRole="radiogroup" accessibilityLabel={g.label} style={styles.group}>
+                <AppText variant="small" tone="muted" accessibilityRole="header">
+                  {g.label}
+                </AppText>
+                {g.students.map((s, i) => (
+                  <StudentOptionRow
+                    key={s.id}
+                    name={s.name}
+                    photoUrl={s.photoUrl}
+                    selected={s.id === studentId}
+                    divider={i > 0}
+                    onPress={() => {
+                      setStudentId(s.id);
+                      setSessionId('');
+                      setRaced(null);
+                      setPicking(false);
+                    }}
+                  />
+                ))}
+              </View>
+            ))
+          )}
         </BottomSheet>
       ) : null}
     </Screen>
@@ -469,6 +516,18 @@ const styles = StyleSheet.create({
   section: { gap: spacing.sm },
   inline: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   options: { gap: spacing.xs },
+  group: { gap: 2 },
+  chosen: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  search: {
+    minHeight: touchTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+  },
+  searchInput: { flex: 1, minHeight: touchTarget, fontFamily: fontFamilies.regular, fontSize: 15, textAlign: 'right', writingDirection: 'rtl' },
   picker: {
     minHeight: touchTarget,
     flexDirection: 'row',

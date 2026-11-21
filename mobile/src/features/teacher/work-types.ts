@@ -137,6 +137,8 @@ export interface WorkProgram {
   /** The server's verdict (its clock, platform timezone) when the response was built; the evaluation endpoints enforce it (409) */
   evaluation: WorkEvaluationState;
   items: WorkItem[];
+  /** Only with order=workload */
+  workloadOrder?: WorkloadOrder;
 }
 
 export interface WorkEvaluationState {
@@ -151,6 +153,19 @@ export interface WorkProgramFilters {
   sessionId?: string;
   period?: WorkPeriod;
   state?: WorkProgramState;
+  /** «ترتيب حسب البرنامج» (needs sessionId): the server orders the whole session before paginating */
+  order?: 'workload';
+}
+
+/** Server-side advisory order of a session's programs by assigned work (pages) — never a rank. */
+export interface WorkloadOrder {
+  /** false: some work has no measurable size — listed after the others, never treated as zero */
+  comparable: boolean;
+  /** Consecutive programs whose sizes cannot be told apart share a group (not a rank) */
+  group: number | null;
+  pages: { lo: number; hi: number; exact: boolean } | null;
+  examPages: { lo: number; hi: number; exact: boolean } | null;
+  reason: 'FREE_TEXT' | 'UNMEASURED' | 'EDITION' | null;
 }
 
 export interface NewWorkItem {

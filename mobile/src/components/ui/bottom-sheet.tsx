@@ -11,13 +11,15 @@ import { Icon } from './icon';
  * A bottom sheet on React Native's own Modal (no extra dependency): slides
  * up over a dimmed backdrop, closes on backdrop tap, the close button or the
  * Android back button, scrolls when taller than ~80% of the screen, and pads
- * the bottom safe area. `footer` stays visible under the scrolling content.
+ * the bottom safe area. `header` (e.g. a search field) stays visible above
+ * the scrolling content, `footer` under it.
  */
 export function BottomSheet({
   visible,
   title,
   closeLabel,
   onClose,
+  header,
   footer,
   children,
 }: {
@@ -25,6 +27,7 @@ export function BottomSheet({
   title: string;
   closeLabel: string;
   onClose: () => void;
+  header?: ReactNode;
   footer?: ReactNode;
   children: ReactNode;
 }) {
@@ -56,6 +59,7 @@ export function BottomSheet({
               <Icon name="close" size={20} color={colors.mutedForeground} />
             </Pressable>
           </View>
+          {header ? <View style={styles.top}>{header}</View> : null}
           <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
             {children}
           </ScrollView>
@@ -102,6 +106,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg },
   close: { padding: spacing.xs },
   content: { padding: spacing.lg, gap: spacing.md },
+  top: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   footer: {
     flexDirection: 'row',
     gap: spacing.sm,

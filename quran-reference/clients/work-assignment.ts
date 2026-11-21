@@ -606,3 +606,88 @@ export function attemptLabel(attemptNumber: number | null, entry: RecitationEntr
 export function cycleSummaryText(c: { number: number; successes: number; required: number; completed: boolean }): string {
   return `${cycleName(c.number)} · ${cycleProgress(c.successes, c.required)}${c.completed ? ' · مكتملة' : ''}`;
 }
+
+// ───────────────────────── compact Work Program rows (display only) ─────────────────────────
+
+const TYPE_ORDER: WorkType[] = ['MEMORIZATION', 'REVISION', 'RECITATION', 'EXAM'];
+const TYPE_WORD: Record<WorkType, string> = { MEMORIZATION: 'حفظ', REVISION: 'مراجعة', RECITATION: 'عرضة', EXAM: 'اختبار' };
+
+/** «حفظ · مراجعة (2) · عرضة»: the kinds of work of a program, in a fixed order, counted when repeated. */
+export function workTypesSummary(types: WorkType[]): string {
+  return TYPE_ORDER.flatMap((t) => {
+    const n = types.filter((x) => x === t).length;
+    return n === 0 ? [] : [n > 1 ? `${TYPE_WORD[t]} (${n})` : TYPE_WORD[t]];
+  }).join(' · ');
+}
+
+export type ProgramStatusKind = 'pending' | 'partial' | 'done' | 'unfinished' | 'cancelled';
+
+/**
+ * The evaluation state of a program in a few words, from the server's progress:
+ *  «لم يُقيَّم بعد» · «قُيِّم جزئيًا · 1/3 منجز» · «كل الأعمال منجزة» · «2/3 منجز» · «كل الأعمال ملغاة»
+ */
+export function programStatus(p: { active: number; completed: number; pending: number }): { kind: ProgramStatusKind; text: string } {
+  if (p.active === 0) return { kind: 'cancelled', text: 'كل الأعمال ملغاة' };
+  if (p.pending === p.active) return { kind: 'pending', text: 'لم يُقيَّم بعد' };
+  if (p.pending > 0) return { kind: 'partial', text: `قُيِّم جزئيًا · ${p.completed}/${p.active} منجز` };
+  if (p.completed === p.active) return { kind: 'done', text: 'كل الأعمال منجزة' };
+  return { kind: 'unfinished', text: `${p.completed}/${p.active} منجز` };
+}
+
+/** «ترتيب حسب البرنامج» wording (the order itself comes from the server, never computed here). */
+export const WORKLOAD_ORDER = {
+  original: 'الترتيب الأصلي',
+  workload: 'ترتيب حسب البرنامج',
+  active: 'ترتيب مقترح حسب حجم البرنامج',
+  explanation:
+    'ترتيب تقريبي حسب حجم الحفظ والمراجعة والعرضة المسندة في الحصة (الاختبار يفصل بين الأحجام المتساوية فقط). الأحجام المتقاربة تُعرض متتالية دون تفضيل، وليس هذا تصنيفًا للطلبة.',
+  needsSession: 'اختر حصة لترتيب طلبتها حسب البرنامج',
+  comparable: 'حجم متقارب',
+  unavailable: 'حجم غير متاح للمقارنة',
+  unavailableHint: 'فيه عمل دون تحديد من المصحف، فلا يُقارَن بغيره',
+} as const;
+
+export interface WorkloadSection<T> {
+  key: string;
+  kind: 'all' | 'group' | 'unavailable';
+  /** «حجم متقارب» for a group of several; «حجم غير متاح للمقارنة» for the not comparable ones */
+  label: string | null;
+  hint: string | null;
+  programs: T[];
+}
+
+/**
+ * The rows as sections (server order kept): one for the usual order; in the advisory order,
+ * consecutive programs of one group of comparable sizes (labelled when several), then the ones
+ * that cannot be compared (labelled — never ranked last as "less"). No rank numbers.
+ */
+export function workloadSections<T extends { workloadOrder?: { comparable: boolean; group: number | null } | null }>(
+  programs: T[],
+  ordered: boolean,
+): WorkloadSection<T>[] {
+  if (!ordered) return [{ key: 'all', kind: 'all', label: null, hint: null, programs }];
+  const sections: WorkloadSection<T>[] = [];
+  for (const p of programs) {
+    const o = p.workloadOrder;
+    const key = o?.comparable ? `g${o.group}` : 'unavailable';
+    const last = sections.at(-1);
+    if (last?.key === key) last.programs.push(p);
+    else
+      sections.push(
+        key === 'unavailable'
+          ? { key, kind: 'unavailable', label: WORKLOAD_ORDER.unavailable, hint: WORKLOAD_ORDER.unavailableHint, programs: [p] }
+          : { key, kind: 'group', label: null, hint: null, programs: [p] },
+      );
+  }
+  for (const s of sections) if (s.kind === 'group' && s.programs.length > 1) s.label = WORKLOAD_ORDER.comparable;
+  return sections;
+}
+
+/**
+ * The «متابعة العرضات» line of a compact row: the cycle summary of each tracked عرضة («الدورة الأولى ·
+ * 3/4 ناجحة»), null when the program has none (a legacy recitation never gets an invented cycle).
+ */
+export function rowCycleText(items: { recitationCycle?: { number: number; successes: number; required: number; completed: boolean } | null }[]): string | null {
+  const texts = items.flatMap((i) => (i.recitationCycle ? [cycleSummaryText(i.recitationCycle)] : []));
+  return texts.length ? texts.join('؛ ') : null;
+}

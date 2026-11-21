@@ -13,6 +13,7 @@ import type {
   WorkItemPatch,
   RecitationHistory,
   WorkProgram,
+  WorkSession,
   WorkProgramFilters,
 } from './work-types';
 
@@ -183,6 +184,9 @@ export const fetchWorkPrograms = (filters: WorkProgramFilters & { page: number; 
 /** GET /:id — 404 also for a program outside my scope. */
 export const fetchWorkProgram = (id: string, signal?: AbortSignal) =>
   api<WorkProgram>(`${WORK}/${encodeURIComponent(id)}`, { signal });
+
+/** GET session-options — the sessions that have programs (the «الحصة» filter, as on the web). */
+export const fetchWorkSessionOptions = (signal?: AbortSignal) => api<WorkSession[]>(`${WORK}/session-options`, { signal });
 
 /** GET eligible-sessions — the student's existing UPCOMING sessions that may receive work (never a free date). */
 export const fetchEligibleSessions = (studentId: string, afterSessionId: string | undefined, signal?: AbortSignal) =>

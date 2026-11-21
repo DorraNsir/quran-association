@@ -30,6 +30,8 @@ export interface WorkProgramFilters {
   sessionId?: string
   period?: "upcoming" | "past"
   state?: "pending" | "unfinished" | "cancelled" | "done"
+  /** «ترتيب حسب البرنامج» (needs sessionId): the server orders the whole session before paginating */
+  order?: "workload"
 }
 
 const clean = (q: object): Query =>

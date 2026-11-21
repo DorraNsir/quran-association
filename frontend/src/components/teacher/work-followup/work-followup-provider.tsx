@@ -23,6 +23,8 @@ export interface WorkStudentOption {
   firstName: string
   lastName: string
   groupClassId: ID
+  /** The workspace's photo URL (private file), null without a photo */
+  photoUrl: string | null
 }
 export interface WorkClassOption {
   id: ID
@@ -73,7 +75,7 @@ export function WorkFollowupProvider({ children }: { children: React.ReactNode }
       : []
   const students: WorkStudentOption[] = (workspace.data?.students ?? [])
     .filter((s) => s.status === "ACTIVE" && s.groupClassId)
-    .map((s) => ({ id: s.id, firstName: s.firstName, lastName: s.lastName, groupClassId: s.groupClassId! }))
+    .map((s) => ({ id: s.id, firstName: s.firstName, lastName: s.lastName, groupClassId: s.groupClassId!, photoUrl: s.photoUrl ?? null }))
 
   const openForm = (program?: WorkProgram) => setForm((f) => ({ key: (f?.key ?? 0) + 1, open: true, program }))
 

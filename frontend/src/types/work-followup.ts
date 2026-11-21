@@ -136,6 +136,17 @@ export interface WorkProgress {
   rate: number | null
 }
 
+/** Server-side advisory order of a session's programs by assigned work (pages, exact or bounded). */
+export interface WorkloadOrder {
+  /** false: some work has no measurable size — listed after the others, never treated as zero */
+  comparable: boolean
+  /** Consecutive programs whose sizes cannot be told apart share a group (not a rank) */
+  group: number | null
+  pages: { lo: number; hi: number; exact: boolean } | null
+  examPages: { lo: number; hi: number; exact: boolean } | null
+  reason: "FREE_TEXT" | "UNMEASURED" | "EDITION" | null
+}
+
 export interface WorkProgram {
   id: ID
   /** Optimistic concurrency of the notes */
@@ -155,6 +166,8 @@ export interface WorkProgram {
    */
   evaluation: WorkEvaluationState
   items: WorkItem[]
+  /** «ترتيب حسب البرنامج» (only with order=workload): where it stands in the advisory order — never a rank */
+  workloadOrder?: WorkloadOrder
 }
 
 export interface WorkEvaluationState {

@@ -3064,4 +3064,158 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
       await api.get('sup', `students/${randomUUID()}/recitations`).expect(404);
     });
   });
+
+  // ───────────────────── «ترتيب حسب البرنامج» (Phase 5B) ─────────────────────
+
+  describe('«ترتيب حسب البرنامج»: advisory order of a session’s students by assigned work', () => {
+    type Ordered = Program & {
+      student: { id: string };
+      workloadOrder?: {
+        comparable: boolean;
+        group: number | null;
+        pages: { lo: number; hi: number; exact: boolean } | null;
+        reason: string | null;
+      };
+    };
+    const list = async (who: string, query: object) =>
+      (await api.get(who, 'work-programs', query).expect(200)).body as {
+        data: Ordered[];
+        meta: { total: number; totalPages: number };
+      };
+    const who = (p: Ordered) =>
+      Object.entries(id).find(([, v]) => v === p.student.id)?.[0];
+
+    beforeAll(async () => {
+      id.ord = await session('C', addDays(TODAY, 90), '16:00');
+      // s1: juz 30 (23 pages, exact) + page 79 → 24 pages, exact
+      await create('sup', 's1', 'ord', [
+        {
+          type: 'REVISION',
+          assignment: { kind: 'SURAH_RANGE', fromSurah: 78, toSurah: 114 },
+        },
+        {
+          type: 'MEMORIZATION',
+          assignment: { kind: 'PAGE_RANGE', fromPage: 79 },
+        },
+      ]).expect(201);
+      // s2: al-Baqara (47 < pages < 48) + an exam
+      await create('sup', 's2', 'ord', [
+        { type: 'REVISION', assignment: { kind: 'SURAH_RANGE', fromSurah: 2 } },
+        { type: 'EXAM', assignment: { kind: 'SURAH_RANGE', fromSurah: 67 } },
+      ]).expect(201);
+    });
+
+    it('default order unchanged and without ordering data; the advisory order only on request', async () => {
+      const normal = await list('sup', { sessionId: id.ord });
+      expect(normal.data.map(who)).toEqual(['s1', 's2']);
+      expect(normal.data[0]).not.toHaveProperty('workloadOrder');
+      const ordered = await list('sup', {
+        sessionId: id.ord,
+        order: 'workload',
+      });
+      expect(ordered.data.map(who)).toEqual(['s2', 's1']);
+      expect(ordered.data.map((p) => p.workloadOrder)).toEqual([
+        {
+          comparable: true,
+          group: 0,
+          pages: { lo: 47, hi: 48, exact: false },
+          examPages: expect.any(Object),
+          reason: null,
+        },
+        {
+          comparable: true,
+          group: 1,
+          pages: { lo: 24, hi: 24, exact: true },
+          examPages: { lo: 0, hi: 0, exact: true },
+          reason: null,
+        },
+      ]);
+      // nothing stored, no rank: the default order is back right after
+      expect((await list('sup', { sessionId: id.ord })).data.map(who)).toEqual([
+        's1',
+        's2',
+      ]);
+    });
+
+    it('needs a session; orders the WHOLE filtered set before paginating', async () => {
+      expect(
+        (
+          await api
+            .get('sup', 'work-programs', { order: 'workload' })
+            .expect(400)
+        ).body.code,
+      ).toBe('WORK_ORDER_SESSION_REQUIRED');
+      const p1 = await list('sup', {
+        sessionId: id.ord,
+        order: 'workload',
+        pageSize: 1,
+        page: 1,
+      });
+      const p2 = await list('sup', {
+        sessionId: id.ord,
+        order: 'workload',
+        pageSize: 1,
+        page: 2,
+      });
+      expect([p1.meta.total, p1.meta.totalPages]).toEqual([2, 2]);
+      expect([...p1.data, ...p2.data].map(who)).toEqual(['s2', 's1']);
+      // filters still apply (search)
+      const searched = await list('sup', {
+        sessionId: id.ord,
+        order: 'workload',
+        q: 's1',
+      });
+      expect(searched.data.map(who)).toEqual(['s1']);
+    });
+
+    it('unknown work is never zero: a free-text item or another edition makes the program not comparable (kept, after the others)', async () => {
+      const programs = await list('sup', { sessionId: id.ord });
+      const s2 = programs.data.find((p) => who(p) === 's2')!;
+      // a free-text item added to the larger program
+      await api
+        .post('sup', `work-programs/${s2.id}/items`, {
+          items: [{ type: 'REVISION', description: 'مراجعة حرة' }],
+        })
+        .expect(201);
+      let ordered = await list('sup', { sessionId: id.ord, order: 'workload' });
+      expect(
+        ordered.data.map((p) => [
+          who(p),
+          p.workloadOrder!.comparable,
+          p.workloadOrder!.reason,
+        ]),
+      ).toEqual([
+        ['s1', true, null],
+        ['s2', false, 'FREE_TEXT'],
+      ]);
+      // a snapshot of another edition (simulated): not compared as if equivalent; snapshot untouched by ordering
+      const s1 = programs.data.find((p) => who(p) === 's1')!;
+      const row = await prisma.workItem.findFirstOrThrow({
+        where: { workProgramId: s1.id, type: 'REVISION' },
+      });
+      const other = {
+        ...(row.quranWorkload as object),
+        editionId: 'another-edition',
+      };
+      await prisma.workItem.update({
+        where: { id: row.id },
+        data: { quranWorkload: other },
+      });
+      ordered = await list('sup', { sessionId: id.ord, order: 'workload' });
+      expect(ordered.data.map((p) => p.workloadOrder!.reason)).toEqual([
+        'EDITION',
+        'FREE_TEXT',
+      ]);
+      expect(
+        (await prisma.workItem.findUniqueOrThrow({ where: { id: row.id } }))
+          .quranWorkload,
+      ).toEqual(other);
+    });
+
+    it('access: another class’s teacher sees nothing of this session, ordered or not', async () => {
+      expect(
+        (await list('other', { sessionId: id.ord, order: 'workload' })).data,
+      ).toEqual([]);
+    });
+  });
 });

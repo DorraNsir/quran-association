@@ -4,8 +4,9 @@ import type { ReactNode } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import type { SessionUser } from '@/features/auth/types';
-import { canonicalOf } from '@/features/quran-reference/work-assignment';
+import { canonicalOf, programStatus, WORKLOAD_ORDER, workTypesSummary } from '@/features/quran-reference/work-assignment';
 import { ar } from '@/i18n/ar';
+import { apiUrl, setAuthBridge } from '@/services/api';
 
 import { eligible, workItem, workPage, workProgram, workSession } from './__fixtures__/work';
 import { workspaceFixture } from './__fixtures__/workspace';
@@ -142,20 +143,25 @@ async function pickSurahIn(field: string, item: number, search: string, option: 
 }
 
 describe('list', () => {
-  it('shows MY programs from the server with the session, phase, server progress and a preview', async () => {
+  it('one compact row per program: photo or initial, name, class · session · phase, kinds of work, evaluation state — no item previews', async () => {
     stub();
     await renderScreen(<TeacherWorkScreen />);
     expect(await screen.findByText(w.total(1))).toBeTruthy();
+    const p = workProgram();
     expect(screen.getByText('محمد التونسي')).toBeTruthy();
-    expect(screen.getByText('مجموعة الفجر — الفرع الرئيسي')).toBeTruthy();
-    expect(screen.getByText('الاثنين 9 نوفمبر 2026')).toBeTruthy();
-    expect(screen.getByText(w.phase.PAST)).toBeTruthy();
-    expect(screen.getByText('تم إنجاز 1 من أصل 3 أعمال')).toBeTruthy(); // the server's numbers
-    expect(screen.getByText(w.pendingCount(1))).toBeTruthy();
-    expect(screen.getByText('حفظ صفحتين من سورة البقرة')).toBeTruthy();
-    expect(screen.queryByText('مراجعة جزء عمّ')).toBeNull(); // preview: two items
-    expect(screen.getByText(w.more(1))).toBeTruthy();
-    expect(screen.getByText(w.lastEditedBy('أحمد السالمي'))).toBeTruthy();
+    expect(screen.getByText(`مجموعة الفجر · الاثنين 9 نوفمبر 2026 · ${w.phase.PAST}`)).toBeTruthy();
+    expect(screen.getByText(workTypesSummary(p.items.map((i) => i.type)))).toBeTruthy();
+    const status = programStatus(p.progress);
+    expect(screen.getByTestId(`status-${status.kind}`).props.children).toBe(status.text);
+    expect(screen.getByText('م', { includeHiddenElements: true })).toBeTruthy(); // no photo: the first letter (hidden from screen readers)
+    expect(screen.queryByTestId('avatar-photo', { includeHiddenElements: true })).toBeNull();
+    // compact: no item previews, no "more", no last editor, no repeated workload
+    expect(screen.queryByText('حفظ صفحتين من سورة البقرة')).toBeNull();
+    expect(screen.queryByText(w.more(1))).toBeNull();
+    expect(screen.queryByText(w.lastEditedBy('أحمد السالمي'))).toBeNull();
+    // the whole row opens THAT program
+    await fireEvent.press(screen.getByLabelText(new RegExp(`^${w.detailTitle} محمد التونسي`)));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/work/[id]', params: { id: p.id } });
     expect(lists()[0]!.params.get('page')).toBe('1');
   });
 
@@ -982,7 +988,7 @@ describe('mobile refinements: item notes, session selector, workload line', () =
     });
   });
 
-  it('list card: the same concise workload line as the program screen', async () => {
+  it('list row: the kinds of work only — the workload stays on the program screen (no duplicate), no verification sentence', async () => {
     const EDITION = 'qalun-abi-nashit-tn-hannibal-mualim-v1';
     const bounded = { kind: 'bounded' as const, greaterThan: 2, lessThan: 3, touched: 3, partialAtStart: true, partialAtEnd: true, dataStatus: 'x' };
     const exactOne = { kind: 'exact' as const, value: 1, touched: 1, dataStatus: 'x' };
@@ -998,8 +1004,8 @@ describe('mobile refinements: item notes, session selector, workload line', () =
     });
     stub(undefined, p);
     await renderScreen(<TeacherWorkScreen />);
-    expect(await screen.findByText('سورة مريم: من الآية 12 إلى الآية 50')).toBeTruthy();
-    expect(screen.getByText('39 آية · بين صفحتين و3 صفحات')).toBeTruthy();
+    expect(await screen.findByText('حفظ')).toBeTruthy();
+    expect(screen.queryByText('39 آية · بين صفحتين و3 صفحات')).toBeNull();
     expect(screen.queryByText(/قيد التحقق/)).toBeNull(); // no per-item verification sentence
   });
 });
@@ -1481,11 +1487,15 @@ describe('«متابعة العرضات» (mobile)', () => {
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/students/[id]/recitations', params: { id: 'st1', surah: '2' } });
   });
 
-  it('list card: the same compact cycle line, without the history link', async () => {
+  it('list row: the same compact cycle line in one line, without the history link; nothing for a legacy recitation', async () => {
     stub(undefined, workProgram('w1', { items: [tracked] }));
     await renderScreen(<TeacherWorkScreen />);
-    expect(await screen.findByText('الدورة الأولى · 3/4 ناجحة')).toBeTruthy();
+    expect((await screen.findByTestId('row-cycles')).props.children).toBe('الدورة الأولى · 3/4 ناجحة');
     expect(screen.queryByLabelText(/^سجل العرضات/)).toBeNull();
+    stub(undefined, workProgram('w2', { items: [legacy] }));
+    await renderScreen(<TeacherWorkScreen />);
+    await screen.findByText(w.total(1));
+    expect(screen.queryByTestId('row-cycles')).toBeNull();
   });
 
   async function newRecitation(answer: (c: Call) => Answer | undefined) {
@@ -1528,5 +1538,175 @@ describe('«متابعة العرضات» (mobile)', () => {
     await renderScreen(<TeacherWorkFormScreen programId="w1" />);
     expect((await screen.findByTestId('recitation-auto-number')).props.children).toBe(w.managedRecitationNumber(6, 'الدورة الأولى'));
     expect(screen.queryByLabelText(`${w.recitationNumber} — ${w.itemN(1)}`)).toBeNull();
+  });
+});
+
+describe('«ترتيب حسب البرنامج» and compact rows (mobile)', () => {
+  const S9 = workSession('s9', '2026-11-09');
+  const person = (id: string, firstName: string, photoUrl: string | null = null) => ({ id, firstName, lastName: 'التونسي', photoUrl });
+  const order = (group: number | null) =>
+    group === null
+      ? { comparable: false, group: null, pages: null, examPages: null, reason: 'FREE_TEXT' as const }
+      : { comparable: true, group, pages: { lo: 10, hi: 12, exact: false }, examPages: { lo: 0, hi: 0, exact: true }, reason: null };
+  const base = [
+    workProgram('a', { student: person('sa', 'أمين', '/api/files/photo-a'), session: S9 }),
+    workProgram('b', { student: person('sb', 'بلال'), session: S9 }),
+    workProgram('c', { student: person('sc', 'جميلة'), session: S9 }),
+    workProgram('d', { student: person('sd', 'دينا'), session: S9 }),
+  ];
+  // the server's advisory order: c alone, then a ≈ d, then b not comparable
+  const advisory = [
+    { ...base[2]!, workloadOrder: order(0) },
+    { ...base[0]!, workloadOrder: order(1) },
+    { ...base[3]!, workloadOrder: order(1) },
+    { ...base[1]!, workloadOrder: order(null) },
+  ];
+  const answer = (c: Call) => {
+    if (c.path.endsWith('/teacher/work-programs/session-options')) return ok([S9]);
+    if (c.method === 'GET' && c.path.endsWith('/teacher/work-programs'))
+      return ok(workPage(c.params.get('order') === 'workload' ? advisory : base));
+    return undefined;
+  };
+  const rows = () => screen.queryAllByTestId(/^program-/).map((r) => r.props.testID.replace('program-', ''));
+  async function chooseSession(label: RegExp | string) {
+    await fireEvent.press(screen.getByLabelText(new RegExp(`^${w.sessionFilter}: `)));
+    await fireEvent.press(screen.getByRole('radio', { name: label }));
+  }
+
+  it('photos: the real photo when there is one (private, with the token), the first letter otherwise', async () => {
+    setAuthBridge({ getAccessToken: () => 'tok', refresh: async () => 'renewed', onSessionEnded: () => undefined });
+    stub(answer);
+    await renderScreen(<TeacherWorkScreen />);
+    await screen.findByText('أمين التونسي');
+    expect(screen.getAllByTestId('avatar-photo', { includeHiddenElements: true })).toHaveLength(1);
+    const source = [screen.getByTestId('avatar-photo', { includeHiddenElements: true }).props.source].flat()[0];
+    expect(source).toMatchObject({ uri: apiUrl('/api/files/photo-a'), headers: { Authorization: 'Bearer tok' } });
+    expect(screen.getByText('ب', { includeHiddenElements: true })).toBeTruthy();
+    setAuthBridge(null);
+  });
+
+  it('off by default; needs a session; on request the server order with its groups; back to the original order', async () => {
+    stub(answer);
+    await renderScreen(<TeacherWorkScreen />);
+    await screen.findByText('أمين التونسي');
+    expect(rows()).toEqual(['a', 'b', 'c', 'd']);
+    expect(screen.getByText(WORKLOAD_ORDER.needsSession)).toBeTruthy();
+    expect(screen.queryByLabelText(w.pickOrder)).toBeNull();
+    expect(lists().every((c) => !c.params.has('order'))).toBe(true);
+
+    await chooseSession(/^مجموعة الفجر · الاثنين 9 نوفمبر 2026/);
+    await settle();
+    expect(lists().at(-1)!.params.get('sessionId')).toBe('s9');
+    expect(radio(w.pickOrder, WORKLOAD_ORDER.original).props.accessibilityState.selected).toBe(true);
+    await fireEvent.press(radio(w.pickOrder, WORKLOAD_ORDER.workload));
+    await settle();
+    expect([lists().at(-1)!.params.get('order'), lists().at(-1)!.params.get('sessionId'), lists().at(-1)!.params.get('page')]).toEqual(['workload', 's9', '1']);
+    expect(rows()).toEqual(['c', 'a', 'd', 'b']);
+    expect(screen.getByTestId('section-group').props.children[0]).toBe(WORKLOAD_ORDER.comparable);
+    expect(screen.getByTestId('section-unavailable').props.children[0]).toBe(WORKLOAD_ORDER.unavailable);
+    expect(screen.getByText(WORKLOAD_ORDER.active)).toBeTruthy();
+    // no rank numbers anywhere; one session chosen → the session is not repeated in each row
+    expect(screen.queryByText(/الأول|الثاني|الثالث|رتبة/)).toBeNull();
+    expect(screen.queryAllByText(new RegExp(` · ${w.phase.PAST}$`))).toHaveLength(0);
+
+    // the choice holds when the list is reloaded by another filter
+    await fireEvent.press(radio(w.pickState, w.state.pending));
+    await settle();
+    expect([lists().at(-1)!.params.get('state'), lists().at(-1)!.params.get('order')]).toEqual(['pending', 'workload']);
+
+    await fireEvent.press(radio(w.pickOrder, WORKLOAD_ORDER.original));
+    await settle();
+    expect(lists().at(-1)!.params.has('order')).toBe(false);
+    expect(rows()).toEqual(['a', 'b', 'c', 'd']);
+    expect(screen.queryByTestId('section-group')).toBeNull();
+  });
+
+  it('another session is never reordered without being asked', async () => {
+    stub(answer);
+    await renderScreen(<TeacherWorkScreen />);
+    await screen.findByText('أمين التونسي');
+    await chooseSession(/^مجموعة الفجر · الاثنين 9 نوفمبر 2026/);
+    await fireEvent.press(radio(w.pickOrder, WORKLOAD_ORDER.workload));
+    await settle();
+    expect(lists().at(-1)!.params.get('order')).toBe('workload');
+    await chooseSession(w.allSessions);
+    await settle();
+    expect(lists().at(-1)!.params.has('sessionId')).toBe(false);
+    expect(lists().at(-1)!.params.has('order')).toBe(false);
+    expect(screen.getByText(WORKLOAD_ORDER.needsSession)).toBeTruthy();
+  });
+});
+
+describe('«اختر الطالب»: photos, search and compact rows (mobile)', () => {
+  // the teacher workspace provides each student's photoUrl (private file)
+  const workspace = () => {
+    const ws = workspaceFixture();
+    ws.students = ws.students.map((s) =>
+      s.id === 'st1' ? { ...s, photoUrl: '/api/files/photo-st1' } : s.id === 'st2' ? { ...s, photoUrl: '/api/files/missing' } : s,
+    );
+    ws.students.push({ ...ws.students[0]!, id: 'st9', firstName: 'Sara', lastName: 'Ben Ali', photoUrl: null });
+    return ws;
+  };
+  async function openSheet() {
+    setAuthBridge({ getAccessToken: () => 'tok', refresh: async () => 'renewed', onSessionEnded: () => undefined });
+    stub((c) => {
+      if (c.path.endsWith('/teacher/workspace')) return ok(workspace());
+      if (c.path.endsWith('/eligible-sessions')) return ok([eligible('s20', '2026-11-18')]);
+      return undefined;
+    });
+    await renderScreen(<TeacherWorkFormScreen />);
+    await fireEvent.press(await screen.findByLabelText(`${w.student}: ${w.pickStudent}`));
+  }
+  afterEach(() => setAuthBridge(null));
+  const sheetStudents = () => screen.queryAllByTestId('student-option').map((r) => r.props.accessibilityLabel);
+  const photoOf = (name: string) =>
+    within(screen.getByRole('radio', { name })).queryByTestId('avatar-photo', { includeHiddenElements: true });
+
+  it('each row: the real photo (private URL with the token) or the first letter; a broken photo falls back to the letter', async () => {
+    await openSheet();
+    expect(screen.getByLabelText(w.searchStudentLabel)).toBeTruthy(); // the sheet is open
+    const source = [photoOf('محمد التونسي')!.props.source].flat()[0];
+    expect(source).toMatchObject({ uri: apiUrl('/api/files/photo-st1'), headers: { Authorization: 'Bearer tok' } });
+    // no photo: Latin and Arabic first letters
+    expect(photoOf('Sara Ben Ali')).toBeNull();
+    expect(within(screen.getByRole('radio', { name: 'Sara Ben Ali' })).getByText('S', { includeHiddenElements: true })).toBeTruthy();
+    // a photo that fails to load (missing / no access) → the letter
+    const broken = photoOf('آمنة التونسي')!;
+    await act(async () => {
+      fireEvent(broken, 'error', { nativeEvent: { error: 'HTTP 404' } });
+    });
+    expect(photoOf('آمنة التونسي')).toBeNull();
+    expect(within(screen.getByRole('radio', { name: 'آمنة التونسي' })).getByText('آ', { includeHiddenElements: true })).toBeTruthy();
+  });
+
+  it('search: Arabic (hamza / tashkeel tolerant) and Latin (case-insensitive); group headings kept; a clear empty state', async () => {
+    await openSheet();
+    const all = sheetStudents();
+    expect(all).toEqual(expect.arrayContaining(['محمد التونسي', 'آمنة التونسي', 'Sara Ben Ali']));
+    await fireEvent.changeText(screen.getByLabelText(w.searchStudentLabel), 'امنة');
+    expect(sheetStudents()).toEqual(['آمنة التونسي']);
+    expect(screen.getByRole('header', { name: 'مجموعة الفجر' })).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText(w.searchStudentLabel), 'sARa');
+    expect(sheetStudents()).toEqual(['Sara Ben Ali']);
+    await fireEvent.changeText(screen.getByLabelText(w.searchStudentLabel), 'زكرياء');
+    expect(sheetStudents()).toEqual([]);
+    expect(screen.getByText(w.noStudentMatch)).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText(w.clearStudentSearch));
+    expect(sheetStudents()).toEqual(all);
+  });
+
+  it('choosing a student closes the sheet, shows their photo and name, and loads their upcoming sessions', async () => {
+    await openSheet();
+    await fireEvent.changeText(screen.getByLabelText(w.searchStudentLabel), 'محمد');
+    await fireEvent.press(screen.getByRole('radio', { name: 'محمد التونسي' }));
+    await settle();
+    expect(screen.queryByLabelText(w.searchStudentLabel)).toBeNull(); // sheet closed
+    const field = screen.getByLabelText(`${w.student}: محمد التونسي`);
+    expect(within(field).getByTestId('avatar-photo', { includeHiddenElements: true })).toBeTruthy();
+    expect(calls.find((c) => c.path.endsWith('/eligible-sessions'))!.params.get('studentId')).toBe('st1');
+    // reopening: a fresh search, the choice marked
+    await fireEvent.press(field);
+    expect(screen.getByLabelText(w.searchStudentLabel).props.value).toBe('');
+    expect(screen.getByRole('radio', { name: 'محمد التونسي' }).props.accessibilityState.selected).toBe(true);
   });
 });

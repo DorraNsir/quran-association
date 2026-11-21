@@ -6,6 +6,11 @@ import { readFileSync } from 'node:fs';
 import {
   adaptDraft,
   assignmentSummary,
+  programStatus,
+  rowCycleText,
+  workloadSections,
+  workTypesSummary,
+  WORKLOAD_ORDER,
   attemptLabel,
   cycleName,
   cycleProgressLong,
@@ -522,5 +527,49 @@ describe('«متابعة العرضات» wording (display only)', () => {
     assert.equal(attemptLabel(5, 'PENDING'), 'عرضة 5 — قيد الانتظار');
     assert.equal(attemptLabel(null, 'POSTPONED'), 'مؤجلة — لا تُحتسب');
     for (const k of ['POSTPONED', 'DROPPED', 'SESSION_CANCELLED'] as const) assert.match(RECITATION_ENTRY_LABEL[k], /لا تُحتسب/);
+  });
+});
+
+describe('compact Work Program rows (display only)', () => {
+  test('work kinds in a fixed order, counted when repeated', () => {
+    assert.equal(workTypesSummary(['RECITATION', 'MEMORIZATION', 'REVISION']), 'حفظ · مراجعة · عرضة');
+    assert.equal(workTypesSummary(['REVISION', 'EXAM', 'REVISION']), 'مراجعة (2) · اختبار');
+    assert.equal(workTypesSummary([]), '');
+  });
+  test('evaluation state in a few words', () => {
+    assert.deepEqual(programStatus({ active: 3, completed: 0, pending: 3 }), { kind: 'pending', text: 'لم يُقيَّم بعد' });
+    assert.deepEqual(programStatus({ active: 3, completed: 1, pending: 2 }), { kind: 'partial', text: 'قُيِّم جزئيًا · 1/3 منجز' });
+    assert.deepEqual(programStatus({ active: 3, completed: 3, pending: 0 }), { kind: 'done', text: 'كل الأعمال منجزة' });
+    assert.deepEqual(programStatus({ active: 3, completed: 2, pending: 0 }), { kind: 'unfinished', text: '2/3 منجز' });
+    assert.deepEqual(programStatus({ active: 0, completed: 0, pending: 0 }), { kind: 'cancelled', text: 'كل الأعمال ملغاة' });
+  });
+  test('ordering wording: advisory, never a ranking', () => {
+    assert.match(WORKLOAD_ORDER.explanation, /ليس هذا تصنيفًا/);
+    assert.doesNotMatch(Object.values(WORKLOAD_ORDER).join(' '), /الأول|الثاني|الثالث|رتبة/);
+  });
+});
+
+describe('advisory order sections (display only, server order kept)', () => {
+  const p = (id: string, comparable: boolean, group: number | null) => ({ id, workloadOrder: { comparable, group } });
+  test('usual order: one section; advisory order: groups (labelled when several), then the not comparable ones', () => {
+    assert.deepEqual(workloadSections([p('a', true, 0)], false).map((s) => s.kind), ['all']);
+    const sections = workloadSections([p('c', true, 0), p('a', true, 1), p('d', true, 1), p('b', false, null)], true);
+    assert.deepEqual(
+      sections.map((s) => [s.kind, s.label, s.programs.map((x) => x.id)]),
+      [
+        ['group', null, ['c']],
+        ['group', WORKLOAD_ORDER.comparable, ['a', 'd']],
+        ['unavailable', WORKLOAD_ORDER.unavailable, ['b']],
+      ],
+    );
+  });
+});
+
+describe('row cycle line (display only)', () => {
+  test('tracked recitations only; nothing invented for the others', () => {
+    const c = (number: number, successes: number) => ({ recitationCycle: { number, successes, required: 4, completed: successes >= 4 } });
+    assert.equal(rowCycleText([c(1, 3)]), 'الدورة الأولى · 3/4 ناجحة');
+    assert.equal(rowCycleText([c(1, 3), { recitationCycle: null }, c(2, 4)]), 'الدورة الأولى · 3/4 ناجحة؛ الدورة الثانية · 4/4 ناجحة · مكتملة');
+    assert.equal(rowCycleText([{}, { recitationCycle: null }]), null);
   });
 });

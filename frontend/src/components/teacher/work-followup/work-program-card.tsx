@@ -1,126 +1,16 @@
 "use client"
 
-import { CalendarDays, ChevronLeft, ClipboardCheck, Pencil, UserRoundPen } from "lucide-react"
-import Link from "next/link"
+import { CalendarDays } from "lucide-react"
 
-import { UserAvatar } from "@/components/shared/user-avatar"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { useEvaluationBlock } from "@/hooks/use-evaluation-block"
 import { cn } from "@/lib/utils"
-import { cancelledLabel, evaluationBlockMessage, progressLabel, sessionLabel, sessionPhaseLabel, type SessionPhase } from "@/lib/work-followup"
-import type { WorkProgram, WorkProgress, WorkSession } from "@/types/work-followup"
-
-import { RecitationCycleLine } from "./recitation-cycle-line"
-import { WorkAssignmentView } from "./work-assignment-view"
-import { WorkStatusBadge, WorkTypeBadge } from "./work-badges"
+import { cancelledLabel, progressLabel, sessionLabel, sessionPhaseLabel, type SessionPhase } from "@/lib/work-followup"
+import type { WorkProgress, WorkSession } from "@/types/work-followup"
 
 /** Wraps any text — long paragraphs, line breaks and unbroken strings — inside its box. */
 export const WRAP = "min-w-0 max-w-full break-words [overflow-wrap:anywhere]"
 
 export const programHref = (id: string) => `/teacher/work-followup/${id}`
-
-const PREVIEW = 2
-
-/**
- * ONE student + ONE session = one compact, clickable card: who, when, the
- * progress and a preview of the first two items. Everything else (all the
- * items, their actions) is on the program's page. The student's name is the
- * card's link, stretched over the card; the action buttons sit above it.
- */
-export function WorkProgramCard({
-  program,
-  phase,
-  onEvaluate,
-  onEdit,
-}: {
-  program: WorkProgram
-  phase: SessionPhase
-  onEvaluate: () => void
-  onEdit: () => void
-}) {
-  const { student, session } = program
-  const name = `${student.firstName} ${student.lastName}`
-  const href = programHref(program.id)
-  const more = program.items.length - PREVIEW
-  const blocked = useEvaluationBlock(program)
-  const blockedId = `wf-eval-${program.id}`
-
-  return (
-    <Card className="relative gap-0 overflow-hidden p-0 transition-colors hover:border-primary/40 hover:bg-muted/20 has-[a[data-card-link]:focus-visible]:ring-3 has-[a[data-card-link]:focus-visible]:ring-ring/50">
-      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <UserAvatar name={name} photoUrl={student.photoUrl ?? undefined} />
-          <div className="min-w-0">
-            <Link
-              href={href}
-              data-card-link
-              className="block truncate font-semibold outline-none after:absolute after:inset-0 after:content-['']"
-              aria-label={`برنامج عمل ${name} — ${sessionLabel(session)}`}
-            >
-              {name}
-            </Link>
-            <p className="truncate text-xs text-muted-foreground">
-              {session.groupName} — {session.branchName}
-            </p>
-            <SessionLine session={session} phase={phase} className="mt-1" />
-          </div>
-        </div>
-        <ProgramProgress progress={program.progress} className="sm:w-48 sm:shrink-0" />
-      </div>
-
-      <ol className="divide-y border-t">
-        {program.items.slice(0, PREVIEW).map((item) => (
-          <li key={item.id} className="flex items-start gap-3 px-4 py-2.5">
-            <WorkTypeBadge type={item.type} recitationNumber={item.recitationNumber ?? undefined} />
-            {/* Two lines at most here — the full text is on the program's page */}
-            {item.assignment ? (
-              <div className="min-w-0 flex-1 space-y-1">
-                <WorkAssignmentView type={item.type} assignment={item.assignment} workload={item.workload} compact />
-                {item.recitationCycle && <RecitationCycleLine cycle={item.recitationCycle} studentId={program.student.id} compact />}
-              </div>
-            ) : (
-              <p className={cn("line-clamp-2 flex-1 text-sm", WRAP)}>{item.description}</p>
-            )}
-            <WorkStatusBadge status={item.status} className="shrink-0" />
-          </li>
-        ))}
-      </ol>
-      {more > 0 && <p className="border-t px-4 py-2 text-xs text-muted-foreground">+ {more === 1 ? "عمل آخر" : `${more} أعمال أخرى`}</p>}
-
-      {blocked && (
-        <p id={blockedId} className="border-t px-4 py-2 text-xs text-muted-foreground">
-          {evaluationBlockMessage[blocked]}
-        </p>
-      )}
-
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2.5">
-        <p className="flex items-center gap-1 text-xs text-muted-foreground">
-          <UserRoundPen className="size-3.5" aria-hidden />
-          آخر تعديل بواسطة: {program.lastEditedBy}
-        </p>
-        {/* Above the stretched link: these never open the program */}
-        <div className="relative z-10 flex flex-wrap gap-1.5">
-          <Button variant="ghost" size="sm" onClick={onEdit}>
-            <Pencil />
-            تعديل البرنامج
-          </Button>
-          <Button variant="outline" size="sm" onClick={onEvaluate} disabled={blocked !== null} aria-describedby={blocked ? blockedId : undefined}>
-            <ClipboardCheck />
-            تقييم الأعمال
-          </Button>
-          <Button asChild variant="ghost" size="sm" className="text-primary">
-            <Link href={href}>
-              عرض تفاصيل البرنامج
-              <ChevronLeft />
-            </Link>
-          </Button>
-        </div>
-      </div>
-    </Card>
-  )
-}
 
 /** Date, time and «قادمة / جارية / سابقة». */
 export function SessionLine({ session, phase, className }: { session: WorkSession; phase: SessionPhase; className?: string }) {

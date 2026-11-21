@@ -345,6 +345,7 @@ export class NextRecitationDto extends ScheduleWorkItemDto {
 }
 
 export const PERIODS = ['upcoming', 'past'] as const;
+export const ORDERS = ['default', 'workload'] as const;
 export const PROGRAM_STATES = [
   'pending',
   'unfinished',
@@ -388,6 +389,15 @@ export class WorkProgramListQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(PROGRAM_STATES)
   state?: (typeof PROGRAM_STATES)[number];
+
+  @ApiPropertyOptional({
+    enum: ORDERS,
+    description:
+      '«ترتيب حسب البرنامج» (workload, sessionId required): an ADVISORY order of the session’s students by assigned work — the whole filtered set is ordered before paginating; each program then carries workloadOrder. Never a ranking. Default: the usual order.',
+  })
+  @IsOptional()
+  @IsIn(ORDERS)
+  order?: (typeof ORDERS)[number];
 }
 
 export class EligibleSessionsQueryDto {
@@ -667,6 +677,45 @@ export class WorkEvaluationStateDto {
   blockedReason!: EvaluationBlock | null;
 }
 
+/** Interval of printed pages: exact (lo = hi) or strictly between lo and hi. */
+export class PageIntervalDto {
+  @ApiProperty() lo!: number;
+  @ApiProperty() hi!: number;
+  @ApiProperty() exact!: boolean;
+}
+
+export class WorkloadOrderDto {
+  @ApiProperty({
+    description:
+      'false: some work has no measurable size (free text, unavailable measure, another edition) — listed after the others, never treated as zero',
+  })
+  comparable!: boolean;
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description:
+      'Consecutive programs whose sizes cannot be told apart share a group (0, 1, …); a new group starts where the next one is certainly smaller. Not a rank.',
+  })
+  group!: number | null;
+  @ApiPropertyOptional({
+    type: PageIntervalDto,
+    nullable: true,
+    description: 'حفظ + مراجعة + عرضة, in pages (stored snapshots)',
+  })
+  pages!: PageIntervalDto | null;
+  @ApiPropertyOptional({
+    type: PageIntervalDto,
+    nullable: true,
+    description: 'اختبار, in pages: only breaks a tie of equal sizes',
+  })
+  examPages!: PageIntervalDto | null;
+  @ApiPropertyOptional({
+    enum: ['FREE_TEXT', 'UNMEASURED', 'EDITION'],
+    nullable: true,
+  })
+  reason!: string | null;
+}
+
 export class WorkProgramDto {
   @ApiProperty() id!: string;
   @ApiProperty() version!: number;
@@ -690,6 +739,11 @@ export class WorkProgramDto {
   @ApiProperty() updatedAt!: Date;
   @ApiProperty({ type: WorkProgressDto }) progress!: WorkProgressDto;
   @ApiProperty({ type: WorkItemDto, isArray: true }) items!: WorkItemDto[];
+  @ApiPropertyOptional({
+    type: WorkloadOrderDto,
+    description: 'Only with order=workload',
+  })
+  workloadOrder?: WorkloadOrderDto;
 }
 
 export class WorkProgramListDto {
