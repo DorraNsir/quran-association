@@ -235,11 +235,13 @@ describe("«متابعة العمل» — program page (API)", () => {
   it("every item in full, with where carried work came from", async () => {
     routeFetch()
     renderIn(<WorkProgramDetails programId="p1" />)
-    expect(await screen.findByRole("heading", { name: "برنامج عمل درة نصير" })).toBeTruthy()
+    // the page's own title; the student's name in the summary card
+    expect(await screen.findByRole("heading", { name: "تفاصيل برنامج العمل" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "درة نصير" })).toBeTruthy()
     const full = screen.getByText(/مراجعة من سورة الزمر/)
     expect(full.textContent).toContain("\n")
     expect(full.className).not.toMatch(/line-clamp/)
-    expect(screen.getByText(/منقول من حصة سابقة: .* — مؤجل/)).toBeTruthy()
+    expect(screen.getByRole("link", { name: /منقول من حصة سابقة: .* — مؤجل/ })).toBeTruthy()
   })
 
   it("a cancelled item is carried to a later session of the same student", async () => {
@@ -339,7 +341,8 @@ describe("«متابعة العمل» — evaluation follows the session (API)",
     })
     routeFetch({ get: () => json(200, { ...program, items: [carried] }) })
     renderIn(<WorkProgramDetails programId="p1" />)
-    expect(await screen.findByText(/^منقول من حصة ملغاة: /)).toBeTruthy()
+    expect(await screen.findByRole("link", { name: /^منقول من حصة ملغاة: / })).toBeTruthy()
+    expect(screen.getByText("منقول من حصة ملغاة")).toBeTruthy()
   })
 
   it("the API refuses (the lesson moved / was cancelled meanwhile): its message is shown and the programs reload", async () => {
@@ -449,8 +452,9 @@ describe("«متابعة العمل» — structured Quranic assignments (Qalun,
     })
     routeFetch({ get: () => json(200, { ...program, items: [tracked] }) })
     renderIn(<WorkProgramDetails programId="p1" />)
-    expect(await screen.findByText("سورة البقرة · 4 عرضات")).toBeTruthy()
-    expect(screen.getByRole("link", { name: "سجل العرضات" }).getAttribute("href")).toBe(`/teacher/students/${program.student.id}?tab=recitations&surah=2`)
+    const history = await screen.findByRole("link", { name: "سجل العرضات — سورة البقرة · 4 عرضات" })
+    expect(history.getAttribute("href")).toBe(`/teacher/students/${program.student.id}?tab=recitations&surah=2`)
+    expect(history.querySelector("[data-recitation-count]")!.textContent).toBe("4 عرضات")
     // no attempt table inside the item
     expect(document.querySelectorAll("[data-entry]")).toHaveLength(0)
   })
@@ -1002,9 +1006,13 @@ describe("«متابعة العمل» — «التقييم العام» (web)", 
     release(json(200, { ...program, version: 4, overallEvaluation: given("VERY_GOOD") }))
     await waitFor(() => expect(document.querySelector("[data-overall-saved]")!.getAttribute("data-overall-saved")).toBe("VERY_GOOD"))
     expect(screen.queryByRole("button", { name: OVERALL_EVALUATION.save })).toBeNull()
+    expect(screen.queryByRole("radio")).toBeNull() // the choices close once saved
+    expect(screen.getByText("آخر تقييم: مريم بن علي · 19 أكتوبر 2026")).toBeTruthy()
 
-    // correction
-    fireEvent.click(await screen.findByRole("radio", { name: "ممتاز" }))
+    // correction: behind «تعديل التقييم»
+    fireEvent.click(screen.getByRole("button", { name: "تعديل التقييم" }))
+    expect(screen.getByRole("radio", { name: "جيد جدًا" }).getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(screen.getByRole("radio", { name: "ممتاز" }))
     expect(screen.getByText(overallChangeText("VERY_GOOD", "EXCELLENT"))).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: OVERALL_EVALUATION.save }))
     await waitFor(() => expect(document.querySelector("[data-overall-saved]")!.getAttribute("data-overall-saved")).toBe("EXCELLENT"))
@@ -1015,7 +1023,8 @@ describe("«متابعة العمل» — «التقييم العام» (web)", 
     const message = "تغيّر برنامج العمل منذ فتحه. أعد التحميل."
     const calls = stub({ ...program, overallEvaluation: given("GOOD") }, () => json(409, { code: "WORK_PROGRAM_CHANGED", message }))
     renderIn(<WorkProgramDetails programId="p1" />)
-    fireEvent.click(await screen.findByRole("radio", { name: "ممتاز" }))
+    fireEvent.click(await screen.findByRole("button", { name: "تعديل التقييم" }))
+    fireEvent.click(screen.getByRole("radio", { name: "ممتاز" }))
     const gets = () => calls.filter((c) => c.method === "GET" && c.path === "/teacher/work-programs/p1").length
     const before = gets()
     fireEvent.click(screen.getByRole("button", { name: OVERALL_EVALUATION.save }))
@@ -1038,8 +1047,9 @@ describe("«متابعة العمل» — «التقييم العام» (web)", 
     renderIn(<WorkProgramDetails programId="p1" />)
     await screen.findByRole("heading", { name: OVERALL_EVALUATION.title })
     expect(document.querySelector("[data-overall-saved]")!.getAttribute("data-overall-saved")).toBe("GOOD")
-    expect(screen.getByRole("radio", { name: "جيد" }).getAttribute("aria-checked")).toBe("true")
-    expect(radios().every((r) => (r as HTMLButtonElement).disabled)).toBe(true)
+    // a recorded level cannot be corrected while closed: no «تعديل التقييم», no choices
+    expect(screen.queryByRole("button", { name: "تعديل التقييم" })).toBeNull()
+    expect(screen.queryByRole("radio")).toBeNull()
     expect(document.querySelector("[data-overall-blocked]")!.textContent).toBe(OVERALL_BLOCKED.cancelled)
   })
 
@@ -1059,5 +1069,69 @@ describe("«متابعة العمل» — «التقييم العام» (web)", 
     const row = (await screen.findByRole("link", { name: /برنامج عمل درة نصير/ })).closest("li[data-program]") as HTMLElement
     expect(row.querySelector("[data-overall]")).toBeNull()
     expect(within(row).queryByText(OVERALL_EVALUATION.none)).toBeNull()
+  })
+})
+
+describe("«تفاصيل برنامج العمل» (web, the mobile redesign)", () => {
+  const counters = () => [...document.querySelectorAll("[data-summary]")].map((c) => [...c.children].map((x) => x.textContent).join(" "))
+  const withItems = (items: WorkItem[], extra: Partial<WorkProgram> = {}) => routeFetch({ get: () => json(200, { ...program, items, ...extra }) })
+
+  it("«ملخص الأعمال» counts EVERY item: 1 منجز · 1 ملغى — never «جميع الأعمال», no progress bar; the level in the summary", async () => {
+    withItems([item("a", { status: "COMPLETED" }), item("b", { status: "CANCELLED" })], {
+      overallEvaluation: { level: "GOOD", evaluatedAt: "2026-10-19T17:00:00Z", evaluatedBy: "مريم بن علي" },
+    })
+    renderIn(<WorkProgramDetails programId="p1" />)
+    await screen.findByRole("heading", { name: "ملخص الأعمال" })
+    expect(counters()).toEqual(["1 منجز", "1 ملغى"])
+    expect(screen.getByRole("list", { name: "ملخص الأعمال: 1 منجز · 1 ملغى" })).toBeTruthy()
+    expect(screen.getByText("عملان")).toBeTruthy()
+    expect(document.querySelector("[data-summary-overall]")!.textContent).toBe("جيد")
+    expect(document.body.textContent).not.toMatch(/جميع الأعمال/)
+    expect(screen.queryByRole("progressbar")).toBeNull()
+  })
+
+  it("other mixes: 2 منجزان; 1 منجز · 4 ملغاة", async () => {
+    withItems([item("a", { status: "COMPLETED" }), item("b", { status: "COMPLETED" })])
+    const first = renderIn(<WorkProgramDetails programId="p1" />)
+    await screen.findByRole("heading", { name: "ملخص الأعمال" })
+    expect(counters()).toEqual(["2 منجزان"])
+    first.unmount()
+    withItems([item("a", { status: "COMPLETED" }), ...[1, 2, 3, 4].map((n) => item(`c${n}`, { status: "CANCELLED" }))])
+    renderIn(<WorkProgramDetails programId="p1" />)
+    await screen.findByRole("heading", { name: "ملخص الأعمال" })
+    expect(counters()).toEqual(["1 منجز", "4 ملغاة"])
+  })
+
+  it("each item keeps its details; the next recitation is a link; «إضافة العرضة التالية» is GREEN (primary), purple only on the عرضة badge", async () => {
+    withItems([
+      item("r1", {
+        type: "RECITATION",
+        recitationNumber: 1,
+        description: "العرضة الأولى من سورة المجادلة",
+        status: "CANCELLED",
+        evaluatedBy: "حمدي الشوك",
+        evaluatedAt: "2026-10-19T17:00:00Z",
+        evaluationComment: "غاب عن الحصة",
+        recitation: { surah: 58, attempts: 1 },
+        continuedBy: [{ itemId: "r2", programId: "p2", sessionId: "ses2", sessionDate: "2026-10-26" }],
+      }),
+    ])
+    renderIn(<WorkProgramDetails programId="p1" />)
+    const card = (await screen.findByText("ملاحظات التقييم")).closest("li")!
+    const type = card.querySelector("[data-type='RECITATION']")!
+    expect(type.className).toMatch(/violet/)
+    expect(type.textContent).toBe("عرضة1")
+    expect(card.querySelector("[data-status='CANCELLED']")!.className).not.toMatch(/violet/)
+    expect(within(card).getByText("غاب عن الحصة")).toBeTruthy()
+    expect(card.querySelector("[data-evaluated]")!.textContent).toContain("حمدي الشوك")
+    expect(card.querySelector("[data-recitation-count]")!.textContent).toBe("عرضة واحدة")
+    const next = within(card).getByRole("link", { name: /^العرضة التالية مبرمجة في حصة/ })
+    expect(next.getAttribute("href")).toBe("/teacher/work-followup/p2")
+    expect(within(next).getByText("العرضة القادمة")).toBeTruthy()
+    const add = within(card).getByRole("button", { name: "إضافة العرضة التالية" })
+    expect(add.getAttribute("data-variant")).toBe("default")
+    expect(add.className).not.toMatch(/violet/)
+    expect(within(card).getByRole("button", { name: "نقل إلى الحصة القادمة" }).getAttribute("data-variant")).toBe("outline")
+    expect(document.body.textContent).not.toMatch(/دورة|تحتسب|من 4/)
   })
 })

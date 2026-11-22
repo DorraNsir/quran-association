@@ -1,22 +1,14 @@
 "use client"
 
 import {
-  BarChart3,
-  BookOpen,
   ChevronLeft,
   CircleCheck,
   CircleMinus,
   CircleSlash,
   CircleX,
   ClipboardCheck,
-  ClipboardList,
   Clock,
-  Mic,
   Pencil,
-  RefreshCw,
-  Star,
-  ThumbsUp,
-  Trophy,
   type LucideIcon,
 } from "lucide-react"
 import Link from "next/link"
@@ -29,30 +21,13 @@ import {
   PERFORMANCE_LABEL,
   workTypeBadges,
   type WorkItemStatus,
-  type WorkPerformance,
-  type WorkType,
 } from "@/lib/quran-reference/work-assignment"
 import { cn } from "@/lib/utils"
 import { evaluationBlockMessage, sessionLabel, sessionPhaseLabel, type SessionPhase } from "@/lib/work-followup"
 import type { WorkProgram } from "@/types/work-followup"
 
+import { LEVEL_LOOK, TYPE_LOOK } from "./work-badges"
 import { programHref } from "./work-program-card"
-
-/** Work types: soft colour + icon of their own (the mobile palette; never the result colours). */
-export const TYPE_LOOK: Record<WorkType, { icon: LucideIcon; tone: string }> = {
-  MEMORIZATION: { icon: BookOpen, tone: "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300" },
-  REVISION: { icon: RefreshCw, tone: "bg-teal-50 text-teal-700 dark:bg-teal-950/50 dark:text-teal-300" },
-  RECITATION: { icon: Mic, tone: "bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300" },
-  EXAM: { icon: ClipboardList, tone: "bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300" },
-}
-
-/** «التقييم العام»: the level only, with an icon of its own. */
-const LEVEL_LOOK: Record<WorkPerformance, { icon: LucideIcon; tone: string }> = {
-  EXCELLENT: { icon: Trophy, tone: "bg-brand-soft text-brand-soft-foreground" },
-  VERY_GOOD: { icon: ThumbsUp, tone: "bg-sky-50 text-sky-800 dark:bg-sky-950/50 dark:text-sky-300" },
-  GOOD: { icon: Star, tone: "bg-warning-soft text-warning" },
-  NEEDS_IMPROVEMENT: { icon: BarChart3, tone: "bg-destructive/10 text-destructive" },
-}
 
 /** Results of the items (icon + words, never colour alone). */
 const RESULT_LOOK: Record<WorkItemStatus, { icon: LucideIcon; tone: string }> = {

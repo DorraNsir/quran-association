@@ -1,7 +1,7 @@
 "use client"
 
 import { useQueryClient } from "@tanstack/react-query"
-import { Award, Check, Info } from "lucide-react"
+import { Award, Check, Info, Pencil, UserRound } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 
@@ -23,13 +23,17 @@ import {
 import { cn } from "@/lib/utils"
 import type { WorkProgram } from "@/types/work-followup"
 
+import { LEVEL_LOOK } from "./work-badges"
+
 /**
- * «التقييم العام» of a program (after the items): four choices, the saved one marked by a check,
- * a choice saved explicitly («حفظ التقييم العام», a correction worded as such). The server decides
- * when it is allowed; the saved value changes only once it confirms.
+ * «التقييم العام» of a program (after the items) — the mobile design: the saved level prominent, who
+ * gave it and when below it, and «تعديل التقييم» revealing the four choices (shown at once while none
+ * is given, disabled while the session forbids it). A choice is saved explicitly (a correction worded
+ * as such). The server decides when it is allowed; the saved value changes only once it confirms.
  */
 export function OverallEvaluationSection({ program }: { program: WorkProgram }) {
   const saved = program.overallEvaluation ?? null
+  const [editing, setEditing] = useState(false)
   const [choice, setChoice] = useState<WorkPerformance | null>(null)
   const [error, setError] = useState<string | null>(null)
   const blocked = useEvaluationBlock(program)
@@ -39,6 +43,13 @@ export function OverallEvaluationSection({ program }: { program: WorkProgram }) 
   const changed = choice !== null && choice !== saved?.level
   const pendingNote = overallPendingNote(program.progress.pending)
   const disabled = blocked !== null || save.isPending
+  const choosing = !saved || (editing && blocked === null)
+  const LevelIcon = saved ? LEVEL_LOOK[saved.level].icon : null
+
+  function close() {
+    setChoice(null)
+    setEditing(false)
+  }
 
   function submit() {
     if (!changed || !choice) return
@@ -47,7 +58,7 @@ export function OverallEvaluationSection({ program }: { program: WorkProgram }) 
       { id: program.id, version: program.version, overall: choice, items: [] },
       {
         onSuccess: () => {
-          setChoice(null)
+          close()
           toast.success(OVERALL_EVALUATION.saved, { description: PERFORMANCE_LABEL[choice] })
         },
         // 409 (stale version): the server's message; the program is reloaded by the mutation
@@ -62,73 +73,90 @@ export function OverallEvaluationSection({ program }: { program: WorkProgram }) 
   }
 
   return (
-    <section aria-labelledby="wf-overall" className="space-y-3">
-      <h2 id="wf-overall" className="flex items-center gap-2 text-base font-semibold">
-        <Award className="size-4 text-primary" aria-hidden />
-        {OVERALL_EVALUATION.title}
-      </h2>
+    <section aria-labelledby="wf-overall">
       <Card className="gap-3 p-4">
-        <p className="text-xs text-muted-foreground">{OVERALL_EVALUATION.hint}</p>
-        <p className="text-sm" data-overall-saved={saved?.level ?? ""}>
-          {saved ? (
-            <>
-              <span className="font-medium">{PERFORMANCE_LABEL[saved.level]}</span>
-              <span className="text-xs text-muted-foreground">
-                {" — "}
-                {saved.evaluatedBy ? `${saved.evaluatedBy} · ` : ""}
-                {formatDate(saved.evaluatedAt.slice(0, 10))}
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 id="wf-overall" className="flex flex-1 items-center gap-2 text-base font-semibold">
+            <Award className="size-5 text-primary" aria-hidden />
+            {OVERALL_EVALUATION.title}
+          </h2>
+          <div data-overall-saved={saved?.level ?? ""}>
+            {saved && LevelIcon ? (
+              <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-semibold", LEVEL_LOOK[saved.level].tone)}>
+                <LevelIcon className="size-4" aria-hidden />
+                {PERFORMANCE_LABEL[saved.level]}
               </span>
-            </>
-          ) : (
-            <span className="text-muted-foreground">{OVERALL_EVALUATION.none}</span>
-          )}
-        </p>
-        <div role="radiogroup" aria-label={OVERALL_EVALUATION.title} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {WORK_PERFORMANCES.map((level) => {
-            const on = selected === level
-            return (
-              <button
-                key={level}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                disabled={disabled}
-                onClick={() => setChoice(level)}
-                className={cn(
-                  "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border px-3 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-                  on ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
-                )}
-              >
-                {on && <Check className="size-4" aria-hidden />}
-                {PERFORMANCE_LABEL[level]}
-              </button>
-            )
-          })}
+            ) : (
+              <span className="text-sm text-muted-foreground">{OVERALL_EVALUATION.none}</span>
+            )}
+          </div>
         </div>
-        {blocked ? (
+        {saved && (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-overall-by>
+            <UserRound className="size-3.5" aria-hidden />
+            آخر تقييم: {[saved.evaluatedBy, formatDate(saved.evaluatedAt.slice(0, 10))].filter(Boolean).join(" · ")}
+          </p>
+        )}
+
+        {blocked && (
           // worded for this section (the page already announces the items' reason)
           <p className="flex items-start gap-1.5 text-xs text-muted-foreground" data-overall-blocked>
             <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
             {blocked === "CANCELLED" ? OVERALL_BLOCKED.cancelled : OVERALL_BLOCKED.notStarted}
           </p>
-        ) : (
-          pendingNote && <p className="text-xs text-muted-foreground">{pendingNote}</p>
         )}
-        {changed && saved && choice && <p className="text-sm font-medium">{overallChangeText(saved.level, choice)}</p>}
+
+        {choosing && (
+          <>
+            <div role="radiogroup" aria-label={OVERALL_EVALUATION.title} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {WORK_PERFORMANCES.map((level) => {
+                const on = selected === level
+                const Icon = on ? Check : LEVEL_LOOK[level].icon
+                return (
+                  <button
+                    key={level}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    disabled={disabled}
+                    onClick={() => setChoice(level)}
+                    className={cn(
+                      "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border px-3 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                      on ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
+                    )}
+                  >
+                    <Icon className={cn("size-4", !on && "text-muted-foreground")} aria-hidden />
+                    {PERFORMANCE_LABEL[level]}
+                  </button>
+                )
+              })}
+            </div>
+            {!blocked && pendingNote && <p className="text-xs text-muted-foreground">{pendingNote}</p>}
+            {changed && saved && choice && <p className="text-sm font-medium">{overallChangeText(saved.level, choice)}</p>}
+          </>
+        )}
         {error && (
           <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
         )}
-        {changed && (
+        {choosing && (changed || editing) && (
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={submit} disabled={disabled}>
-              {save.isPending ? OVERALL_EVALUATION.saving : OVERALL_EVALUATION.save}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setChoice(null)} disabled={save.isPending}>
+            {changed && (
+              <Button size="sm" onClick={submit} disabled={disabled}>
+                {save.isPending ? OVERALL_EVALUATION.saving : OVERALL_EVALUATION.save}
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={close} disabled={save.isPending}>
               إلغاء
             </Button>
           </div>
+        )}
+        {saved && !choosing && !blocked && (
+          <Button variant="outline" className="w-full sm:w-auto sm:self-start" onClick={() => setEditing(true)}>
+            <Pencil />
+            تعديل التقييم
+          </Button>
         )}
       </Card>
     </section>
