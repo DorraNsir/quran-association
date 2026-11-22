@@ -38,16 +38,14 @@ import {
 import { expectedOnDate } from '../scheduling/roster.sql.js';
 import { orderByWorkload, type OrderedProgram } from './workload-order.js';
 import {
-  cycleForNewAttempt,
-  cycleState,
+  isAttempt,
+  keepsNumber,
   lockSurah,
-  startCycle,
-  statesOf,
-  SUCCESSES_REQUIRED,
+  nextRecitationNumber,
+  recitationEntry,
+  recitationsOf,
   trackedSurah,
-  verifyCycles,
-  type CycleState,
-} from './recitation-cycles.js';
+} from './recitations.js';
 import { fromDbTime, toDbTime } from '../scheduling/time.js';
 import {
   managesClassInSession,
@@ -286,61 +284,57 @@ function workloadOrderOf(o: OrderedProgram<string>) {
       };
 }
 
-/** «متابعة العرضات» of an item: its cycle's progress and its own attempt number. */
-export interface RecitationCycleSummary {
-  cycleId: string;
+/** «متابعة العرضات» of an item: its surah, and how many recitations of it the student has done. */
+export interface RecitationSummary {
   surah: number;
-  number: number;
-  successes: number;
-  required: number;
-  completed: boolean;
-  /** This item's chronological attempt number in the cycle (null: not an attempt) */
-  attemptNumber: number | null;
-  /** What this item is for its cycle */
-  entry: string;
+  /** Recitations of this surah done with a result (منجز / جزئي / غير منجز / ملغى) — all sessions */
+  attempts: number;
 }
 
-/** The cycle summaries of the items of some programs (one query per call). */
-async function cycleSummaries(
+/** The recitation summaries of the structured عرضة items of some programs (one query). */
+async function recitationSummaries(
   db: Db,
   ...programs: ProgramRow[]
-): Promise<Map<string, RecitationCycleSummary>> {
-  const items = programs.flatMap((p) => p.items);
-  const cycleIds = [
-    ...new Set(
-      items.flatMap((i) => (i.recitationCycleId ? [i.recitationCycleId] : [])),
-    ),
-  ];
-  const out = new Map<string, RecitationCycleSummary>();
-  if (!cycleIds.length) return out;
-  const [cycles, states] = await Promise.all([
-    db.recitationCycle.findMany({
-      where: { id: { in: cycleIds } },
-      select: { id: true, surah: true, number: true },
+): Promise<Map<string, RecitationSummary>> {
+  const tracked = programs.flatMap((p) =>
+    p.items.flatMap((i) => {
+      const surah = trackedSurah(i);
+      return surah ? [{ itemId: i.id, studentId: p.studentId, surah }] : [];
     }),
-    statesOf(db, cycleIds),
-  ]);
-  for (const c of cycles) {
-    const state = states.get(c.id) as CycleState;
-    for (const e of state.entries)
-      out.set(e.itemId, {
-        cycleId: c.id,
-        surah: c.surah,
-        number: c.number,
-        successes: state.successes,
-        required: SUCCESSES_REQUIRED,
-        completed: state.successes >= SUCCESSES_REQUIRED,
-        attemptNumber: e.attemptNumber,
-        entry: e.kind,
-      });
-  }
+  );
+  const out = new Map<string, RecitationSummary>();
+  if (!tracked.length) return out;
+  const rows = await db.workItem.findMany({
+    where: recitationsOf(
+      [...new Set(tracked.map((t) => t.studentId))],
+      [...new Set(tracked.map((t) => t.surah))],
+    ),
+    select: {
+      status: true,
+      quranFromSurah: true,
+      program: {
+        select: { studentId: true, session: { select: { status: true } } },
+      },
+    },
+  });
+  const count = new Map<string, number>();
+  for (const r of rows)
+    if (isAttempt(recitationEntry(r.status, r.program.session.status))) {
+      const key = `${r.program.studentId}:${r.quranFromSurah}`;
+      count.set(key, (count.get(key) ?? 0) + 1);
+    }
+  for (const t of tracked)
+    out.set(t.itemId, {
+      surah: t.surah,
+      attempts: count.get(`${t.studentId}:${t.surah}`) ?? 0,
+    });
   return out;
 }
 
 function toDto(
   p: ProgramRow,
   clock: Clock,
-  cycles: Map<string, RecitationCycleSummary>,
+  recitations: Map<string, RecitationSummary>,
 ): WorkProgramDto {
   const blockedReason = evaluationBlock(p.session, clock);
   return {
@@ -395,7 +389,7 @@ function toDto(
       workload: presentWorkload(
         (i.quranWorkload as Record<string, unknown> | null) ?? null,
       ),
-      recitationCycle: cycles.get(i.id) ?? null,
+      recitation: recitations.get(i.id) ?? null,
     })),
   };
 }
@@ -639,7 +633,7 @@ export class WorkFollowupService {
         include: programInclude,
       });
       const byId = new Map(rows.map((r) => [r.id, r]));
-      const cycles = await cycleSummaries(this.prisma, ...rows);
+      const cycles = await recitationSummaries(this.prisma, ...rows);
       return {
         data: page.map((o) => {
           const dto = toDto(byId.get(o.value)!, clock, cycles);
@@ -659,7 +653,7 @@ export class WorkFollowupService {
         take: pageSize,
       }),
     ]);
-    const cycles = await cycleSummaries(this.prisma, ...rows);
+    const cycles = await recitationSummaries(this.prisma, ...rows);
     return {
       data: rows.map((row) => toDto(row, clock, cycles)),
       meta: paginationMeta(query.page, pageSize, total),
@@ -840,11 +834,10 @@ export class WorkFollowupService {
           })),
           select: { id: true },
         });
-        await this.trackNewAttempts(
+        await this.numberRecitations(
           tx,
           dto.studentId,
           created.map((c) => c.id),
-          actor.userId,
         );
         return program.id;
       });
@@ -962,12 +955,6 @@ export class WorkFollowupService {
           );
         if (dto.version !== program.version) throw programChanged();
       }
-      // «متابعة العرضات»: the cycles these results belong to are locked first, re-checked after
-      const cycleIds = await this.lockCyclesOf(
-        tx,
-        program.id,
-        dto.items.map((l) => l.id),
-      );
       const stale: string[] = [];
       for (const line of dto.items) {
         const current = await tx.workItem.findFirst({
@@ -994,7 +981,6 @@ export class WorkFollowupService {
         if (count === 0) stale.push(line.id);
       }
       if (stale.length) throw itemChanged(stale);
-      await verifyCycles(tx, cycleIds, 'evaluation');
       // «التقييم العام»: the teacher's own choice, never derived from the items; the same
       // level sent again changes nothing (who and when stay those of the real decision)
       const overall =
@@ -1092,29 +1078,15 @@ export class WorkFollowupService {
   // ───────────────────────── «متابعة العرضات» ─────────────────────────
 
   /**
-   * A student's recitation cycles, by surah: every cycle with its attempts (chronological,
-   * numbered), and the recitations of the surah planned before cycles existed (shown, never
-   * counted). Admin: any student; teacher: a student they currently teach.
+   * A student's recitations, by surah: every عرضة of the surah in chronological order with its
+   * number and result, how many were done, and the next number. Admin: any student; teacher: a
+   * student they currently teach.
    */
   async recitationHistory(
     actor: WorkActor,
     studentId: string,
   ): Promise<RecitationHistoryDto> {
     await this.assertStudentProfile(this.prisma, actor, studentId);
-    return this.history(this.prisma, studentId);
-  }
-
-  /** «بدء دورة جديدة»: explicit, only once the surah's current cycle is complete. */
-  async startRecitationCycle(
-    actor: WorkActor,
-    studentId: string,
-    surah: number,
-  ): Promise<RecitationHistoryDto> {
-    await this.prisma.$transaction(async (tx) => {
-      await this.assertStudentProfile(tx, actor, studentId);
-      await lockSurah(tx, studentId, surah);
-      await startCycle(tx, studentId, surah, actor.userId);
-    });
     return this.history(this.prisma, studentId);
   }
 
@@ -1143,117 +1115,64 @@ export class WorkFollowupService {
     db: Db,
     studentId: string,
   ): Promise<RecitationHistoryDto> {
-    const [cycles, items] = await Promise.all([
-      db.recitationCycle.findMany({
-        where: { studentId },
-        orderBy: [{ surah: 'asc' }, { number: 'asc' }],
-        select: {
-          id: true,
-          surah: true,
-          number: true,
-          completedAt: true,
-          createdAt: true,
-        },
-      }),
-      db.workItem.findMany({
-        where: {
-          program: { studentId },
-          type: WorkType.RECITATION,
-          quranAssignmentKind: WorkAssignmentKind.SURAH_RANGE,
-        },
-        select: {
-          id: true,
-          status: true,
-          createdAt: true,
-          recitationCycleId: true,
-          quranFromSurah: true,
-          evaluationComment: true,
-          evaluatedAt: true,
-          evaluatedBy: personName,
-          program: {
-            select: {
-              id: true,
-              session: {
-                select: { id: true, date: true, startTime: true, status: true },
-              },
+    const items = await db.workItem.findMany({
+      where: recitationsOf([studentId]),
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        recitationNumber: true,
+        quranFromSurah: true,
+        evaluationComment: true,
+        evaluatedAt: true,
+        evaluatedBy: personName,
+        program: {
+          select: {
+            id: true,
+            session: {
+              select: { id: true, date: true, startTime: true, status: true },
             },
           },
         },
-      }),
-    ]);
-    const states = await statesOf(
-      db,
-      cycles.map((c) => c.id),
+      },
+    });
+    // chronological: the session's date and time, then the order of planning
+    items.sort(
+      (a, b) =>
+        a.program.session.date.getTime() - b.program.session.date.getTime() ||
+        a.program.session.startTime.getTime() -
+          b.program.session.startTime.getTime() ||
+        a.createdAt.getTime() - b.createdAt.getTime() ||
+        a.id.localeCompare(b.id),
     );
-    const byId = new Map(items.map((i) => [i.id, i]));
-    const entry = (e: {
-      itemId: string;
-      kind: string;
-      attemptNumber: number | null;
-    }): RecitationAttemptDto => {
-      const i = byId.get(e.itemId)!;
-      return {
-        itemId: i.id,
-        programId: i.program.id,
-        sessionId: i.program.session.id,
-        sessionDate: fromDbDate(i.program.session.date),
-        attemptNumber: e.attemptNumber,
-        entry: e.kind,
-        status: i.status,
-        evaluationComment: i.evaluationComment,
-        evaluatedAt: i.evaluatedAt,
-        evaluatedBy: fullName(i.evaluatedBy),
-      };
-    };
     const surahs = [
-      ...new Set([
-        ...cycles.map((c) => c.surah),
-        ...items
-          .filter((i) => !i.recitationCycleId)
-          .map((i) => i.quranFromSurah as number),
-      ]),
+      ...new Set(items.map((i) => i.quranFromSurah as number)),
     ].sort((a, b) => a - b);
     return {
       studentId,
       surahs: surahs.map((surah) => {
-        const own = cycles.filter((c) => c.surah === surah);
-        const earlier = cycleState(
-          items
-            .filter((i) => !i.recitationCycleId && i.quranFromSurah === surah)
-            .map((i) => ({
-              itemId: i.id,
-              status: i.status,
-              sessionStatus: i.program.session.status,
-              sessionDate: fromDbDate(i.program.session.date),
-              sessionTime: fromDbTime(i.program.session.startTime),
-              createdAt: i.createdAt,
-            })),
-        );
-        const last = own.at(-1);
+        const own = items.filter((i) => i.quranFromSurah === surah);
+        const entries = own.map((i): RecitationAttemptDto => {
+          const entry = recitationEntry(i.status, i.program.session.status);
+          return {
+            itemId: i.id,
+            programId: i.program.id,
+            sessionId: i.program.session.id,
+            sessionDate: fromDbDate(i.program.session.date),
+            number: i.recitationNumber,
+            entry,
+            status: i.status,
+            evaluationComment: i.evaluationComment,
+            evaluatedAt: i.evaluatedAt,
+            evaluatedBy: fullName(i.evaluatedBy),
+          };
+        });
         return {
           surah,
-          cycles: own.map((c) => {
-            const st = states.get(c.id) as CycleState;
-            return {
-              id: c.id,
-              number: c.number,
-              successes: st.successes,
-              required: SUCCESSES_REQUIRED,
-              attempts: st.attempts,
-              completed: st.successes >= SUCCESSES_REQUIRED,
-              completedAt: c.completedAt,
-              startedAt: c.createdAt,
-              entries: st.entries.map(entry),
-            };
-          }),
-          // shown as they were recorded; no number, nothing counted
-          earlier: earlier.entries.map((e) =>
-            entry({ ...e, attemptNumber: null }),
-          ),
-          canStartNewCycle: last
-            ? (states.get(last.id) as CycleState).successes >=
-              SUCCESSES_REQUIRED
-            : false,
+          attempts: entries.filter((e) => isAttempt(e.entry as never)).length,
+          nextNumber:
+            Math.max(0, ...own.map((i) => i.recitationNumber ?? 0)) + 1,
+          entries,
         };
       }),
     };
@@ -1369,12 +1288,9 @@ export class WorkFollowupService {
           select: { id: true },
         });
         // A carried / next recitation is an attempt of the surah's current cycle
-        await this.trackNewAttempts(
-          tx,
-          source.program.studentId,
-          [created.id],
-          actor.userId,
-        );
+        await this.numberRecitations(tx, source.program.studentId, [
+          created.id,
+        ]);
         await this.touch(tx, actor, program.id);
         return program.id;
       });
@@ -1588,16 +1504,16 @@ export class WorkFollowupService {
       },
     });
     if (!current) throw itemNotFound();
-    // «متابعة العرضات»: an attempt's number is the server's (chronological in its cycle)
+    // «متابعة العرضات»: a structured عرضة's number is the server's (stable in its surah)
     if (
-      current.recitationCycleId &&
+      trackedSurah(current) !== null &&
       edit.recitationNumber !== undefined &&
       (edit.type ?? current.type) === WorkType.RECITATION &&
       edit.recitationNumber !== current.recitationNumber
     )
       throw badRequest(
         'WORK_RECITATION_NUMBER_MANAGED',
-        'رقم العرضة يُحدَّد تلقائيًا حسب دورة السورة',
+        'رقم العرضة يُحدَّد تلقائيًا في سجل السورة',
       );
     const type = edit.type ?? current.type;
     if (current.continuedFromItemId && type !== WorkType.RECITATION)
@@ -1662,30 +1578,24 @@ export class WorkFollowupService {
       after === before
     )
       return 'ok';
-    // «متابعة العرضات»: a tracked attempt changing surah or type leaves its cycle (only while it
-    // waits for its evaluation: an evaluated attempt keeps its place in the history); a pending
-    // item becoming a structured recitation joins its surah's current cycle
-    const oldSurah = current.recitationCycleId ? trackedSurah(current) : null;
+    // «متابعة العرضات»: an evaluated عرضة keeps its surah and type (its place in the history);
+    // a pending one moved to another surah (or becoming one) is numbered in that surah
+    const oldSurah = trackedSurah(current);
     const newSurah = trackedSurah({
       type,
       quranAssignmentKind: after?.quranAssignmentKind ?? null,
       quranFromSurah: after?.quranFromSurah ?? null,
     });
-    const leaves = oldSurah !== null && oldSurah !== newSurah;
-    if (leaves && current.status !== WorkStatus.NOT_EVALUATED)
+    const moves = oldSurah !== newSurah;
+    if (
+      moves &&
+      oldSurah !== null &&
+      current.status !== WorkStatus.NOT_EVALUATED
+    )
       throw conflict(
         'RECITATION_ATTEMPT_EVALUATED',
-        'عرضة مقيَّمة في متابعة العرضات: لا يُغيَّر نوعها أو سورتها (عدّل نتيجتها إن لزم)',
+        'عرضة مقيَّمة في سجل العرضات: لا يُغيَّر نوعها أو سورتها (عدّل نتيجتها إن لزم)',
       );
-    const joins =
-      newSurah !== null &&
-      (leaves || !current.recitationCycleId) &&
-      (type !== current.type || after !== before) &&
-      current.status === WorkStatus.NOT_EVALUATED;
-    for (const surah of [oldSurah, joins ? newSurah : null]
-      .filter((x): x is number => x !== null)
-      .sort((a, b) => a - b))
-      await lockSurah(tx, studentId, surah);
     const { count } = await tx.workItem.updateMany({
       where: { id: itemId, version: edit.version },
       data: {
@@ -1693,20 +1603,21 @@ export class WorkFollowupService {
         description,
         recitationNumber,
         ...(after === before ? {} : assignmentData(after)),
-        ...(leaves ? { recitationCycleId: null } : {}),
+        // a record of the former cycle model is left as it was, unless the item leaves its surah
+        ...(moves && current.recitationCycleId
+          ? { recitationCycleId: null }
+          : {}),
         updatedByUserId: actor.userId,
         version: { increment: 1 },
       },
     });
     if (count === 0) return 'stale';
-    if (leaves)
-      await verifyCycles(
-        tx,
-        [current.recitationCycleId as string],
-        'evaluation',
-      );
-    if (joins)
-      await this.trackNewAttempts(tx, studentId, [itemId], actor.userId);
+    if (
+      moves &&
+      newSurah !== null &&
+      current.status === WorkStatus.NOT_EVALUATED
+    )
+      await this.numberRecitations(tx, studentId, [itemId], { renumber: true });
     return 'ok';
   }
 
@@ -1726,87 +1637,77 @@ export class WorkFollowupService {
       })),
       select: { id: true },
     });
-    await this.trackNewAttempts(
+    await this.numberRecitations(
       tx,
       studentId,
       created.map((c) => c.id),
-      actor.userId,
     );
   }
 
   /**
-   * «متابعة العرضات»: new structured recitations (one whole surah) become attempts of their
-   * surah's current cycle (cycle 1 is created with the first one): the next attempt number is
-   * assigned by the server, and a description written by the server follows it. A complete
-   * cycle, or one still waiting for an evaluation, refuses the attempt (whole transaction).
+   * «متابعة العرضات»: numbers new structured recitations (one whole surah) in their surah's
+   * history — the highest number + 1, or, for a postponed recitation rescheduled (or a cancelled
+   * session's unevaluated one carried), the number it already had. A server-written description
+   * follows the number. The same surah twice in one session's program is refused (an accidental
+   * duplicate); any number of recitations across sessions is allowed.
    */
-  private async trackNewAttempts(
+  private async numberRecitations(
     tx: Tx,
     studentId: string,
     itemIds: string[],
-    userId: string,
+    options: { renumber?: boolean } = {},
   ) {
     const items = (
       await tx.workItem.findMany({
-        where: { id: { in: itemIds }, recitationCycleId: null },
+        where: { id: { in: itemIds } },
         select: {
           id: true,
+          workProgramId: true,
           type: true,
           description: true,
           recitationNumber: true,
+          carriedFromStatus: true,
           ...ASSIGNMENT_SELECT,
         },
       })
     ).filter((i) => trackedSurah(i) !== null);
     if (!items.length) return;
-    const surahs = [...new Set(items.map((i) => trackedSurah(i) as number))];
-    for (const surah of surahs.sort((a, b) => a - b))
+    for (const surah of [
+      ...new Set(items.map((i) => trackedSurah(i) as number)),
+    ].sort((a, b) => a - b))
       await lockSurah(tx, studentId, surah);
-    const touched: string[] = [];
     for (const id of itemIds) {
       const item = items.find((i) => i.id === id);
       if (!item) continue;
       const surah = trackedSurah(item) as number;
-      const cycle = await cycleForNewAttempt(tx, studentId, surah, userId);
-      const state = (await statesOf(tx, [cycle.id])).get(
-        cycle.id,
-      ) as CycleState;
-      const number = state.attempts + 1;
-      await tx.workItem.update({
-        where: { id: item.id },
-        data: {
-          recitationCycleId: cycle.id,
-          recitationNumber: number,
-          description: renumbered(item, number),
+      const twice = await tx.workItem.count({
+        where: {
+          ...recitationsOf([studentId], [surah]),
+          workProgramId: item.workProgramId,
+          id: { not: item.id },
         },
       });
-      touched.push(cycle.id);
+      if (twice)
+        throw conflict(
+          'WORK_RECITATION_DUPLICATE',
+          'عرضة هذه السورة مبرمجة في هذه الحصة من قبل',
+        );
+      const keep =
+        !options.renumber &&
+        keepsNumber(item.carriedFromStatus) &&
+        item.recitationNumber !== null;
+      const number = keep
+        ? (item.recitationNumber as number)
+        : await nextRecitationNumber(tx, studentId, surah, item.id);
+      if (number !== item.recitationNumber || !keep)
+        await tx.workItem.update({
+          where: { id: item.id },
+          data: {
+            recitationNumber: number,
+            description: renumbered(item, number),
+          },
+        });
     }
-    await verifyCycles(tx, touched, 'attempt');
-  }
-
-  /** Locks the cycles of these items (sorted, no deadlock) and returns their ids. */
-  private async lockCyclesOf(tx: Tx, programId: string, itemIds: string[]) {
-    const rows = await tx.workItem.findMany({
-      where: {
-        id: { in: itemIds },
-        workProgramId: programId,
-        recitationCycleId: { not: null },
-      },
-      select: {
-        recitationCycle: {
-          select: { id: true, studentId: true, surah: true },
-        },
-      },
-    });
-    const cycles = rows.flatMap((r) =>
-      r.recitationCycle ? [r.recitationCycle] : [],
-    );
-    for (const surah of [...new Set(cycles.map((c) => c.surah))].sort(
-      (a, b) => a - b,
-    ))
-      await lockSurah(tx, cycles[0]!.studentId, surah);
-    return cycles.map((c) => c.id);
   }
 
   private async nextPosition(tx: Tx, programId: string) {
@@ -1863,7 +1764,7 @@ export class WorkFollowupService {
       where: { id },
       include: programInclude,
     });
-    return toDto(row, await this.clock(db), await cycleSummaries(db, row));
+    return toDto(row, await this.clock(db), await recitationSummaries(db, row));
   }
 }
 

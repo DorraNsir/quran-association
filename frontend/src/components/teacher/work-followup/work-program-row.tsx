@@ -1,12 +1,13 @@
 "use client"
 
-import { Award, ChevronLeft, CircleCheck, CircleMinus, CircleSlash, ClipboardCheck, Clock, Pencil, Repeat, type LucideIcon } from "lucide-react"
+import { Award, ChevronLeft, CircleCheck, CircleMinus, CircleSlash, ClipboardCheck, Clock, Mic, Pencil, type LucideIcon } from "lucide-react"
 import Link from "next/link"
 
 import { UserAvatar } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { useEvaluationBlock } from "@/hooks/use-evaluation-block"
-import { overallRowText, programStatus, rowCycleText, workTypesSummary, type ProgramStatusKind } from "@/lib/quran-reference/work-assignment"
+import { overallRowText, programStatus, recitationSummaryText, workTypesSummary, type ProgramStatusKind } from "@/lib/quran-reference/work-assignment"
+import { surahByNumber } from "@/lib/quran/surahs"
 import { cn } from "@/lib/utils"
 import { evaluationBlockMessage, sessionLabel, sessionPhaseLabel, type SessionPhase } from "@/lib/work-followup"
 import type { WorkProgram } from "@/types/work-followup"
@@ -48,7 +49,11 @@ export function WorkProgramRow({
   const { icon: StatusIcon, tone } = STATUS_LOOK[status.kind]
   const blocked = useEvaluationBlock(program)
   const types = workTypesSummary(program.items.map((i) => i.type))
-  const cycles = rowCycleText(program.items)
+  // «متابعة العرضات»: «سورة المجادلة · 3 عرضات» per structured عرضة (none for the others)
+  const recitations =
+    program.items
+      .flatMap((i) => (i.recitation ? [recitationSummaryText(`سورة ${surahByNumber(i.recitation.surah)?.nameAr ?? i.recitation.surah}`, i.recitation.attempts)] : []))
+      .join("؛ ") || null
   const overall = overallRowText(program.overallEvaluation?.level)
   return (
     <li
@@ -83,11 +88,11 @@ export function WorkProgramRow({
             </span>
           )}
         </p>
-        {/* «متابعة العرضات»: tracked recitations only, one line */}
-        {cycles && (
-          <p className="flex items-center gap-1 truncate text-xs text-muted-foreground" data-recitation-cycles>
-            <Repeat className="size-3 shrink-0 text-primary" aria-hidden />
-            <span className="truncate">{cycles}</span>
+        {/* «متابعة العرضات»: structured recitations only, one line */}
+        {recitations && (
+          <p className="flex items-center gap-1 truncate text-xs text-muted-foreground" data-recitations>
+            <Mic className="size-3 shrink-0 text-primary" aria-hidden />
+            <span className="truncate">{recitations}</span>
           </p>
         )}
       </div>

@@ -32,24 +32,13 @@ export interface WorkItemLink {
   sessionDate: ISODate
 }
 
-/**
- * «متابعة العرضات»: what an item is for its surah's cycle. Attempts: SUCCESS (counts), FAILED, PENDING;
- * not attempts (kept in the history, unnumbered): POSTPONED, DROPPED (item cancelled), SESSION_CANCELLED.
- */
-export type RecitationEntry = "SUCCESS" | "FAILED" | "PENDING" | "POSTPONED" | "DROPPED" | "SESSION_CANCELLED"
+/** «متابعة العرضات»: what an item is in its surah's history (POSTPONED: «لا تحتسب»). */
+export type RecitationEntry = "COMPLETED" | "PARTIAL" | "NOT_COMPLETED" | "CANCELLED" | "POSTPONED" | "PENDING" | "SESSION_CANCELLED"
 
-/** A tracked عرضة's cycle (four successful recitations per surah and cycle). */
-export interface RecitationCycleSummary {
-  cycleId: ID
+/** A structured عرضة: its surah and how many recitations of it the student has done. */
+export interface RecitationSummary {
   surah: number
-  /** 1, 2, … for this student and surah */
-  number: number
-  successes: number
-  required: number
-  completed: boolean
-  /** This item's chronological attempt number (null: not an attempt) */
-  attemptNumber: number | null
-  entry: RecitationEntry
+  attempts: number
 }
 
 export interface RecitationAttempt {
@@ -57,7 +46,8 @@ export interface RecitationAttempt {
   programId: ID
   sessionId: ID
   sessionDate: ISODate
-  attemptNumber: number | null
+  /** Stored number (a rescheduled postponed recitation keeps it); null for an old item without one */
+  number: number | null
   entry: RecitationEntry
   status: WorkStatus
   evaluationComment: string | null
@@ -65,26 +55,13 @@ export interface RecitationAttempt {
   evaluatedBy: string | null
 }
 
-export interface RecitationCycle {
-  id: ID
-  number: number
-  successes: number
-  required: number
-  attempts: number
-  completed: boolean
-  completedAt: string | null
-  startedAt: string
-  /** Chronological */
-  entries: RecitationAttempt[]
-}
-
 export interface RecitationSurahHistory {
   surah: number
-  /** Oldest first; the last one is the current cycle */
-  cycles: RecitationCycle[]
-  /** Recitations planned before cycles existed: shown as recorded, never counted */
-  earlier: RecitationAttempt[]
-  canStartNewCycle: boolean
+  /** Recitations done with a result */
+  attempts: number
+  nextNumber: number
+  /** Chronological */
+  entries: RecitationAttempt[]
 }
 
 export interface RecitationHistory {
@@ -117,8 +94,8 @@ export interface WorkItem {
   assignment: WorkAssignment | null
   /** Computed and stored by the server when the assignment was saved — never computed here */
   workload: WorkloadSnapshot | null
-  /** «متابعة العرضات»: the cycle of a tracked عرضة (null: another type, free text, or planned before cycles) */
-  recitationCycle?: RecitationCycleSummary | null
+  /** «متابعة العرضات»: a structured عرضة's surah and recitations done (null otherwise) */
+  recitation?: RecitationSummary | null
 }
 
 export interface WorkProgress {

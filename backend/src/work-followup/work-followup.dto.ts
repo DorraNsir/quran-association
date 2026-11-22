@@ -511,48 +511,45 @@ export class WorkItemAssignmentDto {
   @ApiPropertyOptional({ type: Number, nullable: true }) toPage!: number | null;
 }
 
-const CYCLE_ENTRY = [
-  'SUCCESS',
-  'FAILED',
-  'PENDING',
+const RECITATION_ENTRY = [
+  'COMPLETED',
+  'PARTIAL',
+  'NOT_COMPLETED',
+  'CANCELLED',
   'POSTPONED',
-  'DROPPED',
+  'PENDING',
   'SESSION_CANCELLED',
 ];
 
-/** «متابعة العرضات»: an item's cycle (structured عرضة of one surah only). */
-export class RecitationCycleSummaryDto {
-  @ApiProperty({ format: 'uuid' }) cycleId!: string;
+/** «متابعة العرضات» of a structured عرضة: its surah and the recitations of it done so far. */
+export class RecitationSummaryDto {
   @ApiProperty({ minimum: 1, maximum: 114 }) surah!: number;
   @ApiProperty({
-    description: 'Cycle number for this student and surah (1, 2, …)',
-  })
-  number!: number;
-  @ApiProperty({
-    description: 'Successful recitations (COMPLETED) in the cycle',
-  })
-  successes!: number;
-  @ApiProperty({ example: 4 }) required!: number;
-  @ApiProperty() completed!: boolean;
-  @ApiPropertyOptional({
-    type: Number,
-    nullable: true,
     description:
-      "This item's chronological attempt number in the cycle (null: not an attempt — postponed, dropped, or its session was cancelled)",
+      'Recitations of this surah done with a result (منجز / جزئي / غير منجز / ملغى), all sessions',
   })
-  attemptNumber!: number | null;
-  @ApiProperty({ enum: CYCLE_ENTRY }) entry!: string;
+  attempts!: number;
 }
 
-/** One entry of a cycle's history: a work item (its evaluation is the source of truth). */
+/** One عرضة of a surah's history: a work item (its evaluation is the source of truth). */
 export class RecitationAttemptDto {
   @ApiProperty({ format: 'uuid' }) itemId!: string;
   @ApiProperty({ format: 'uuid' }) programId!: string;
   @ApiProperty({ format: 'uuid' }) sessionId!: string;
   @ApiProperty({ example: '2026-11-18' }) sessionDate!: string;
-  @ApiPropertyOptional({ type: Number, nullable: true }) attemptNumber!:
-    number | null;
-  @ApiProperty({ enum: CYCLE_ENTRY }) entry!: string;
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description:
+      'Its stored number (a rescheduled postponed recitation keeps its number); null for an old item planned without one',
+  })
+  number!: number | null;
+  @ApiProperty({
+    enum: RECITATION_ENTRY,
+    description:
+      'POSTPONED is not an attempt («لا تحتسب»); SESSION_CANCELLED: not evaluated, the session was cancelled',
+  })
+  entry!: string;
   @ApiProperty({ enum: WorkStatus, enumName: 'WorkStatus' })
   status!: WorkStatus;
   @ApiPropertyOptional({ type: String, nullable: true })
@@ -563,43 +560,20 @@ export class RecitationAttemptDto {
     string | null;
 }
 
-export class RecitationCycleDto {
-  @ApiProperty({ format: 'uuid' }) id!: string;
-  @ApiProperty() number!: number;
-  @ApiProperty() successes!: number;
-  @ApiProperty({ example: 4 }) required!: number;
-  @ApiProperty() attempts!: number;
-  @ApiProperty() completed!: boolean;
-  @ApiPropertyOptional({ type: Date, nullable: true })
-  completedAt!: Date | null;
-  @ApiProperty() startedAt!: Date;
-  @ApiProperty({
-    type: RecitationAttemptDto,
-    isArray: true,
-    description: 'Chronological',
-  })
-  entries!: RecitationAttemptDto[];
-}
-
 export class RecitationSurahHistoryDto {
   @ApiProperty({ minimum: 1, maximum: 114 }) surah!: number;
+  @ApiProperty({ description: 'Recitations done with a result' })
+  attempts!: number;
   @ApiProperty({
-    type: RecitationCycleDto,
-    isArray: true,
-    description: 'Oldest first; the last one is the current cycle',
+    description: 'The number the next recitation of this surah will get',
   })
-  cycles!: RecitationCycleDto[];
+  nextNumber!: number;
   @ApiProperty({
     type: RecitationAttemptDto,
     isArray: true,
-    description:
-      'Recitations of this surah planned before cycles existed: shown as they are, never counted',
+    description: 'Chronological (session date and time)',
   })
-  earlier!: RecitationAttemptDto[];
-  @ApiProperty({
-    description: 'The current cycle is complete: a new one may be started',
-  })
-  canStartNewCycle!: boolean;
+  entries!: RecitationAttemptDto[];
 }
 
 export class RecitationHistoryDto {
@@ -658,12 +632,12 @@ export class WorkItemDto {
   })
   workload!: Record<string, unknown> | null;
   @ApiPropertyOptional({
-    type: RecitationCycleSummaryDto,
+    type: RecitationSummaryDto,
     nullable: true,
     description:
-      '«متابعة العرضات»: the cycle of a tracked recitation (null otherwise)',
+      '«متابعة العرضات»: a structured عرضة’s surah and recitations done (null otherwise)',
   })
-  recitationCycle!: RecitationCycleSummaryDto | null;
+  recitation!: RecitationSummaryDto | null;
 }
 
 export class WorkProgressDto {

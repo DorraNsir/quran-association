@@ -17,7 +17,7 @@ import { useConfirmThenBack } from './use-confirm-then-back';
 import { useTeacherWorkspace } from './use-teacher-dashboard';
 import { useCreateWorkProgram, useEligibleSessions, useUpdateWorkProgram, useWorkProgram } from './use-work';
 import { WorkStatusBadge } from './work-badges';
-import { adaptDraft, cycleName } from '../quran-reference/work-assignment';
+import { adaptDraft, recitationTitle } from '../quran-reference/work-assignment';
 import { QuranAssignmentEditor } from './quran-assignment-editor';
 import { StudentOptionRow } from './student-option-row';
 import {
@@ -486,8 +486,8 @@ function ItemEditor({
       {/* «متابعة العرضات»: a structured عرضة is numbered by the server (no number field, nothing sent) */}
       {item.type === 'RECITATION' && isManagedNumber(item) ? (
         <AppText variant="small" tone="muted" testID="recitation-auto-number">
-          {item.saved?.recitationCycle?.attemptNumber
-            ? w.managedRecitationNumber(item.saved.recitationCycle.attemptNumber, cycleName(item.saved.recitationCycle.number))
+          {item.saved?.recitationNumber
+            ? w.managedRecitationNumber(recitationTitle(item.saved.recitationNumber))
             : w.autoRecitationNumber}
         </AppText>
       ) : null}

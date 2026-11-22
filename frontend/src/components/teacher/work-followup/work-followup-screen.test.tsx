@@ -430,24 +430,24 @@ describe("«متابعة العمل» — structured Quranic assignments (Qalun,
     const sheet = await openCreate()
     await chooseType(sheet, "عرضة")
     expect(within(sheet).queryByLabelText("رقم العرضة (اختياري)")).toBeNull()
-    expect(within(sheet).getByText(/يُحدَّد رقم العرضة تلقائيًا حسب دورة السورة/)).toBeTruthy()
+    expect(within(sheet).getByText("يُحدَّد رقم العرضة تلقائيًا")).toBeTruthy()
     await pickSurah(sheet, /^السورة/, "البقرة", "سورة البقرة")
     save(sheet)
     await waitFor(() => expect(posted(calls)).toBeTruthy())
     expect(posted(calls)!.items).toEqual([{ type: "RECITATION", recitationNumber: null, assignment: { kind: "SURAH_RANGE", fromSurah: 2, toSurah: 2 } }])
   })
 
-  it("«متابعة العرضات» on the program page: the surah's current cycle, compact, with a link to its history", async () => {
+  it("«متابعة العرضات» on the program page: the surah and its recitations done, compact, with a link to its history", async () => {
     const tracked = item("r1", {
       type: "RECITATION",
       recitationNumber: 5,
       description: "العرضة الخامسة من سورة البقرة",
       assignment: { kind: "SURAH_RANGE", editionId: "qalun-abi-nashit-tn-hannibal-mualim-v1", fromSurah: 2, fromAyah: 1, toSurah: 2, toAyah: 286, fromPage: null, toPage: null },
-      recitationCycle: { cycleId: "c1", surah: 2, number: 1, successes: 3, required: 4, completed: false, attemptNumber: 5, entry: "PENDING" },
+      recitation: { surah: 2, attempts: 4 },
     })
     routeFetch({ get: () => json(200, { ...program, items: [tracked] }) })
     renderIn(<WorkProgramDetails programId="p1" />)
-    expect(await screen.findByText("الدورة الأولى · 3/4 ناجحة")).toBeTruthy()
+    expect(await screen.findByText("سورة البقرة · 4 عرضات")).toBeTruthy()
     expect(screen.getByRole("link", { name: "سجل العرضات" }).getAttribute("href")).toBe(`/teacher/students/${program.student.id}?tab=recitations&surah=2`)
     // no attempt table inside the item
     expect(document.querySelectorAll("[data-entry]")).toHaveLength(0)

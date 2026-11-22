@@ -11,7 +11,6 @@ import {
   fetchWorkPrograms,
   fetchWorkSessionOptions,
   scheduleWorkItem,
-  startRecitationCycle,
   updateWorkProgram,
 } from './teacher.api';
 import { teacherKey } from './use-teacher-dashboard';
@@ -103,19 +102,6 @@ export function useRecitationHistory(teacherId: string, studentId: string) {
     queryKey: [...workKey(teacherId), 'recitations', studentId],
     queryFn: ({ signal }) => fetchRecitationHistory(studentId, signal),
     enabled: !!teacherId && studentId.length > 0,
-  });
-}
-
-/** «بدء دورة جديدة»: explicit; the server refuses it until the current cycle is complete. */
-export function useStartRecitationCycle(teacherId: string, studentId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationKey: ['work', 'cycle', studentId],
-    mutationFn: (surah: number) => startRecitationCycle(studentId, surah),
-    onSuccess: (saved) => {
-      queryClient.setQueryData([...workKey(teacherId), 'recitations', studentId], saved);
-      return queryClient.invalidateQueries({ queryKey: workKey(teacherId) });
-    },
   });
 }
 

@@ -573,40 +573,41 @@ export function workloadSummary(type: WorkType, w: WorkloadSnapshot): { text: st
 }
 
 // ───────────────────────── «متابعة العرضات» (display only) ─────────────────────────
-// The server tracks cycles (four successful recitations per surah and cycle) from the evaluations;
-// these helpers only word what it returned, identically on the web and the mobile app.
+// Each student has, for each surah, its numbered عرضات (numbers and results from the server; no
+// cycles, no target). Minimal wording: «لا تحتسب» only for a postponed recitation.
 
-/** What an item is for its surah's cycle (server value). */
-export type RecitationEntry = 'SUCCESS' | 'FAILED' | 'PENDING' | 'POSTPONED' | 'DROPPED' | 'SESSION_CANCELLED';
+/** What an item is in its surah's history (server value). */
+export type RecitationEntry = 'COMPLETED' | 'PARTIAL' | 'NOT_COMPLETED' | 'CANCELLED' | 'POSTPONED' | 'PENDING' | 'SESSION_CANCELLED';
 
-const FEMININE_ORDINALS = ['الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة', 'الثامنة', 'التاسعة', 'العاشرة'];
-
-/** «الدورة الأولى», «الدورة الثانية» … «الدورة رقم 11» */
-export const cycleName = (n: number) => `الدورة ${FEMININE_ORDINALS[n - 1] ?? `رقم ${n}`}`;
-
-/** Compact progress «3/4 ناجحة» (cards) and the long form «3 من 4 ناجحة» (history). */
-export const cycleProgress = (successes: number, required: number) => `${successes}/${required} ناجحة`;
-export const cycleProgressLong = (successes: number, required: number) => `${successes} من ${required} ناجحة`;
-
-/** Status words of an entry — always shown as text (never colour alone). */
 export const RECITATION_ENTRY_LABEL: Record<RecitationEntry, string> = {
-  SUCCESS: 'ناجحة',
-  FAILED: 'غير ناجحة',
-  PENDING: 'قيد الانتظار',
-  POSTPONED: 'مؤجلة — لا تُحتسب',
-  DROPPED: 'ملغاة — لا تُحتسب',
-  SESSION_CANCELLED: 'حصة ملغاة — لا تُحتسب',
+  COMPLETED: 'منجزة',
+  PARTIAL: 'جزئي',
+  NOT_COMPLETED: 'غير منجزة',
+  CANCELLED: 'ملغاة',
+  POSTPONED: 'مؤجلة · لا تحتسب',
+  PENDING: 'لم تُقيَّم بعد',
+  SESSION_CANCELLED: 'حصة ملغاة',
 };
 
-/** «عرضة 3 — غير ناجحة»: the number is the CHRONOLOGICAL attempt number, not a count of successes. */
-export function attemptLabel(attemptNumber: number | null, entry: RecitationEntry): string {
-  return attemptNumber ? `عرضة ${attemptNumber} — ${RECITATION_ENTRY_LABEL[entry]}` : RECITATION_ENTRY_LABEL[entry];
+/** «العرضة 3» (an old item planned without a number: «العرضة»). */
+export const recitationTitle = (n: number | null) => (n ? `العرضة ${n}` : 'العرضة');
+
+/** «العرضة 2 — مؤجلة · لا تحتسب» */
+export const recitationLabel = (n: number | null, entry: RecitationEntry) => `${recitationTitle(n)} — ${RECITATION_ENTRY_LABEL[entry]}`;
+
+/** «عرضة واحدة», «عرضتان», «3 عرضات», «11 عرضة» — recitations done (never «محتسبة»). */
+export function recitationsCount(n: number): string {
+  if (n === 0) return 'لا عرضات بعد';
+  if (n === 1) return 'عرضة واحدة';
+  if (n === 2) return 'عرضتان';
+  return `${n} ${n <= 10 ? 'عرضات' : 'عرضة'}`;
 }
 
-/** One compact line for a Work Program item: «الدورة الأولى · 3/4 ناجحة» (+ «· مكتملة»). */
-export function cycleSummaryText(c: { number: number; successes: number; required: number; completed: boolean }): string {
-  return `${cycleName(c.number)} · ${cycleProgress(c.successes, c.required)}${c.completed ? ' · مكتملة' : ''}`;
-}
+/** «التالية: العرضة 4» */
+export const nextRecitationText = (n: number) => `التالية: ${recitationTitle(n)}`;
+
+/** A structured عرضة's compact line: «سورة المجادلة · 3 عرضات». */
+export const recitationSummaryText = (surahName: string, attempts: number) => `${surahName} · ${recitationsCount(attempts)}`;
 
 // ───────────────────────── compact Work Program rows (display only) ─────────────────────────
 
@@ -685,11 +686,14 @@ export function workloadSections<T extends { workloadOrder?: { comparable: boole
 }
 
 /**
- * The «متابعة العرضات» line of a compact row: the cycle summary of each tracked عرضة («الدورة الأولى ·
- * 3/4 ناجحة»), null when the program has none (a legacy recitation never gets an invented cycle).
+ * The «متابعة العرضات» line of a compact row: «سورة المجادلة · 3 عرضات» per structured عرضة; null
+ * when the program has none.
  */
-export function rowCycleText(items: { recitationCycle?: { number: number; successes: number; required: number; completed: boolean } | null }[]): string | null {
-  const texts = items.flatMap((i) => (i.recitationCycle ? [cycleSummaryText(i.recitationCycle)] : []));
+export function rowRecitationText(
+  items: { recitation?: { surah: number; attempts: number } | null }[],
+  surahName: (n: number) => string,
+): string | null {
+  const texts = items.flatMap((i) => (i.recitation ? [recitationSummaryText(surahName(i.recitation.surah), i.recitation.attempts)] : []));
   return texts.length ? texts.join('؛ ') : null;
 }
 

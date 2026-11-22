@@ -12,7 +12,6 @@ import { fontFamilies, radius, spacing, touchTarget, useAppTheme } from '@/theme
 import {
   overallRowText,
   programStatus,
-  rowCycleText,
   workloadSections,
   WORKLOAD_ORDER,
   workTypesSummary,
@@ -23,6 +22,7 @@ import { useTeacherWorkspace } from './use-teacher-dashboard';
 import { usePullToRefresh } from './use-refresh';
 import { useWorkProgramPages, useWorkSessionOptions, workKey } from './use-work';
 import { phaseOf, sessionDay, studentName } from './work-model';
+import { recitationText } from './recitation-line';
 import type { WorkPeriod, WorkProgram, WorkProgramFilters, WorkProgramState } from './work-types';
 
 const w = ar.work;
@@ -303,7 +303,7 @@ function ProgramRow({
   const name = studentName(p);
   const status = programStatus(p.progress);
   const types = workTypesSummary(p.items.map((i) => i.type));
-  const cycles = rowCycleText(p.items);
+  const recitations = p.items.flatMap((i) => (i.recitation ? [recitationText(i.recitation)] : [])).join('؛ ') || null;
   const overall = overallRowText(p.overallEvaluation?.level);
   const context = showSession ? `${p.session.groupName} · ${sessionDay(p.session)} · ${w.phase[phaseOf(p.session, timeZone)]}` : p.session.groupName;
   const tone = status.kind === 'done' ? colors.primary : status.kind === 'pending' || status.kind === 'cancelled' ? colors.mutedForeground : colors.warning;
@@ -311,7 +311,7 @@ function ProgramRow({
     <PressableRow
       bordered={bordered}
       onPress={onPress}
-      accessibilityLabel={`${w.detailTitle} ${name} — ${context} — ${types} — ${status.text}${overall ? ` — ${overall}` : ''}${cycles ? ` — ${cycles}` : ''}`}>
+      accessibilityLabel={`${w.detailTitle} ${name} — ${context} — ${types} — ${status.text}${overall ? ` — ${overall}` : ''}${recitations ? ` — ${recitations}` : ''}`}>
       <View style={styles.row} testID={`program-${p.id}`}>
         <InitialsAvatar name={name} size={44} photoUrl={p.student.photoUrl} />
         <View style={styles.flex}>
@@ -343,12 +343,12 @@ function ProgramRow({
               </View>
             ) : null}
           </View>
-          {/* «متابعة العرضات»: tracked recitations only, one line */}
-          {cycles ? (
+          {/* «متابعة العرضات»: structured recitations only, one line */}
+          {recitations ? (
             <View style={styles.inline}>
-              <Icon name="revision" size={12} color={colors.primary} />
-              <AppText variant="caption" tone="muted" numberOfLines={1} style={styles.flex} testID="row-cycles">
-                {cycles}
+              <Icon name="recitation" size={12} color={colors.primary} />
+              <AppText variant="caption" tone="muted" numberOfLines={1} style={styles.flex} testID="row-recitations">
+                {recitations}
               </AppText>
             </View>
           ) : null}

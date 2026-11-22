@@ -14,15 +14,15 @@ import {
   PERFORMANCE_LABEL,
   WORK_PERFORMANCES,
   programStatus,
-  rowCycleText,
   workloadSections,
   workTypesSummary,
   WORKLOAD_ORDER,
-  attemptLabel,
-  cycleName,
-  cycleProgressLong,
-  cycleSummaryText,
+  nextRecitationText,
   RECITATION_ENTRY_LABEL,
+  recitationLabel,
+  recitationsCount,
+  recitationSummaryText,
+  rowRecitationText,
   ayahCount,
   canonicalOf,
   countLabel,
@@ -522,18 +522,22 @@ describe('حفظ modes: whole surah, verses (optional end), pages (optional end)
 });
 
 describe('«متابعة العرضات» wording (display only)', () => {
-  test('cycle names, compact and long progress, completion', () => {
-    assert.deepEqual([1, 2, 10, 11].map(cycleName), ['الدورة الأولى', 'الدورة الثانية', 'الدورة العاشرة', 'الدورة رقم 11']);
-    assert.equal(cycleSummaryText({ number: 1, successes: 3, required: 4, completed: false }), 'الدورة الأولى · 3/4 ناجحة');
-    assert.equal(cycleSummaryText({ number: 2, successes: 4, required: 4, completed: true }), 'الدورة الثانية · 4/4 ناجحة · مكتملة');
-    assert.equal(cycleProgressLong(3, 4), '3 من 4 ناجحة');
+  test('al-Mujadila: numbered recitations with their results; «لا تحتسب» only for مؤجلة', () => {
+    assert.deepEqual(
+      [[1, 'CANCELLED'], [2, 'POSTPONED'], [2, 'COMPLETED'], [3, 'PARTIAL']].map(([n, e]) => recitationLabel(n as number, e as 'CANCELLED')),
+      ['العرضة 1 — ملغاة', 'العرضة 2 — مؤجلة · لا تحتسب', 'العرضة 2 — منجزة', 'العرضة 3 — جزئي'],
+    );
+    assert.equal(nextRecitationText(4), 'التالية: العرضة 4');
+    const labels = Object.entries(RECITATION_ENTRY_LABEL);
+    assert.deepEqual(labels.filter(([, l]) => /تحتسب/.test(l)).map(([k]) => k), ['POSTPONED']);
+    assert.ok(labels.every(([, l]) => !/محتسب|تُحتسب|دورة/.test(l)));
   });
-  test('attempt labels: chronological number + words; non-attempts unnumbered and marked as not counted', () => {
-    assert.equal(attemptLabel(1, 'SUCCESS'), 'عرضة 1 — ناجحة');
-    assert.equal(attemptLabel(3, 'FAILED'), 'عرضة 3 — غير ناجحة');
-    assert.equal(attemptLabel(5, 'PENDING'), 'عرضة 5 — قيد الانتظار');
-    assert.equal(attemptLabel(null, 'POSTPONED'), 'مؤجلة — لا تُحتسب');
-    for (const k of ['POSTPONED', 'DROPPED', 'SESSION_CANCELLED'] as const) assert.match(RECITATION_ENTRY_LABEL[k], /لا تُحتسب/);
+  test('counts: «3 عرضات», never «محتسبة»; compact lines', () => {
+    assert.deepEqual([0, 1, 2, 3, 10, 11].map(recitationsCount), ['لا عرضات بعد', 'عرضة واحدة', 'عرضتان', '3 عرضات', '10 عرضات', '11 عرضة']);
+    assert.equal(recitationSummaryText('سورة المجادلة', 3), 'سورة المجادلة · 3 عرضات');
+    const name = (n: number) => (n === 58 ? 'سورة المجادلة' : 'سورة يس');
+    assert.equal(rowRecitationText([{ recitation: { surah: 58, attempts: 3 } }, {}, { recitation: null }], name), 'سورة المجادلة · 3 عرضات');
+    assert.equal(rowRecitationText([{}], name), null);
   });
 });
 
@@ -569,15 +573,6 @@ describe('advisory order sections (display only, server order kept)', () => {
         ['unavailable', WORKLOAD_ORDER.unavailable, ['b']],
       ],
     );
-  });
-});
-
-describe('row cycle line (display only)', () => {
-  test('tracked recitations only; nothing invented for the others', () => {
-    const c = (number: number, successes: number) => ({ recitationCycle: { number, successes, required: 4, completed: successes >= 4 } });
-    assert.equal(rowCycleText([c(1, 3)]), 'الدورة الأولى · 3/4 ناجحة');
-    assert.equal(rowCycleText([c(1, 3), { recitationCycle: null }, c(2, 4)]), 'الدورة الأولى · 3/4 ناجحة؛ الدورة الثانية · 4/4 ناجحة · مكتملة');
-    assert.equal(rowCycleText([{}, { recitationCycle: null }]), null);
   });
 });
 

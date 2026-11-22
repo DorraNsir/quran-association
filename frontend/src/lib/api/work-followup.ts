@@ -147,22 +147,13 @@ export function useScheduleWorkItem() {
 }
 
 
-/** «متابعة العرضات»: a student's recitation cycles by surah (the API checks the teacher may see the student). */
+/** «متابعة العرضات»: a student's recitations by surah (the API checks the teacher may see the student). */
 export function useRecitationHistory(studentId: string) {
   return useQuery({
     queryKey: workKeys.recitations(studentId),
     queryFn: ({ signal }) => api<RecitationHistory>(`/teacher/students/${studentId}/recitations`, { signal }),
     retry: false,
   })
-}
-
-/** «بدء دورة جديدة»: only once the surah's current cycle is complete (the API refuses otherwise). */
-export function useStartRecitationCycle() {
-  return useApiMutation(
-    ({ studentId, surah }: { studentId: string; surah: number }) =>
-      api<RecitationHistory>(`/teacher/students/${studentId}/recitations/${surah}/cycles`, { method: "POST" }),
-    [workKeys.all]
-  )
 }
 
 /** The signed-in student's OWN programs (read-only: the API offers no write for students). */

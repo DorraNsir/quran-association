@@ -1348,125 +1348,65 @@ describe('حفظ modes (mobile): whole surah, verses (optional end), pages (opti
   });
 });
 
-describe('«متابعة العرضات» (mobile)', () => {
+describe('«متابعة العرضات» (mobile): each surah its numbered recitations', () => {
   const EDITION = 'qalun-abi-nashit-tn-hannibal-mualim-v1';
   const HISTORY = '/teacher/students/st1/recitations';
-  type Attempt = { itemId: string; programId: string; sessionId: string; sessionDate: string; attemptNumber: number | null; entry: string; status: string; evaluationComment: string | null; evaluatedAt: string | null; evaluatedBy: string | null };
   let seq = 0;
-  const attempt = (attemptNumber: number | null, entry: string, status: string): Attempt => {
+  const entry = (number: number | null, e: string, status: string) => {
     seq++;
-    return { itemId: `i${seq}`, programId: `p${seq}`, sessionId: `s${seq}`, sessionDate: `2026-11-${String(seq).padStart(2, '0')}`, attemptNumber, entry, status, evaluationComment: null, evaluatedAt: null, evaluatedBy: entry === 'PENDING' ? null : 'أحمد السالمي' };
+    return { itemId: `i${seq}`, programId: `p${seq}`, sessionId: `s${seq}`, sessionDate: `2026-11-${String(seq).padStart(2, '0')}`, number, entry: e, status, evaluationComment: null, evaluatedAt: null, evaluatedBy: e === 'PENDING' ? null : 'أحمد السالمي' };
   };
-  const cycle = (id: string, number: number, successes: number, entries: Attempt[], completed = successes >= 4) => ({
-    id, number, successes, required: 4, attempts: entries.filter((e) => e.attemptNumber).length, completed,
-    completedAt: completed ? '2026-11-15T10:00:00.000Z' : null, startedAt: '2026-11-01T10:00:00.000Z', entries,
-  });
-  // al-Baqara: S, S, F, (postponed, not counted), S, pending, S → 7 entries, 6 numbered attempts
+  // al-Mujadila: 1 ملغاة, 2 مؤجلة (rescheduled, keeps 2), 2 منجزة, 3 جزئي → next 4
+  const mujadila = {
+    surah: 58,
+    attempts: 3,
+    nextNumber: 4,
+    entries: [entry(1, 'CANCELLED', 'CANCELLED'), entry(2, 'POSTPONED', 'POSTPONED'), entry(2, 'COMPLETED', 'COMPLETED'), entry(3, 'PARTIAL', 'PARTIAL')],
+  };
+  // more than five, no limit
   const baqara = {
     surah: 2,
-    cycles: [
-      cycle('c1', 1, 3, [
-        attempt(1, 'SUCCESS', 'COMPLETED'), attempt(2, 'SUCCESS', 'COMPLETED'), attempt(3, 'FAILED', 'NOT_COMPLETED'),
-        attempt(null, 'POSTPONED', 'POSTPONED'), attempt(4, 'FAILED', 'PARTIAL'), attempt(5, 'SUCCESS', 'COMPLETED'), attempt(6, 'PENDING', 'NOT_EVALUATED'),
-      ]),
-    ],
-    earlier: [],
-    canStartNewCycle: false,
+    attempts: 6,
+    nextNumber: 8,
+    entries: [1, 2, 3, 4, 5, 6].map((n) => entry(n, 'COMPLETED', 'COMPLETED')).concat(entry(7, 'PENDING', 'NOT_EVALUATED')),
   };
-  // an-Nasr: cycle 1 complete, cycle 2 complete → a third may be started; one record from before cycles
-  const nasr = {
-    surah: 110,
-    cycles: [
-      cycle('c2', 1, 4, [1, 2, 3, 4].map((n) => attempt(n, 'SUCCESS', 'COMPLETED'))),
-      cycle('c3', 2, 4, [attempt(1, 'FAILED', 'NOT_COMPLETED'), ...[2, 3, 4, 5].map((n) => attempt(n, 'SUCCESS', 'COMPLETED'))]),
-    ],
-    earlier: [attempt(null, 'SUCCESS', 'COMPLETED')],
-    canStartNewCycle: true,
-  };
-  const history = { studentId: 'st1', surahs: [baqara, nasr] };
-  const labels = () => screen.queryAllByTestId(/^attempt-/).map((v) => v.props.accessibilityLabel.split(' — ').slice(0, 2).join(' — '));
+  const history = { studentId: 'st1', surahs: [baqara, mujadila] };
+  const labels = () => screen.queryAllByTestId(/^entry-/).map((v) => v.props.accessibilityLabel.split(' — ').slice(0, 2).join(' — '));
 
-  it('history: the student, each surah with its current cycle; the opened surah lists every attempt chronologically (more than five)', async () => {
+  it('history: the student, each surah with its recitations done; the opened surah in order with each result and the next number', async () => {
     stub((c) => (c.path.endsWith(HISTORY) ? ok(history) : undefined));
-    await renderScreen(<TeacherStudentRecitationsScreen studentId="st1" initialSurah={2} />);
+    await renderScreen(<TeacherStudentRecitationsScreen studentId="st1" initialSurah={58} />);
     expect(await screen.findByText('محمد التونسي')).toBeTruthy();
-    expect(await screen.findByText('الدورة الأولى · 3/4 ناجحة')).toBeTruthy();
-    expect(screen.getByText('الدورة الثانية · 4/4 ناجحة · مكتملة')).toBeTruthy();
-    expect(screen.getByText('سورة البقرة — متابعة العرضات')).toBeTruthy();
-    expect(screen.getByLabelText('الدورة الأولى — 3 من 4 ناجحة')).toBeTruthy();
-    expect(labels()).toEqual([
-      'عرضة 1 — ناجحة',
-      'عرضة 2 — ناجحة',
-      'عرضة 3 — غير ناجحة',
-      'مؤجلة — لا تُحتسب',
-      'عرضة 4 — غير ناجحة',
-      'عرضة 5 — ناجحة',
-      'عرضة 6 — قيد الانتظار',
-    ]);
-    // icons + words (never colour alone): each card's label states its result
-    expect(screen.getAllByTestId('attempt-SUCCESS')).toHaveLength(3);
-    expect(screen.getAllByTestId('attempt-FAILED')).toHaveLength(2);
-    expect(screen.getAllByTestId('attempt-PENDING')).toHaveLength(1);
-    expect(screen.queryByLabelText(w.startNewCycle)).toBeNull(); // incomplete: no new cycle
+    expect(await screen.findByText('3 عرضات')).toBeTruthy();
+    expect(screen.getByText('6 عرضات')).toBeTruthy();
+    expect(screen.getByText('سورة المجادلة — متابعة العرضات')).toBeTruthy();
+    expect(labels()).toEqual(['العرضة 1 — ملغاة', 'العرضة 2 — مؤجلة · لا تحتسب', 'العرضة 2 — منجزة', 'العرضة 3 — جزئي']);
+    expect(screen.getByTestId('next-recitation').props.children).toBe('التالية: العرضة 4');
+    // minimal wording: «لا تحتسب» only for the postponed one; no cycles, targets, «محتسبة» or new-cycle action
+    expect(screen.queryAllByText(/لا تحتسب/)).toHaveLength(1);
+    expect(screen.queryByText(/دورة|محتسب|من 4/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /دورة/ })).toBeNull();
   });
 
-  it('a complete surah: current and previous cycles, earlier records apart; «بدء دورة جديدة» only after the server confirms', async () => {
-    stub((c) => {
-      if (c.method === 'POST' && c.path.endsWith('/teacher/students/st1/recitations/110/cycles'))
-        return 'pending' as Answer;
-      return c.path.endsWith(HISTORY) ? ok(history) : undefined;
-    });
+  it('a surah with more than five recitations and a pending one: all listed, numbering continues', async () => {
+    stub((c) => (c.path.endsWith(HISTORY) ? ok(history) : undefined));
     await renderScreen(<TeacherStudentRecitationsScreen studentId="st1" />);
-    await fireEvent.press(await screen.findByLabelText('سورة النصر — الدورة الثانية · 4/4 ناجحة · مكتملة'));
-    expect(screen.getByText(w.previousCycles)).toBeTruthy();
-    expect(screen.getByText(w.earlierRecitations)).toBeTruthy();
-    expect(screen.getByLabelText(/^الدورة الأولى — 4 من 4 ناجحة — مكتملة/)).toBeTruthy();
-    expect(labels()[0]).toBe('عرضة 1 — غير ناجحة'); // the current cycle (2) first
-    await fireEvent.press(screen.getByLabelText(w.startNewCycle));
-    await settle();
-    expect(writes().map((c) => [c.method, c.path.replace(/^.*\/api/, '')])).toEqual([['POST', '/teacher/students/st1/recitations/110/cycles']]);
-    expect(screen.queryByText(/بدأت الدورة/)).toBeNull(); // still waiting for the server: nothing claimed
-  });
-
-  it('new cycle confirmed: the server history replaces the screen and a confirmation is shown; a refusal shows its Arabic message', async () => {
-    const started = { ...history, surahs: [baqara, { ...nasr, cycles: [...nasr.cycles, cycle('c4', 3, 0, [])], canStartNewCycle: false }] };
-    let current: unknown = history; // the server's state: the new cycle exists once it is created
-    stub((c) => {
-      if (c.method === 'POST') {
-        current = started;
-        return { status: 201, body: started };
-      }
-      return c.path.endsWith(HISTORY) ? ok(current) : undefined;
-    });
-    await renderScreen(<TeacherStudentRecitationsScreen studentId="st1" initialSurah={110} />);
-    await fireEvent.press(await screen.findByLabelText(w.startNewCycle));
-    expect(await screen.findByText('بدأت الدورة الثالثة — سورة النصر')).toBeTruthy();
-    expect(await screen.findByText(w.noAttemptYet)).toBeTruthy();
-    expect(screen.queryByLabelText(w.startNewCycle)).toBeNull();
-
-    const message = 'لا تبدأ دورة جديدة قبل اكتمال الدورة الحالية بأربع عرضات ناجحة';
-    stub((c) => {
-      if (c.method === 'POST') return { status: 409, body: { code: 'RECITATION_CYCLE_NOT_COMPLETED', message } };
-      return c.path.endsWith(HISTORY) ? ok(history) : undefined;
-    });
-    await renderScreen(<TeacherStudentRecitationsScreen studentId="st1" initialSurah={110} />);
-    await fireEvent.press(await screen.findByLabelText(w.startNewCycle));
-    expect(await screen.findByText(message)).toBeTruthy();
+    await fireEvent.press(await screen.findByLabelText('سورة البقرة — 6 عرضات'));
+    expect(labels()).toHaveLength(7);
+    expect(labels().at(-1)).toBe('العرضة 7 — لم تُقيَّم بعد');
+    expect(screen.getByTestId('next-recitation').props.children).toBe('التالية: العرضة 8');
   });
 
   it('empty, error and forbidden states; a student who is not mine is not requested', async () => {
     stub((c) => (c.path.endsWith(HISTORY) ? ok({ studentId: 'st1', surahs: [] }) : undefined));
     await renderScreen(<TeacherStudentRecitationsScreen studentId="st1" />);
     expect(await screen.findByText(w.recitationsEmpty)).toBeTruthy();
-
     stub((c) => (c.path.endsWith(HISTORY) ? { status: 403, body: { code: 'FORBIDDEN', message: 'x' } } : undefined));
     await renderScreen(<TeacherStudentRecitationsScreen studentId="st1" />);
     expect(await screen.findByText(ar.states.forbiddenTitle)).toBeTruthy();
-
     stub((c) => (c.path.endsWith(HISTORY) ? { status: 500, body: {} } : undefined));
     await renderScreen(<TeacherStudentRecitationsScreen studentId="st1" />);
     expect(await screen.findByLabelText(/إعادة المحاولة|retry/i)).toBeTruthy();
-
     stub();
     await renderScreen(<TeacherStudentRecitationsScreen studentId="nobody" />);
     expect(await screen.findByText(w.recitationsUnavailable)).toBeTruthy();
@@ -1480,42 +1420,32 @@ describe('«متابعة العرضات» (mobile)', () => {
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/students/[id]/recitations', params: { id: 'st1' } });
   });
 
-  const a = (from: number) => ({ kind: 'SURAH_RANGE' as const, editionId: EDITION, fromSurah: from, fromAyah: 1, toSurah: from, toAyah: 286, fromPage: null, toPage: null });
-  const tracked = workItem('r1', {
-    type: 'RECITATION',
-    recitationNumber: 6,
-    description: 'العرضة السادسة من سورة البقرة',
-    assignment: a(2),
-    recitationCycle: { cycleId: 'c1', surah: 2, number: 1, successes: 3, required: 4, completed: false, attemptNumber: 6, entry: 'PENDING' },
-  });
-  const legacy = workItem('r2', { position: 1, type: 'RECITATION', recitationNumber: 2, description: 'العرضة الثانية من سورة يس', assignment: a(36) });
+  const a = (from: number) => ({ kind: 'SURAH_RANGE' as const, editionId: EDITION, fromSurah: from, fromAyah: 1, toSurah: from, toAyah: 22, fromPage: null, toPage: null });
+  const tracked = workItem('r1', { type: 'RECITATION', recitationNumber: 4, description: 'العرضة الرابعة من سورة المجادلة', assignment: a(58), recitation: { surah: 58, attempts: 3 } });
+  const legacy = workItem('r2', { position: 1, type: 'RECITATION', recitationNumber: 2, description: 'عرضة حرة', assignment: null });
 
-  it('program screen: a tracked عرضة shows its cycle and opens the surah history; a legacy one shows no cycle', async () => {
-    const p = workProgram('w1', { items: [tracked, legacy] });
-    stub(undefined, p);
+  it('program screen: a structured عرضة shows «سورة المجادلة · 3 عرضات» and opens the surah history; a free-text one shows nothing', async () => {
+    stub(undefined, workProgram('w1', { items: [tracked, legacy] }));
     await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
-    expect(await screen.findByText('الدورة الأولى · 3/4 ناجحة')).toBeTruthy();
-    expect(screen.getAllByTestId('recitation-cycle')).toHaveLength(1); // nothing invented for the legacy item
-    await fireEvent.press(screen.getByLabelText(`${w.recitationHistory} — الدورة الأولى · 3/4 ناجحة`));
-    expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/students/[id]/recitations', params: { id: 'st1', surah: '2' } });
+    expect(await screen.findByText('سورة المجادلة · 3 عرضات')).toBeTruthy();
+    expect(screen.getAllByTestId('recitation-line')).toHaveLength(1);
+    await fireEvent.press(screen.getByLabelText(`${w.recitationHistory} — سورة المجادلة · 3 عرضات`));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/students/[id]/recitations', params: { id: 'st1', surah: '58' } });
   });
 
-  it('list row: the same compact cycle line in one line, without the history link; nothing for a legacy recitation', async () => {
+  it('list row: the same line, compact (no link); nothing without a structured عرضة', async () => {
     stub(undefined, workProgram('w1', { items: [tracked] }));
     await renderScreen(<TeacherWorkScreen />);
-    expect((await screen.findByTestId('row-cycles')).props.children).toBe('الدورة الأولى · 3/4 ناجحة');
+    expect((await screen.findByTestId('row-recitations')).props.children).toBe('سورة المجادلة · 3 عرضات');
     expect(screen.queryByLabelText(/^سجل العرضات/)).toBeNull();
     stub(undefined, workProgram('w2', { items: [legacy] }));
     await renderScreen(<TeacherWorkScreen />);
     await screen.findByText(w.total(1));
-    expect(screen.queryByTestId('row-cycles')).toBeNull();
+    expect(screen.queryByTestId('row-recitations')).toBeNull();
   });
 
   async function newRecitation(answer: (c: Call) => Answer | undefined) {
-    stub((c) => {
-      if (c.path.endsWith('/eligible-sessions')) return ok([eligible('s20', '2026-11-18')]);
-      return answer(c);
-    });
+    stub((c) => (c.path.endsWith('/eligible-sessions') ? ok([eligible('s20', '2026-11-18')]) : answer(c)));
     await renderScreen(<TeacherWorkFormScreen studentId="st1" />);
     await fireEvent.press(await screen.findByLabelText(`${w.session}: ${w.pickSession}`));
     await fireEvent.press(screen.getByRole('radio', { name: /^الأربعاء 18 نوفمبر 2026/ }));
@@ -1524,32 +1454,27 @@ describe('«متابعة العرضات» (mobile)', () => {
   }
   const posted = () => (writes().find((c) => c.method === 'POST')?.body as { items: unknown[] } | undefined)?.items;
 
-  it('form: no recitation number field — the server numbers the attempt; nothing numbered is sent', async () => {
+  it('form: no number field — «يُحدَّد رقم العرضة تلقائيًا»; nothing numbered is sent', async () => {
     await newRecitation((c) => (c.method === 'POST' ? { status: 201, body: workProgram('w5') } : undefined));
     expect(screen.queryByLabelText(`${w.recitationNumber} — ${w.itemN(1)}`)).toBeNull();
-    expect(screen.getByTestId('recitation-auto-number').props.children).toBe(w.autoRecitationNumber);
+    expect(screen.getByTestId('recitation-auto-number').props.children).toBe('يُحدَّد رقم العرضة تلقائيًا');
     await fireEvent.press(screen.getByLabelText(w.savePlan));
     await settle();
     expect(posted()).toEqual([{ type: 'RECITATION', recitationNumber: null, assignment: { kind: 'SURAH_RANGE', fromSurah: 2, toSurah: 2 } }]);
   });
 
-  it('form: the server refuses a second pending attempt or a complete cycle — its Arabic message is shown, nothing else is sent', async () => {
-    for (const [code, message] of [
-      ['RECITATION_ATTEMPT_PENDING', 'لهذه السورة عرضة لم تُقيَّم بعد: لا تُضاف عرضة أخرى قبل تقييمها'],
-      ['RECITATION_CYCLE_COMPLETED', 'اكتملت دورة هذه السورة (4 عرضات ناجحة): ابدأ دورة جديدة لإضافة عرضة'],
-    ] as const) {
-      await newRecitation((c) => (c.method === 'POST' ? { status: 409, body: { code, message, surah: 2, cycleId: 'c1' } } : undefined));
-      await fireEvent.press(screen.getByLabelText(w.savePlan));
-      expect(await screen.findByText(message)).toBeTruthy();
-      expect(writes()).toHaveLength(1);
-    }
+  it('form: the same surah twice in one session is refused by the server — its Arabic message is shown', async () => {
+    const message = 'عرضة هذه السورة مبرمجة في هذه الحصة من قبل';
+    await newRecitation((c) => (c.method === 'POST' ? { status: 409, body: { code: 'WORK_RECITATION_DUPLICATE', message } } : undefined));
+    await fireEvent.press(screen.getByLabelText(w.savePlan));
+    expect(await screen.findByText(message)).toBeTruthy();
   });
 
-  it('form: editing a tracked عرضة shows its server number; the saved number is never changed from here', async () => {
+  it('form: editing a structured عرضة shows its server number', async () => {
     const p = workProgram('w1', { items: [tracked] });
     stub((c) => (c.method === 'PATCH' ? ok(p) : undefined), p);
     await renderScreen(<TeacherWorkFormScreen programId="w1" />);
-    expect((await screen.findByTestId('recitation-auto-number')).props.children).toBe(w.managedRecitationNumber(6, 'الدورة الأولى'));
+    expect((await screen.findByTestId('recitation-auto-number')).props.children).toBe('العرضة 4 — يُحدَّد الرقم تلقائيًا');
     expect(screen.queryByLabelText(`${w.recitationNumber} — ${w.itemN(1)}`)).toBeNull();
   });
 });

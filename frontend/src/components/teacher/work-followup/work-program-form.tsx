@@ -15,7 +15,7 @@ import { ApiError, errorMessage } from "@/lib/api/errors"
 import { useCreateWorkProgram, useEligibleSessions, useUpdateWorkProgram, type NewWorkItemInput } from "@/lib/api/work-followup"
 import {
   adaptDraft,
-  cycleName,
+  recitationTitle,
   draftFromAssignment,
   emptyDraft,
   isBlankDraft,
@@ -72,7 +72,7 @@ const structured = (d: DraftItem) => d.assignment.mode !== "free"
  * «متابعة العرضات»: the server numbers a structured عرضة (a new one, or one already in a cycle);
  * a legacy item keeps its own number field.
  */
-const managedNumber = (d: DraftItem) => structured(d) && (!d.saved || Boolean(d.saved.recitationCycle))
+const managedNumber = (d: DraftItem) => structured(d)
 /** An item saved as free text (legacy): it may stay free text. */
 const legacyFreeText = (d: DraftItem) => Boolean(d.saved && !d.saved.assignment)
 /** A new item with nothing selected yet: ignored on save (an extra blank item never blocks it). */
@@ -370,13 +370,11 @@ export function WorkProgramForm({
                     {itemErrors.get(item.key)}
                   </p>
                 )}
-                {/* «متابعة العرضات»: a structured عرضة is numbered by the server, in its surah's cycle */}
+                {/* «متابعة العرضات»: a structured عرضة is numbered by the server, in its surah's history */}
                 {item.type === "RECITATION" && managedNumber(item) && (
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Repeat className="size-3.5 shrink-0 text-primary" aria-hidden />
-                    {item.saved?.recitationCycle?.attemptNumber
-                      ? `العرضة ${item.saved.recitationCycle.attemptNumber} في ${cycleName(item.saved.recitationCycle.number)} — يُحدَّد الرقم تلقائيًا`
-                      : "يُحدَّد رقم العرضة تلقائيًا حسب دورة السورة (أربع عرضات ناجحة لكل دورة)"}
+                    {item.saved?.recitationNumber ? `${recitationTitle(item.saved.recitationNumber)} — يُحدَّد الرقم تلقائيًا` : "يُحدَّد رقم العرضة تلقائيًا"}
                   </p>
                 )}
                 {item.type === "RECITATION" && !managedNumber(item) && (
