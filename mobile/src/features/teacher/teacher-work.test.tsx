@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
+import { StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import type { SessionUser } from '@/features/auth/types';
@@ -18,6 +19,7 @@ import {
 } from '@/features/quran-reference/work-assignment';
 import { ar } from '@/i18n/ar';
 import { apiUrl, setAuthBridge } from '@/services/api';
+import { lightColors } from '@/theme/colors';
 
 import { eligible, workItem, workPage, workProgram, workSession } from './__fixtures__/work';
 import { workspaceFixture } from './__fixtures__/workspace';
@@ -42,12 +44,19 @@ const mockPush = jest.fn();
 const mockBack = jest.fn();
 const mockReplace = jest.fn();
 let mockPreventRemove = { active: false };
+const mockTitles: unknown[] = [];
+const headerTitles = () => mockTitles;
 jest.mock('expo-symbols', () => ({ SymbolView: () => null }));
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush, back: mockBack, replace: mockReplace, canGoBack: () => true }),
   useNavigation: () => ({ isFocused: () => true }),
   // the header's own action («+ إضافة») is rendered, as in the app
-  Stack: { Screen: ({ options }: { options?: { headerRight?: () => unknown } }) => options?.headerRight?.() ?? null },
+  Stack: {
+    Screen: ({ options }: { options?: { title?: unknown; headerRight?: () => unknown } }) => {
+      if (options?.title) mockTitles.push(options.title);
+      return options?.headerRight?.() ?? null;
+    },
+  },
   usePreventRemove: (active: boolean) => {
     mockPreventRemove = { active };
     return () => {
@@ -333,9 +342,12 @@ describe('program details', () => {
     // the evaluation comment «ممتاز», and the «التقييم العام» choice of the same word
     expect(screen.getAllByText(/ممتاز/)).toHaveLength(2);
     expect(screen.getByRole('radio', { name: 'ممتاز' })).toBeTruthy();
-    expect(screen.getByText(w.evaluatedBy('سارة بن علي', '9 نوفمبر 2026'))).toBeTruthy();
-    expect(screen.getByText(w.carriedFrom('2 نوفمبر 2026', w.status.PARTIAL))).toBeTruthy();
-    expect(screen.getByText(w.carriedTo('16 نوفمبر 2026'))).toBeTruthy();
+    expect(screen.getByLabelText(w.evaluatedBy('سارة بن علي', '9 نوفمبر 2026'))).toBeTruthy();
+    expect(screen.getByText(w.evaluationNotes)).toBeTruthy();
+    expect(screen.getByLabelText(w.carriedFrom('2 نوفمبر 2026', w.status.PARTIAL))).toBeTruthy();
+    expect(screen.getByLabelText(w.carriedTo('16 نوفمبر 2026'))).toBeTruthy();
+    // the screen's own title; the student's name stays in the summary card
+    expect(screen.getByRole('header', { name: 'محمد التونسي' })).toBeTruthy();
     expect(screen.getByText('تحسّن ملحوظ في التجويد')).toBeTruthy();
     expect(screen.getByText(w.lastEditedBy('أحمد السالمي'))).toBeTruthy();
   });
@@ -348,7 +360,7 @@ describe('program details', () => {
     expect(screen.getAllByRole('button', { name: new RegExp(`^${w.next}`) })).toHaveLength(1); // i2 only
     await fireEvent.press(screen.getByLabelText(`${w.carry}: حفظ صفحتين من سورة البقرة`));
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/work/[id]/schedule', params: { id: 'w1', itemId: 'i1', mode: 'carry' } });
-    await fireEvent.press(screen.getAllByLabelText(w.openLinked)[0]!);
+    await fireEvent.press(screen.getByLabelText(w.carriedFrom('2 نوفمبر 2026', w.status.PARTIAL)));
     expect(mockPush).toHaveBeenLastCalledWith({ pathname: '/teacher/work/[id]', params: { id: 'w0' } });
     await fireEvent.press(screen.getByLabelText(w.evaluate));
     expect(mockPush).toHaveBeenLastCalledWith({ pathname: '/teacher/work/[id]/evaluate', params: { id: 'w1' } });
@@ -725,7 +737,8 @@ describe('evaluation follows the session (server verdict + platform clock)', () 
     });
     stub(undefined, carried);
     await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
-    expect(await screen.findByText(w.carriedFromCancelled('2 نوفمبر 2026'))).toBeTruthy();
+    expect(await screen.findByLabelText(w.carriedFromCancelled('2 نوفمبر 2026'))).toBeTruthy();
+    expect(screen.getByText(w.linkCarriedFromCancelled)).toBeTruthy();
   });
 
   it('the evaluation screen opened early (a link): the reason and a way back, no form', async () => {
@@ -945,7 +958,7 @@ describe('structured Quranic assignments (Qalun, Tunisian edition)', () => {
     stub(undefined, carried);
     await renderScreen(<TeacherWorkProgramScreen programId="w9" />);
     expect(await screen.findByText('سورة البقرة: من الآية 6 إلى الآية 20')).toBeTruthy();
-    expect(screen.getByText(w.carriedFrom('9 نوفمبر 2026', w.status.PARTIAL))).toBeTruthy();
+    expect(screen.getByLabelText(w.carriedFrom('9 نوفمبر 2026', w.status.PARTIAL))).toBeTruthy();
   });
 });
 
@@ -1481,7 +1494,7 @@ describe('«متابعة العرضات» (mobile): each surah its numbered reci
   it('program screen: a structured عرضة shows «سورة المجادلة · 3 عرضات» and opens the surah history; a free-text one shows nothing', async () => {
     stub(undefined, workProgram('w1', { items: [tracked, legacy] }));
     await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
-    expect(await screen.findByText('سورة المجادلة · 3 عرضات')).toBeTruthy();
+    expect((await screen.findByTestId('recitation-line')).props.children).toBe('3 عرضات');
     expect(screen.getAllByTestId('recitation-line')).toHaveLength(1);
     await fireEvent.press(screen.getByLabelText(`${w.recitationHistory} — سورة المجادلة · 3 عرضات`));
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/students/[id]/recitations', params: { id: 'st1', surah: '58' } });
@@ -1749,7 +1762,9 @@ describe('«التقييم العام» (mobile)', () => {
     await fireEvent.press(await screen.findByRole('radio', { name: 'جيد جدًا' }));
     await fireEvent.press(screen.getByLabelText(OVERALL_EVALUATION.save));
     expect(await screen.findByText(`${OVERALL_EVALUATION.saved} — جيد جدًا`)).toBeTruthy();
-    expect(screen.getByRole('radio', { name: 'جيد جدًا' }).props.accessibilityState.selected).toBe(true);
+    expect(within(screen.getByTestId('overall-saved')).getByText('جيد جدًا')).toBeTruthy();
+    expect(screen.queryByRole('radio')).toBeNull(); // the choices close once saved
+    expect(screen.getByLabelText(w.editOverall)).toBeTruthy();
     expect(screen.queryByLabelText(OVERALL_EVALUATION.save)).toBeNull();
   });
 
@@ -1757,7 +1772,12 @@ describe('«التقييم العام» (mobile)', () => {
     const p = workProgram('w1', { version: 7, overallEvaluation: given('GOOD') });
     stub((c) => (c.method === 'PATCH' ? ok({ ...p, version: 8, overallEvaluation: given('EXCELLENT') }) : undefined), p);
     await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
-    expect((await screen.findByRole('radio', { name: 'جيد' })).props.accessibilityState.selected).toBe(true);
+    // the saved level prominent, its evaluator and date below; the choices behind «تعديل التقييم»
+    expect(within(await screen.findByTestId('overall-saved')).getByText('جيد')).toBeTruthy();
+    expect(screen.getByText(w.lastOverall('سارة بن علي · 9 نوفمبر 2026'))).toBeTruthy();
+    expect(screen.queryByRole('radio')).toBeNull();
+    await fireEvent.press(screen.getByLabelText(w.editOverall));
+    expect(screen.getByRole('radio', { name: 'جيد' }).props.accessibilityState.selected).toBe(true);
     await fireEvent.press(screen.getByRole('radio', { name: 'ممتاز' }));
     expect(screen.getByText(overallChangeText('GOOD', 'EXCELLENT'))).toBeTruthy();
     await fireEvent.press(screen.getByLabelText(OVERALL_EVALUATION.save));
@@ -1771,7 +1791,8 @@ describe('«التقييم العام» (mobile)', () => {
     const message = 'تغيّر برنامج العمل منذ فتحه. أعد التحميل.';
     stub((c) => (c.method === 'PATCH' ? { status: 409, body: { code: 'WORK_PROGRAM_CHANGED', message } } : undefined), p);
     await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
-    await fireEvent.press(await screen.findByRole('radio', { name: 'ممتاز' }));
+    await fireEvent.press(await screen.findByLabelText(w.editOverall));
+    await fireEvent.press(screen.getByRole('radio', { name: 'ممتاز' }));
     const gets = () => calls.filter((c) => c.method === 'GET' && c.path.endsWith('/teacher/work-programs/w1')).length;
     const before = gets();
     await fireEvent.press(screen.getByLabelText(OVERALL_EVALUATION.save));
@@ -1799,7 +1820,9 @@ describe('«التقييم العام» (mobile)', () => {
     await screen.findByText(OVERALL_EVALUATION.title);
     expect(within(screen.getByTestId('overall-saved')).getByText('جيد')).toBeTruthy();
     expect(screen.getByTestId('overall-blocked').props.children).toBe(OVERALL_BLOCKED.cancelled);
-    expect(choices().every((c) => c.props.accessibilityState.disabled)).toBe(true);
+    // a recorded level cannot be corrected while closed: no «تعديل التقييم», no choices
+    expect(screen.queryByLabelText(w.editOverall)).toBeNull();
+    expect(screen.queryByRole('radio')).toBeNull();
   });
 
   it('card: the level only («جيد جدًا», no «التقييم العام:»), next to the items’ results; nothing when not given', async () => {
@@ -1817,5 +1840,89 @@ describe('«التقييم العام» (mobile)', () => {
     await renderScreen(<TeacherWorkScreen />);
     await screen.findByText(w.total(1));
     expect(screen.queryByTestId('card-overall')).toBeNull();
+  });
+});
+
+describe('«تفاصيل برنامج العمل» (mobile redesign)', () => {
+  const surah = (n: number) => ({ kind: 'SURAH_RANGE' as const, editionId: 'qalun-tunisia', fromSurah: n, fromAyah: 1, toSurah: n, toAyah: 22, fromPage: null, toPage: null });
+  const counters = () =>
+    screen.queryAllByTestId(/^summary-(COMPLETED|PARTIAL|NOT_COMPLETED|POSTPONED|CANCELLED|NOT_EVALUATED)$/).map((c) =>
+      within(c).getAllByText(/./).map((t) => String(t.props.children)).join(' '),
+    );
+  const bg = (node: { props: { style?: unknown } }) => StyleSheet.flatten(node.props.style as never)?.backgroundColor;
+
+  it('title «تفاصيل برنامج العمل»; the student, the level and «ملخص الأعمال» counting EVERY item: 1 منجز · 1 ملغى (never «جميع الأعمال»)', async () => {
+    const p = workProgram('w1', {
+      overallEvaluation: { level: 'GOOD', evaluatedAt: '2026-11-22T17:00:00.000Z', evaluatedBy: 'حمدي الشوك' },
+      items: [workItem('i1', { status: 'CANCELLED' }), workItem('i2', { position: 1, type: 'REVISION', status: 'COMPLETED' })],
+    });
+    stub(undefined, p);
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    expect(await screen.findByTestId('items-summary')).toBeTruthy();
+    expect(headerTitles()).toContain(w.detailsTitle);
+    expect(within(screen.getByTestId('summary-overall')).getByText('جيد')).toBeTruthy();
+    expect(screen.getByText(w.itemsTotal(2))).toBeTruthy();
+    expect(counters()).toEqual(['1 منجز', '1 ملغى']);
+    expect(screen.getByLabelText(`${w.itemsSummary}: 1 منجز · 1 ملغى`)).toBeTruthy();
+    expect(screen.queryByText(/جميع الأعمال/)).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+
+  it('other mixes: 2 منجزان; 1 منجز · 4 ملغاة; pending and partial counted too', async () => {
+    const cases: [WorkItem['status'][], string[]][] = [
+      [['COMPLETED', 'COMPLETED'], ['2 منجزان']],
+      [['COMPLETED', 'CANCELLED', 'CANCELLED', 'CANCELLED', 'CANCELLED'], ['1 منجز', '4 ملغاة']],
+      [['PARTIAL', 'NOT_EVALUATED', 'POSTPONED', 'NOT_COMPLETED'], ['1 جزئي', '1 غير منجز', '1 مؤجل', '1 بانتظار التقييم']],
+    ];
+    for (const [statuses, expected] of cases) {
+      stub(undefined, workProgram('w1', { items: statuses.map((status, i) => workItem(`i${i}`, { position: i, status })) }));
+      await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+      await screen.findByTestId('items-summary');
+      expect(counters()).toEqual(expected);
+    }
+  });
+
+  it('each item keeps its details: coloured type, result, range and size, evaluator, notes, recitation history and the next recitation', async () => {
+    const recitation = workItem('r1', {
+      type: 'RECITATION',
+      recitationNumber: 1,
+      description: 'العرضة الأولى من سورة المجادلة',
+      assignment: surah(58),
+      recitation: { surah: 58, attempts: 1 },
+      status: 'CANCELLED',
+      evaluatedBy: 'حمدي الشوك',
+      evaluatedAt: '2026-11-22T17:00:00.000Z',
+      evaluationComment: 'غاب عن الحصة',
+      continuedBy: [{ itemId: 'r2', programId: 'w2', sessionId: 's2', sessionDate: '2026-11-26' }],
+    });
+    stub(undefined, workProgram('w1', { items: [recitation] }));
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    const type = await screen.findByTestId('type-RECITATION');
+    // purple marks the عرضة TYPE; the result has its own (gray for ملغى)
+    expect(bg(type)).toBe(lightColors.recitationSoft);
+    expect(within(type).getByText('عرضة 1')).toBeTruthy();
+    expect(bg(screen.getByTestId('status-CANCELLED'))).toBe(lightColors.muted);
+    expect(screen.getByText('سورة المجادلة')).toBeTruthy();
+    expect(screen.getByLabelText(w.evaluatedBy('حمدي الشوك', '22 نوفمبر 2026'))).toBeTruthy();
+    expect(screen.getByText('غاب عن الحصة')).toBeTruthy();
+    expect(screen.getByTestId('recitation-line').props.children).toBe('عرضة واحدة');
+    expect(screen.getByText(w.linkContinuedBy)).toBeTruthy();
+    expect(screen.getByText(w.scheduledOn('26 نوفمبر 2026'))).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText(w.continuedBy('26 نوفمبر 2026')));
+    expect(mockPush).toHaveBeenLastCalledWith({ pathname: '/teacher/work/[id]', params: { id: 'w2' } });
+    // simplified recitations: no cycles, no «تحتسب»
+    expect(screen.queryByText(/دورة|تحتسب|من 4/)).toBeNull();
+  });
+
+  it('primary actions are GREEN (the app colour) — «إضافة العرضة التالية» included; transfer stays outlined', async () => {
+    const recitation = workItem('r1', { type: 'RECITATION', recitationNumber: 2, description: 'العرضة الثانية من سورة التوبة', status: 'PARTIAL' });
+    stub(undefined, workProgram('w1', { items: [recitation] }));
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    const next = await screen.findByLabelText(`${w.next}: العرضة الثانية من سورة التوبة`);
+    expect(bg(next)).toBe(lightColors.primary);
+    expect(bg(next)).not.toBe(lightColors.recitationForeground);
+    expect(bg(screen.getByLabelText(`${w.carry}: العرضة الثانية من سورة التوبة`))).toBe(lightColors.card);
+    expect(bg(screen.getByLabelText(w.evaluate))).toBe(lightColors.primary);
+    expect(bg(screen.getByLabelText(w.edit))).toBe(lightColors.card);
   });
 });

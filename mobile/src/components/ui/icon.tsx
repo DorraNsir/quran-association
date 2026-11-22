@@ -77,6 +77,9 @@ const ICONS = {
   thumbsUp: { ios: 'hand.thumbsup', android: 'thumb_up' },
   star: { ios: 'star', android: 'star' },
   improve: { ios: 'chart.bar', android: 'bar_chart' },
+  summary: { ios: 'square.stack.3d.up', android: 'layers' },
+  history: { ios: 'list.bullet', android: 'list' },
+  award: { ios: 'rosette', android: 'workspace_premium' },
 } as const satisfies Record<string, { ios: SFSymbol; android: AndroidSymbol }>;
 
 export type IconName = keyof typeof ICONS;

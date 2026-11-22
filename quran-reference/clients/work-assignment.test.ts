@@ -615,6 +615,9 @@ describe('program cards (display only)', () => {
     assert.equal(completionText(['NOT_EVALUATED', 'NOT_EVALUATED']), '2 بانتظار التقييم');
     assert.equal(completionText(['COMPLETED', 'COMPLETED', 'COMPLETED', 'NOT_COMPLETED', 'POSTPONED']), '3 منجزة · 1 غير منجز · 1 مؤجل');
     assert.deepEqual(completionParts(['CANCELLED']).map((p) => [p.status, p.count]), [['CANCELLED', 1]]);
+    // counters: the word alone, agreeing with the count
+    assert.deepEqual(completionParts(['COMPLETED', 'CANCELLED']).map((p) => [p.count, p.label]), [[1, 'منجز'], [1, 'ملغى']]);
+    assert.deepEqual(completionParts(['COMPLETED', 'COMPLETED', 'NOT_EVALUATED']).map((p) => p.label), ['منجزان', 'بانتظار التقييم']);
     // never «كل الأعمال منجزة» (even with dropped items)
     assert.doesNotMatch(completionText(['COMPLETED', 'CANCELLED']), /كل الأعمال/);
   });

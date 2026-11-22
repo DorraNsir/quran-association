@@ -1,11 +1,11 @@
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 
 import { AppText, Icon } from '@/components/ui';
 import { ar } from '@/i18n/ar';
-import { spacing, touchTarget, useAppTheme } from '@/theme';
+import { radius, spacing, touchTarget, useAppTheme } from '@/theme';
 
-import { recitationSummaryText } from '../quran-reference/work-assignment';
+import { recitationsCount, recitationSummaryText } from '../quran-reference/work-assignment';
 import { surahByNumber } from '../quran/surahs';
 import type { RecitationSummary } from './work-types';
 
@@ -13,38 +13,44 @@ import type { RecitationSummary } from './work-types';
 export const recitationText = (r: RecitationSummary) => recitationSummaryText(`سورة ${surahByNumber(r.surah)?.nameAr ?? r.surah}`, r.attempts);
 
 /**
- * «متابعة العرضات» of one structured عرضة, compact (server values), with «سجل العرضات» opening the
- * surah's history unless `compact` (list rows).
+ * «سجل العرضات» of one structured عرضة on the program screen (server values): a soft row in the
+ * عرضة colour — the history on one side, how many recitations of the surah were done
+ * («عرضة واحدة» / «3 عرضات») on the other — opening the surah's history.
  */
-export function RecitationLine({ recitation, studentId, compact }: { recitation: RecitationSummary; studentId: string; compact?: boolean }) {
+export function RecitationLine({ recitation, studentId }: { recitation: RecitationSummary; studentId: string }) {
   const { colors } = useAppTheme();
   const router = useRouter();
   const text = recitationText(recitation);
   return (
-    <View style={styles.row}>
-      <Icon name="recitation" size={14} color={colors.primary} />
-      <AppText variant="small" tone="muted" testID="recitation-line" accessibilityLabel={`${ar.work.recitations}: ${text}`}>
-        {text}
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={`${ar.work.recitationHistory} — ${text}`}
+      onPress={() =>
+        router.push({ pathname: '/teacher/students/[id]/recitations', params: { id: studentId, surah: String(recitation.surah) } })
+      }
+      style={({ pressed }) => [styles.row, { backgroundColor: colors.recitationSoft }, pressed && styles.pressed]}>
+      <Icon name="history" size={18} color={colors.recitationForeground} />
+      <AppText variant="label" style={[styles.flex, { color: colors.recitationForeground }]}>
+        {ar.work.recitationHistory}
       </AppText>
-      {!compact ? (
-        <Pressable
-          accessibilityRole="link"
-          accessibilityLabel={`${ar.work.recitationHistory} — ${text}`}
-          hitSlop={8}
-          style={styles.link}
-          onPress={() =>
-            router.push({ pathname: '/teacher/students/[id]/recitations', params: { id: studentId, surah: String(recitation.surah) } })
-          }>
-          <AppText variant="small" tone="primary">
-            {ar.work.recitationHistory}
-          </AppText>
-        </Pressable>
-      ) : null}
-    </View>
+      <AppText variant="small" tone="muted" testID="recitation-line">
+        {recitationsCount(recitation.attempts)}
+      </AppText>
+      <Icon name="forward" size={16} color={colors.mutedForeground} />
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.xs },
-  link: { minHeight: touchTarget, justifyContent: 'center', paddingHorizontal: spacing.xs },
+  row: {
+    minHeight: touchTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  flex: { flex: 1 },
+  pressed: { opacity: 0.8 },
 });

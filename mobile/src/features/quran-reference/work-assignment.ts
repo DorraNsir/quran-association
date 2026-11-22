@@ -647,13 +647,22 @@ const RESULT_ORDER: WorkItemStatus[] = ['COMPLETED', 'PARTIAL', 'NOT_COMPLETED',
  * «2 منجزان» · «1 منجز · 4 ملغاة» · «1 منجز · 1 جزئي» · «2 بانتظار التقييم». Never «كل الأعمال
  * منجزة» when items were dropped; nothing to do with the overall evaluation.
  */
-export function completionParts(statuses: WorkItemStatus[]): { status: WorkItemStatus; count: number; text: string }[] {
-  return RESULT_ORDER.flatMap((status): { status: WorkItemStatus; count: number; text: string }[] => {
+export interface CompletionPart {
+  status: WorkItemStatus;
+  count: number;
+  /** The word alone, agreeing with the count («منجز» / «منجزان» / «ملغاة»), for a counter */
+  label: string;
+  /** «1 منجز» */
+  text: string;
+}
+
+export function completionParts(statuses: WorkItemStatus[]): CompletionPart[] {
+  return RESULT_ORDER.flatMap((status): CompletionPart[] => {
     const count = statuses.filter((x) => x === status).length;
     if (count === 0) return [];
-    if (status === 'NOT_EVALUATED') return [{ status, count, text: `${count} بانتظار التقييم` }];
-    const [one, two, many] = RESULT_FORMS[status];
-    return [{ status, count, text: `${count} ${count === 1 ? one : count === 2 ? two : many}` }];
+    const [one, two, many] = status === 'NOT_EVALUATED' ? ['بانتظار التقييم', 'بانتظار التقييم', 'بانتظار التقييم'] : RESULT_FORMS[status];
+    const label = count === 1 ? one : count === 2 ? two : many;
+    return [{ status, count, label, text: `${count} ${label}` }];
   });
 }
 

@@ -121,7 +121,9 @@ export function progressLabel(p: WorkProgress): string {
   if (p.total === 0) return 'لا توجد أعمال';
   if (p.active === 0) return 'لا توجد أعمال نشطة';
   if (p.completed === 0) return `${p.active} ${p.active === 1 ? 'عمل' : 'أعمال'} بانتظار الإنجاز`;
-  if (p.completed === p.active) return `تم إنجاز جميع الأعمال (${p.completed}/${p.active})`;
+  // «جميع الأعمال» only when EVERY item is done — never when some were dropped (1 منجز + 1 ملغى)
+  if (p.completed === p.total) return `تم إنجاز جميع الأعمال (${p.completed}/${p.total})`;
+  if (p.completed === p.active) return `تم إنجاز ${p.completed} من أصل ${p.total} أعمال`;
   return `تم إنجاز ${p.completed} من أصل ${p.active} ${p.cancelled ? 'أعمال نشطة' : 'أعمال'}`;
 }
 

@@ -32,6 +32,8 @@ describe('progress (the approved rule, same numbers as the server)', () => {
     expect(progressLabel(progressOf([]))).toBe('لا توجد أعمال');
     expect(progressLabel(progressOf([{ status: 'CANCELLED' }]))).toBe('لا توجد أعمال نشطة');
     expect(progressLabel(progressOf([{ status: 'COMPLETED' }, { status: 'COMPLETED' }]))).toBe('تم إنجاز جميع الأعمال (2/2)');
+    // one done + one dropped: never «جميع الأعمال»
+    expect(progressLabel(progressOf([{ status: 'COMPLETED' }, { status: 'CANCELLED' }]))).toBe('تم إنجاز 1 من أصل 2 أعمال');
     expect(progressOf([{ status: 'CANCELLED' }]).rate).toBeNull();
   });
 

@@ -17,14 +17,16 @@ import {
   type WorkPerformance,
 } from '../quran-reference/work-assignment';
 import { useEvaluateWorkProgram } from './use-work';
+import { LEVEL_LOOK } from './work-look';
 import type { EvaluationBlock } from './work-model';
 import type { WorkProgram } from './work-types';
 
 /**
- * «التقييم العام» of a program (the web's section, after the items): four choices, the saved one
- * checked, a choice saved explicitly (a correction worded as such). The server decides when it is
- * allowed; the saved value changes only once it confirms (the confirmed program replaces the
- * cached one); a 409 shows its message and the program is reloaded.
+ * «التقييم العام» of a program (after the items): the saved level prominent, who gave it and when
+ * below it, and «تعديل التقييم» revealing the four choices (shown at once while none is given). A
+ * choice is saved explicitly (a correction worded as such). The server decides when it is allowed;
+ * the saved value changes only once it confirms (the confirmed program replaces the cached one); a
+ * 409 shows its message and the program is reloaded.
  */
 export function OverallEvaluationCard({
   teacherId,
@@ -40,6 +42,7 @@ export function OverallEvaluationCard({
 }) {
   const { colors } = useAppTheme();
   const saved = program.overallEvaluation ?? null;
+  const [editing, setEditing] = useState(false);
   const [choice, setChoice] = useState<WorkPerformance | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
@@ -48,6 +51,15 @@ export function OverallEvaluationCard({
   const changed = choice !== null && choice !== saved?.level;
   const disabled = blocked !== null || save.isPending;
   const pendingNote = overallPendingNote(program.progress.pending);
+  // Nothing given yet: the choices straight away (disabled while the session forbids it); given:
+  // behind «تعديل التقييم», which is offered only while allowed.
+  const choosing = !saved || (editing && blocked === null);
+  const look = saved ? LEVEL_LOOK[saved.level] : null;
+
+  function close() {
+    setChoice(null);
+    setEditing(false);
+  }
 
   function submit() {
     if (!changed || !choice) return;
@@ -57,7 +69,7 @@ export function OverallEvaluationCard({
       { items: [], version: program.version, overall: choice },
       {
         onSuccess: () => {
-          setChoice(null);
+          close();
           setConfirmation(`${OVERALL_EVALUATION.saved} — ${PERFORMANCE_LABEL[choice]}`);
         },
         onError: (e) => {
@@ -74,73 +86,98 @@ export function OverallEvaluationCard({
 
   return (
     <Card style={styles.card}>
-      <View style={styles.inline}>
-        <Icon name="success" size={16} color={colors.primary} />
-        <AppText variant="label" accessibilityRole="header">
+      <View style={styles.head}>
+        <Icon name="award" size={22} color={colors.primary} />
+        <AppText variant="heading" accessibilityRole="header" style={styles.flex}>
           {OVERALL_EVALUATION.title}
         </AppText>
-      </View>
-      <AppText variant="caption" tone="muted">
-        {OVERALL_EVALUATION.hint}
-      </AppText>
-      <AppText variant="body" testID="overall-saved">
-        {saved ? (
-          <>
-            <AppText variant="bodyStrong">{PERFORMANCE_LABEL[saved.level]}</AppText>
-            <AppText variant="caption" tone="muted">
-              {` — ${saved.evaluatedBy ? `${saved.evaluatedBy} · ` : ''}${formatDate(saved.evaluatedAt.slice(0, 10))}`}
-            </AppText>
-          </>
-        ) : (
-          <AppText variant="body" tone="muted">
-            {OVERALL_EVALUATION.none}
-          </AppText>
-        )}
-      </AppText>
-      <View accessibilityRole="radiogroup" accessibilityLabel={OVERALL_EVALUATION.title} style={styles.choices}>
-        {WORK_PERFORMANCES.map((level) => {
-          const on = selected === level;
-          return (
-            <Pressable
-              key={level}
-              onPress={() => setChoice(level)}
-              disabled={disabled}
-              accessibilityRole="radio"
-              accessibilityLabel={PERFORMANCE_LABEL[level]}
-              accessibilityState={{ selected: on, checked: on, disabled }}
-              style={[
-                styles.choice,
-                { borderColor: on ? colors.primary : colors.input, backgroundColor: on ? colors.primary : colors.card },
-                disabled && styles.disabled,
-              ]}>
-              {on ? <Icon name="success" size={16} color={colors.primaryForeground} /> : null}
-              <AppText variant="label" style={{ color: on ? colors.primaryForeground : colors.foreground }}>
-                {PERFORMANCE_LABEL[level]}
+        <View testID="overall-saved">
+          {saved && look ? (
+            <View style={[styles.level, { backgroundColor: colors[look.bg] }]}>
+              <Icon name={look.icon} size={16} color={colors[look.fg]} />
+              <AppText variant="bodyStrong" style={{ color: colors[look.fg] }}>
+                {PERFORMANCE_LABEL[saved.level]}
               </AppText>
-            </Pressable>
-          );
-        })}
+            </View>
+          ) : (
+            <AppText variant="small" tone="muted">
+              {OVERALL_EVALUATION.none}
+            </AppText>
+          )}
+        </View>
       </View>
+      {saved ? (
+        <View style={styles.inline}>
+          <Icon name="user" size={14} color={colors.mutedForeground} />
+          <AppText variant="small" tone="muted" style={styles.flex}>
+            {ar.work.lastOverall([saved.evaluatedBy, formatDate(saved.evaluatedAt.slice(0, 10))].filter(Boolean).join(' · '))}
+          </AppText>
+        </View>
+      ) : null}
+
       {blocked ? (
         // worded for this section (the footer already states the items' reason)
         <AppText variant="caption" tone="muted" testID="overall-blocked">
           {blocked === 'CANCELLED' ? OVERALL_BLOCKED.cancelled : OVERALL_BLOCKED.notStarted}
         </AppText>
-      ) : pendingNote ? (
-        <AppText variant="caption" tone="muted">
-          {pendingNote}
-        </AppText>
       ) : null}
-      {changed && saved && choice ? <AppText variant="label">{overallChangeText(saved.level, choice)}</AppText> : null}
+
+      {choosing ? (
+        <>
+          <View accessibilityRole="radiogroup" accessibilityLabel={OVERALL_EVALUATION.title} style={styles.choices}>
+            {WORK_PERFORMANCES.map((level) => {
+              const on = selected === level;
+              return (
+                <Pressable
+                  key={level}
+                  onPress={() => setChoice(level)}
+                  disabled={disabled}
+                  accessibilityRole="radio"
+                  accessibilityLabel={PERFORMANCE_LABEL[level]}
+                  accessibilityState={{ selected: on, checked: on, disabled }}
+                  style={[
+                    styles.choice,
+                    { borderColor: on ? colors.primary : colors.input, backgroundColor: on ? colors.primary : colors.card },
+                    disabled && styles.disabled,
+                  ]}>
+                  <Icon name={LEVEL_LOOK[level].icon} size={16} color={on ? colors.primaryForeground : colors.mutedForeground} />
+                  <AppText variant="label" style={{ color: on ? colors.primaryForeground : colors.foreground }}>
+                    {PERFORMANCE_LABEL[level]}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </View>
+          {pendingNote ? (
+            <AppText variant="caption" tone="muted">
+              {pendingNote}
+            </AppText>
+          ) : null}
+          {changed && saved && choice ? <AppText variant="label">{overallChangeText(saved.level, choice)}</AppText> : null}
+        </>
+      ) : null}
+
       {error ? <AlertBox message={error} /> : null}
       {confirmation && !changed ? <SuccessToast message={confirmation} /> : null}
-      {changed ? (
+
+      {choosing && (changed || editing) ? (
         <View style={styles.actions}>
-          <View style={styles.flex}>
-            <Button label={save.isPending ? OVERALL_EVALUATION.saving : OVERALL_EVALUATION.save} loading={save.isPending} disabled={disabled} fullWidth onPress={submit} />
-          </View>
-          <Button variant="ghost" label={ar.work.cancelChoice} disabled={save.isPending} onPress={() => setChoice(null)} />
+          {changed ? (
+            <View style={styles.flex}>
+              <Button
+                label={save.isPending ? OVERALL_EVALUATION.saving : OVERALL_EVALUATION.save}
+                loading={save.isPending}
+                disabled={disabled}
+                fullWidth
+                onPress={submit}
+              />
+            </View>
+          ) : null}
+          <Button variant="ghost" label={ar.work.cancelChoice} disabled={save.isPending} onPress={close} />
         </View>
+      ) : null}
+      {saved && !choosing && blocked === null ? (
+        <Button variant="outline" icon="edit" label={ar.work.editOverall} fullWidth onPress={() => setEditing(true)} />
       ) : null}
     </Card>
   );
@@ -148,6 +185,8 @@ export function OverallEvaluationCard({
 
 const styles = StyleSheet.create({
   card: { gap: spacing.sm },
+  head: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  level: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: 6 },
   inline: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   choices: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   choice: {

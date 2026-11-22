@@ -112,8 +112,13 @@ export function progressLabel(p: WorkProgress): string {
     return `${p.active} أعمال بانتظار الإنجاز`
   }
 
+  // «جميع الأعمال» only when EVERY item is done — never when some were dropped (1 منجز + 1 ملغى)
+  if (p.completed === p.total) {
+    return `تم إنجاز جميع الأعمال (${p.completed}/${p.total})`
+  }
+
   if (p.completed === p.active) {
-    return `تم إنجاز جميع الأعمال (${p.completed}/${p.active})`
+    return `تم إنجاز ${p.completed} من أصل ${p.total} أعمال`
   }
 
   return `تم إنجاز ${p.completed} من أصل ${p.active} ${

@@ -26,7 +26,8 @@ describe("«متابعة العمل» display rules", () => {
     expect(progressLabel(progressOf(items("COMPLETED", "PARTIAL")))).toBe("تم إنجاز 1 من أصل 2 أعمال")
     // Nothing done yet / everything done / no work at all
     expect(progressLabel(progressOf(items("PARTIAL", "NOT_EVALUATED")))).toBe("2 أعمال بانتظار الإنجاز")
-    expect(progressLabel(progressOf(items("COMPLETED", "COMPLETED", "CANCELLED")))).toBe("تم إنجاز جميع الأعمال (2/2)")
+    expect(progressLabel(progressOf(items("COMPLETED", "COMPLETED", "CANCELLED")))).toBe("تم إنجاز 2 من أصل 3 أعمال")
+    expect(progressLabel(progressOf(items("COMPLETED", "COMPLETED")))).toBe("تم إنجاز جميع الأعمال (2/2)")
     expect(progressLabel(progressOf([]))).toBe("لا توجد أعمال")
     // No misleading percentage without active work
     const none = progressOf(items("CANCELLED"))

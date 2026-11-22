@@ -1,48 +1,30 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { AppText, Icon, InitialsAvatar, type IconName } from '@/components/ui';
+import { AppText, Icon, InitialsAvatar } from '@/components/ui';
 import { ar } from '@/i18n/ar';
-import { radius, spacing, useAppTheme, type ColorTokens } from '@/theme';
+import { radius, spacing, useAppTheme } from '@/theme';
 
 import {
   completionParts,
   completionText,
   PERFORMANCE_LABEL,
   workTypeBadges,
-  type WorkItemStatus,
-  type WorkPerformance,
-  type WorkType,
 } from '../quran-reference/work-assignment';
+import { LEVEL_LOOK, RESULT_LOOK, TYPE_LOOK } from './work-look';
 import { sessionDay, studentName } from './work-model';
 import type { WorkProgram } from './work-types';
 
 const w = ar.work;
 
-/** Work types: soft colour + icon of their own (never the result / evaluation colours). */
-const TYPE_LOOK: Record<WorkType, { icon: IconName; bg: keyof ColorTokens; fg: keyof ColorTokens }> = {
-  MEMORIZATION: { icon: 'memorization', bg: 'memorizationSoft', fg: 'memorizationForeground' },
-  REVISION: { icon: 'revision', bg: 'revisionSoft', fg: 'revisionForeground' },
-  RECITATION: { icon: 'recitation', bg: 'recitationSoft', fg: 'recitationForeground' },
-  EXAM: { icon: 'exam', bg: 'examSoft', fg: 'examForeground' },
-};
-
-/** «التقييم العام»: the level only, with an icon of its own. */
-const LEVEL_LOOK: Record<WorkPerformance, { icon: IconName; bg: keyof ColorTokens; fg: keyof ColorTokens }> = {
-  EXCELLENT: { icon: 'trophy', bg: 'brandSoft', fg: 'brandSoftForeground' },
-  VERY_GOOD: { icon: 'thumbsUp', bg: 'infoSoft', fg: 'infoSoftForeground' },
-  GOOD: { icon: 'star', bg: 'warningSoft', fg: 'warningSoftForeground' },
-  NEEDS_IMPROVEMENT: { icon: 'improve', bg: 'destructiveSoft', fg: 'destructiveSoftForeground' },
-};
-
-/** Results of the items (icon + words). */
-const RESULT_LOOK: Record<WorkItemStatus, { icon: IconName; fg: keyof ColorTokens }> = {
-  COMPLETED: { icon: 'success', fg: 'primary' },
-  PARTIAL: { icon: 'partial', fg: 'warning' },
-  NOT_COMPLETED: { icon: 'notDone', fg: 'destructive' },
-  POSTPONED: { icon: 'clock', fg: 'infoSoftForeground' },
-  CANCELLED: { icon: 'ban', fg: 'mutedForeground' },
-  NOT_EVALUATED: { icon: 'pending', fg: 'mutedForeground' },
-};
+/** Results on the card: the text colour only (no background). */
+const RESULT_FG = {
+  COMPLETED: 'primary',
+  PARTIAL: 'warning',
+  NOT_COMPLETED: 'destructive',
+  POSTPONED: 'infoSoftForeground',
+  CANCELLED: 'mutedForeground',
+  NOT_EVALUATED: 'mutedForeground',
+} as const;
 
 /**
  * ONE work program as one card (the whole card opens it):
@@ -126,8 +108,8 @@ export function WorkProgramCard({ program: p, onPress }: { program: WorkProgram;
           {parts.map((part, i) => (
             <View key={part.status} style={styles.inline}>
               {i > 0 ? <View style={[styles.divider, { backgroundColor: colors.border }]} /> : null}
-              <Icon name={RESULT_LOOK[part.status].icon} size={16} color={colors[RESULT_LOOK[part.status].fg]} />
-              <AppText variant="label" style={{ color: colors[RESULT_LOOK[part.status].fg] }} testID={`card-result-${part.status}`}>
+              <Icon name={RESULT_LOOK[part.status].icon} size={16} color={colors[RESULT_FG[part.status]]} />
+              <AppText variant="label" style={{ color: colors[RESULT_FG[part.status]] }} testID={`card-result-${part.status}`}>
                 {part.text}
               </AppText>
             </View>
