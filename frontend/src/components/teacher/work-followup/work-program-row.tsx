@@ -1,12 +1,12 @@
 "use client"
 
-import { ChevronLeft, CircleCheck, CircleMinus, CircleSlash, ClipboardCheck, Clock, Pencil, Repeat, type LucideIcon } from "lucide-react"
+import { Award, ChevronLeft, CircleCheck, CircleMinus, CircleSlash, ClipboardCheck, Clock, Pencil, Repeat, type LucideIcon } from "lucide-react"
 import Link from "next/link"
 
 import { UserAvatar } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { useEvaluationBlock } from "@/hooks/use-evaluation-block"
-import { programStatus, rowCycleText, workTypesSummary, type ProgramStatusKind } from "@/lib/quran-reference/work-assignment"
+import { overallRowText, programStatus, rowCycleText, workTypesSummary, type ProgramStatusKind } from "@/lib/quran-reference/work-assignment"
 import { cn } from "@/lib/utils"
 import { evaluationBlockMessage, sessionLabel, sessionPhaseLabel, type SessionPhase } from "@/lib/work-followup"
 import type { WorkProgram } from "@/types/work-followup"
@@ -49,6 +49,7 @@ export function WorkProgramRow({
   const blocked = useEvaluationBlock(program)
   const types = workTypesSummary(program.items.map((i) => i.type))
   const cycles = rowCycleText(program.items)
+  const overall = overallRowText(program.overallEvaluation?.level)
   return (
     <li
       data-program={program.id}
@@ -74,6 +75,13 @@ export function WorkProgramRow({
             <StatusIcon className="size-3.5 shrink-0" aria-hidden />
             {status.text}
           </span>
+          {/* «التقييم العام»: only once given (no clutter otherwise); separate from the items' state */}
+          {overall && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-brand-soft px-1.5 py-0.5 text-brand-soft-foreground" data-overall>
+              <Award className="size-3.5 shrink-0" aria-hidden />
+              {overall}
+            </span>
+          )}
         </p>
         {/* «متابعة العرضات»: tracked recitations only, one line */}
         {cycles && (

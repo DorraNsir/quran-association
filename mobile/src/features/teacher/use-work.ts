@@ -1,5 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
+import type { WorkPerformance } from '@/features/quran-reference/work-assignment';
+
 import {
   createWorkProgram,
   evaluateWorkProgram,
@@ -91,7 +93,7 @@ export const useUpdateWorkProgram = (teacherId: string, id: string) =>
   );
 
 export const useEvaluateWorkProgram = (teacherId: string, id: string) =>
-  useWorkMutation(teacherId, `evaluate-${id}`, (b: { items: EvaluationLine[]; version?: number; generalNotes?: string | null }) =>
+  useWorkMutation(teacherId, `evaluate-${id}`, (b: { items: EvaluationLine[]; version?: number; generalNotes?: string | null; overall?: WorkPerformance }) =>
     evaluateWorkProgram(id, b),
   );
 

@@ -4,7 +4,18 @@ import type { ReactNode } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import type { SessionUser } from '@/features/auth/types';
-import { canonicalOf, programStatus, WORKLOAD_ORDER, workTypesSummary } from '@/features/quran-reference/work-assignment';
+import {
+  canonicalOf,
+  OVERALL_BLOCKED,
+  OVERALL_EVALUATION,
+  overallChangeText,
+  overallPendingNote,
+  PERFORMANCE_LABEL,
+  programStatus,
+  WORK_PERFORMANCES,
+  WORKLOAD_ORDER,
+  workTypesSummary,
+} from '@/features/quran-reference/work-assignment';
 import { ar } from '@/i18n/ar';
 import { apiUrl, setAuthBridge } from '@/services/api';
 
@@ -265,7 +276,9 @@ describe('program details', () => {
     expect(await screen.findByText(w.itemsCount(3))).toBeTruthy();
     expect(screen.getByLabelText('عرضة 2')).toBeTruthy();
     expect(screen.getAllByText(w.status.COMPLETED)).toHaveLength(2);
-    expect(screen.getByText(/ممتاز/)).toBeTruthy();
+    // the evaluation comment «ممتاز», and the «التقييم العام» choice of the same word
+    expect(screen.getAllByText(/ممتاز/)).toHaveLength(2);
+    expect(screen.getByRole('radio', { name: 'ممتاز' })).toBeTruthy();
     expect(screen.getByText(w.evaluatedBy('سارة بن علي', '9 نوفمبر 2026'))).toBeTruthy();
     expect(screen.getByText(w.carriedFrom('2 نوفمبر 2026', w.status.PARTIAL))).toBeTruthy();
     expect(screen.getByText(w.carriedTo('16 نوفمبر 2026'))).toBeTruthy();
@@ -1708,5 +1721,109 @@ describe('«اختر الطالب»: photos, search and compact rows (mobile)', 
     await fireEvent.press(field);
     expect(screen.getByLabelText(w.searchStudentLabel).props.value).toBe('');
     expect(screen.getByRole('radio', { name: 'محمد التونسي' }).props.accessibilityState.selected).toBe(true);
+  });
+});
+
+describe('«التقييم العام» (mobile)', () => {
+  const given = (level: 'EXCELLENT' | 'VERY_GOOD' | 'GOOD' | 'NEEDS_IMPROVEMENT') => ({ level, evaluatedAt: '2026-11-09T17:00:00.000Z', evaluatedBy: 'سارة بن علي' });
+  const evaluationPath = (p: WorkProgram) => `/teacher/work-programs/${p.id}/evaluation`;
+  const choices = () => within(screen.getByLabelText(OVERALL_EVALUATION.title)).getAllByRole('radio');
+
+  it('not given yet: four choices (same words as the web), none selected; the empty state and the pending-items note', async () => {
+    const p = workProgram('w1');
+    stub(undefined, p);
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    expect(await screen.findByText(OVERALL_EVALUATION.title)).toBeTruthy();
+    expect(choices().map((c) => [c.props.accessibilityLabel, c.props.accessibilityState.selected])).toEqual(
+      WORK_PERFORMANCES.map((l) => [PERFORMANCE_LABEL[l], false]),
+    );
+    expect(screen.getByText(OVERALL_EVALUATION.none)).toBeTruthy();
+    if (p.progress.pending > 0) expect(screen.getByText(overallPendingNote(p.progress.pending)!)).toBeTruthy();
+    expect(screen.queryByLabelText(OVERALL_EVALUATION.save)).toBeNull(); // nothing chosen: nothing to save
+  });
+
+  it('choose → save: the request carries the version; shown only after the server confirms, with a confirmation', async () => {
+    const p = workProgram('w1');
+    stub((c) => (c.method === 'PATCH' && c.path.endsWith(evaluationPath(p)) ? 'pending' : undefined), p);
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    await fireEvent.press(await screen.findByRole('radio', { name: 'جيد جدًا' }));
+    expect(screen.getByRole('radio', { name: 'جيد جدًا' }).props.accessibilityState.selected).toBe(true);
+    await fireEvent.press(screen.getByLabelText(OVERALL_EVALUATION.save));
+    await settle();
+    expect(writes().at(-1)!.body).toEqual({ items: [], version: p.version, overall: 'VERY_GOOD' });
+    // still waiting for the server: nothing claimed
+    expect(screen.getByText(OVERALL_EVALUATION.none)).toBeTruthy();
+    expect(screen.queryByText(new RegExp(OVERALL_EVALUATION.saved))).toBeNull();
+
+    const savedProgram = { ...p, version: p.version + 1, overallEvaluation: given('VERY_GOOD') };
+    stub((c) => (c.method === 'PATCH' ? ok(savedProgram) : undefined), p);
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    await fireEvent.press(await screen.findByRole('radio', { name: 'جيد جدًا' }));
+    await fireEvent.press(screen.getByLabelText(OVERALL_EVALUATION.save));
+    expect(await screen.findByText(`${OVERALL_EVALUATION.saved} — جيد جدًا`)).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'جيد جدًا' }).props.accessibilityState.selected).toBe(true);
+    expect(screen.queryByLabelText(OVERALL_EVALUATION.save)).toBeNull();
+  });
+
+  it('a correction is explicit and sent with the current version', async () => {
+    const p = workProgram('w1', { version: 7, overallEvaluation: given('GOOD') });
+    stub((c) => (c.method === 'PATCH' ? ok({ ...p, version: 8, overallEvaluation: given('EXCELLENT') }) : undefined), p);
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    expect((await screen.findByRole('radio', { name: 'جيد' })).props.accessibilityState.selected).toBe(true);
+    await fireEvent.press(screen.getByRole('radio', { name: 'ممتاز' }));
+    expect(screen.getByText(overallChangeText('GOOD', 'EXCELLENT'))).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText(OVERALL_EVALUATION.save));
+    await settle();
+    expect(writes().at(-1)!.body).toEqual({ items: [], version: 7, overall: 'EXCELLENT' });
+    expect(await screen.findByText(`${OVERALL_EVALUATION.saved} — ممتاز`)).toBeTruthy();
+  });
+
+  it('a stale version (409): the server’s message and the program reloaded — nothing shown as saved', async () => {
+    const p = workProgram('w1', { overallEvaluation: given('GOOD') });
+    const message = 'تغيّر برنامج العمل منذ فتحه. أعد التحميل.';
+    stub((c) => (c.method === 'PATCH' ? { status: 409, body: { code: 'WORK_PROGRAM_CHANGED', message } } : undefined), p);
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    await fireEvent.press(await screen.findByRole('radio', { name: 'ممتاز' }));
+    const gets = () => calls.filter((c) => c.method === 'GET' && c.path.endsWith('/teacher/work-programs/w1')).length;
+    const before = gets();
+    await fireEvent.press(screen.getByLabelText(OVERALL_EVALUATION.save));
+    expect(await screen.findByText(message)).toBeTruthy();
+    await settle();
+    expect(gets()).toBeGreaterThan(before);
+    expect(screen.getByRole('radio', { name: 'جيد' }).props.accessibilityState.selected).toBe(true);
+  });
+
+  it('before the start / cancelled: choices disabled with this section’s reason; a recorded value stays visible', async () => {
+    stub(undefined, workProgram('w1', { session: workSession('s9', '2099-11-09'), evaluation: { allowed: false, blockedReason: 'SESSION_NOT_STARTED' } }));
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    await screen.findByText(OVERALL_EVALUATION.title);
+    expect(choices().every((c) => c.props.accessibilityState.disabled)).toBe(true);
+    expect(screen.getByTestId('overall-blocked').props.children).toBe(OVERALL_BLOCKED.notStarted);
+    stub(
+      undefined,
+      workProgram('w1', {
+        session: workSession('s9', '2099-11-09', { status: 'CANCELLED' }),
+        evaluation: { allowed: false, blockedReason: 'SESSION_CANCELLED' },
+        overallEvaluation: given('GOOD'),
+      }),
+    );
+    await renderScreen(<TeacherWorkProgramScreen programId="w1" />);
+    await screen.findByText(OVERALL_EVALUATION.title);
+    expect(within(screen.getByTestId('overall-saved')).getByText('جيد')).toBeTruthy();
+    expect(screen.getByTestId('overall-blocked').props.children).toBe(OVERALL_BLOCKED.cancelled);
+    expect(choices().every((c) => c.props.accessibilityState.disabled)).toBe(true);
+  });
+
+  it('compact row: «التقييم العام: …» once given, next to the items’ state; nothing when not given', async () => {
+    const p = workProgram('w1', { overallEvaluation: given('VERY_GOOD') });
+    stub(undefined, p);
+    await renderScreen(<TeacherWorkScreen />);
+    expect((await screen.findByTestId('row-overall')).props.children).toBe('التقييم العام: جيد جدًا');
+    const status = programStatus(p.progress);
+    expect(screen.getByTestId(`status-${status.kind}`).props.children).toBe(status.text);
+    stub(undefined, workProgram('w2'));
+    await renderScreen(<TeacherWorkScreen />);
+    await screen.findByText(w.total(1));
+    expect(screen.queryByTestId('row-overall')).toBeNull();
   });
 });

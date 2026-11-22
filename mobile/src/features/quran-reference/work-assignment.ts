@@ -692,3 +692,49 @@ export function rowCycleText(items: { recitationCycle?: { number: number; succes
   const texts = items.flatMap((i) => (i.recitationCycle ? [cycleSummaryText(i.recitationCycle)] : []));
   return texts.length ? texts.join('؛ ') : null;
 }
+
+// ───────────────────────── «التقييم العام» (display only) ─────────────────────────
+// The teacher's holistic judgment of a student's work in one session: chosen by hand, never
+// computed from the items, the workload or the recitation cycles. The server decides who may set
+// it and when (session started, not cancelled); these helpers only word it.
+
+export type WorkPerformance = 'EXCELLENT' | 'VERY_GOOD' | 'GOOD' | 'NEEDS_IMPROVEMENT';
+
+/** The four levels, best first (the order of the choices). */
+export const WORK_PERFORMANCES: readonly WorkPerformance[] = ['EXCELLENT', 'VERY_GOOD', 'GOOD', 'NEEDS_IMPROVEMENT'];
+
+export const PERFORMANCE_LABEL: Record<WorkPerformance, string> = {
+  EXCELLENT: 'ممتاز',
+  VERY_GOOD: 'جيد جدًا',
+  GOOD: 'جيد',
+  NEEDS_IMPROVEMENT: 'يحتاج تحسين',
+};
+
+export const OVERALL_EVALUATION = {
+  title: 'التقييم العام',
+  none: 'لم يُحدَّد التقييم العام بعد',
+  hint: 'تقدير المعلم العام لأداء الطالب في هذه الحصة، مستقل عن نتائج الأعمال.',
+  save: 'حفظ التقييم العام',
+  saving: 'جارٍ الحفظ…',
+  saved: 'تم حفظ التقييم العام',
+} as const;
+
+/** Why the overall evaluation cannot be set now (the server's verdict, worded for this section). */
+export const OVERALL_BLOCKED = {
+  notStarted: 'يُحدَّد التقييم العام بعد بداية الحصة.',
+  cancelled: 'الحصة ملغاة: لا يُحدَّد التقييم العام ولا يُعدَّل.',
+} as const;
+
+/** «التقييم العام: جيد جدًا» — the compact row indicator (null when not given: no clutter). */
+export const overallRowText = (level: WorkPerformance | null | undefined) =>
+  level ? `${OVERALL_EVALUATION.title}: ${PERFORMANCE_LABEL[level]}` : null;
+
+/** «تغيير التقييم العام من «جيد» إلى «ممتاز»» — a correction is always explicit. */
+export const overallChangeText = (from: WorkPerformance, to: WorkPerformance) =>
+  `تغيير التقييم العام من «${PERFORMANCE_LABEL[from]}» إلى «${PERFORMANCE_LABEL[to]}»`;
+
+/** A gentle note when some items still wait for their result (it never blocks the overall evaluation). */
+export const overallPendingNote = (pending: number) =>
+  pending > 0
+    ? `${pending === 1 ? 'عمل واحد لم يُقيَّم' : pending === 2 ? 'عملان لم يُقيَّما' : `${pending} أعمال لم تُقيَّم`} بعد — يمكن تحديد التقييم العام على أي حال.`
+    : null;

@@ -3,10 +3,10 @@
  * Student → Session → Work program (one per student per session) → Work items.
  * The program's date, time, class and branch always come from its session.
  */
-import type { WorkAssignment, WorkloadSnapshot } from "@/lib/quran-reference/work-assignment"
+import type { WorkAssignment, WorkloadSnapshot, WorkPerformance } from "@/lib/quran-reference/work-assignment"
 import type { ID, ISODate, SessionStatus } from "@/types/domain"
 
-export type { AssignmentPayload, WorkAssignment, WorkloadSnapshot } from "@/lib/quran-reference/work-assignment"
+export type { AssignmentPayload, WorkAssignment, WorkloadSnapshot, WorkPerformance } from "@/lib/quran-reference/work-assignment"
 
 export type WorkType = "MEMORIZATION" | "REVISION" | "RECITATION" | "EXAM"
 
@@ -156,6 +156,8 @@ export interface WorkProgram {
   /** «ملاحظات المعلم» — not the private «ملاحظاتي» notes */
   generalNotes: string | null
   lastEditedBy: string | null
+  /** «التقييم العام»: the teacher's holistic judgment (null: not given yet) — separate from the items' results */
+  overallEvaluation?: { level: WorkPerformance; evaluatedAt: string; evaluatedBy: string | null } | null
   createdAt: string
   updatedAt: string
   progress: WorkProgress
@@ -182,6 +184,8 @@ export interface StudentWorkProgram {
   /** The teacher who planned it (else the session supervisor) */
   teacherName: string | null
   progress: WorkProgress
+  /** «التقييم العام» given by the teacher (null: not yet) */
+  overallEvaluation?: { level: WorkPerformance; evaluatedAt: string } | null
   items: {
     id: ID
     type: WorkType

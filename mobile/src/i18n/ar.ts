@@ -508,6 +508,7 @@ export const ar = {
     totalPages: 'مجموع الصفحات',
     // compact list + «ترتيب حسب البرنامج» (the wording itself is shared with the web)
     sessionFilter: 'الحصة',
+    cancelChoice: 'إلغاء',
     allSessions: 'كل الحصص',
     pickOrder: 'ترتيب الطلبة',
     closeSessions: 'إغلاق قائمة الحصص',

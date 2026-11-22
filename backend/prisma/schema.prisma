@@ -207,6 +207,15 @@ enum WorkAssignmentKind {
   SURAH_RANGE
 }
 
+/// «التقييم العام»: the teacher's holistic judgment of a student's work in one session (chosen by
+/// hand, never computed from the items, the workload or the recitation cycles)
+enum WorkPerformance {
+  EXCELLENT
+  VERY_GOOD
+  GOOD
+  NEEDS_IMPROVEMENT
+}
+
 /// «متابعة العمل»: the result of a work item. CANCELLED = this item was dropped (not a cancelled session)
 enum WorkStatus {
   NOT_EVALUATED
@@ -311,39 +320,40 @@ model User {
   roles    UserRole[]
   sessions AuthSession[]
 
-  memorizationUpdates       MemorizationProgress[]
-  createdRegistrations      RegistrationRequest[]  @relation("RegistrationCreator")
-  reviewedRegistrations     RegistrationRequest[]  @relation("RegistrationReviewer")
-  recordedPayments          Payment[]              @relation("PaymentRecorder")
-  issuedReceipts            Payment[]              @relation("PaymentReceiptIssuer")
-  voidedPayments            Payment[]              @relation("PaymentVoider")
-  createdGroupFees          GroupFee[]             @relation("GroupFeeCreator")
-  deactivatedGroupFees      GroupFee[]             @relation("GroupFeeDeactivator")
-  createdObligations        PaymentObligation[]    @relation("ObligationCreator")
-  voidedObligations         PaymentObligation[]    @relation("ObligationVoider")
-  obligationTransfers       ObligationTransfer[]
-  groupClassMoves           GroupClassMove[]
-  graduateConsents          QuranGraduate[]        @relation("GraduateConsentRecorder")
-  uploadedFiles             StoredFile[]           @relation("FileUploader")
-  publishedResources        Resource[]
-  publishedAnnouncements    Announcement[]
-  notifications             Notification[]         @relation("NotificationRecipient")
-  actedNotifications        Notification[]         @relation("NotificationActor")
-  recordedAttendance        StudentAttendance[]
-  recordedTeacherAttendance TeacherAttendance[]    @relation("TeacherAttendanceRecorder")
-  attendanceChanges         AttendanceChange[]
-  createdWorkPrograms       WorkProgram[]          @relation("WorkProgramCreator")
-  updatedWorkPrograms       WorkProgram[]          @relation("WorkProgramUpdater")
-  createdWorkItems          WorkItem[]             @relation("WorkItemCreator")
-  updatedWorkItems          WorkItem[]             @relation("WorkItemUpdater")
-  evaluatedWorkItems        WorkItem[]             @relation("WorkItemEvaluator")
-  startedRecitationCycles   RecitationCycle[]      @relation("RecitationCycleStarter")
-  createdOnboardingLinks    OnboardingLink[]
-  reviewedOnboardings       OnboardingSubmission[]
-  recordedEnrollments       StudentEnrollment[]
-  recordedStatusChanges     StudentStatusChange[]
-  completedSessions         Session[]
-  administrationMember      AdministrationMember[]
+  memorizationUpdates          MemorizationProgress[]
+  createdRegistrations         RegistrationRequest[]  @relation("RegistrationCreator")
+  reviewedRegistrations        RegistrationRequest[]  @relation("RegistrationReviewer")
+  recordedPayments             Payment[]              @relation("PaymentRecorder")
+  issuedReceipts               Payment[]              @relation("PaymentReceiptIssuer")
+  voidedPayments               Payment[]              @relation("PaymentVoider")
+  createdGroupFees             GroupFee[]             @relation("GroupFeeCreator")
+  deactivatedGroupFees         GroupFee[]             @relation("GroupFeeDeactivator")
+  createdObligations           PaymentObligation[]    @relation("ObligationCreator")
+  voidedObligations            PaymentObligation[]    @relation("ObligationVoider")
+  obligationTransfers          ObligationTransfer[]
+  groupClassMoves              GroupClassMove[]
+  graduateConsents             QuranGraduate[]        @relation("GraduateConsentRecorder")
+  uploadedFiles                StoredFile[]           @relation("FileUploader")
+  publishedResources           Resource[]
+  publishedAnnouncements       Announcement[]
+  notifications                Notification[]         @relation("NotificationRecipient")
+  actedNotifications           Notification[]         @relation("NotificationActor")
+  recordedAttendance           StudentAttendance[]
+  recordedTeacherAttendance    TeacherAttendance[]    @relation("TeacherAttendanceRecorder")
+  attendanceChanges            AttendanceChange[]
+  createdWorkPrograms          WorkProgram[]          @relation("WorkProgramCreator")
+  updatedWorkPrograms          WorkProgram[]          @relation("WorkProgramUpdater")
+  overallEvaluatedWorkPrograms WorkProgram[]          @relation("WorkProgramOverallEvaluator")
+  createdWorkItems             WorkItem[]             @relation("WorkItemCreator")
+  updatedWorkItems             WorkItem[]             @relation("WorkItemUpdater")
+  evaluatedWorkItems           WorkItem[]             @relation("WorkItemEvaluator")
+  startedRecitationCycles      RecitationCycle[]      @relation("RecitationCycleStarter")
+  createdOnboardingLinks       OnboardingLink[]
+  reviewedOnboardings          OnboardingSubmission[]
+  recordedEnrollments          StudentEnrollment[]
+  recordedStatusChanges        StudentStatusChange[]
+  completedSessions            Session[]
+  administrationMember         AdministrationMember[]
 
   @@map("users")
 }
@@ -1599,23 +1609,28 @@ model StoredFile {
 /// session — never stored here. Never deleted with a session or a student
 /// (Restrict): a session that has work is kept (cancelled), never removed.
 model WorkProgram {
-  id              String   @id @default(uuid(7)) @db.Uuid
-  studentId       String   @db.Uuid
-  sessionId       String   @db.Uuid
+  id                       String           @id @default(uuid(7)) @db.Uuid
+  studentId                String           @db.Uuid
+  sessionId                String           @db.Uuid
   /// «ملاحظات المعلم» — not the private «ملاحظاتي» notes (TeacherNote)
-  generalNotes    String?
-  /// Optimistic concurrency of the program's own fields (notes)
-  version         Int      @default(1)
-  createdByUserId String?  @db.Uuid
-  updatedByUserId String?  @db.Uuid
-  createdAt       DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+  generalNotes             String?
+  /// Optimistic concurrency of the program's own fields (notes, overall evaluation)
+  version                  Int              @default(1)
+  /// «التقييم العام» (null: not given yet); with who gave it and when (CHECK: all or none)
+  overallEvaluation        WorkPerformance?
+  overallEvaluatedAt       DateTime?        @db.Timestamptz(3)
+  overallEvaluatedByUserId String?          @db.Uuid
+  createdByUserId          String?          @db.Uuid
+  updatedByUserId          String?          @db.Uuid
+  createdAt                DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime         @updatedAt @db.Timestamptz(3)
 
-  student   Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
-  session   Session    @relation(fields: [sessionId], references: [id], onDelete: Restrict)
-  createdBy User?      @relation("WorkProgramCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedBy User?      @relation("WorkProgramUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
-  items     WorkItem[]
+  student            Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  session            Session    @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  createdBy          User?      @relation("WorkProgramCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy          User?      @relation("WorkProgramUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  overallEvaluatedBy User?      @relation("WorkProgramOverallEvaluator", fields: [overallEvaluatedByUserId], references: [id], onDelete: SetNull)
+  items              WorkItem[]
 
   @@unique([studentId, sessionId])
   @@index([sessionId])
@@ -1627,56 +1642,56 @@ model WorkProgram {
 /// next recitation («إضافة العرضة التالية») creates a NEW item that points to
 /// its source; the source is never changed.
 model WorkItem {
-  id                  String      @id @default(uuid(7)) @db.Uuid
-  workProgramId       String      @db.Uuid
+  id                  String              @id @default(uuid(7)) @db.Uuid
+  workProgramId       String              @db.Uuid
   /// Display order inside the program
   position            Int
   type                WorkType
   description         String
-  status              WorkStatus  @default(NOT_EVALUATED)
+  status              WorkStatus          @default(NOT_EVALUATED)
   /// عرضة only: 1, 2, 3… (no maximum)
   recitationNumber    Int?
   evaluationComment   String?
   /// Continues this unfinished item of an earlier session (same task)
-  carriedFromItemId   String?     @db.Uuid
+  carriedFromItemId   String?             @db.Uuid
   /// The source item's status when it was carried (its status may change later)
   carriedFromStatus   WorkStatus?
   /// The previous numbered recitation this one follows (number + 1)
-  continuedFromItemId String?     @db.Uuid
+  continuedFromItemId String?             @db.Uuid
   /// «متابعة العرضات»: the cycle this عرضة is an attempt of (null: not a tracked recitation —
   /// another type, free text, or a recitation planned before cycles existed)
-  recitationCycleId   String?     @db.Uuid
+  recitationCycleId   String?             @db.Uuid
   /// Optimistic concurrency: a stale client never overwrites a newer value
-  version             Int         @default(1)
+  version             Int                 @default(1)
   /// Structured Quranic assignment (all null for a free-text item; CHECK in migration).
   /// The verse range is canonical (derived by the server from the chosen references) and belongs
   /// to the Mushaf edition `quranEditionId`; pages only for PAGE_RANGE.
   quranAssignmentKind WorkAssignmentKind?
   quranEditionId      String?
-  quranFromSurah      Int?        @db.SmallInt
-  quranFromAyah       Int?        @db.SmallInt
-  quranToSurah        Int?        @db.SmallInt
-  quranToAyah         Int?        @db.SmallInt
-  quranFromPage       Int?        @db.SmallInt
-  quranToPage         Int?        @db.SmallInt
+  quranFromSurah      Int?                @db.SmallInt
+  quranFromAyah       Int?                @db.SmallInt
+  quranToSurah        Int?                @db.SmallInt
+  quranToAyah         Int?                @db.SmallInt
+  quranFromPage       Int?                @db.SmallInt
+  quranToPage         Int?                @db.SmallInt
   /// Workload computed by the server when the assignment was saved (exact / bounded / unavailable
   /// per unit, data reliability); never recomputed silently, never sent by clients
   quranWorkload       Json?
-  createdByUserId     String?     @db.Uuid
-  updatedByUserId     String?     @db.Uuid
-  evaluatedByUserId   String?     @db.Uuid
-  evaluatedAt         DateTime?   @db.Timestamptz(3)
-  createdAt           DateTime    @default(now()) @db.Timestamptz(3)
-  updatedAt           DateTime    @updatedAt @db.Timestamptz(3)
+  createdByUserId     String?             @db.Uuid
+  updatedByUserId     String?             @db.Uuid
+  evaluatedByUserId   String?             @db.Uuid
+  evaluatedAt         DateTime?           @db.Timestamptz(3)
+  createdAt           DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime            @updatedAt @db.Timestamptz(3)
 
-  program       WorkProgram @relation(fields: [workProgramId], references: [id], onDelete: Restrict)
-  carriedFrom   WorkItem?   @relation("WorkItemCarry", fields: [carriedFromItemId], references: [id], onDelete: Restrict)
-  carriedTo     WorkItem[]  @relation("WorkItemCarry")
-  continuedFrom WorkItem?   @relation("WorkItemNextRecitation", fields: [continuedFromItemId], references: [id], onDelete: Restrict)
-  continuedBy   WorkItem[]  @relation("WorkItemNextRecitation")
-  createdBy     User?       @relation("WorkItemCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedBy     User?       @relation("WorkItemUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
-  evaluatedBy   User?       @relation("WorkItemEvaluator", fields: [evaluatedByUserId], references: [id], onDelete: SetNull)
+  program         WorkProgram      @relation(fields: [workProgramId], references: [id], onDelete: Restrict)
+  carriedFrom     WorkItem?        @relation("WorkItemCarry", fields: [carriedFromItemId], references: [id], onDelete: Restrict)
+  carriedTo       WorkItem[]       @relation("WorkItemCarry")
+  continuedFrom   WorkItem?        @relation("WorkItemNextRecitation", fields: [continuedFromItemId], references: [id], onDelete: Restrict)
+  continuedBy     WorkItem[]       @relation("WorkItemNextRecitation")
+  createdBy       User?            @relation("WorkItemCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy       User?            @relation("WorkItemUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  evaluatedBy     User?            @relation("WorkItemEvaluator", fields: [evaluatedByUserId], references: [id], onDelete: SetNull)
   recitationCycle RecitationCycle? @relation(fields: [recitationCycleId], references: [id], onDelete: Restrict)
 
   /// The same item is carried at most once into a given program (= student + session)

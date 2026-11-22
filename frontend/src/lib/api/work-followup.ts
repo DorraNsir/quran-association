@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 
-import type { AssignmentPayload, RecitationHistory, StudentWorkProgram, WorkProgram, WorkSession, WorkStatus, WorkType } from "@/types/work-followup"
+import type { AssignmentPayload, RecitationHistory, StudentWorkProgram, WorkPerformance, WorkProgram, WorkSession, WorkStatus, WorkType } from "@/types/work-followup"
 
 import { api, useApiMutation } from "./academic"
 import type { Page, Query } from "./client"
@@ -126,6 +126,8 @@ export function useEvaluateWorkProgram() {
       id: string
       version?: number
       generalNotes?: string | null
+      /** «التقييم العام» (version required) */
+      overall?: WorkPerformance
       items: { id: string; version: number; status: WorkStatus; evaluationComment?: string | null }[]
     }) => api<WorkProgram>(`${BASE}/${id}/evaluation`, { method: "PATCH", body }),
     [workKeys.all]

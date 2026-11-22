@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils"
 import { carriedFromLabel, evaluationBlockMessage, isTransferable, phaseOf } from "@/lib/work-followup"
 import type { WorkProgram } from "@/types/work-followup"
 
+import { OverallEvaluationSection } from "./overall-evaluation"
 import { RecitationCycleLine } from "./recitation-cycle-line"
 import { ownDescription, WorkAssignmentView } from "./work-assignment-view"
 import { WorkStatusBadge, WorkTypeBadge } from "./work-badges"
@@ -178,7 +179,14 @@ function ProgramView({ program }: { program: WorkProgram }) {
             })}
           </ol>
         </Card>
+      </section>
 
+      {/* «التقييم العام»: after the individual results, separate from them */}
+      <div className="mt-6">
+        <OverallEvaluationSection key={`${program.id}-${program.version}`} program={program} />
+      </div>
+
+      <section aria-label="ملاحظات البرنامج" className="mt-6 space-y-3">
         {program.generalNotes && (
           <Card className="flex-row items-start gap-2 p-4 text-sm">
             <NotebookText className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />

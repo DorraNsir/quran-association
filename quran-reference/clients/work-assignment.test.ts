@@ -6,6 +6,13 @@ import { readFileSync } from 'node:fs';
 import {
   adaptDraft,
   assignmentSummary,
+  OVERALL_BLOCKED,
+  OVERALL_EVALUATION,
+  overallChangeText,
+  overallPendingNote,
+  overallRowText,
+  PERFORMANCE_LABEL,
+  WORK_PERFORMANCES,
   programStatus,
   rowCycleText,
   workloadSections,
@@ -571,5 +578,29 @@ describe('row cycle line (display only)', () => {
     assert.equal(rowCycleText([c(1, 3)]), 'الدورة الأولى · 3/4 ناجحة');
     assert.equal(rowCycleText([c(1, 3), { recitationCycle: null }, c(2, 4)]), 'الدورة الأولى · 3/4 ناجحة؛ الدورة الثانية · 4/4 ناجحة · مكتملة');
     assert.equal(rowCycleText([{}, { recitationCycle: null }]), null);
+  });
+});
+
+describe('«التقييم العام» wording (display only)', () => {
+  test('four levels, best first, with their Arabic labels', () => {
+    assert.deepEqual(WORK_PERFORMANCES, ['EXCELLENT', 'VERY_GOOD', 'GOOD', 'NEEDS_IMPROVEMENT']);
+    assert.deepEqual(WORK_PERFORMANCES.map((l) => PERFORMANCE_LABEL[l]), ['ممتاز', 'جيد جدًا', 'جيد', 'يحتاج تحسين']);
+  });
+  test('row indicator only when given; the empty state reads differently from an unevaluated item', () => {
+    assert.equal(overallRowText('VERY_GOOD'), 'التقييم العام: جيد جدًا');
+    assert.equal(overallRowText(null), null);
+    assert.equal(OVERALL_EVALUATION.none, 'لم يُحدَّد التقييم العام بعد');
+    assert.notEqual(OVERALL_EVALUATION.none, 'لم يُقيَّم بعد');
+  });
+  test('blocked wording of its own (not the items’ message repeated)', () => {
+    assert.match(OVERALL_BLOCKED.notStarted, /بعد بداية الحصة/);
+    assert.match(OVERALL_BLOCKED.cancelled, /ملغاة/);
+  });
+  test('an explicit correction; a pending-items note that never blocks', () => {
+    assert.equal(overallChangeText('GOOD', 'EXCELLENT'), 'تغيير التقييم العام من «جيد» إلى «ممتاز»');
+    assert.equal(overallPendingNote(0), null);
+    assert.match(overallPendingNote(1) ?? '', /^عمل واحد لم يُقيَّم بعد — يمكن/);
+    assert.match(overallPendingNote(2) ?? '', /^عملان لم يُقيَّما بعد/);
+    assert.match(overallPendingNote(3) ?? '', /^3 أعمال لم تُقيَّم بعد/);
   });
 });

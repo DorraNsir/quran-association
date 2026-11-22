@@ -3218,4 +3218,248 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
       ).toEqual([]);
     });
   });
+
+  // ───────────────────── «التقييم العام» (Phase 6) ─────────────────────
+
+  describe('«التقييم العام»: one overall evaluation per program, chosen by the teacher', () => {
+    type Overall = {
+      level: string;
+      evaluatedAt: string;
+      evaluatedBy: string | null;
+    } | null;
+    const overallOf = (p: Program) =>
+      (p as unknown as { overallEvaluation: Overall }).overallEvaluation;
+    const setOverall = (
+      who: string,
+      p: Program,
+      overall: unknown,
+      extra: object = {},
+    ) =>
+      api.patch(who, `work-programs/${p.id}/evaluation`, {
+        items: [],
+        version: p.version,
+        overall,
+        ...extra,
+      });
+    let started = -400;
+
+    beforeAll(async () => {
+      // The class's assistant for the sessions planned from now on (the session team snapshot)
+      await admin
+        .patch(`group-classes/${id.C}`, {
+          supervisorId: id.sup,
+          assistantTeacherIds: [id.asst],
+        })
+        .expect(200);
+      id.ovSession = await session('C', addDays(TODAY, 120), '16:00');
+      const p = (
+        await create('sup', 's1', 'ovSession', [
+          {
+            type: 'MEMORIZATION',
+            assignment: { kind: 'PAGE_RANGE', fromPage: 79 },
+          },
+          {
+            type: 'REVISION',
+            assignment: { kind: 'SURAH_RANGE', fromSurah: 78, toSurah: 114 },
+          },
+          {
+            type: 'RECITATION',
+            assignment: { kind: 'SURAH_RANGE', fromSurah: 103 },
+          },
+          { type: 'EXAM', assignment: { kind: 'SURAH_RANGE', fromSurah: 67 } },
+        ]).expect(201)
+      ).body as Program;
+      id.ovProgram = p.id;
+    });
+
+    it('none at first; refused before the session starts; never computed from the items', async () => {
+      const p = await programOf('sup', id.ovProgram);
+      expect(overallOf(p)).toBeNull();
+      expect(
+        (await setOverall('sup', p, 'EXCELLENT').expect(409)).body.code,
+      ).toBe('WORK_SESSION_NOT_STARTED');
+      // all items completed: still no overall evaluation (nothing automatic)
+      await startNow(id.ovSession, addDays(TODAY, started++));
+      let q = await programOf('sup', id.ovProgram);
+      q = (
+        await api
+          .patch('sup', `work-programs/${q.id}/evaluation`, {
+            items: q.items.map((i) => ({
+              id: i.id,
+              version: i.version,
+              status: 'COMPLETED',
+            })),
+          })
+          .expect(200)
+      ).body as Program;
+      expect(overallOf(q)).toBeNull();
+    });
+
+    it('validation: the four levels only, a version is required and must be current', async () => {
+      const p = await programOf('sup', id.ovProgram);
+      for (const bad of ['PERFECT', 'excellent', 3, '', null])
+        await setOverall('sup', p, bad).expect(400);
+      expect(
+        (
+          await api
+            .patch('sup', `work-programs/${p.id}/evaluation`, {
+              items: [],
+              overall: 'GOOD',
+            })
+            .expect(400)
+        ).body.code,
+      ).toBe('WORK_PROGRAM_VERSION_REQUIRED');
+      expect(
+        (
+          await setOverall(
+            'sup',
+            { ...p, version: p.version + 1 },
+            'GOOD',
+          ).expect(409)
+        ).body.code,
+      ).toBe('WORK_PROGRAM_CHANGED');
+      expect(
+        (
+          await api
+            .patch('sup', `work-programs/${randomUUID()}/evaluation`, {
+              items: [],
+              version: 1,
+              overall: 'GOOD',
+            })
+            .expect(404)
+        ).body.code,
+      ).toBe('WORK_PROGRAM_NOT_FOUND');
+    });
+
+    it('the supervisor sets it (with who and when); items, cycles and the workload order are untouched', async () => {
+      const before = await programOf('sup', id.ovProgram);
+      const cycles = await prisma.recitationCycle.findMany({
+        where: { studentId: id.s1 },
+        orderBy: { id: 'asc' },
+      });
+      const order = (
+        await api
+          .get('sup', 'work-programs', {
+            sessionId: id.ovSession,
+            order: 'workload',
+          })
+          .expect(200)
+      ).body;
+      const saved = (await setOverall('sup', before, 'VERY_GOOD').expect(200))
+        .body as Program;
+      expect(overallOf(saved)).toMatchObject({
+        level: 'VERY_GOOD',
+        evaluatedBy: `sup ${tag('حساب')}`,
+      });
+      expect(saved.version).toBe(before.version + 1);
+      // individual results unchanged
+      expect(saved.items.map((i) => [i.id, i.status, i.version])).toEqual(
+        before.items.map((i) => [i.id, i.status, i.version]),
+      );
+      // recitation cycles unchanged
+      expect(
+        await prisma.recitationCycle.findMany({
+          where: { studentId: id.s1 },
+          orderBy: { id: 'asc' },
+        }),
+      ).toEqual(cycles);
+      // the advisory order does not use it
+      const after = (
+        await api
+          .get('sup', 'work-programs', {
+            sessionId: id.ovSession,
+            order: 'workload',
+          })
+          .expect(200)
+      ).body;
+      expect(
+        after.data.map((d: { id: string; workloadOrder: unknown }) => [
+          d.id,
+          d.workloadOrder,
+        ]),
+      ).toEqual(
+        order.data.map((d: { id: string; workloadOrder: unknown }) => [
+          d.id,
+          d.workloadOrder,
+        ]),
+      );
+      // re-opened: the same
+      expect(overallOf(await programOf('sup', id.ovProgram))).toMatchObject({
+        level: 'VERY_GOOD',
+      });
+    });
+
+    it('corrections: the same level again changes nothing; another level is recorded with its new author', async () => {
+      const p = await programOf('sup', id.ovProgram);
+      const same = (await setOverall('sup', p, 'VERY_GOOD').expect(200))
+        .body as Program;
+      expect(overallOf(same)).toEqual(overallOf(p));
+      expect(same.version).toBe(p.version);
+      // the class's assistant on this session may correct it
+      const corrected = (
+        await setOverall('asst', same, 'EXCELLENT').expect(200)
+      ).body as Program;
+      expect(overallOf(corrected)).toMatchObject({
+        level: 'EXCELLENT',
+        evaluatedBy: `asst ${tag('حساب')}`,
+      });
+      expect(
+        new Date(overallOf(corrected)!.evaluatedAt) >=
+          new Date(overallOf(p)!.evaluatedAt),
+      ).toBe(true);
+      // a concurrent teacher with the old version loses nothing silently
+      expect((await setOverall('sup', p, 'GOOD').expect(409)).body.code).toBe(
+        'WORK_PROGRAM_CHANGED',
+      );
+      // with notes in the same request: one version step for both
+      const both = (
+        await setOverall('sup', corrected, 'GOOD', {
+          generalNotes: 'أداء جيد',
+        }).expect(200)
+      ).body as Program;
+      expect([both.version, overallOf(both)!.level, both.generalNotes]).toEqual(
+        [corrected.version + 1, 'GOOD', 'أداء جيد'],
+      );
+    });
+
+    it('access: another class’s teacher cannot read or set it; the student sees their own, read-only', async () => {
+      const p = await programOf('sup', id.ovProgram);
+      await api.get('other', `work-programs/${p.id}`).expect(403);
+      await setOverall('other', p, 'EXCELLENT').expect(403);
+      const mine = (
+        await http()
+          .get(`/api/student/work-programs/${p.id}`)
+          .set(as('pupil'))
+          .expect(200)
+      ).body;
+      expect(mine.overallEvaluation).toMatchObject({ level: 'GOOD' });
+      expect(mine.overallEvaluation).not.toHaveProperty('evaluatedBy');
+      await http()
+        .patch(`/api/student/work-programs/${p.id}/evaluation`)
+        .set(as('pupil'))
+        .send({ items: [], version: p.version, overall: 'EXCELLENT' })
+        .expect(404);
+      // the list carries it too
+      const listed = (
+        await api
+          .get('sup', 'work-programs', { sessionId: id.ovSession })
+          .expect(200)
+      ).body.data[0];
+      expect(listed.overallEvaluation).toMatchObject({ level: 'GOOD' });
+    });
+
+    it('a cancelled session keeps the recorded evaluation but refuses any change', async () => {
+      await admin
+        .patch(`sessions/${id.ovSession}/status`, { status: 'CANCELLED' })
+        .expect(200);
+      const p = await programOf('sup', id.ovProgram);
+      expect(overallOf(p)).toMatchObject({ level: 'GOOD' });
+      expect(
+        (await setOverall('sup', p, 'EXCELLENT').expect(409)).body.code,
+      ).toBe('WORK_SESSION_CANCELLED');
+      expect(overallOf(await programOf('sup', id.ovProgram))).toMatchObject({
+        level: 'GOOD',
+      });
+    });
+  });
 });

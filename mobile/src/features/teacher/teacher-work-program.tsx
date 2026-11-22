@@ -15,6 +15,7 @@ import { useEvaluationBlock } from './use-evaluation-block';
 import { usePullToRefresh } from './use-refresh';
 import { useWorkProgram, workProgramKey } from './use-work';
 import { WorkProgressView, WorkSessionLine, WorkStatusBadge, WorkTypeBadge } from './work-badges';
+import { OverallEvaluationCard } from './overall-evaluation-card';
 import { RecitationCycleLine } from './recitation-cycle-line';
 import { ownDescription, WorkAssignmentView } from './work-assignment-view';
 import { isTransferable, phaseOf, shortDate, studentName } from './work-model';
@@ -126,6 +127,15 @@ export function TeacherWorkProgramScreen({ programId }: { programId: string }) {
                 />
               ))}
             </Card>
+
+            {/* «التقييم العام»: after the individual results, separate from them */}
+            <OverallEvaluationCard
+              key={program.id}
+              teacherId={teacherId}
+              program={program}
+              blocked={blocked}
+              onStale={() => void query.refetch()}
+            />
 
             {program.generalNotes ? (
               <Card style={styles.notes}>

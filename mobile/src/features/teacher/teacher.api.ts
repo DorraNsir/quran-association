@@ -2,6 +2,8 @@ import { File as ExpoFile } from 'expo-file-system';
 
 import { api, type Query } from '@/services/api';
 
+import type { WorkPerformance } from '@/features/quran-reference/work-assignment';
+
 import type { Announcement, AnnouncementFilters, PublishResult, TeacherAnnouncementBody } from './announcement-types';
 import type { SaveBody } from './attendance-draft';
 import { mimeOf } from './resource-model';
@@ -205,7 +207,8 @@ export const updateWorkProgram = (
 /** PATCH /:id/evaluation — «حفظ التقييم»: the changed items (+ notes), atomically. */
 export const evaluateWorkProgram = (
   id: string,
-  body: { items: EvaluationLine[]; version?: number; generalNotes?: string | null },
+  /** `overall`: «التقييم العام» (version required) */
+  body: { items: EvaluationLine[]; version?: number; generalNotes?: string | null; overall?: WorkPerformance },
 ) => api<WorkProgram>(`${WORK}/${encodeURIComponent(id)}/evaluation`, { method: 'PATCH', body });
 
 /** POST /work-items/:id/transfer | next-recitation — answers with the TARGET program. */

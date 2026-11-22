@@ -30,14 +30,14 @@ const program: StudentWorkProgram = {
   ],
 }
 
-function routeFetch() {
+function routeFetch(data: StudentWorkProgram[] = [program]) {
   const calls: URL[] = []
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input))
       calls.push(url)
-      if (url.pathname === "/api/student/work-programs") return json(200, { data: [program], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } })
+      if (url.pathname === "/api/student/work-programs") return json(200, { data, meta: { page: 1, pageSize: 10, total: data.length, totalPages: 1 } })
       return json(404, { code: "NOT_FOUND" })
     })
   )
@@ -57,6 +57,18 @@ beforeEach(() => {
 })
 
 describe("student space — «متابعة العمل» (read-only)", () => {
+  it("«التقييم العام»: the teacher's level when given (read-only, no controls); nothing otherwise", async () => {
+    routeFetch([{ ...program, overallEvaluation: { level: "VERY_GOOD", evaluatedAt: "2099-10-19T17:00:00Z" } }])
+    const { unmount } = renderScreen()
+    expect(await screen.findByText("التقييم العام: جيد جدًا")).toBeTruthy()
+    expect(screen.queryByRole("radio")).toBeNull()
+    unmount()
+    routeFetch()
+    renderScreen()
+    await screen.findByText("مجموعة الماهر — الفرع الأول")
+    expect(document.querySelector("[data-overall]")).toBeNull()
+  })
+
   it("shows the session, the teacher, every item with its type, full text, result and the teacher's comment", async () => {
     routeFetch()
     renderScreen()

@@ -1,4 +1,10 @@
-import type { AssignmentPayload, RecitationEntry, WorkAssignment, WorkloadSnapshot } from '@/features/quran-reference/work-assignment';
+import type {
+  AssignmentPayload,
+  RecitationEntry,
+  WorkAssignment,
+  WorkloadSnapshot,
+  WorkPerformance,
+} from '@/features/quran-reference/work-assignment';
 
 import type { SessionStatus } from './types';
 
@@ -131,6 +137,8 @@ export interface WorkProgram {
   session: WorkSession;
   generalNotes: string | null;
   lastEditedBy: string | null;
+  /** «التقييم العام»: the teacher's holistic judgment (null: not given yet) — separate from the items' results */
+  overallEvaluation?: { level: WorkPerformance; evaluatedAt: string; evaluatedBy: string | null } | null;
   createdAt: string;
   updatedAt: string;
   progress: WorkProgress;

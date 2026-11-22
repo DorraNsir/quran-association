@@ -10,6 +10,7 @@ import { ar } from '@/i18n/ar';
 import { fontFamilies, radius, spacing, touchTarget, useAppTheme } from '@/theme';
 
 import {
+  overallRowText,
   programStatus,
   rowCycleText,
   workloadSections,
@@ -303,13 +304,14 @@ function ProgramRow({
   const status = programStatus(p.progress);
   const types = workTypesSummary(p.items.map((i) => i.type));
   const cycles = rowCycleText(p.items);
+  const overall = overallRowText(p.overallEvaluation?.level);
   const context = showSession ? `${p.session.groupName} · ${sessionDay(p.session)} · ${w.phase[phaseOf(p.session, timeZone)]}` : p.session.groupName;
   const tone = status.kind === 'done' ? colors.primary : status.kind === 'pending' || status.kind === 'cancelled' ? colors.mutedForeground : colors.warning;
   return (
     <PressableRow
       bordered={bordered}
       onPress={onPress}
-      accessibilityLabel={`${w.detailTitle} ${name} — ${context} — ${types} — ${status.text}${cycles ? ` — ${cycles}` : ''}`}>
+      accessibilityLabel={`${w.detailTitle} ${name} — ${context} — ${types} — ${status.text}${overall ? ` — ${overall}` : ''}${cycles ? ` — ${cycles}` : ''}`}>
       <View style={styles.row} testID={`program-${p.id}`}>
         <InitialsAvatar name={name} size={44} photoUrl={p.student.photoUrl} />
         <View style={styles.flex}>
@@ -331,6 +333,15 @@ function ProgramRow({
                 {status.text}
               </AppText>
             </View>
+            {/* «التقييم العام»: only once given; next to the items' state, never instead of it */}
+            {overall ? (
+              <View style={[styles.overall, { backgroundColor: colors.brandSoft }]}>
+                <Icon name="success" size={12} color={colors.brandSoftForeground} />
+                <AppText variant="caption" style={{ color: colors.brandSoftForeground }} testID="row-overall">
+                  {overall}
+                </AppText>
+              </View>
+            ) : null}
           </View>
           {/* «متابعة العرضات»: tracked recitations only, one line */}
           {cycles ? (
@@ -370,6 +381,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   note: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs },
+  overall: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: radius.md, paddingHorizontal: 6, paddingVertical: 1 },
   section: { paddingVertical: 0, gap: 0 },
   sectionLabel: { paddingTop: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },

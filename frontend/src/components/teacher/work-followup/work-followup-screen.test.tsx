@@ -5,7 +5,18 @@ import { DirectionProvider } from "@/components/ui/direction"
 import { clearSession, setSession } from "@/lib/api/session"
 import { authResponse, json } from "@/test/fetch-mock"
 import { renderWithClient } from "@/test/render"
-import { canonicalOf, programStatus, workTypesSummary, WORKLOAD_ORDER } from "@/lib/quran-reference/work-assignment"
+import {
+  canonicalOf,
+  OVERALL_BLOCKED,
+  OVERALL_EVALUATION,
+  overallChangeText,
+  overallPendingNote,
+  PERFORMANCE_LABEL,
+  programStatus,
+  WORK_PERFORMANCES,
+  workTypesSummary,
+  WORKLOAD_ORDER,
+} from "@/lib/quran-reference/work-assignment"
 import { sessionLabel } from "@/lib/work-followup"
 import type { WorkItem, WorkloadOrder, WorkProgram, WorkSession } from "@/types/work-followup"
 
@@ -927,5 +938,123 @@ describe("«متابعة العمل» — «ترتيب حسب البرنامج»
     await waitFor(() => expect(calls.at(-1)!.has("sessionId")).toBe(false))
     expect(calls.at(-1)!.has("order")).toBe(false)
     expect(screen.getByRole("radio", { name: WORKLOAD_ORDER.original }).getAttribute("aria-checked")).toBe("true")
+  })
+})
+
+describe("«متابعة العمل» — «التقييم العام» (web)", () => {
+  const given = (level: "EXCELLENT" | "VERY_GOOD" | "GOOD" | "NEEDS_IMPROVEMENT") => ({ level, evaluatedAt: "2026-10-19T17:00:00Z", evaluatedBy: "مريم بن علي" })
+  const radios = () => within(screen.getByRole("radiogroup", { name: OVERALL_EVALUATION.title })).getAllByRole("radio")
+
+  function stub(initial: WorkProgram, answer: (body: Record<string, unknown>) => Response | Promise<Response>) {
+    let current = initial
+    const calls: { method: string; path: string; body?: Record<string, unknown> }[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = new URL(String(input)).pathname.replace(/^\/api/, "")
+        const method = init?.method ?? "GET"
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined
+        calls.push({ method, path, body })
+        if (path === "/teacher/work-programs/p1/evaluation") {
+          const res = await answer(body)
+          if (res.ok) current = (await res.clone().json()) as WorkProgram
+          return res
+        }
+        if (path === "/teacher/work-programs/p1") return json(200, current)
+        if (path === "/teacher/work-programs") return json(200, { data: [current], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } })
+        if (path === "/teacher/work-programs/session-options") return json(200, [current.session])
+        return json(404, { code: "NOT_FOUND", message: "غير موجود" })
+      })
+    )
+    return calls
+  }
+
+  it("not given yet: four choices, none selected, the empty state and the pending-items note (never blocking)", async () => {
+    stub(program, () => json(200, program))
+    renderIn(<WorkProgramDetails programId="p1" />)
+    expect(await screen.findByRole("heading", { name: OVERALL_EVALUATION.title })).toBeTruthy()
+    expect(radios().map((r) => [r.textContent, r.getAttribute("aria-checked")])).toEqual(WORK_PERFORMANCES.map((l) => [PERFORMANCE_LABEL[l], "false"]))
+    expect(screen.getByText(OVERALL_EVALUATION.none)).toBeTruthy()
+    expect(screen.getByText(overallPendingNote(program.progress.pending)!)).toBeTruthy()
+    expect(radios().every((r) => !(r as HTMLButtonElement).disabled)).toBe(true)
+    // only one set of evaluation controls for the overall evaluation
+    expect(screen.getAllByRole("radiogroup", { name: OVERALL_EVALUATION.title })).toHaveLength(1)
+  })
+
+  it("choose → save → shown only once the server confirms (with its version); then a correction, worded explicitly", async () => {
+    let release: (r: Response) => void = () => {}
+    const calls = stub(program, (body) =>
+      body.overall === "VERY_GOOD"
+        ? new Promise<Response>((resolve) => (release = resolve))
+        : json(200, { ...program, version: 5, overallEvaluation: given("EXCELLENT") })
+    )
+    renderIn(<WorkProgramDetails programId="p1" />)
+    await screen.findByRole("heading", { name: OVERALL_EVALUATION.title })
+    fireEvent.click(screen.getByRole("radio", { name: "جيد جدًا" }))
+    expect(screen.getByRole("radio", { name: "جيد جدًا" }).getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(screen.getByRole("button", { name: OVERALL_EVALUATION.save }))
+    await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true))
+    expect(calls.find((c) => c.method === "PATCH")!.body).toEqual({ version: program.version, overall: "VERY_GOOD", items: [] })
+    // not claimed before the server answers
+    expect(document.querySelector("[data-overall-saved]")!.getAttribute("data-overall-saved")).toBe("")
+    release(json(200, { ...program, version: 4, overallEvaluation: given("VERY_GOOD") }))
+    await waitFor(() => expect(document.querySelector("[data-overall-saved]")!.getAttribute("data-overall-saved")).toBe("VERY_GOOD"))
+    expect(screen.queryByRole("button", { name: OVERALL_EVALUATION.save })).toBeNull()
+
+    // correction
+    fireEvent.click(await screen.findByRole("radio", { name: "ممتاز" }))
+    expect(screen.getByText(overallChangeText("VERY_GOOD", "EXCELLENT"))).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: OVERALL_EVALUATION.save }))
+    await waitFor(() => expect(document.querySelector("[data-overall-saved]")!.getAttribute("data-overall-saved")).toBe("EXCELLENT"))
+    expect(calls.filter((c) => c.method === "PATCH").at(-1)!.body).toEqual({ version: 4, overall: "EXCELLENT", items: [] })
+  })
+
+  it("a stale version (409): the server's message, the program reloaded, nothing shown as saved", async () => {
+    const message = "تغيّر برنامج العمل منذ فتحه. أعد التحميل."
+    const calls = stub({ ...program, overallEvaluation: given("GOOD") }, () => json(409, { code: "WORK_PROGRAM_CHANGED", message }))
+    renderIn(<WorkProgramDetails programId="p1" />)
+    fireEvent.click(await screen.findByRole("radio", { name: "ممتاز" }))
+    const gets = () => calls.filter((c) => c.method === "GET" && c.path === "/teacher/work-programs/p1").length
+    const before = gets()
+    fireEvent.click(screen.getByRole("button", { name: OVERALL_EVALUATION.save }))
+    expect(await screen.findByRole("alert")).toBeTruthy()
+    expect(screen.getByRole("alert").textContent).toContain(message)
+    await waitFor(() => expect(gets()).toBeGreaterThan(before))
+    expect(document.querySelector("[data-overall-saved]")!.getAttribute("data-overall-saved")).toBe("GOOD")
+  })
+
+  it("before the session starts or once cancelled: choices disabled with the reason; a recorded value stays visible", async () => {
+    const upcoming = { ...program, session: session("ses1", "2099-10-19"), evaluation: { allowed: false, blockedReason: "SESSION_NOT_STARTED" as const } }
+    stub(upcoming, () => json(200, upcoming))
+    const { unmount } = renderIn(<WorkProgramDetails programId="p1" />)
+    await screen.findByRole("heading", { name: OVERALL_EVALUATION.title })
+    expect(radios().every((r) => (r as HTMLButtonElement).disabled)).toBe(true)
+    expect(document.querySelector("[data-overall-blocked]")!.textContent).toBe(OVERALL_BLOCKED.notStarted)
+    unmount()
+    const cancelled = { ...upcoming, session: { ...upcoming.session, status: "CANCELLED" as const }, evaluation: { allowed: false, blockedReason: "SESSION_CANCELLED" as const }, overallEvaluation: given("GOOD") }
+    stub(cancelled, () => json(200, cancelled))
+    renderIn(<WorkProgramDetails programId="p1" />)
+    await screen.findByRole("heading", { name: OVERALL_EVALUATION.title })
+    expect(document.querySelector("[data-overall-saved]")!.getAttribute("data-overall-saved")).toBe("GOOD")
+    expect(screen.getByRole("radio", { name: "جيد" }).getAttribute("aria-checked")).toBe("true")
+    expect(radios().every((r) => (r as HTMLButtonElement).disabled)).toBe(true)
+    expect(document.querySelector("[data-overall-blocked]")!.textContent).toBe(OVERALL_BLOCKED.cancelled)
+  })
+
+  it("compact row: «التقييم العام: …» once given, next to the items' own state (never instead of it)", async () => {
+    stub({ ...program, overallEvaluation: given("VERY_GOOD") }, () => json(200, program))
+    renderIn(<WorkFollowupScreen />)
+    const link = await screen.findByRole("link", { name: /برنامج عمل درة نصير/ })
+    const row = link.closest("li[data-program]") as HTMLElement
+    expect(within(row).getByText("التقييم العام: جيد جدًا")).toBeTruthy()
+    expect(within(row).getByText(programStatus(program.progress).text)).toBeTruthy()
+  })
+
+  it("compact row without an overall evaluation: no extra line", async () => {
+    stub(program, () => json(200, program))
+    renderIn(<WorkFollowupScreen />)
+    const row = (await screen.findByRole("link", { name: /برنامج عمل درة نصير/ })).closest("li[data-program]") as HTMLElement
+    expect(row.querySelector("[data-overall]")).toBeNull()
+    expect(within(row).queryByText(OVERALL_EVALUATION.none)).toBeNull()
   })
 })

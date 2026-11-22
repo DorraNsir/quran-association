@@ -1,6 +1,6 @@
 "use client"
 
-import { ClipboardList, CornerDownLeft, MessageSquareText, UserRound } from "lucide-react"
+import { Award, ClipboardList, CornerDownLeft, MessageSquareText, UserRound } from "lucide-react"
 import { useState } from "react"
 
 import { WorkStatusBadge, WorkTypeBadge } from "@/components/teacher/work-followup/work-badges"
@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card"
 import { useMyWorkPrograms } from "@/lib/api/work-followup"
 import { todayInTunis } from "@/lib/dates"
 import { formatDate } from "@/lib/format"
+import { overallRowText } from "@/lib/quran-reference/work-assignment"
 import { usePlatformSettings } from "@/lib/store/settings"
 import { cn } from "@/lib/utils"
 import { phaseOf, workStatusLabel } from "@/lib/work-followup"
@@ -102,6 +103,13 @@ function StudentWorkCard({ program, phase }: { program: StudentWorkProgram; phas
             <p className="flex items-center gap-1 text-xs text-muted-foreground">
               <UserRound className="size-3.5" aria-hidden />
               المعلم: {program.teacherName}
+            </p>
+          )}
+          {/* «التقييم العام» given by the teacher (read-only) */}
+          {program.overallEvaluation && (
+            <p className="flex items-center gap-1 text-xs font-medium" data-overall>
+              <Award className="size-3.5 text-primary" aria-hidden />
+              {overallRowText(program.overallEvaluation.level)}
             </p>
           )}
         </div>

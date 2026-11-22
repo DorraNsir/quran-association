@@ -24,6 +24,7 @@ import {
   WorkAssignmentKind,
   WorkStatus,
   WorkType,
+  WorkPerformance,
 } from '../generated/prisma/enums.js';
 
 export const DESCRIPTION_MAX = 2000;
@@ -297,6 +298,20 @@ export class EvaluationLineDto extends EvaluateWorkItemDto {
 }
 
 /** «حفظ التقييم»: the changed items (and notes), atomically. */
+export class OverallEvaluationDto {
+  @ApiProperty({ enum: WorkPerformance, enumName: 'WorkPerformance' })
+  level!: WorkPerformance;
+  @ApiProperty() evaluatedAt!: Date;
+  @ApiPropertyOptional({ type: String, nullable: true })
+  evaluatedBy!: string | null;
+}
+
+export class StudentOverallEvaluationDto {
+  @ApiProperty({ enum: WorkPerformance, enumName: 'WorkPerformance' })
+  level!: WorkPerformance;
+  @ApiProperty() evaluatedAt!: Date;
+}
+
 export class EvaluateWorkProgramDto {
   @ApiProperty({ type: EvaluationLineDto, isArray: true })
   @IsArray()
@@ -318,6 +333,17 @@ export class EvaluateWorkProgramDto {
   @IsString()
   @MaxLength(NOTES_MAX)
   generalNotes?: string | null;
+
+  @ApiPropertyOptional({
+    enum: WorkPerformance,
+    enumName: 'WorkPerformance',
+    description:
+      '«التقييم العام»: the teacher’s holistic judgment of the session (version required). Never computed from the items; the same level again changes nothing.',
+  })
+  // omitted = unchanged; null is refused (an evaluation is corrected, never erased here)
+  @ValidateIf((_, v) => v !== undefined)
+  @IsIn(Object.values(WorkPerformance))
+  overall?: WorkPerformance;
 }
 
 export class ScheduleWorkItemDto {
@@ -735,6 +761,13 @@ export class WorkProgramDto {
     description: 'Name of the last editor',
   })
   lastEditedBy!: string | null;
+  @ApiPropertyOptional({
+    type: OverallEvaluationDto,
+    nullable: true,
+    description:
+      '«التقييم العام»: the teacher’s holistic judgment (null: not given yet) — separate from the items’ results',
+  })
+  overallEvaluation!: OverallEvaluationDto | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
   @ApiProperty({ type: WorkProgressDto }) progress!: WorkProgressDto;
@@ -801,6 +834,12 @@ export class StudentWorkProgramDto {
   })
   teacherName!: string | null;
   @ApiProperty({ type: WorkProgressDto }) progress!: WorkProgressDto;
+  @ApiPropertyOptional({
+    type: StudentOverallEvaluationDto,
+    nullable: true,
+    description: '«التقييم العام» given by the teacher (null: not yet)',
+  })
+  overallEvaluation!: StudentOverallEvaluationDto | null;
   @ApiProperty({ type: StudentWorkItemDto, isArray: true })
   items!: StudentWorkItemDto[];
 }

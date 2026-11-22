@@ -14,6 +14,7 @@ import { Prisma } from '../generated/prisma/client.js';
 import {
   SessionStatus,
   WorkAssignmentKind,
+  WorkPerformance,
   WorkStatus,
   WorkType,
 } from '../generated/prisma/enums.js';
@@ -176,6 +177,7 @@ const programInclude = {
   },
   createdBy: personName,
   updatedBy: personName,
+  overallEvaluatedBy: personName,
   items: {
     orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
     include: {
@@ -354,6 +356,15 @@ function toDto(
     evaluation: { allowed: blockedReason === null, blockedReason },
     generalNotes: p.generalNotes,
     lastEditedBy: fullName(p.updatedBy) ?? fullName(p.createdBy),
+    // «التقييم العام»: the teacher's own judgment (null until given)
+    overallEvaluation:
+      p.overallEvaluation && p.overallEvaluatedAt
+        ? {
+            level: p.overallEvaluation,
+            evaluatedAt: p.overallEvaluatedAt,
+            evaluatedBy: fullName(p.overallEvaluatedBy),
+          }
+        : null,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     progress: progressOf(p.items.map((i) => i.status)),
@@ -452,6 +463,10 @@ function toStudentDto(p: StudentProgramRow): StudentWorkProgramDto {
         ? `${supervisor.firstName} ${supervisor.lastName}`
         : null,
     progress: progressOf(p.items.map((i) => i.status)),
+    overallEvaluation:
+      p.overallEvaluation && p.overallEvaluatedAt
+        ? { level: p.overallEvaluation, evaluatedAt: p.overallEvaluatedAt }
+        : null,
     items: p.items.map((i) => ({
       id: i.id,
       type: i.type,
@@ -936,11 +951,14 @@ export class WorkFollowupService {
       const program = await this.lockProgram(tx, actor, id);
       const blocked = evaluationBlock(program.session, await this.clock(tx));
       if (blocked) throw evaluationRefused(blocked);
-      if (dto.generalNotes !== undefined) {
+      // The program's own fields (notes, «التقييم العام»): version checked — no lost update
+      if (dto.generalNotes !== undefined || dto.overall !== undefined) {
         if (dto.version === undefined)
           throw badRequest(
             'WORK_PROGRAM_VERSION_REQUIRED',
-            'إصدار البرنامج مطلوب لتعديل الملاحظات',
+            dto.overall !== undefined
+              ? 'إصدار البرنامج مطلوب لحفظ التقييم العام'
+              : 'إصدار البرنامج مطلوب لتعديل الملاحظات',
           );
         if (dto.version !== program.version) throw programChanged();
       }
@@ -977,7 +995,17 @@ export class WorkFollowupService {
       }
       if (stale.length) throw itemChanged(stale);
       await verifyCycles(tx, cycleIds, 'evaluation');
-      await this.touch(tx, actor, program.id, dto.generalNotes);
+      // «التقييم العام»: the teacher's own choice, never derived from the items; the same
+      // level sent again changes nothing (who and when stay those of the real decision)
+      const overall =
+        dto.overall !== undefined && dto.overall !== program.overallEvaluation
+          ? {
+              overallEvaluation: dto.overall,
+              overallEvaluatedAt: new Date(),
+              overallEvaluatedByUserId: actor.userId,
+            }
+          : undefined;
+      await this.touch(tx, actor, program.id, dto.generalNotes, overall);
     });
     return this.build(this.prisma, id);
   }
@@ -1529,6 +1557,7 @@ export class WorkFollowupService {
         version: true,
         sessionId: true,
         studentId: true,
+        overallEvaluation: true,
         session: { select: { status: true, date: true, startTime: true } },
       },
     });
@@ -1794,13 +1823,21 @@ export class WorkFollowupService {
     actor: WorkActor,
     programId: string,
     generalNotes?: string | null,
+    overall?: {
+      overallEvaluation: WorkPerformance;
+      overallEvaluatedAt: Date;
+      overallEvaluatedByUserId: string;
+    },
   ) {
     await tx.workProgram.update({
       where: { id: programId },
       data: {
         updatedByUserId: actor.userId,
-        ...(generalNotes !== undefined
-          ? { generalNotes, version: { increment: 1 } }
+        ...(generalNotes !== undefined ? { generalNotes } : {}),
+        ...overall,
+        // the program's own fields changed: version + 1 (one increment for both)
+        ...(generalNotes !== undefined || overall
+          ? { version: { increment: 1 } }
           : {}),
       },
     });
