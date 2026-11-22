@@ -6,15 +6,15 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { SessionUser } from '@/features/auth/types';
 import {
   canonicalOf,
+  completionParts,
+  workTypeBadges,
   OVERALL_BLOCKED,
   OVERALL_EVALUATION,
   overallChangeText,
   overallPendingNote,
   PERFORMANCE_LABEL,
-  programStatus,
   WORK_PERFORMANCES,
   WORKLOAD_ORDER,
-  workTypesSummary,
 } from '@/features/quran-reference/work-assignment';
 import { ar } from '@/i18n/ar';
 import { apiUrl, setAuthBridge } from '@/services/api';
@@ -46,7 +46,8 @@ jest.mock('expo-symbols', () => ({ SymbolView: () => null }));
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush, back: mockBack, replace: mockReplace, canGoBack: () => true }),
   useNavigation: () => ({ isFocused: () => true }),
-  Stack: { Screen: () => null },
+  // the header's own action («+ إضافة») is rendered, as in the app
+  Stack: { Screen: ({ options }: { options?: { headerRight?: () => unknown } }) => options?.headerRight?.() ?? null },
   usePreventRemove: (active: boolean) => {
     mockPreventRemove = { active };
     return () => {
@@ -154,42 +155,93 @@ async function pickSurahIn(field: string, item: number, search: string, option: 
 }
 
 describe('list', () => {
-  it('one compact row per program: photo or initial, name, class · session · phase, kinds of work, evaluation state — no item previews', async () => {
+  it('one card per program: photo or initial, name, class, the FULL session date, work-type badges and the results — no item previews', async () => {
     stub();
     await renderScreen(<TeacherWorkScreen />);
     expect(await screen.findByText(w.total(1))).toBeTruthy();
     const p = workProgram();
     expect(screen.getByText('محمد التونسي')).toBeTruthy();
-    expect(screen.getByText(`مجموعة الفجر · الاثنين 9 نوفمبر 2026 · ${w.phase.PAST}`)).toBeTruthy();
-    expect(screen.getByText(workTypesSummary(p.items.map((i) => i.type)))).toBeTruthy();
-    const status = programStatus(p.progress);
-    expect(screen.getByTestId(`status-${status.kind}`).props.children).toBe(status.text);
+    expect(screen.getByText('مجموعة الفجر')).toBeTruthy();
+    expect(screen.getByTestId('card-date').props.children).toBe('الاثنين 9 نوفمبر 2026');
+    for (const b of workTypeBadges(p.items.map((i) => i.type))) expect(screen.getByTestId(`card-type-${b.type}`)).toBeTruthy();
+    for (const part of completionParts(p.items.map((i) => i.status)))
+      expect(screen.getByTestId(`card-result-${part.status}`).props.children).toBe(part.text);
     expect(screen.getByText('م', { includeHiddenElements: true })).toBeTruthy(); // no photo: the first letter (hidden from screen readers)
     expect(screen.queryByTestId('avatar-photo', { includeHiddenElements: true })).toBeNull();
-    // compact: no item previews, no "more", no last editor, no repeated workload
+    expect(screen.queryByTestId('card-overall')).toBeNull(); // no overall evaluation yet: no badge
+    // compact: no item previews, no "more", no last editor, no repeated workload, no long intro
     expect(screen.queryByText('حفظ صفحتين من سورة البقرة')).toBeNull();
     expect(screen.queryByText(w.more(1))).toBeNull();
     expect(screen.queryByText(w.lastEditedBy('أحمد السالمي'))).toBeNull();
-    // the whole row opens THAT program
+    expect(screen.queryByText(w.intro)).toBeNull();
+    // the whole card opens THAT program
     await fireEvent.press(screen.getByLabelText(new RegExp(`^${w.detailTitle} محمد التونسي`)));
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/work/[id]', params: { id: p.id } });
     expect(lists()[0]!.params.get('page')).toBe('1');
   });
 
-  it('filters are applied BY THE SERVER: period, state, class, and the student search after a pause', async () => {
+  it('card: the four work-type badges (repeated ones counted) and an exact summary — never «كل الأعمال منجزة» with dropped work', async () => {
+    const items = [
+      workItem('a', { type: 'MEMORIZATION', status: 'COMPLETED' }),
+      workItem('b', { position: 1, type: 'REVISION', status: 'CANCELLED' }),
+      workItem('c', { position: 2, type: 'RECITATION', status: 'CANCELLED' }),
+      workItem('d', { position: 3, type: 'EXAM', status: 'CANCELLED' }),
+      workItem('e', { position: 4, type: 'EXAM', status: 'CANCELLED' }),
+    ];
+    stub(undefined, workProgram('w1', { items }));
+    await renderScreen(<TeacherWorkScreen />);
+    await screen.findByTestId('card-type-EXAM');
+    expect(['MEMORIZATION', 'REVISION', 'RECITATION', 'EXAM'].map((t) => screen.getByTestId(`card-type-${t}`))).toHaveLength(4);
+    expect(within(screen.getByTestId('card-type-EXAM')).getByText('اختبار (2)')).toBeTruthy();
+    expect(screen.getByTestId('card-result-COMPLETED').props.children).toBe('1 منجز');
+    expect(screen.getByTestId('card-result-CANCELLED').props.children).toBe('4 ملغاة');
+    expect(screen.queryByText(/كل الأعمال/)).toBeNull();
+  });
+
+  it('the session selector shows the chosen session with its FULL date, and can be cleared', async () => {
+    stub((c) => (c.path.endsWith('/teacher/work-programs/session-options') ? ok([workSession('s9', '2026-11-15')]) : undefined));
+    await renderScreen(<TeacherWorkScreen />);
+    await screen.findByText(w.total(1));
+    await fireEvent.press(screen.getByLabelText(`${w.sessionFilter}: ${w.allSessions}`));
+    await fireEvent.press(screen.getByRole('radio', { name: /^الأحد 15 نوفمبر 2026 · 17:00/ }));
+    expect(screen.getByLabelText(`${w.sessionFilter}: الأحد 15 نوفمبر 2026 · 17:00 · مجموعة الفجر`)).toBeTruthy();
+    await settle();
+    expect(lists().at(-1)!.params.get('sessionId')).toBe('s9');
+    await fireEvent.press(screen.getByLabelText(w.clearSession));
+    expect(screen.getByLabelText(`${w.sessionFilter}: ${w.allSessions}`)).toBeTruthy();
+  });
+
+  it('«تصفية»: period, state and class in one sheet, applied together; the active count and a short summary; the search after a pause', async () => {
     stub();
     await renderScreen(<TeacherWorkScreen />);
     await screen.findByText(w.total(1));
+    await fireEvent.press(screen.getByLabelText(w.filter));
+    expect(screen.getByText(w.filtersTitle)).toBeTruthy();
     await fireEvent.press(radio(w.pickPeriod, w.period.upcoming));
     await fireEvent.press(radio(w.pickState, w.state.pending));
     await fireEvent.press(radio(w.pickClass, 'مجموعة الأمل'));
+    const before = lists().length;
+    await settle();
+    expect(lists()).toHaveLength(before); // nothing sent before «تطبيق الفلاتر»
+    await fireEvent.press(screen.getByLabelText(w.applyFilters));
     await settle();
     const last = lists().at(-1)!.params;
     expect([last.get('period'), last.get('state'), last.get('groupClassId')]).toEqual(['upcoming', 'pending', 'c2']);
-    const before = lists().length;
+    expect(screen.getByLabelText(w.filtersActive(3))).toBeTruthy();
+    expect(screen.getByTestId('filters-count').props.children).toBe(3);
+    expect(screen.getByText(`${w.total(1)} · ${w.period.upcoming} · ${w.state.pending} · مجموعة الأمل`)).toBeTruthy();
+    // «إعادة تعيين» in the sheet, then applied: back to everything
+    await fireEvent.press(screen.getByLabelText(w.filtersActive(3)));
+    expect(radio(w.pickState, w.state.pending).props.accessibilityState.selected).toBe(true); // opens on the applied filters
+    await fireEvent.press(screen.getByLabelText(w.resetShort));
+    await fireEvent.press(screen.getByLabelText(w.applyFilters));
+    await settle();
+    expect(['period', 'state', 'groupClassId'].some((k) => lists().at(-1)!.params.has(k))).toBe(false);
+    expect(screen.queryByTestId('filters-count')).toBeNull();
+    const n = lists().length;
     await fireEvent.changeText(screen.getByLabelText(w.searchLabel), 'محم');
     await settle(50);
-    expect(lists()).toHaveLength(before); // not on every keystroke
+    expect(lists()).toHaveLength(n); // not on every keystroke
     await settle(450);
     expect(lists().at(-1)!.params.get('q')).toBe('محم');
   });
@@ -197,7 +249,7 @@ describe('list', () => {
   it('opened from a class: filtered by that class; from a student: by that student', async () => {
     stub();
     await renderScreen(<TeacherWorkScreen initialClassId="c1" studentId="st1" />);
-    await screen.findByText(w.total(1));
+    expect(await screen.findByText(`${w.total(1)} · مجموعة الفجر`)).toBeTruthy(); // the active class, summarised
     expect(lists()[0]!.params.get('groupClassId')).toBe('c1');
     expect(lists()[0]!.params.get('studentId')).toBe('st1');
     expect(await screen.findByText(w.studentFilter('محمد التونسي'))).toBeTruthy();
@@ -230,7 +282,9 @@ describe('list', () => {
     stub((c) => (c.method === 'GET' && c.path.endsWith('/teacher/work-programs') ? ok(workPage([])) : undefined));
     await renderScreen(<TeacherWorkScreen />);
     expect(await screen.findByText(w.empty)).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText(w.filter));
     await fireEvent.press(radio(w.pickState, w.state.done));
+    await fireEvent.press(screen.getByLabelText(w.applyFilters));
     expect(await screen.findByText(w.noMatch)).toBeTruthy();
     await fireEvent.press(screen.getByLabelText(w.resetFilters));
     expect(await screen.findByText(w.empty)).toBeTruthy();
@@ -1433,15 +1487,13 @@ describe('«متابعة العرضات» (mobile): each surah its numbered reci
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/students/[id]/recitations', params: { id: 'st1', surah: '58' } });
   });
 
-  it('list row: the same line, compact (no link); nothing without a structured عرضة', async () => {
+  it('list card: simple — the «عرضة» badge only, no recitation history (that stays on the program screen)', async () => {
     stub(undefined, workProgram('w1', { items: [tracked] }));
     await renderScreen(<TeacherWorkScreen />);
-    expect((await screen.findByTestId('row-recitations')).props.children).toBe('سورة المجادلة · 3 عرضات');
+    expect(await screen.findByTestId('card-type-RECITATION')).toBeTruthy();
+    expect(screen.queryByText('سورة المجادلة · 3 عرضات')).toBeNull();
+    expect(screen.queryByTestId('recitation-line')).toBeNull();
     expect(screen.queryByLabelText(/^سجل العرضات/)).toBeNull();
-    stub(undefined, workProgram('w2', { items: [legacy] }));
-    await renderScreen(<TeacherWorkScreen />);
-    await screen.findByText(w.total(1));
-    expect(screen.queryByTestId('row-recitations')).toBeNull();
   });
 
   async function newRecitation(answer: (c: Call) => Answer | undefined) {
@@ -1523,18 +1575,24 @@ describe('«ترتيب حسب البرنامج» and compact rows (mobile)', () 
     setAuthBridge(null);
   });
 
+  const openSort = () => fireEvent.press(screen.getByLabelText(new RegExp(`^${w.sort}: `)));
+
   it('off by default; needs a session; on request the server order with its groups; back to the original order', async () => {
     stub(answer);
     await renderScreen(<TeacherWorkScreen />);
     await screen.findByText('أمين التونسي');
     expect(rows()).toEqual(['a', 'b', 'c', 'd']);
+    // without a session: «الترتيب» offers the original order only, and says why
+    await openSort();
     expect(screen.getByText(WORKLOAD_ORDER.needsSession)).toBeTruthy();
-    expect(screen.queryByLabelText(w.pickOrder)).toBeNull();
+    expect(screen.queryByRole('radio', { name: WORKLOAD_ORDER.workload })).toBeNull();
+    await fireEvent.press(radio(w.pickOrder, WORKLOAD_ORDER.original));
     expect(lists().every((c) => !c.params.has('order'))).toBe(true);
 
-    await chooseSession(/^مجموعة الفجر · الاثنين 9 نوفمبر 2026/);
+    await chooseSession(/^الاثنين 9 نوفمبر 2026/);
     await settle();
     expect(lists().at(-1)!.params.get('sessionId')).toBe('s9');
+    await openSort();
     expect(radio(w.pickOrder, WORKLOAD_ORDER.original).props.accessibilityState.selected).toBe(true);
     await fireEvent.press(radio(w.pickOrder, WORKLOAD_ORDER.workload));
     await settle();
@@ -1542,16 +1600,18 @@ describe('«ترتيب حسب البرنامج» and compact rows (mobile)', () 
     expect(rows()).toEqual(['c', 'a', 'd', 'b']);
     expect(screen.getByTestId('section-group').props.children[0]).toBe(WORKLOAD_ORDER.comparable);
     expect(screen.getByTestId('section-unavailable').props.children[0]).toBe(WORKLOAD_ORDER.unavailable);
-    expect(screen.getByText(WORKLOAD_ORDER.active)).toBeTruthy();
-    // no rank numbers anywhere; one session chosen → the session is not repeated in each row
+    expect(screen.getByTestId('order-active').props.children).toBe(WORKLOAD_ORDER.active);
+    // no rank numbers anywhere
     expect(screen.queryByText(/الأول|الثاني|الثالث|رتبة/)).toBeNull();
-    expect(screen.queryAllByText(new RegExp(` · ${w.phase.PAST}$`))).toHaveLength(0);
 
     // the choice holds when the list is reloaded by another filter
+    await fireEvent.press(screen.getByLabelText(w.filter));
     await fireEvent.press(radio(w.pickState, w.state.pending));
+    await fireEvent.press(screen.getByLabelText(w.applyFilters));
     await settle();
     expect([lists().at(-1)!.params.get('state'), lists().at(-1)!.params.get('order')]).toEqual(['pending', 'workload']);
 
+    await openSort();
     await fireEvent.press(radio(w.pickOrder, WORKLOAD_ORDER.original));
     await settle();
     expect(lists().at(-1)!.params.has('order')).toBe(false);
@@ -1563,14 +1623,17 @@ describe('«ترتيب حسب البرنامج» and compact rows (mobile)', () 
     stub(answer);
     await renderScreen(<TeacherWorkScreen />);
     await screen.findByText('أمين التونسي');
-    await chooseSession(/^مجموعة الفجر · الاثنين 9 نوفمبر 2026/);
+    await chooseSession(/^الاثنين 9 نوفمبر 2026/);
+    await openSort();
     await fireEvent.press(radio(w.pickOrder, WORKLOAD_ORDER.workload));
     await settle();
     expect(lists().at(-1)!.params.get('order')).toBe('workload');
-    await chooseSession(w.allSessions);
+    // clearing the session (its ×): back to the original order
+    await fireEvent.press(screen.getByLabelText(w.clearSession));
     await settle();
     expect(lists().at(-1)!.params.has('sessionId')).toBe(false);
     expect(lists().at(-1)!.params.has('order')).toBe(false);
+    await openSort();
     expect(screen.getByText(WORKLOAD_ORDER.needsSession)).toBeTruthy();
   });
 });
@@ -1739,16 +1802,20 @@ describe('«التقييم العام» (mobile)', () => {
     expect(choices().every((c) => c.props.accessibilityState.disabled)).toBe(true);
   });
 
-  it('compact row: «التقييم العام: …» once given, next to the items’ state; nothing when not given', async () => {
-    const p = workProgram('w1', { overallEvaluation: given('VERY_GOOD') });
-    stub(undefined, p);
-    await renderScreen(<TeacherWorkScreen />);
-    expect((await screen.findByTestId('row-overall')).props.children).toBe('التقييم العام: جيد جدًا');
-    const status = programStatus(p.progress);
-    expect(screen.getByTestId(`status-${status.kind}`).props.children).toBe(status.text);
+  it('card: the level only («جيد جدًا», no «التقييم العام:»), next to the items’ results; nothing when not given', async () => {
+    for (const level of WORK_PERFORMANCES) {
+      const p = workProgram('w1', { overallEvaluation: given(level) });
+      stub(undefined, p);
+      await renderScreen(<TeacherWorkScreen />);
+      const badge = await screen.findByTestId('card-overall');
+      expect(within(badge).getByText(PERFORMANCE_LABEL[level])).toBeTruthy();
+      expect(screen.queryByText(/التقييم العام:/)).toBeNull();
+      for (const part of completionParts(p.items.map((i) => i.status)))
+        expect(screen.getByTestId(`card-result-${part.status}`).props.children).toBe(part.text);
+    }
     stub(undefined, workProgram('w2'));
     await renderScreen(<TeacherWorkScreen />);
     await screen.findByText(w.total(1));
-    expect(screen.queryByTestId('row-overall')).toBeNull();
+    expect(screen.queryByTestId('card-overall')).toBeNull();
   });
 });

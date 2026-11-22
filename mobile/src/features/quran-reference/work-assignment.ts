@@ -622,6 +622,43 @@ export function workTypesSummary(types: WorkType[]): string {
   }).join(' · ');
 }
 
+/** The kinds of work of a program as badges, in a fixed order: «حفظ», «مراجعة», «عرضة», «اختبار (2)». */
+export function workTypeBadges(types: WorkType[]): { type: WorkType; count: number; label: string }[] {
+  return TYPE_ORDER.flatMap((type) => {
+    const count = types.filter((x) => x === type).length;
+    return count === 0 ? [] : [{ type, count, label: count > 1 ? `${TYPE_WORD[type]} (${count})` : TYPE_WORD[type] }];
+  });
+}
+
+export type WorkItemStatus = 'NOT_EVALUATED' | 'COMPLETED' | 'NOT_COMPLETED' | 'PARTIAL' | 'POSTPONED' | 'CANCELLED';
+
+/** [one, two, three-and-more] forms of each result (agreeing with «عمل»). */
+const RESULT_FORMS: Record<Exclude<WorkItemStatus, 'NOT_EVALUATED'>, [string, string, string]> = {
+  COMPLETED: ['منجز', 'منجزان', 'منجزة'],
+  PARTIAL: ['جزئي', 'جزئيان', 'جزئية'],
+  NOT_COMPLETED: ['غير منجز', 'غير منجزين', 'غير منجزة'],
+  POSTPONED: ['مؤجل', 'مؤجلان', 'مؤجلة'],
+  CANCELLED: ['ملغى', 'ملغيان', 'ملغاة'],
+};
+const RESULT_ORDER: WorkItemStatus[] = ['COMPLETED', 'PARTIAL', 'NOT_COMPLETED', 'POSTPONED', 'CANCELLED', 'NOT_EVALUATED'];
+
+/**
+ * The completion of a program, exact and concise — one part per result present, in a fixed order:
+ * «2 منجزان» · «1 منجز · 4 ملغاة» · «1 منجز · 1 جزئي» · «2 بانتظار التقييم». Never «كل الأعمال
+ * منجزة» when items were dropped; nothing to do with the overall evaluation.
+ */
+export function completionParts(statuses: WorkItemStatus[]): { status: WorkItemStatus; count: number; text: string }[] {
+  return RESULT_ORDER.flatMap((status): { status: WorkItemStatus; count: number; text: string }[] => {
+    const count = statuses.filter((x) => x === status).length;
+    if (count === 0) return [];
+    if (status === 'NOT_EVALUATED') return [{ status, count, text: `${count} بانتظار التقييم` }];
+    const [one, two, many] = RESULT_FORMS[status];
+    return [{ status, count, text: `${count} ${count === 1 ? one : count === 2 ? two : many}` }];
+  });
+}
+
+export const completionText = (statuses: WorkItemStatus[]) => completionParts(statuses).map((p) => p.text).join(' · ');
+
 export type ProgramStatusKind = 'pending' | 'partial' | 'done' | 'unfinished' | 'cancelled';
 
 /**

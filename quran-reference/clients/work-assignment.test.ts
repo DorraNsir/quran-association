@@ -13,7 +13,10 @@ import {
   overallRowText,
   PERFORMANCE_LABEL,
   WORK_PERFORMANCES,
+  completionParts,
+  completionText,
   programStatus,
+  workTypeBadges,
   workloadSections,
   workTypesSummary,
   WORKLOAD_ORDER,
@@ -597,5 +600,22 @@ describe('«التقييم العام» wording (display only)', () => {
     assert.match(overallPendingNote(1) ?? '', /^عمل واحد لم يُقيَّم بعد — يمكن/);
     assert.match(overallPendingNote(2) ?? '', /^عملان لم يُقيَّما بعد/);
     assert.match(overallPendingNote(3) ?? '', /^3 أعمال لم تُقيَّم بعد/);
+  });
+});
+
+describe('program cards (display only)', () => {
+  test('work-type badges in a fixed order, counted when repeated', () => {
+    assert.deepEqual(workTypeBadges(['EXAM', 'RECITATION', 'MEMORIZATION', 'EXAM', 'REVISION']).map((b) => b.label), ['حفظ', 'مراجعة', 'عرضة', 'اختبار (2)']);
+    assert.deepEqual(workTypeBadges([]), []);
+  });
+  test('completion: exact, concise, one part per result', () => {
+    assert.equal(completionText(['COMPLETED', 'COMPLETED']), '2 منجزان');
+    assert.equal(completionText(['CANCELLED', 'COMPLETED', 'CANCELLED', 'CANCELLED', 'CANCELLED']), '1 منجز · 4 ملغاة');
+    assert.equal(completionText(['PARTIAL', 'COMPLETED']), '1 منجز · 1 جزئي');
+    assert.equal(completionText(['NOT_EVALUATED', 'NOT_EVALUATED']), '2 بانتظار التقييم');
+    assert.equal(completionText(['COMPLETED', 'COMPLETED', 'COMPLETED', 'NOT_COMPLETED', 'POSTPONED']), '3 منجزة · 1 غير منجز · 1 مؤجل');
+    assert.deepEqual(completionParts(['CANCELLED']).map((p) => [p.status, p.count]), [['CANCELLED', 1]]);
+    // never «كل الأعمال منجزة» (even with dropped items)
+    assert.doesNotMatch(completionText(['COMPLETED', 'CANCELLED']), /كل الأعمال/);
   });
 });

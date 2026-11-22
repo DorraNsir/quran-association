@@ -1,61 +1,49 @@
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { EmptyState, QueryState } from '@/components/feedback';
-import { AppText, BottomSheet, Button, Card, ChipRow, Icon, InitialsAvatar, OptionRow, PressableRow, Screen, type IconName } from '@/components/ui';
+import { AppText, BottomSheet, Button, Card, Icon, OptionRow, Screen } from '@/components/ui';
 import { useSession } from '@/features/auth/auth-provider';
-import { usePreferences } from '@/features/preferences/preferences';
 import { ar } from '@/i18n/ar';
 import { fontFamilies, radius, spacing, touchTarget, useAppTheme } from '@/theme';
 
-import {
-  overallRowText,
-  programStatus,
-  workloadSections,
-  WORKLOAD_ORDER,
-  workTypesSummary,
-  type ProgramStatusKind,
-} from '../quran-reference/work-assignment';
+import { workloadSections, WORKLOAD_ORDER } from '../quran-reference/work-assignment';
 import { teacherClasses } from './dashboard-model';
 import { useTeacherWorkspace } from './use-teacher-dashboard';
 import { usePullToRefresh } from './use-refresh';
 import { useWorkProgramPages, useWorkSessionOptions, workKey } from './use-work';
-import { phaseOf, sessionDay, studentName } from './work-model';
-import { recitationText } from './recitation-line';
-import type { WorkPeriod, WorkProgram, WorkProgramFilters, WorkProgramState } from './work-types';
+import { sessionDay } from './work-model';
+import { WorkProgramCard } from './work-program-card';
+import type { WorkPeriod, WorkProgramFilters, WorkProgramState, WorkSession } from './work-types';
 
 const w = ar.work;
 const ALL = 'ALL';
 type Order = 'original' | 'workload';
-const STATUS_ICON: Record<ProgramStatusKind, IconName> = {
-  pending: 'pending',
-  partial: 'partial',
-  unfinished: 'partial',
-  done: 'success',
-  cancelled: 'ban',
-};
 const STATES: readonly WorkProgramState[] = ['pending', 'unfinished', 'cancelled', 'done'];
 
 /** Typing pauses this long before the (server-side) student search is sent. */
 export const SEARCH_DELAY_MS = 400;
 
+/** «الأحد 15 نوفمبر 2026 · 17:00 · مجموعة الأمل» — the full date, never shortened. */
+const sessionText = (s: WorkSession) => `${sessionDay(s)} · ${s.startTime} · ${s.groupName}`;
+
 /**
- * «متابعة برنامج العمل»: the work programs of MY sessions (GET
- * /teacher/work-programs — the server keeps only sessions of my team snapshot
- * and, in shared sessions, students of classes I manage there), filtered and
- * paginated ON THE SERVER as on the web: period, program state, class,
- * session, student name. One compact row per student × session.
- * «ترتيب حسب البرنامج»: on request, for one chosen session — the server orders
- * the whole session (advisory, never a rank); the choice holds across pages
- * and refreshes until «الترتيب الأصلي» or another session.
+ * «متابعة برنامج العمل»: the work programs of MY sessions (GET /teacher/work-programs — the server
+ * keeps only sessions of my team snapshot and, in shared sessions, students of classes I manage
+ * there), filtered and paginated ON THE SERVER as on the web.
+ *
+ * Layout, from the top: «+ إضافة» in the header · search + «تصفية» (period, state, class in one
+ * sheet, applied together) · the session + «الترتيب» · a short summary of the active filters and
+ * the count · one card per program. «ترتيب حسب البرنامج» is offered for one chosen session only
+ * (the server orders the whole session; advisory, never a rank) and is reset when the session
+ * changes.
  */
 export function TeacherWorkScreen({ initialClassId, studentId }: { initialClassId?: string; studentId?: string }) {
   const { user } = useSession();
   const teacherId = user?.teacherId ?? '';
   const router = useRouter();
   const { colors } = useAppTheme();
-  const timeZone = usePreferences().data?.timezone;
   const workspace = useTeacherWorkspace(teacherId);
   const classes = workspace.data ? teacherClasses(workspace.data) : [];
   const student = studentId ? workspace.data?.students.find((s) => s.id === studentId) : undefined;
@@ -65,7 +53,7 @@ export function TeacherWorkScreen({ initialClassId, studentId }: { initialClassI
   const [classId, setClassIdRaw] = useState<string>(initialClassId ?? ALL);
   const [sessionId, setSessionIdRaw] = useState<string>(ALL);
   const [order, setOrder] = useState<Order>('original');
-  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [sheet, setSheet] = useState<'filters' | 'sessions' | 'order' | null>(null);
   const sessionOptions = useWorkSessionOptions(teacherId);
   // Another session (or class) is never reordered without being asked
   const setSessionId = (v: string) => {
@@ -98,12 +86,19 @@ export function TeacherWorkScreen({ initialClassId, studentId }: { initialClassI
   const ordered = filters.order === 'workload';
   const sessions = (sessionOptions.data ?? []).filter((s) => classId === ALL || s.groupClassId === classId);
   const chosenSession = sessions.find((s) => s.id === sessionId);
-  const sessionText = (s: (typeof sessions)[number]) => `${s.groupName} · ${sessionDay(s)} · ${s.startTime}`;
   const filtered = Object.keys(filters).some((k) => k !== 'order');
   const pages = useWorkProgramPages(teacherId, filters);
   const { refreshing, onRefresh } = usePullToRefresh([workKey(teacherId)]);
   const programs = pages.data?.pages.flatMap((p) => p.data) ?? [];
   const total = pages.data?.pages[0]?.meta.total ?? 0;
+
+  // The sheet's filters, applied together
+  const activeCount = [period !== ALL, state !== ALL, classId !== ALL].filter(Boolean).length;
+  const summary = [
+    period !== ALL ? w.period[period] : null,
+    state !== ALL ? w.state[state] : null,
+    classId !== ALL ? classes.find((c) => c.id === classId)?.groupName : null,
+  ].filter(Boolean);
 
   const reset = () => {
     setPeriod(ALL);
@@ -114,101 +109,43 @@ export function TeacherWorkScreen({ initialClassId, studentId }: { initialClassI
     setText('');
     setQ('');
   };
+  const add = () => router.push({ pathname: '/teacher/work/new', params: studentOnly && studentId ? { studentId } : {} });
 
   return (
     <Screen refreshing={refreshing} onRefresh={onRefresh}>
-      <AppText variant="small" tone="muted">
-        {w.intro}
-      </AppText>
-      <Button
-        label={w.add}
-        icon="add"
-        fullWidth
-        onPress={() => router.push({ pathname: '/teacher/work/new', params: studentOnly && studentId ? { studentId } : {} })}
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <Pressable
+              onPress={add}
+              accessibilityRole="button"
+              accessibilityLabel={w.add}
+              hitSlop={8}
+              style={[styles.addButton, { backgroundColor: colors.primary }]}>
+              <Icon name="add" size={16} color={colors.primaryForeground} />
+              <AppText variant="label" style={{ color: colors.primaryForeground }}>
+                {w.addShort}
+              </AppText>
+            </Pressable>
+          ),
+        }}
       />
 
-      <View style={styles.filters}>
-        <ChipRow
-          label={w.pickPeriod}
-          value={period}
-          onChange={setPeriod}
-          options={[
-            { value: ALL, label: w.period.all },
-            { value: 'upcoming', label: w.period.upcoming },
-            { value: 'past', label: w.period.past },
-          ]}
-        />
-        <ChipRow
-          label={w.pickState}
-          value={state}
-          onChange={setState}
-          options={[{ value: ALL, label: w.allStates }, ...STATES.map((s) => ({ value: s, label: w.state[s] }))]}
-        />
-        {classes.length > 1 ? (
-          <ChipRow
-            label={w.pickClass}
-            value={classId}
-            onChange={setClassId}
-            options={[{ value: ALL, label: w.allClasses }, ...classes.map((c) => ({ value: c.id, label: c.groupName }))]}
-          />
-        ) : null}
-        <Pressable
-          onPress={() => setSessionsOpen(true)}
-          accessibilityRole="button"
-          accessibilityLabel={`${w.sessionFilter}: ${chosenSession ? sessionText(chosenSession) : w.allSessions}`}
-          style={[styles.picker, { borderColor: colors.input, backgroundColor: colors.card }]}>
-          <Icon name="calendar" size={16} color={colors.mutedForeground} />
-          <AppText variant="body" numberOfLines={1} style={styles.flex}>
-            {chosenSession ? sessionText(chosenSession) : w.allSessions}
-          </AppText>
-          <Icon name="forward" size={16} color={colors.mutedForeground} />
-        </Pressable>
-        <BottomSheet visible={sessionsOpen} title={w.sessionFilter} closeLabel={w.closeSessions} onClose={() => setSessionsOpen(false)}>
-          {[{ id: ALL, label: w.allSessions }, ...sessions.map((s) => ({ id: s.id, label: sessionText(s) }))].map((o) => (
-            <OptionRow
-              key={o.id}
-              label={o.label}
-              selected={o.id === sessionId}
-              onPress={() => {
-                setSessionId(o.id);
-                setSessionsOpen(false);
-              }}
-            />
-          ))}
-        </BottomSheet>
-        {sessionId !== ALL ? (
-          <ChipRow
-            label={w.pickOrder}
-            value={ordered ? 'workload' : 'original'}
-            onChange={(v: Order) => setOrder(v)}
-            options={[
-              { value: 'original', label: WORKLOAD_ORDER.original },
-              { value: 'workload', label: WORKLOAD_ORDER.workload },
-            ]}
-          />
-        ) : (
-          <AppText variant="caption" tone="muted">
-            {WORKLOAD_ORDER.needsSession}
-          </AppText>
-        )}
-        {ordered ? (
-          <View style={styles.note} accessibilityLiveRegion="polite">
-            <Icon name="info" size={14} color={colors.mutedForeground} />
-            <AppText variant="caption" tone="muted" style={styles.flex}>
-              <AppText variant="caption">{WORKLOAD_ORDER.active}</AppText> — {WORKLOAD_ORDER.explanation}
-            </AppText>
-          </View>
-        ) : null}
+      {/* Search + «تصفية» */}
+      <View style={styles.toolbar}>
         {studentOnly && studentId ? (
-          <View style={styles.inline}>
-            <AppText variant="small" style={styles.flex}>
+          <View style={[styles.field, styles.flex, { borderColor: colors.input, backgroundColor: colors.card }]}>
+            <Icon name="user" size={16} color={colors.mutedForeground} />
+            <AppText variant="small" numberOfLines={1} style={styles.flex}>
               {w.studentFilter(student ? `${student.firstName} ${student.lastName}` : '…')}
             </AppText>
-            <Button variant="ghost" label={w.clearStudent} onPress={() => setStudentOnly(false)} />
+            <Pressable onPress={() => setStudentOnly(false)} accessibilityRole="button" accessibilityLabel={w.clearStudent} hitSlop={8}>
+              <Icon name="close" size={16} color={colors.mutedForeground} />
+            </Pressable>
           </View>
         ) : (
-          <View style={[styles.search, { borderColor: colors.input, backgroundColor: colors.card }]}>
-            <Icon name="search" size={16} color={colors.mutedForeground} />
+          <View style={[styles.field, styles.flex, { borderColor: colors.input, backgroundColor: colors.card }]}>
+            <Icon name="search" size={18} color={colors.mutedForeground} />
             <TextInput
               value={text}
               onChangeText={setText}
@@ -227,12 +164,55 @@ export function TeacherWorkScreen({ initialClassId, studentId }: { initialClassI
             ) : null}
           </View>
         )}
+        <ToolButton
+          icon="filter"
+          label={w.filter}
+          count={activeCount}
+          accessibilityLabel={activeCount ? w.filtersActive(activeCount) : w.filter}
+          onPress={() => setSheet('filters')}
+        />
+      </View>
+
+      {/* The session (full date) + «الترتيب» */}
+      <View style={styles.toolbar}>
+        <Pressable
+          onPress={() => setSheet('sessions')}
+          accessibilityRole="button"
+          accessibilityLabel={`${w.sessionFilter}: ${chosenSession ? sessionText(chosenSession) : w.allSessions}`}
+          style={[styles.field, styles.flex, { borderColor: chosenSession ? colors.primary : colors.input, backgroundColor: colors.card }]}>
+          <Icon name="calendar" size={16} color={chosenSession ? colors.primary : colors.mutedForeground} />
+          <AppText variant="small" numberOfLines={1} style={styles.flex}>
+            {chosenSession ? sessionText(chosenSession) : w.allSessions}
+          </AppText>
+          {chosenSession ? (
+            <Pressable onPress={() => setSessionId(ALL)} accessibilityRole="button" accessibilityLabel={w.clearSession} hitSlop={8}>
+              <Icon name="close" size={16} color={colors.mutedForeground} />
+            </Pressable>
+          ) : (
+            <Icon name="forward" size={14} color={colors.mutedForeground} />
+          )}
+        </Pressable>
+        <ToolButton
+          icon="sort"
+          label={w.sort}
+          active={ordered}
+          accessibilityLabel={`${w.sort}: ${ordered ? WORKLOAD_ORDER.workload : WORKLOAD_ORDER.original}`}
+          onPress={() => setSheet('order')}
+        />
       </View>
 
       <QueryState query={pages}>
-        <AppText variant="small" tone="muted" accessibilityLiveRegion="polite">
-          {w.total(total)}
-        </AppText>
+        <View style={styles.meta}>
+          <AppText variant="small" tone="muted" accessibilityLiveRegion="polite">
+            {w.total(total)}
+            {summary.length ? ` · ${summary.join(' · ')}` : ''}
+          </AppText>
+          {ordered ? (
+            <AppText variant="caption" tone="primary" testID="order-active">
+              {WORKLOAD_ORDER.active}
+            </AppText>
+          ) : null}
+        </View>
         {programs.length === 0 ? (
           <Card>
             {filtered ? (
@@ -248,143 +228,210 @@ export function TeacherWorkScreen({ initialClassId, studentId }: { initialClassI
           </Card>
         ) : (
           workloadSections(programs, ordered).map((section) => (
-            <Card key={section.key} style={styles.section}>
+            <View key={section.key} style={styles.section}>
               {section.label ? (
-                <AppText variant="caption" tone="muted" testID={`section-${section.kind}`} style={styles.sectionLabel}>
+                <AppText variant="caption" tone="muted" testID={`section-${section.kind}`}>
                   {section.label}
                   {section.hint ? ` — ${section.hint}` : ''}
                 </AppText>
               ) : null}
-              {section.programs.map((p, i) => (
-                <ProgramRow
-                  key={p.id}
-                  program={p}
-                  bordered={i > 0 || Boolean(section.label)}
-                  showSession={sessionId === ALL}
-                  timeZone={timeZone}
-                  onPress={() => router.push({ pathname: '/teacher/work/[id]', params: { id: p.id } })}
-                />
+              {section.programs.map((p) => (
+                <WorkProgramCard key={p.id} program={p} onPress={() => router.push({ pathname: '/teacher/work/[id]', params: { id: p.id } })} />
               ))}
-            </Card>
+            </View>
           ))
         )}
         {pages.hasNextPage ? (
-          <Button
-            variant="outline"
-            label={w.loadMore}
-            loading={pages.isFetchingNextPage}
-            onPress={() => void pages.fetchNextPage()}
-          />
+          <Button variant="outline" label={w.loadMore} loading={pages.isFetchingNextPage} onPress={() => void pages.fetchNextPage()} />
         ) : null}
       </QueryState>
+
+      {/* Mounted while open: each opening starts from the applied filters */}
+      {sheet === 'filters' ? (
+        <FiltersSheet
+          onClose={() => setSheet(null)}
+          classes={classes.map((c) => ({ id: c.id, label: c.groupName }))}
+          value={{ period, state, classId }}
+          onApply={(v) => {
+            setPeriod(v.period);
+            setState(v.state);
+            if (v.classId !== classId) setClassId(v.classId);
+            setSheet(null);
+          }}
+        />
+      ) : null}
+
+      <BottomSheet visible={sheet === 'sessions'} title={w.sessionFilter} closeLabel={w.closeSessions} onClose={() => setSheet(null)}>
+        {[{ id: ALL, label: w.allSessions }, ...sessions.map((s) => ({ id: s.id, label: sessionText(s) }))].map((o) => (
+          <OptionRow
+            key={o.id}
+            label={o.label}
+            selected={o.id === sessionId}
+            onPress={() => {
+              setSessionId(o.id);
+              setSheet(null);
+            }}
+          />
+        ))}
+      </BottomSheet>
+
+      <BottomSheet visible={sheet === 'order'} title={w.sortTitle} closeLabel={w.closePicker} onClose={() => setSheet(null)}>
+        <View accessibilityRole="radiogroup" accessibilityLabel={w.pickOrder} style={styles.options}>
+          <OptionRow
+            label={WORKLOAD_ORDER.original}
+            selected={!ordered}
+            onPress={() => {
+              setOrder('original');
+              setSheet(null);
+            }}
+          />
+          {/* «ترتيب حسب البرنامج»: for one chosen session only */}
+          {sessionId !== ALL ? (
+            <OptionRow
+              label={WORKLOAD_ORDER.workload}
+              selected={ordered}
+              onPress={() => {
+                setOrder('workload');
+                setSheet(null);
+              }}
+            />
+          ) : null}
+        </View>
+        <AppText variant="small" tone="muted">
+          {sessionId !== ALL ? WORKLOAD_ORDER.explanation : WORKLOAD_ORDER.needsSession}
+        </AppText>
+      </BottomSheet>
     </Screen>
   );
 }
 
-/**
- * ONE student + ONE session as one compact row: photo (or initial), name, class (+ the session
- * unless one session is chosen), the kinds of work and the evaluation state — icon and words.
- * The whole row opens that program; everything else is on its screen.
- */
-function ProgramRow({
-  program: p,
-  bordered,
-  showSession,
-  timeZone,
+/** A compact toolbar button: icon + label (+ the number of active filters, or an active state). */
+function ToolButton({
+  icon,
+  label,
+  count = 0,
+  active = false,
+  accessibilityLabel,
   onPress,
 }: {
-  program: WorkProgram;
-  bordered: boolean;
-  showSession: boolean;
-  timeZone: string | undefined;
+  icon: 'filter' | 'sort';
+  label: string;
+  count?: number;
+  active?: boolean;
+  accessibilityLabel: string;
   onPress: () => void;
 }) {
   const { colors } = useAppTheme();
-  const name = studentName(p);
-  const status = programStatus(p.progress);
-  const types = workTypesSummary(p.items.map((i) => i.type));
-  const recitations = p.items.flatMap((i) => (i.recitation ? [recitationText(i.recitation)] : [])).join('؛ ') || null;
-  const overall = overallRowText(p.overallEvaluation?.level);
-  const context = showSession ? `${p.session.groupName} · ${sessionDay(p.session)} · ${w.phase[phaseOf(p.session, timeZone)]}` : p.session.groupName;
-  const tone = status.kind === 'done' ? colors.primary : status.kind === 'pending' || status.kind === 'cancelled' ? colors.mutedForeground : colors.warning;
+  const on = active || count > 0;
   return (
-    <PressableRow
-      bordered={bordered}
+    <Pressable
       onPress={onPress}
-      accessibilityLabel={`${w.detailTitle} ${name} — ${context} — ${types} — ${status.text}${overall ? ` — ${overall}` : ''}${recitations ? ` — ${recitations}` : ''}`}>
-      <View style={styles.row} testID={`program-${p.id}`}>
-        <InitialsAvatar name={name} size={44} photoUrl={p.student.photoUrl} />
-        <View style={styles.flex}>
-          <AppText variant="bodyStrong" numberOfLines={1}>
-            {name}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      style={({ pressed }) => [
+        styles.tool,
+        { backgroundColor: on ? colors.brandSoft : colors.card, borderColor: on ? colors.primary : colors.input },
+        pressed && { opacity: 0.85 },
+      ]}>
+      <Icon name={icon} size={16} color={on ? colors.brandSoftForeground : colors.foreground} />
+      <AppText variant="label" style={{ color: on ? colors.brandSoftForeground : colors.foreground }}>
+        {label}
+      </AppText>
+      {count > 0 ? (
+        <View style={[styles.count, { backgroundColor: colors.primary }]}>
+          <AppText variant="caption" style={{ color: colors.primaryForeground }} testID="filters-count">
+            {count}
           </AppText>
-          <AppText variant="caption" tone="muted" numberOfLines={1}>
-            {context}
-          </AppText>
-          <View style={styles.meta}>
-            {types ? (
-              <AppText variant="small" numberOfLines={1}>
-                {types}
-              </AppText>
-            ) : null}
-            <View style={styles.inline}>
-              <Icon name={STATUS_ICON[status.kind]} size={14} color={tone} />
-              <AppText variant="small" style={{ color: tone }} testID={`status-${status.kind}`}>
-                {status.text}
-              </AppText>
-            </View>
-            {/* «التقييم العام»: only once given; next to the items' state, never instead of it */}
-            {overall ? (
-              <View style={[styles.overall, { backgroundColor: colors.brandSoft }]}>
-                <Icon name="success" size={12} color={colors.brandSoftForeground} />
-                <AppText variant="caption" style={{ color: colors.brandSoftForeground }} testID="row-overall">
-                  {overall}
-                </AppText>
-              </View>
-            ) : null}
-          </View>
-          {/* «متابعة العرضات»: structured recitations only, one line */}
-          {recitations ? (
-            <View style={styles.inline}>
-              <Icon name="recitation" size={12} color={colors.primary} />
-              <AppText variant="caption" tone="muted" numberOfLines={1} style={styles.flex} testID="row-recitations">
-                {recitations}
-              </AppText>
-            </View>
-          ) : null}
         </View>
-      </View>
-    </PressableRow>
+      ) : null}
+    </Pressable>
+  );
+}
+
+type SheetFilters = { period: WorkPeriod | typeof ALL; state: WorkProgramState | typeof ALL; classId: string };
+
+/** «تصفية البرامج»: period, state and class as labelled choices, applied together. */
+function FiltersSheet({
+  onClose,
+  classes,
+  value,
+  onApply,
+}: {
+  onClose: () => void;
+  classes: { id: string; label: string }[];
+  value: SheetFilters;
+  onApply: (v: SheetFilters) => void;
+}) {
+  const [draft, setDraft] = useState<SheetFilters>(value);
+  const section = <K extends keyof SheetFilters>(key: K, title: string, options: { value: SheetFilters[K]; label: string }[]) => (
+    <View accessibilityRole="radiogroup" accessibilityLabel={title} style={styles.options}>
+      <AppText variant="label" accessibilityRole="header">
+        {title}
+      </AppText>
+      {options.map((o) => (
+        <OptionRow key={String(o.value)} label={o.label} selected={draft[key] === o.value} onPress={() => setDraft({ ...draft, [key]: o.value })} />
+      ))}
+    </View>
+  );
+  return (
+    <BottomSheet
+      visible
+      title={w.filtersTitle}
+      closeLabel={w.closePicker}
+      onClose={onClose}
+      footer={
+        <>
+          <View style={styles.flex}>
+            <Button label={w.applyFilters} fullWidth onPress={() => onApply(draft)} />
+          </View>
+          <Button variant="ghost" label={w.resetShort} onPress={() => setDraft({ period: ALL, state: ALL, classId: ALL })} />
+        </>
+      }>
+      {section('period', w.pickPeriod, [
+        { value: ALL, label: w.period.all },
+        { value: 'upcoming', label: w.period.upcoming },
+        { value: 'past', label: w.period.past },
+      ])}
+      {section('state', w.pickState, [{ value: ALL, label: w.allStates }, ...STATES.map((s) => ({ value: s, label: w.state[s] }))])}
+      {classes.length > 1
+        ? section('classId', w.pickClass, [{ value: ALL, label: w.allClasses }, ...classes.map((c) => ({ value: c.id, label: c.label }))])
+        : null}
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  filters: { gap: spacing.sm },
-  inline: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  search: {
+  toolbar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  field: {
     minHeight: touchTarget,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     borderWidth: 1,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     paddingHorizontal: spacing.md,
   },
   searchInput: { flex: 1, minHeight: touchTarget, fontFamily: fontFamilies.regular, fontSize: 15, textAlign: 'right', writingDirection: 'rtl' },
-  picker: {
+  tool: {
     minHeight: touchTarget,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
     borderWidth: 1,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     paddingHorizontal: spacing.md,
   },
-  note: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs },
-  overall: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: radius.md, paddingHorizontal: 6, paddingVertical: 1 },
-  section: { paddingVertical: 0, gap: 0 },
-  sectionLabel: { paddingTop: spacing.sm },
-  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  meta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: spacing.md, rowGap: 2 },
+  count: { minWidth: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    minHeight: 34,
+  },
+  meta: { gap: 2 },
+  section: { gap: spacing.sm },
+  options: { gap: spacing.xs },
   flex: { flex: 1, minWidth: 0 },
 });

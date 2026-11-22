@@ -40,6 +40,18 @@ export interface ColorTokens {
   heroMuted: string;
   /** Gold accent of the web login page (hadith, header edge) */
   gold: string;
+  /**
+   * Work types (soft badge + its text), the web's palette: حفظ blue, مراجعة teal, عرضة purple,
+   * اختبار amber — kept apart from the result / evaluation colours.
+   */
+  memorizationSoft: string;
+  memorizationForeground: string;
+  revisionSoft: string;
+  revisionForeground: string;
+  recitationSoft: string;
+  recitationForeground: string;
+  examSoft: string;
+  examForeground: string;
 }
 
 export const lightColors: ColorTokens = {
@@ -73,6 +85,14 @@ export const lightColors: ColorTokens = {
   heroForeground: '#ffffff',
   heroMuted: 'rgba(255,255,255,0.78)',
   gold: '#e8cf98',
+  memorizationSoft: '#eaf2ff',
+  memorizationForeground: '#1d4ed8',
+  revisionSoft: '#e6f7f4',
+  revisionForeground: '#0f766e',
+  recitationSoft: '#f3edff',
+  recitationForeground: '#6d28d9',
+  examSoft: '#fff5e0',
+  examForeground: '#a15c07',
 };
 
 export const darkColors: ColorTokens = {
@@ -107,4 +127,12 @@ export const darkColors: ColorTokens = {
   heroForeground: '#f5f5f5',
   heroMuted: 'rgba(245,245,245,0.72)',
   gold: '#c9ad6f',
+  memorizationSoft: '#172a45',
+  memorizationForeground: '#a9c8fb',
+  revisionSoft: '#0f2f2b',
+  revisionForeground: '#8fdccd',
+  recitationSoft: '#2a1d42',
+  recitationForeground: '#d3bdfb',
+  examSoft: '#3a2a10',
+  examForeground: '#f4c77c',
 };

@@ -1,32 +1,74 @@
 "use client"
 
-import { Award, ChevronLeft, CircleCheck, CircleMinus, CircleSlash, ClipboardCheck, Clock, Mic, Pencil, type LucideIcon } from "lucide-react"
+import {
+  BarChart3,
+  BookOpen,
+  ChevronLeft,
+  CircleCheck,
+  CircleMinus,
+  CircleSlash,
+  CircleX,
+  ClipboardCheck,
+  ClipboardList,
+  Clock,
+  Mic,
+  Pencil,
+  RefreshCw,
+  Star,
+  ThumbsUp,
+  Trophy,
+  type LucideIcon,
+} from "lucide-react"
 import Link from "next/link"
 
 import { UserAvatar } from "@/components/shared/user-avatar"
 import { Button } from "@/components/ui/button"
 import { useEvaluationBlock } from "@/hooks/use-evaluation-block"
-import { overallRowText, programStatus, recitationSummaryText, workTypesSummary, type ProgramStatusKind } from "@/lib/quran-reference/work-assignment"
-import { surahByNumber } from "@/lib/quran/surahs"
+import {
+  completionParts,
+  PERFORMANCE_LABEL,
+  workTypeBadges,
+  type WorkItemStatus,
+  type WorkPerformance,
+  type WorkType,
+} from "@/lib/quran-reference/work-assignment"
 import { cn } from "@/lib/utils"
 import { evaluationBlockMessage, sessionLabel, sessionPhaseLabel, type SessionPhase } from "@/lib/work-followup"
 import type { WorkProgram } from "@/types/work-followup"
 
 import { programHref } from "./work-program-card"
 
-/** Icon + words per state (never colour alone). */
-const STATUS_LOOK: Record<ProgramStatusKind, { icon: LucideIcon; tone: string }> = {
-  pending: { icon: Clock, tone: "text-muted-foreground" },
-  partial: { icon: CircleMinus, tone: "text-warning" },
-  unfinished: { icon: CircleMinus, tone: "text-warning" },
-  done: { icon: CircleCheck, tone: "text-primary" },
-  cancelled: { icon: CircleSlash, tone: "text-muted-foreground" },
+/** Work types: soft colour + icon of their own (the mobile palette; never the result colours). */
+export const TYPE_LOOK: Record<WorkType, { icon: LucideIcon; tone: string }> = {
+  MEMORIZATION: { icon: BookOpen, tone: "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300" },
+  REVISION: { icon: RefreshCw, tone: "bg-teal-50 text-teal-700 dark:bg-teal-950/50 dark:text-teal-300" },
+  RECITATION: { icon: Mic, tone: "bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300" },
+  EXAM: { icon: ClipboardList, tone: "bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300" },
+}
+
+/** «التقييم العام»: the level only, with an icon of its own. */
+const LEVEL_LOOK: Record<WorkPerformance, { icon: LucideIcon; tone: string }> = {
+  EXCELLENT: { icon: Trophy, tone: "bg-brand-soft text-brand-soft-foreground" },
+  VERY_GOOD: { icon: ThumbsUp, tone: "bg-sky-50 text-sky-800 dark:bg-sky-950/50 dark:text-sky-300" },
+  GOOD: { icon: Star, tone: "bg-warning-soft text-warning" },
+  NEEDS_IMPROVEMENT: { icon: BarChart3, tone: "bg-destructive/10 text-destructive" },
+}
+
+/** Results of the items (icon + words, never colour alone). */
+const RESULT_LOOK: Record<WorkItemStatus, { icon: LucideIcon; tone: string }> = {
+  COMPLETED: { icon: CircleCheck, tone: "text-primary" },
+  PARTIAL: { icon: CircleMinus, tone: "text-warning" },
+  NOT_COMPLETED: { icon: CircleX, tone: "text-destructive" },
+  POSTPONED: { icon: Clock, tone: "text-sky-700 dark:text-sky-300" },
+  CANCELLED: { icon: CircleSlash, tone: "text-muted-foreground" },
+  NOT_EVALUATED: { icon: Clock, tone: "text-muted-foreground" },
 }
 
 /**
- * ONE student + ONE session as one compact row: photo (or initial), name, class and — unless the
- * list is already narrowed to one session — the session, the kinds of work («حفظ · مراجعة · عرضة»)
- * and the evaluation state. The name links to that program (stretched over the row); the two
+ * ONE student + ONE session as one compact row (the mobile card's content, laid out for the
+ * desktop): photo (or initial), name and the overall evaluation (the level only, once given), the
+ * class and the session's full date, the kinds of work as soft badges, and the items' exact
+ * results («1 منجز · 4 ملغاة»). The name links to that program (stretched over the row); the two
  * actions sit above the link. Everything else is on the program's page.
  */
 export function WorkProgramRow({
@@ -45,56 +87,63 @@ export function WorkProgramRow({
 }) {
   const { student, session } = program
   const name = `${student.firstName} ${student.lastName}`
-  const status = programStatus(program.progress)
-  const { icon: StatusIcon, tone } = STATUS_LOOK[status.kind]
   const blocked = useEvaluationBlock(program)
-  const types = workTypesSummary(program.items.map((i) => i.type))
-  // «متابعة العرضات»: «سورة المجادلة · 3 عرضات» per structured عرضة (none for the others)
-  const recitations =
-    program.items
-      .flatMap((i) => (i.recitation ? [recitationSummaryText(`سورة ${surahByNumber(i.recitation.surah)?.nameAr ?? i.recitation.surah}`, i.recitation.attempts)] : []))
-      .join("؛ ") || null
-  const overall = overallRowText(program.overallEvaluation?.level)
+  const badges = workTypeBadges(program.items.map((i) => i.type))
+  const parts = completionParts(program.items.map((i) => i.status))
+  const level = program.overallEvaluation?.level ?? null
+  const LevelIcon = level ? LEVEL_LOOK[level].icon : null
   return (
     <li
       data-program={program.id}
       className="relative flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/30 has-[a[data-row-link]:focus-visible]:ring-3 has-[a[data-row-link]:focus-visible]:ring-ring/50"
     >
       <UserAvatar name={name} photoUrl={student.photoUrl ?? undefined} size="lg" />
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <Link
-          href={programHref(program.id)}
-          data-row-link
-          className="block truncate font-semibold outline-none after:absolute after:inset-0 after:content-['']"
-          aria-label={`برنامج عمل ${name} — ${sessionLabel(session)}`}
-        >
-          {name}
-        </Link>
-        <p className="truncate text-xs text-muted-foreground">
-          {session.groupName}
-          {showSession && ` · ${sessionLabel(session)} · ${sessionPhaseLabel[phase]}`}
-        </p>
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
-          {types && <span className="text-foreground">{types}</span>}
-          <span className={cn("inline-flex items-center gap-1", tone)} data-status={status.kind}>
-            <StatusIcon className="size-3.5 shrink-0" aria-hidden />
-            {status.text}
-          </span>
-          {/* «التقييم العام»: only once given (no clutter otherwise); separate from the items' state */}
-          {overall && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-brand-soft px-1.5 py-0.5 text-brand-soft-foreground" data-overall>
-              <Award className="size-3.5 shrink-0" aria-hidden />
-              {overall}
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={programHref(program.id)}
+            data-row-link
+            className="truncate font-semibold outline-none after:absolute after:inset-0 after:content-['']"
+            aria-label={`برنامج عمل ${name} — ${sessionLabel(session)}`}
+          >
+            {name}
+          </Link>
+          {/* «التقييم العام»: the level only, once given (no clutter otherwise) */}
+          {level && (
+            <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", LEVEL_LOOK[level].tone)} data-overall={level}>
+              {LevelIcon && <LevelIcon className="size-3.5 shrink-0" aria-hidden />}
+              {PERFORMANCE_LABEL[level]}
             </span>
           )}
+        </div>
+        <p className="truncate text-xs text-muted-foreground">
+          {session.groupName} · {sessionLabel(session)}
+          {showSession && ` · ${sessionPhaseLabel[phase]}`}
         </p>
-        {/* «متابعة العرضات»: structured recitations only, one line */}
-        {recitations && (
-          <p className="flex items-center gap-1 truncate text-xs text-muted-foreground" data-recitations>
-            <Mic className="size-3 shrink-0 text-primary" aria-hidden />
-            <span className="truncate">{recitations}</span>
-          </p>
+        {badges.length > 0 && (
+          <ul aria-label="أنواع الأعمال" className="flex flex-wrap gap-1.5">
+            {badges.map((b) => {
+              const { icon: Icon, tone } = TYPE_LOOK[b.type]
+              return (
+                <li key={b.type} data-type={b.type} className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", tone)}>
+                  <Icon className="size-3.5 shrink-0" aria-hidden />
+                  {b.label}
+                </li>
+              )
+            })}
+          </ul>
         )}
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs" data-results>
+          {parts.map((part) => {
+            const { icon: Icon, tone } = RESULT_LOOK[part.status]
+            return (
+              <span key={part.status} className={cn("inline-flex items-center gap-1 font-medium", tone)} data-result={part.status}>
+                <Icon className="size-3.5 shrink-0" aria-hidden />
+                {part.text}
+              </span>
+            )
+          })}
+        </p>
       </div>
       {/* Above the stretched link: these never open the program */}
       <div className="relative z-10 flex shrink-0 items-center gap-0.5">

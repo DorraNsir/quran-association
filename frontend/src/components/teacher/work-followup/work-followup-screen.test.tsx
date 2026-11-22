@@ -12,9 +12,9 @@ import {
   overallChangeText,
   overallPendingNote,
   PERFORMANCE_LABEL,
-  programStatus,
+  completionParts,
   WORK_PERFORMANCES,
-  workTypesSummary,
+  workTypeBadges,
   WORKLOAD_ORDER,
 } from "@/lib/quran-reference/work-assignment"
 import { sessionLabel } from "@/lib/work-followup"
@@ -146,21 +146,23 @@ beforeEach(() => {
 })
 
 describe("«متابعة العمل» — list (API)", () => {
-  it("one compact row per program: photo or initial, name linking to the program, kinds of work, evaluation state — no item previews", async () => {
+  it("one compact row per program: photo or initial, name linking to the program, the full session date, work-type badges and the exact results — no item previews", async () => {
     routeFetch()
     renderIn(<WorkFollowupScreen />)
     const link = await screen.findByRole("link", { name: /برنامج عمل درة نصير/ })
     expect(link.getAttribute("href")).toBe("/teacher/work-followup/p1")
     const row = link.closest("li[data-program]") as HTMLElement
     expect(row.getAttribute("data-program")).toBe("p1")
-    expect(within(row).getByText(workTypesSummary(program.items.map((i) => i.type)))).toBeTruthy()
-    const status = programStatus(program.progress)
-    expect(within(row).getByText(status.text).closest("[data-status]")!.getAttribute("data-status")).toBe(status.kind)
+    // work types as soft badges (the same labels as on mobile)
+    expect([...row.querySelectorAll("[data-type]")].map((b) => b.textContent)).toEqual(workTypeBadges(program.items.map((i) => i.type)).map((b) => b.label))
+    // the exact results, one part per result present — never «كل الأعمال منجزة» with dropped work
+    expect([...row.querySelectorAll("[data-result]")].map((r) => r.textContent)).toEqual(completionParts(program.items.map((i) => i.status)).map((p) => p.text))
+    expect(row.textContent).not.toMatch(/كل الأعمال/)
     expect(within(row).getByText("د")).toBeTruthy() // no photo: the first letter of the name
-    // no item list in the row, no repeated workload or verification sentence
-    expect(within(row).queryAllByRole("listitem")).toHaveLength(0)
+    expect(row.querySelector("[data-overall]")).toBeNull() // no overall evaluation yet: no badge
+    // no item previews, no repeated workload or verification sentence
     expect(within(row).queryByText(/مراجعة من سورة الزمر|قيد التحقق/)).toBeNull()
-    // the session is shown while the list spans several sessions
+    // the session's full date
     expect(row.textContent).toContain(sessionLabel(program.session))
   })
 
@@ -912,8 +914,8 @@ describe("«متابعة العمل» — «ترتيب حسب البرنامج»
       ["unavailable", `${WORKLOAD_ORDER.unavailable} — ${WORKLOAD_ORDER.unavailableHint}`],
     ])
     expect(document.body.textContent).not.toMatch(/الأول|الثاني|الثالث|رتبة/)
-    // the session is not repeated in every row once one session is chosen
-    expect(screen.getByRole("link", { name: /برنامج عمل جميلة/ }).closest("li")!.textContent).not.toContain(sessionLabel(program.session))
+    // one session chosen: its phase («سابقة») is not repeated in every row (the full date stays)
+    expect(screen.getByRole("link", { name: /برنامج عمل جميلة/ }).closest("li")!.textContent).not.toContain("سابقة")
 
     // the choice holds when the list is reloaded (another filter)
     fireEvent.click(screen.getByRole("tab", { name: "الحصص السابقة" }))
@@ -1041,13 +1043,14 @@ describe("«متابعة العمل» — «التقييم العام» (web)", 
     expect(document.querySelector("[data-overall-blocked]")!.textContent).toBe(OVERALL_BLOCKED.cancelled)
   })
 
-  it("compact row: «التقييم العام: …» once given, next to the items' own state (never instead of it)", async () => {
+  it("compact row: the level only («جيد جدًا», no «التقييم العام:») once given, next to the items' own results (never instead of them)", async () => {
     stub({ ...program, overallEvaluation: given("VERY_GOOD") }, () => json(200, program))
     renderIn(<WorkFollowupScreen />)
     const link = await screen.findByRole("link", { name: /برنامج عمل درة نصير/ })
     const row = link.closest("li[data-program]") as HTMLElement
-    expect(within(row).getByText("التقييم العام: جيد جدًا")).toBeTruthy()
-    expect(within(row).getByText(programStatus(program.progress).text)).toBeTruthy()
+    expect(row.querySelector("[data-overall]")!.textContent).toBe("جيد جدًا")
+    expect(row.textContent).not.toContain("التقييم العام:")
+    expect(row.querySelectorAll("[data-result]").length).toBeGreaterThan(0)
   })
 
   it("compact row without an overall evaluation: no extra line", async () => {

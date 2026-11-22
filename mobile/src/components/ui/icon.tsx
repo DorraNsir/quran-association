@@ -70,6 +70,13 @@ const ICONS = {
   cancelledSession: { ios: 'calendar.badge.exclamationmark', android: 'event_busy' },
   bell: { ios: 'bell', android: 'notifications' },
   markRead: { ios: 'checkmark.circle', android: 'done_all' },
+  // «متابعة برنامج العمل» cards: work types and the overall evaluation
+  memorization: { ios: 'book.pages', android: 'menu_book' },
+  sort: { ios: 'arrow.up.arrow.down', android: 'swap_vert' },
+  trophy: { ios: 'trophy', android: 'trophy' },
+  thumbsUp: { ios: 'hand.thumbsup', android: 'thumb_up' },
+  star: { ios: 'star', android: 'star' },
+  improve: { ios: 'chart.bar', android: 'bar_chart' },
 } as const satisfies Record<string, { ios: SFSymbol; android: AndroidSymbol }>;
 
 export type IconName = keyof typeof ICONS;
