@@ -5,6 +5,7 @@ import { DirectionProvider } from "@/components/ui/direction"
 import { WorkFollowupProvider } from "@/components/teacher/work-followup/work-followup-provider"
 import { recitationsHref } from "@/components/teacher/work-followup/recitation-line"
 import { clearSession, setSession } from "@/lib/api/session"
+import { todayInTunis } from "@/lib/dates"
 import { authResponse, json } from "@/test/fetch-mock"
 import { renderWithClient } from "@/test/render"
 import type { RecitationAttempt, RecitationHistory } from "@/types/work-followup"
@@ -54,18 +55,18 @@ const entry = (number: number | null, e: RecitationAttempt["entry"], status: Rec
   }
 }
 
-// al-Mujadila: 1 ملغاة, 2 مؤجلة twice then 2 منجزة (one recitation), 3 جزئي, 4 pending → 3 عرضات
+// past sessions (2020), whatever today is — al-Mujadila: 1 ملغاة, 2 مؤجلة twice then 2 منجزة (one recitation), 3 جزئي, 4 pending → 3 عرضات
 const mujadila = {
   surah: 58,
   attempts: 3,
   nextNumber: 5,
   entries: [
-    entry(1, "CANCELLED", "CANCELLED", "2026-11-02"),
-    entry(2, "POSTPONED", "POSTPONED", "2026-11-09"),
-    entry(2, "POSTPONED", "POSTPONED", "2026-11-16"),
-    entry(2, "COMPLETED", "COMPLETED", "2026-11-23"),
-    entry(3, "PARTIAL", "PARTIAL", "2026-11-30"),
-    entry(4, "PENDING", "NOT_EVALUATED", "2026-12-07"),
+    entry(1, "CANCELLED", "CANCELLED", "2020-11-02"),
+    entry(2, "POSTPONED", "POSTPONED", "2020-11-09"),
+    entry(2, "POSTPONED", "POSTPONED", "2020-11-16"),
+    entry(2, "COMPLETED", "COMPLETED", "2020-11-23"),
+    entry(3, "PARTIAL", "PARTIAL", "2020-11-30"),
+    entry(4, "PENDING", "NOT_EVALUATED", "2020-12-07"),
   ],
 }
 // many recitations, numbered on their own (another surah)
@@ -73,9 +74,12 @@ const baqara = {
   surah: 2,
   attempts: 9,
   nextNumber: 10,
-  entries: Array.from({ length: 9 }, (_, i) => entry(i + 1, i % 3 === 0 ? "NOT_COMPLETED" : "COMPLETED", i % 3 === 0 ? "NOT_COMPLETED" : "COMPLETED", `2026-10-${String(i + 1).padStart(2, "0")}`)),
+  entries: Array.from({ length: 9 }, (_, i) => entry(i + 1, i % 3 === 0 ? "NOT_COMPLETED" : "COMPLETED", i % 3 === 0 ? "NOT_COMPLETED" : "COMPLETED", `2020-10-${String(i + 1).padStart(2, "0")}`)),
 }
 const history: RecitationHistory = { studentId: "s1", surahs: [baqara, mujadila] }
+
+// my sessions of today (start times): «started» began at 00:00, «later» starts at 23:59
+let sessionsToday: { id: string; date: string; startTime: string }[] = []
 
 function routeFetch(answer: (studentId: string) => Response = (id) => json(200, id === "s1" ? history : { studentId: id, surahs: [] })) {
   const calls: string[] = []
@@ -87,6 +91,7 @@ function routeFetch(answer: (studentId: string) => Response = (id) => json(200, 
       const m = /^\/teacher\/students\/([^/]+)\/recitations$/.exec(path)
       if (m) return answer(m[1]!)
       if (path === "/teacher/work-programs/eligible-sessions") return json(200, [])
+      if (path === "/teacher/sessions/calendar") return json(200, sessionsToday)
       return json(404, { code: "NOT_FOUND", message: "غير موجود" })
     })
   )
@@ -112,6 +117,7 @@ globalThis.ResizeObserver ??= class {
 } as unknown as typeof ResizeObserver
 
 beforeEach(() => {
+  sessionsToday = []
   clearSession()
   setSession(authResponse("u1", ["TEACHER"]))
 })
@@ -199,5 +205,50 @@ describe("«متابعة العرضات» — the module (web)", () => {
     routeFetch(() => json(403, { code: "FORBIDDEN", message: "لا يمكنك عرض هذا الطالب" }))
     renderIn(<RecitationsScreen initialStudentId="s1" />)
     await waitFor(() => expect(screen.getByText("لا يمكنك عرض هذا الطالب")).toBeTruthy())
+  })
+
+  it("«مجدولة» (session not started: calendar icon, neutral) vs «بانتظار التقييم» (started or past, unevaluated); results unchanged", async () => {
+    const today = todayInTunis()
+    sessionsToday = [
+      { id: "started", date: today, startTime: "00:00" },
+      { id: "later", date: today, startTime: "23:59" },
+    ]
+    const nas = {
+      surah: 114,
+      attempts: 2,
+      nextNumber: 7,
+      entries: [
+        entry(1, "COMPLETED", "COMPLETED", "2020-11-02"),
+        entry(2, "NOT_COMPLETED", "NOT_COMPLETED", "2020-11-09"),
+        entry(3, "PENDING", "NOT_EVALUATED", "2020-11-16"), // past, not evaluated
+        { ...entry(4, "PENDING", "NOT_EVALUATED", today), sessionId: "started" },
+        { ...entry(5, "PENDING", "NOT_EVALUATED", today), sessionId: "later" },
+        entry(6, "PENDING", "NOT_EVALUATED", "2099-01-04"), // a future session
+      ],
+    }
+    const calls = routeFetch((id) => json(200, id === "s1" ? { studentId: "s1", surahs: [nas] } : { studentId: id, surahs: [] }))
+    renderIn(<RecitationsScreen initialStudentId="s1" />)
+    await screen.findByRole("table")
+    // today's start times: my sessions of today, asked only because a recitation is dated today
+    await waitFor(() => expect(cells(114).map((c) => c.getAttribute("data-cell"))).toEqual(["COMPLETED", "NOT_COMPLETED", "PENDING", "PENDING", "SCHEDULED", "SCHEDULED"]))
+    expect(calls.filter((c) => c === "/teacher/sessions/calendar")).toHaveLength(1)
+    const planned = cells(114)[5]!
+    expect(planned.getAttribute("aria-label")).toContain("العرضة 6 · مجدولة")
+    expect(planned.querySelector("span")!.className).toContain("bg-secondary")
+    expect(cells(114)[2]!.textContent).toContain("بانتظار التقييم")
+    const totals = document.querySelector("[data-recitation-totals]")!
+    expect(totals.querySelector("[data-total='SCHEDULED']")!.textContent).toContain("2")
+    expect(totals.querySelector("[data-total='SCHEDULED']")!.textContent).toContain("مجدولة")
+    expect(totals.querySelector("[data-total='PENDING']")!.textContent).toContain("2")
+    expect(totals.querySelector("[data-total='COMPLETED']")!.textContent).toContain("1")
+    expect(totals.querySelector("[data-total='NOT_COMPLETED']")!.textContent).toContain("1")
+    expect(totals.firstElementChild!.textContent).toContain("2") // the attempts: unchanged
+  })
+
+  it("no recitation dated today: today's sessions are not requested", async () => {
+    const calls = routeFetch()
+    renderIn(<RecitationsScreen initialStudentId="s1" />)
+    await screen.findByRole("table")
+    expect(calls.includes("/teacher/sessions/calendar")).toBe(false)
   })
 })

@@ -13,6 +13,9 @@ import {
   progressOf,
   recitationOrdinal,
   WORK_STATUSES,
+  recitationState,
+  RECITATION_STATE_SHORT,
+  RECITATION_STATES,
 } from "./work-followup"
 
 const TODAY = "2026-10-17"
@@ -98,5 +101,25 @@ describe("«متابعة العمل» display rules", () => {
     expect(phaseOf(s, TODAY, "17:00")).toBe("ONGOING")
     expect(phaseOf(s, TODAY, "18:00")).toBe("PAST")
     expect(phaseOf({ ...s, date: "2026-10-16" }, TODAY, "08:00")).toBe("PAST")
+  })
+})
+
+describe("recitationState («متابعة العرضات»: مجدولة vs بانتظار التقييم)", () => {
+  const at = new Date("2026-11-23T14:00:00Z") // 15:00 in Tunis
+  it("a session not started: «مجدولة»; started or past: «بانتظار التقييم»", () => {
+    expect(recitationState("PENDING", "2026-11-24", undefined, at)).toBe("SCHEDULED")
+    expect(recitationState("PENDING", "2026-11-23", "16:00", at)).toBe("SCHEDULED")
+    expect(recitationState("PENDING", "2026-11-23", "15:00", at)).toBe("PENDING") // the start minute
+    expect(recitationState("PENDING", "2026-11-23", "08:00", at)).toBe("PENDING")
+    expect(recitationState("PENDING", "2026-11-20", "23:00", at)).toBe("PENDING")
+    // today, start time unknown: as before (the server decides the evaluation)
+    expect(recitationState("PENDING", "2026-11-23", undefined, at)).toBe("PENDING")
+  })
+  it("results and a cancelled session are kept as they are, even in the future", () => {
+    for (const e of ["COMPLETED", "PARTIAL", "NOT_COMPLETED", "CANCELLED", "POSTPONED", "SESSION_CANCELLED"] as const)
+      expect(recitationState(e, "2099-01-01", "08:00", at)).toBe(e)
+    expect(RECITATION_STATE_SHORT.SCHEDULED).toBe("مجدولة")
+    expect(RECITATION_STATE_SHORT.PENDING).toBe("بانتظار التقييم")
+    expect(RECITATION_STATES.slice(-3)).toEqual(["POSTPONED", "PENDING", "SCHEDULED"])
   })
 })

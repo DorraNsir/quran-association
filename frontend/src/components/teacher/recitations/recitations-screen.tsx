@@ -3,6 +3,7 @@
 import {
   BookOpen,
   CalendarClock,
+  CalendarDays,
   CircleCheck,
   CircleMinus,
   CircleSlash,
@@ -27,29 +28,29 @@ import { Card } from "@/components/ui/card"
 import { StudentCombobox } from "@/components/teacher/work-followup/student-combobox"
 import { useWorkFollowup } from "@/components/teacher/work-followup/work-followup-provider"
 import { programHref } from "@/components/teacher/work-followup/work-program-card"
+import { useSessionRange } from "@/lib/api/sessions"
 import { useRecitationHistory } from "@/lib/api/work-followup"
+import { todayInTunis } from "@/lib/dates"
 import { formatDate } from "@/lib/format"
 import {
   ayahCount,
   postponedTimes,
-  RECITATION_RESULT_SHORT,
-  RECITATION_RESULTS,
   recitationColumns,
   recitationsCount,
   recitationTitle,
   type RecitationColumn,
-  type RecitationEntry,
 } from "@/lib/quran-reference/work-assignment"
 import { SURAHS } from "@/lib/quran/surahs"
 import { cn } from "@/lib/utils"
+import { RECITATION_STATE_SHORT, RECITATION_STATES, recitationState, type RecitationState } from "@/lib/work-followup"
 import type { RecitationAttempt, RecitationSurahHistory } from "@/types/work-followup"
 
 /** The module's own address: a student and, optionally, one surah (the «سجل العرضات» deep link). */
 export const recitationsModuleHref = (studentId: string, surah?: number) =>
   `/teacher/recitations?student=${studentId}${surah ? `&surah=${surah}` : ""}`
 
-/** Icon + tone per result: the words always say it too (never colour alone). */
-export const RESULT_LOOK: Record<RecitationEntry, { icon: LucideIcon; tone: string }> = {
+/** Icon + tone per result (and «مجدولة»: a neutral badge, a calendar): the words always say it too (never colour alone). */
+export const RESULT_LOOK: Record<RecitationState, { icon: LucideIcon; tone: string }> = {
   COMPLETED: { icon: CircleCheck, tone: "bg-brand-soft text-brand-soft-foreground" },
   PARTIAL: { icon: CircleMinus, tone: "bg-warning-soft text-warning" },
   NOT_COMPLETED: { icon: CircleX, tone: "bg-destructive/10 text-destructive" },
@@ -57,6 +58,7 @@ export const RESULT_LOOK: Record<RecitationEntry, { icon: LucideIcon; tone: stri
   POSTPONED: { icon: CalendarClock, tone: "bg-sky-50 text-sky-800 dark:bg-sky-950/50 dark:text-sky-300" },
   PENDING: { icon: Clock, tone: "border border-dashed text-muted-foreground" },
   SESSION_CANCELLED: { icon: CircleSlash, tone: "border border-dashed text-muted-foreground" },
+  SCHEDULED: { icon: CalendarDays, tone: "bg-secondary text-secondary-foreground" },
 }
 
 type Scope = "history" | "all"
@@ -195,17 +197,25 @@ function StudentRecitationsTable({
       }),
     [histories]
   )
+  // «مجدولة» vs «بانتظار التقييم»: has the recitation's session started (Africa/Tunis)? Only a
+  // session of TODAY needs its start time — from my sessions of today
+  const today = todayInTunis()
+  const all = rows.flatMap((r) => r.columns)
+  const pendingToday = all.some((c) => c.result.entry === "PENDING" && c.result.sessionDate === today)
+  const todaySessions = useSessionRange("teacher", { from: today, to: today }, pendingToday)
+  const startTimes = new Map((todaySessions.data ?? []).map((x) => [x.id, x.startTime]))
+  const stateOf = (c: RecitationColumn<RecitationAttempt>) => recitationState(c.result.entry, c.result.sessionDate, startTimes.get(c.result.sessionId))
+
   const visible = rows.filter(
     (r) =>
       (scope === "all" || r.history) &&
       (!search || matchesText(r.name, search) || String(r.surah) === search.trim()) &&
-      (result === ALL || r.columns.some((c) => c.result.entry === result))
+      (result === ALL || r.columns.some((c) => stateOf(c) === result))
   )
   const width = Math.max(1, ...visible.map((r) => r.columns.length))
 
-  // Totals of the student's recitations (server counts; one per displayed recitation)
-  const all = rows.flatMap((r) => r.columns)
-  const totals = RECITATION_RESULTS.map((entry) => ({ entry, count: all.filter((c) => c.result.entry === entry).length })).filter((t) => t.count > 0)
+  // Totals of the student's recitations (server counts; one per displayed recitation, by its state)
+  const totals = RECITATION_STATES.map((state) => ({ state, count: all.filter((c) => stateOf(c) === state).length })).filter((t) => t.count > 0)
   const attempts = [...histories.values()].reduce((n, h) => n + h.attempts, 0)
 
   const focusRef = useRef<HTMLTableRowElement>(null)
@@ -231,13 +241,13 @@ function StudentRecitationsTable({
                 <span className="font-semibold tabular-nums">{attempts}</span>
                 <span className="text-muted-foreground">{attempts === 1 ? "عرضة" : "عرضات"}</span>
               </li>
-              {totals.map(({ entry, count }) => {
-                const { icon: Icon, tone } = RESULT_LOOK[entry]
+              {totals.map(({ state, count }) => {
+                const { icon: Icon, tone } = RESULT_LOOK[state]
                 return (
-                  <li key={entry} data-total={entry} className={cn("inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm", tone)}>
+                  <li key={state} data-total={state} className={cn("inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm", tone)}>
                     <Icon className="size-4" aria-hidden />
                     <span className="font-semibold tabular-nums">{count}</span>
-                    {RECITATION_RESULT_SHORT[entry]}
+                    {RECITATION_STATE_SHORT[state]}
                   </li>
                 )
               })}
@@ -277,7 +287,7 @@ function StudentRecitationsTable({
           value={result}
           onValueChange={onResult}
           allLabel="كل النتائج"
-          options={RECITATION_RESULTS.map((r) => ({ value: r, label: RECITATION_RESULT_SHORT[r] }))}
+          options={RECITATION_STATES.map((r) => ({ value: r, label: RECITATION_STATE_SHORT[r] }))}
         />
       </div>
 
@@ -338,7 +348,7 @@ function StudentRecitationsTable({
                     </td>
                     {Array.from({ length: width }, (_, i) => (
                       <td key={i} className="border-b px-2 py-2 text-center">
-                        {row.columns[i] ? <RecitationCell column={row.columns[i]!} surah={row.name} /> : null}
+                        {row.columns[i] ? <RecitationCell column={row.columns[i]!} state={stateOf(row.columns[i]!)} surah={row.name} /> : null}
                       </td>
                     ))}
                     <td className="border-b px-3 py-2 text-center">
@@ -361,13 +371,13 @@ function StudentRecitationsTable({
 }
 
 /** One recitation: its result and session date; postponements noted; opens its program. */
-function RecitationCell({ column, surah }: { column: RecitationColumn<RecitationAttempt>; surah: string }) {
+function RecitationCell({ column, state, surah }: { column: RecitationColumn<RecitationAttempt>; state: RecitationState; surah: string }) {
   const e = column.result
-  const { icon: Icon, tone } = RESULT_LOOK[e.entry]
+  const { icon: Icon, tone } = RESULT_LOOK[state]
   const postponed = postponedTimes(column.earlier.filter((x) => x.entry === "POSTPONED" || x.entry === "SESSION_CANCELLED").length)
   const label = [
     `${surah} — ${recitationTitle(column.number)}`,
-    RECITATION_RESULT_SHORT[e.entry],
+    RECITATION_STATE_SHORT[state],
     `حصة ${formatDate(e.sessionDate)}`,
     postponed,
     e.evaluatedBy,
@@ -379,13 +389,13 @@ function RecitationCell({ column, surah }: { column: RecitationColumn<Recitation
       href={programHref(e.programId)}
       aria-label={label}
       title={e.evaluationComment ? `${label}\n${e.evaluationComment}` : label}
-      data-cell={e.entry}
+      data-cell={state}
       className="inline-flex min-w-28 flex-col items-center gap-0.5 rounded-lg px-2 py-1 outline-none hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <span className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap", tone)}>
         <Icon className="size-3.5" aria-hidden />
-        {RECITATION_RESULT_SHORT[e.entry]}
-        {e.entry === "POSTPONED" && <span className="opacity-80">· لا تحتسب</span>}
+        {RECITATION_STATE_SHORT[state]}
+        {state === "POSTPONED" && <span className="opacity-80">· لا تحتسب</span>}
       </span>
       <span className="text-[0.7rem] text-muted-foreground tabular-nums">{formatDate(e.sessionDate)}</span>
       {postponed && <span className="text-[0.7rem] text-sky-700 dark:text-sky-300">{postponed}</span>}

@@ -3,10 +3,11 @@
  * (eligibility, transfers, numbering, progress); these only label and
  * pre-fill what the teacher sees.
  */
-import { tunisTimeOf, weekdayOf } from "@/lib/dates"
+import { tunisDateOf, tunisTimeOf, weekdayOf } from "@/lib/dates"
 import { formatDate, formatTimeRange } from "@/lib/format"
 import { labels } from "@/lib/i18n"
-import { attendanceOpen } from "@/lib/session-actions"
+import { RECITATION_RESULT_SHORT, RECITATION_RESULTS, type RecitationEntry } from "@/lib/quran-reference/work-assignment"
+import { attendanceOpen, notStartedInTunis } from "@/lib/session-actions"
 import type { ISODate, SessionStatus } from "@/types/domain"
 import type { WorkItem, WorkProgram, WorkProgress, WorkSession, WorkStatus, WorkType } from "@/types/work-followup"
 
@@ -69,6 +70,28 @@ export function evaluationBlockOf(program: Pick<WorkProgram, "session" | "evalua
   if (!evaluation) return started ? null : "NOT_STARTED"
   return evaluation.blockedReason === "SESSION_NOT_STARTED" && !started ? "NOT_STARTED" : null
 }
+
+/** «متابعة العرضات»: what a displayed recitation is now — its result, or «مجدولة» (display only, nothing stored). */
+export type RecitationState = RecitationEntry | "SCHEDULED"
+
+/**
+ * An unevaluated recitation (PENDING) of a session that has NOT STARTED is «مجدولة» — nothing to
+ * evaluate yet; once its session has started (or passed) it is «بانتظار التقييم». The same rule as
+ * the evaluation (the session's date and start time, Africa/Tunis). A session of today whose start
+ * time is not known counts as started: «بانتظار التقييم», as before — the server decides the
+ * evaluation anyway. Results (منجز، جزئي، غير منجز، ملغى، مؤجل) and a cancelled session's are kept.
+ */
+export function recitationState(entry: RecitationEntry, sessionDate: ISODate, startTime: string | undefined, at: Date | number = Date.now()): RecitationState {
+  if (entry !== "PENDING") return entry
+  if (startTime === undefined) return sessionDate > tunisDateOf(at) ? "SCHEDULED" : "PENDING"
+  return notStartedInTunis(sessionDate, startTime, at) ? "SCHEDULED" : "PENDING"
+}
+
+/** The words of the states: the shared short results, and «مجدولة». */
+export const RECITATION_STATE_SHORT: Record<RecitationState, string> = { ...RECITATION_RESULT_SHORT, SCHEDULED: "مجدولة" }
+
+/** The order of counters and filter options: the shared results' order, «مجدولة» right after «بانتظار التقييم». */
+export const RECITATION_STATES: RecitationState[] = RECITATION_RESULTS.flatMap((r): RecitationState[] => (r === "PENDING" ? ["PENDING", "SCHEDULED"] : [r]))
 
 /** «منقول من حصة سابقة: … — مؤجل»; from a cancelled session, unevaluated: «منقول من حصة ملغاة: …». */
 export function carriedFromLabel(from: { sessionDate: ISODate; status: WorkStatus }) {
