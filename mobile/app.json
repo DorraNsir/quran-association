@@ -63,6 +63,19 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "supportsRTL": true,
+      "forcesRTL": true,
+      "eas": {
+        "projectId": "9becdd9c-032b-42a0-a9c4-faa6dbc9db0c"
+      }
+    },
+    "owner": "dorransir"
   }
 }
