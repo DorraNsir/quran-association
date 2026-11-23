@@ -21,6 +21,7 @@ import {
   UsersRound,
   Wallet,
   type LucideIcon,
+  MessageSquareText,
 } from "lucide-react"
 
 import type { Workspace } from "@/lib/workspace"
@@ -76,6 +77,7 @@ export const adminNav: NavSection[] = [
       { label: "الموارد", href: "/admin/resources", icon: FolderOpen, ready: true },
       { label: "الإعلانات", href: "/admin/announcements", icon: Megaphone, ready: true },
       { label: "الموقع الإلكتروني", href: "/admin/website", icon: Globe, ready: true },
+      { label: "الملاحظات والاقتراحات", href: "/admin/feedback", icon: MessageSquareText, ready: true },
     ],
   },
 ]
@@ -109,6 +111,7 @@ export const teacherNav: NavSection[] = [
     items: [
       { label: "الموارد", href: "/teacher/resources", icon: FolderOpen, ready: true },
       { label: "الإعلانات", href: "/teacher/announcements", icon: Megaphone, ready: true },
+      { label: "الملاحظات والاقتراحات", href: "/teacher/feedback", icon: MessageSquareText, ready: true },
     ],
   },
 ]
@@ -127,6 +130,7 @@ export const studentNav: NavSection[] = [
       { label: "الإعلانات", href: "/student/announcements", icon: Megaphone, ready: true },
       { label: "المدفوعات", href: "/student/payments", icon: Wallet, ready: true },
       { label: "الملف الشخصي", href: "/student/profile", icon: CircleUserRound, ready: true },
+      { label: "الملاحظات والاقتراحات", href: "/student/feedback", icon: MessageSquareText, ready: true },
     ],
   },
 ]

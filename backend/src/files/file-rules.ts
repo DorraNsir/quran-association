@@ -11,12 +11,16 @@ import type { FileKind } from './file-signature.js';
  *                        STUDENT (own photo)
  *  EDUCATIONAL_RESOURCE  ADMIN, or TEACHER   images, PDF, audio → a resource
  *                        for a class they are CURRENTLY assigned to
+ *  FEEDBACK_SCREENSHOT   an active TEACHER   images   → their OWN feedback
+ *                        or STUDENT                     (never admin-attachable: its sender
+ *                                                       and the admins only may read it)
  */
 export const PURPOSE_KINDS: Record<FilePurpose, FileKind[]> = {
   [FilePurpose.ASSOCIATION_LOGO]: ['IMAGE'],
   [FilePurpose.CMS_IMAGE]: ['IMAGE'],
   [FilePurpose.PROFILE_PHOTO]: ['IMAGE'],
   [FilePurpose.EDUCATIONAL_RESOURCE]: ['IMAGE', 'PDF', 'AUDIO'],
+  [FilePurpose.FEEDBACK_SCREENSHOT]: ['IMAGE'],
 };
 
 /** Purposes whose files any ADMIN may attach (admin-managed content). */

@@ -362,7 +362,7 @@ describe('teacher navigation through the real route tree', () => {
     expect(requests.some((u) => u.includes('/notifications'))).toBe(false);
   });
 
-  it('dashboard tools: the seven tools (with «متابعة العرضات»), as an equal two-column grid, each opening its screen', async () => {
+  it('dashboard tools: the eight tools (with «متابعة العرضات» and «الملاحظات والاقتراحات»), as an equal two-column grid, each opening its screen', async () => {
     mockState = signedIn(user({}));
     const router = await renderRouter(APP, { initialUrl: '/teacher' });
     const tiles = await screen.findAllByTestId('teacher-tool');
@@ -374,6 +374,7 @@ describe('teacher navigation through the real route tree', () => {
       ar.notes.open,
       ar.resources.open,
       ar.announcements.open,
+      ar.feedback.title,
     ]);
     // Same width for every tile (two per row)
     expect(new Set(tiles.map((t) => StyleSheet.flatten(t.props.style).width))).toEqual(new Set(['48.5%']));
@@ -384,6 +385,12 @@ describe('teacher navigation through the real route tree', () => {
     await fireEvent.press((await screen.findAllByTestId('teacher-tool'))[3]!);
     expect(again).toHavePathname('/teacher/recitations');
     expect((await screen.findAllByText(ar.work.recitationsPick)).length).toBeGreaterThan(0);
+    // «الملاحظات والاقتراحات»: the shared feedback screens, for the teacher workspace
+    const third = await renderRouter(APP, { initialUrl: '/teacher' });
+    await fireEvent.press((await screen.findAllByTestId('teacher-tool'))[7]!);
+    expect(third).toHavePathname('/feedback');
+    expect(third).toHaveSearchParams({ space: 'teacher' });
+    expect(await screen.findByText(ar.feedback.mine)).toBeTruthy();
   });
 
   it('logout moved to «حسابي» (header button): confirmation first, then the EXISTING session logout', async () => {

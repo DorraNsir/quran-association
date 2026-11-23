@@ -12,6 +12,7 @@ import { resourceKey } from '@/features/teacher/use-resources';
 import { teacherKey } from '@/features/teacher/use-teacher-dashboard';
 import type { TeacherWorkspace } from '@/features/teacher/types';
 
+import { fetchMyFeedbackItem } from '@/features/feedback/use-feedback';
 import { markPagesRead, patchPages, teacherNotificationTarget, type TargetCheck } from './notification-model';
 import type { AppNotification } from './notification-types';
 import { fetchNotifications, fetchUnreadCount, markAllNotificationsRead, markNotificationRead } from './notifications.api';
@@ -148,6 +149,14 @@ async function stillMine(queryClient: QueryClient, teacherId: string, check: Tar
       });
       return workspace[check.list].some((x) => x.id === check.id);
     }
+    case 'feedback':
+      // only ever the account's own submission (404 otherwise)
+      await queryClient.fetchQuery({
+        ...base,
+        queryKey: ['feedback-check', check.id],
+        queryFn: ({ signal }) => fetchMyFeedbackItem('teacher', check.id, signal),
+      });
+      return true;
   }
 }
 

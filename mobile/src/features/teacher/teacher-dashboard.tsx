@@ -211,7 +211,12 @@ export function TeacherDashboard() {
         )}
       </SectionCard>
 
-      <ToolsCard onOpen={(path) => router.push(path)} />
+      <ToolsCard
+        onOpen={(path) =>
+          // «الملاحظات والاقتراحات» is shared with the student space: opened for THIS workspace
+          path === '/feedback' ? router.push({ pathname: '/feedback', params: { space: 'teacher' } }) : router.push(path)
+        }
+      />
 
       <WorkspaceSwitcher current="teacher" />
     </Screen>
@@ -340,7 +345,8 @@ type ToolPath =
   | '/teacher/work'
   | '/teacher/recitations'
   | '/teacher/resources'
-  | '/teacher/announcements';
+  | '/teacher/announcements'
+  | '/feedback';
 
 /** Teacher tools: working shortcuts first, then the clearly inactive roadmap (no fake buttons). */
 /** «حسابي» in the green header: account, other workspaces, logout. */
@@ -368,6 +374,7 @@ function ToolsCard({ onOpen }: { onOpen: (path: ToolPath) => void }) {
     { icon: 'notes', label: ar.notes.open, path: '/teacher/notes' },
     { icon: 'resources', label: ar.resources.open, path: '/teacher/resources' },
     { icon: 'announcements', label: ar.announcements.open, path: '/teacher/announcements' },
+    { icon: 'improve', label: ar.feedback.title, path: '/feedback' },
   ];
   return (
     <SectionCard title={t.toolsTitle} icon="workFollowup">

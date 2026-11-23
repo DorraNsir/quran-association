@@ -75,6 +75,7 @@ export const FILE_REFERENCES: { table: string; column: string }[] = [
   { table: 'gallery_images', column: 'imageFileId' },
   { table: 'quran_graduates', column: 'photoFileId' },
   { table: 'administration_members', column: 'photoFileId' },
+  { table: 'feedback', column: 'screenshotFileId' },
 ];
 
 const UNREFERENCED = Prisma.raw(

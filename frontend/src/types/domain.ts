@@ -375,6 +375,8 @@ export type NotificationType =
   | "GROUP_CHANGED"
   | "CLASS_CHANGED"
   | "SESSION_CHANGED"
+  | "FEEDBACK_SUBMITTED"
+  | "FEEDBACK_UPDATED"
 export type NotificationEntityType =
   | "RESOURCE"
   | "ANNOUNCEMENT"
@@ -384,6 +386,7 @@ export type NotificationEntityType =
   | "STUDENT"
   | "GROUP_CLASS"
   | "GROUP"
+  | "FEEDBACK"
 
 /** An in-app alert for ONE user (named to avoid the DOM's global `Notification`). */
 export interface UserNotification {

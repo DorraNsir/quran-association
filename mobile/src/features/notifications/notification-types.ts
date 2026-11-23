@@ -14,7 +14,9 @@ export type NotificationType =
   | 'STUDENT_LEFT_CLASS'
   | 'GROUP_CHANGED'
   | 'CLASS_CHANGED'
-  | 'SESSION_CHANGED';
+  | 'SESSION_CHANGED'
+  | 'FEEDBACK_SUBMITTED'
+  | 'FEEDBACK_UPDATED';
 
 export type NotificationEntity =
   | 'RESOURCE'
@@ -24,7 +26,8 @@ export type NotificationEntity =
   | 'ONBOARDING_SUBMISSION'
   | 'STUDENT'
   | 'GROUP_CLASS'
-  | 'GROUP';
+  | 'GROUP'
+  | 'FEEDBACK';
 
 export interface AppNotification {
   id: string;

@@ -46,6 +46,7 @@ const UNLINKED = [
   NotificationEntity.ONBOARDING_SUBMISSION,
   NotificationEntity.STUDENT,
   NotificationEntity.GROUP_CLASS,
+  NotificationEntity.FEEDBACK,
 ] as NotificationEntity[];
 
 /**
@@ -351,6 +352,9 @@ export class NotificationsService {
       ),
       existing(NotificationEntity.GROUP_CLASS, (a) =>
         this.prisma.groupClass.findMany(a),
+      ),
+      existing(NotificationEntity.FEEDBACK, (a) =>
+        this.prisma.feedback.findMany(a),
       ),
     ]);
     const present = new Set(found.flat().map((r) => r.id));

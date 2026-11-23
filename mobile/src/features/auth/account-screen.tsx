@@ -5,6 +5,9 @@ import { AppText, Card, Screen } from '@/components/ui';
 import { ar } from '@/i18n/ar';
 import { spacing } from '@/theme';
 
+import { FeedbackEntry } from '@/features/feedback/feedback-entry';
+import type { FeedbackSpace } from '@/features/feedback/feedback-model';
+
 import { AccountActionRow, AccountCard, confirmLogout, WorkspaceSwitcher } from './account-components';
 import type { PhotoRole } from './my-photo';
 import type { Workspace } from './workspaces';
@@ -19,17 +22,21 @@ export function AccountScreen({
   workspace,
   passwordHref,
   photoRole,
+  feedbackSpace,
 }: {
   workspace: Workspace;
   passwordHref?: Href;
   /** This role may change its OWN photo here (teacher / student endpoints) */
   photoRole?: PhotoRole;
+  /** «الملاحظات والاقتراحات» for this workspace (teacher / student) */
+  feedbackSpace?: FeedbackSpace;
 }) {
   const router = useRouter();
   return (
     <Screen>
       <AccountCard title={ar.account.signedInAs} photoRole={photoRole} />
       <WorkspaceSwitcher current={workspace} />
+      {feedbackSpace ? <FeedbackEntry space={feedbackSpace} /> : null}
       <Card style={styles.session}>
         <AppText variant="label">{ar.account.session}</AppText>
         {passwordHref ? (

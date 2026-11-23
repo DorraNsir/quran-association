@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, BookOpen, CalendarDays, CheckCheck, ClipboardCheck, ClipboardList, FolderOpen, GraduationCap, Link2, Megaphone, Users } from "lucide-react"
+import { Bell, BookOpen, CalendarDays, CheckCheck, ClipboardCheck, ClipboardList, FolderOpen, GraduationCap, Link2, Megaphone, MessageSquareText, Users } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
@@ -47,6 +47,7 @@ const iconOf: Record<string, typeof Bell> = {
   ANNOUNCEMENT: Megaphone,
   REGISTRATION_REQUEST: ClipboardList,
   ONBOARDING_SUBMISSION: Link2,
+  FEEDBACK: MessageSquareText,
   STUDENT: GraduationCap,
   GROUP_CLASS: BookOpen,
   GROUP: Users,

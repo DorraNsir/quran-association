@@ -314,6 +314,9 @@ export function notificationTarget(notification: UserNotification, workspace: Wo
       return workspace === "teacher"
         ? { href: "/teacher/classes", apiPath: "/teacher/workspace", queryKey: ["teacher-workspace"], contains: inWorkspace("groups", id) }
         : undefined
+    case "FEEDBACK":
+      // The admins: the submission; its sender: their own one (teacher / student space)
+      return { href: `/${workspace}/feedback/${id}`, apiPath: `/${workspace}/feedback/${id}`, queryKey: ["feedback", workspace, "detail", id] }
     case "REGISTRATION_REQUEST":
       return workspace === "admin"
         ? { href: `/admin/registration-requests/${id}`, apiPath: `/admin/registration-requests/${id}`, queryKey: ["registration-requests", "detail", id] }

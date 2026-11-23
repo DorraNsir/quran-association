@@ -163,6 +163,10 @@ enum NotificationType {
   CLASS_CHANGED
   /// An upcoming lesson rescheduled, cancelled, restored, or added by hand: its teachers and students are told
   SESSION_CHANGED
+  /// «الملاحظات والاقتراحات»: a teacher or a student sent feedback — the admins are told
+  FEEDBACK_SUBMITTED
+  /// An admin changed its status or wrote / changed the response — its sender is told
+  FEEDBACK_UPDATED
 }
 
 /// What a notification is about (kept when that content is deleted)
@@ -175,6 +179,7 @@ enum NotificationEntity {
   STUDENT
   GROUP_CLASS
   GROUP
+  FEEDBACK
 }
 
 /// Whose attendance an audit entry is about
@@ -246,6 +251,8 @@ enum FilePurpose {
   CMS_IMAGE
   PROFILE_PHOTO
   EDUCATIONAL_RESOURCE
+  /// «الملاحظات والاقتراحات»: a screenshot sent with feedback (its sender and the admins only)
+  FEEDBACK_SCREENSHOT
 }
 
 /// Who consented to a graduate's public listing
@@ -354,6 +361,8 @@ model User {
   recordedStatusChanges        StudentStatusChange[]
   completedSessions            Session[]
   administrationMember         AdministrationMember[]
+  sentFeedback                 Feedback[]             @relation("FeedbackSender")
+  respondedFeedback            Feedback[]             @relation("FeedbackResponder")
 
   @@map("users")
 }
@@ -1598,6 +1607,7 @@ model StoredFile {
   graduatePhotos    QuranGraduate[]
   memberPhotos      AdministrationMember[]
   achievementImages Achievement[]
+  feedbackScreens   Feedback[]
 
   @@index([createdAt])
   @@index([uploadedByUserId])
@@ -1829,4 +1839,75 @@ model OnboardingPhoto {
   submission OnboardingSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
 
   @@map("onboarding_photos")
+}
+
+// ──────────────────────── «الملاحظات والاقتراحات» (Feedback & Suggestions) ────────────────────────
+
+enum FeedbackCategory {
+  /// «الإبلاغ عن مشكلة»
+  BUG
+  /// «اقتراح تحسين»
+  IMPROVEMENT
+  /// «ملاحظة أخرى»
+  OTHER
+}
+
+enum FeedbackStatus {
+  /// «جديد» — as sent
+  NEW
+  /// «قيد المراجعة»
+  REVIEWING
+  /// «تم الحل»
+  RESOLVED
+  /// «مغلق»
+  CLOSED
+}
+
+/// Where it was sent from (technical context, filled by the app — never asked)
+enum FeedbackPlatform {
+  WEB
+  ANDROID
+  IOS
+}
+
+/// Feedback about the application, sent by a teacher or a student (the sender is the
+/// authenticated account, never a client value); read and answered by the admins. Never deleted.
+model Feedback {
+  id                String            @id @default(uuid(7)) @db.Uuid
+  createdByUserId   String            @db.Uuid
+  /// The workspace it was sent from (TEACHER or STUDENT)
+  senderRole        Role
+  category          FeedbackCategory
+  title             String
+  description       String
+  status            FeedbackStatus    @default(NEW)
+  /// Optional screenshot (a FEEDBACK_SCREENSHOT file uploaded by the sender)
+  screenshotFileId  String?           @db.Uuid
+  platform          FeedbackPlatform?
+  appVersion        String?
+  /// The app screen / route it was sent from (no query string)
+  screenPath        String?
+  adminResponse     String?
+  /// Who last wrote the response, and when (null until there is one)
+  respondedByUserId String?           @db.Uuid
+  respondedAt       DateTime?         @db.Timestamptz(3)
+  /// When it was last marked «تم الحل» (cleared if it leaves that status)
+  resolvedAt        DateTime?         @db.Timestamptz(3)
+  /// Optimistic concurrency of the admins' changes
+  version           Int               @default(1)
+  createdAt         DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime          @updatedAt @db.Timestamptz(3)
+
+  createdBy   User        @relation("FeedbackSender", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  respondedBy User?       @relation("FeedbackResponder", fields: [respondedByUserId], references: [id], onDelete: SetNull)
+  screenshot  StoredFile? @relation(fields: [screenshotFileId], references: [id], onDelete: SetNull)
+
+  /// «ملاحظاتي» (and the rate limit)
+  @@index([createdByUserId, createdAt])
+  /// The admins' inbox and its filters
+  @@index([status, createdAt])
+  @@index([category, createdAt])
+  @@index([createdAt])
+  @@index([screenshotFileId])
+  @@map("feedback")
 }

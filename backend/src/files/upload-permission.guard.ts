@@ -23,7 +23,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  *    photo — the file can then only be attached to their own profile: own
  *    uploads only);
  *  - EDUCATIONAL_RESOURCE: ADMIN, or a TEACHER for a class (groupClassId)
- *    they are CURRENTLY assigned to.
+ *    they are CURRENTLY assigned to;
+ *  - FEEDBACK_SCREENSHOT: an ACTIVE TEACHER / ACTIVE STUDENT (their own
+ *    feedback only: own uploads only).
  */
 @Injectable()
 export class UploadPermissionGuard implements CanActivate {
@@ -65,6 +67,12 @@ export class UploadPermissionGuard implements CanActivate {
       });
     }
     const isAdmin = user.roles.includes(Role.ADMIN);
+    // «الملاحظات والاقتراحات»: an ACTIVE teacher or student, for their own feedback (attachable
+    // by its uploader only: assertAttachable)
+    if (purpose === FilePurpose.FEEDBACK_SCREENSHOT) {
+      if (await this.activeSender(user)) return true;
+      throw forbidden();
+    }
     if (purpose === FilePurpose.PROFILE_PHOTO && !isAdmin) {
       // Their own photo: an ACTIVE student or an ACTIVE teacher (attachable to their own profile only)
       if (user.roles.includes(Role.STUDENT)) {
@@ -122,6 +130,25 @@ export class UploadPermissionGuard implements CanActivate {
       });
     }
     return true;
+  }
+
+  /** An active teacher or student profile behind this account. */
+  private async activeSender(user: AuthPrincipal) {
+    const where = {
+      status: 'ACTIVE' as const,
+      person: { user: { id: user.userId } },
+    };
+    if (
+      user.roles.includes(Role.TEACHER) &&
+      (await this.prisma.teacher.findFirst({ where, select: { id: true } }))
+    )
+      return true;
+    return (
+      user.roles.includes(Role.STUDENT) &&
+      Boolean(
+        await this.prisma.student.findFirst({ where, select: { id: true } }),
+      )
+    );
   }
 }
 

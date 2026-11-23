@@ -78,6 +78,10 @@ function RootNavigator() {
         <Stack.Protected guard={ready && canUseWorkspace(user, 'student')}>
           <Stack.Screen name="student" options={{ title: ar.workspace.student, headerBackVisible: false }} />
         </Stack.Protected>
+        {/* «الملاحظات والاقتراحات»: teachers and students (nested stack, its own headers) */}
+        <Stack.Protected guard={ready && (canUseWorkspace(user, 'teacher') || canUseWorkspace(user, 'student'))}>
+          <Stack.Screen name="feedback" options={{ headerShown: false }} />
+        </Stack.Protected>
       </Stack.Protected>
     </Stack>
   );

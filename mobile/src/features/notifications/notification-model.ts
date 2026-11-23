@@ -32,6 +32,7 @@ const ICON_OF: Record<string, IconName> = {
   STUDENT: 'student',
   GROUP_CLASS: 'classes',
   GROUP: 'students',
+  FEEDBACK: 'notes',
 };
 
 export function notificationIcon(n: Pick<AppNotification, 'type' | 'entityType'>): IconName {
@@ -71,7 +72,8 @@ export function formatNotificationTime(createdAt: string, now: Date, timeZone: s
 /** What must still be true NOW for the teacher to open it (a notification grants no access). */
 export type TargetCheck =
   | { kind: 'resource' | 'announcement' | 'session'; id: string }
-  | { kind: 'workspace'; list: 'students' | 'groupClasses' | 'groups'; id: string };
+  | { kind: 'workspace'; list: 'students' | 'groupClasses' | 'groups'; id: string }
+  | { kind: 'feedback'; id: string };
 
 export type NotificationTarget =
   /** No linked content: reading it is all there is */
@@ -89,7 +91,8 @@ export type NotificationTarget =
  *  RESOURCE → /teacher/resources/[id]          ANNOUNCEMENT → /teacher/announcements/[id]
  *  SESSION  → /teacher/sessions/[id]           (ATTENDANCE_MODIFIED → …/attendance)
  *  STUDENT  → /teacher/students/[id]           GROUP_CLASS → /teacher/classes/[id]
- *  GROUP    → /teacher/classes (the tab)       REGISTRATION_REQUEST / ONBOARDING_SUBMISSION → unsupported
+ *  GROUP    → /teacher/classes (the tab)       FEEDBACK → /feedback/[id] (my own submission)
+ *  REGISTRATION_REQUEST / ONBOARDING_SUBMISSION → unsupported
  */
 export function teacherNotificationTarget(n: Pick<AppNotification, 'type' | 'entityType' | 'entityId' | 'available'>): NotificationTarget {
   if (!n.entityType || !n.entityId) return { kind: 'none' };
@@ -115,6 +118,9 @@ export function teacherNotificationTarget(n: Pick<AppNotification, 'type' | 'ent
       return { kind: 'open', href: { pathname: '/teacher/classes/[id]', params: { id } }, check: { kind: 'workspace', list: 'groupClasses', id } };
     case 'GROUP':
       return { kind: 'open', href: '/teacher/classes', check: { kind: 'workspace', list: 'groups', id } };
+    case 'FEEDBACK':
+      // «الملاحظات والاقتراحات»: my own submission (its status changed, or the admins answered)
+      return { kind: 'open', href: { pathname: '/feedback/[id]', params: { id, space: 'teacher' } }, check: { kind: 'feedback', id } };
     default:
       return { kind: 'unsupported' };
   }

@@ -8,6 +8,7 @@ import { WorkFollowupModule } from './work-followup/work-followup.module.js';
 import { StudentOnboardingModule } from './student-onboarding/student-onboarding.module.js';
 import { CmsModule } from './cms/cms.module.js';
 import { CommunicationModule } from './communication/communication.module.js';
+import { FeedbackModule } from './feedback/feedback.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { validateEnv } from './config/env.validation.js';
 import { FilesModule } from './files/files.module.js';
@@ -43,6 +44,7 @@ import { WorkspaceModule } from './workspace/workspace.module.js';
     RegistrationModule,
     FinanceModule,
     CommunicationModule,
+    FeedbackModule,
     CmsModule,
     SettingsModule,
     WorkspaceModule,
