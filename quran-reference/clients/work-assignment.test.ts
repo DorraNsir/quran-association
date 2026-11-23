@@ -14,6 +14,9 @@ import {
   PERFORMANCE_LABEL,
   WORK_PERFORMANCES,
   completionParts,
+  postponedTimes,
+  RECITATION_RESULT_SHORT,
+  recitationColumns,
   completionText,
   programStatus,
   workTypeBadges,
@@ -622,3 +625,21 @@ describe('program cards (display only)', () => {
     assert.doesNotMatch(completionText(['COMPLETED', 'CANCELLED']), /كل الأعمال/);
   });
 });
+
+describe('«متابعة العرضات» module (display only)', () => {
+  const e = (itemId: string, number: number | null, entry: string) => ({ itemId, number, entry });
+  test('a postponed recitation and its rescheduled continuation are ONE recitation (same number)', () => {
+    const cols = recitationColumns([e('a', 1, 'CANCELLED'), e('b', 2, 'POSTPONED'), e('c', 2, 'POSTPONED'), e('d', 2, 'COMPLETED'), e('f', 3, 'PARTIAL')]);
+    assert.deepEqual(cols.map((c) => [c.number, c.result.itemId, c.earlier.map((x) => x.itemId)]), [[1, 'a', []], [2, 'd', ['b', 'c']], [3, 'f', []]]);
+  });
+  test('unlimited recitations; an old one without a number stays apart', () => {
+    const many = Array.from({ length: 12 }, (_, i) => e(`x${i}`, i + 1, 'COMPLETED'));
+    assert.equal(recitationColumns(many).length, 12);
+    assert.deepEqual(recitationColumns([e('o', null, 'COMPLETED'), e('p', null, 'PARTIAL')]).map((c) => c.key), ['io', 'ip']);
+  });
+  test('wording', () => {
+    assert.equal(RECITATION_RESULT_SHORT.CANCELLED, 'ملغى');
+    assert.deepEqual([postponedTimes(0), postponedTimes(1), postponedTimes(2), postponedTimes(3)], [null, 'أُجّلت مرة', 'أُجّلت مرتين', 'أُجّلت 3 مرات']);
+  });
+});
+

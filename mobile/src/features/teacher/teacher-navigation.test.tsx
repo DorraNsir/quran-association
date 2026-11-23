@@ -362,7 +362,7 @@ describe('teacher navigation through the real route tree', () => {
     expect(requests.some((u) => u.includes('/notifications'))).toBe(false);
   });
 
-  it('dashboard tools: the six tools, as an equal two-column grid, each opening its screen', async () => {
+  it('dashboard tools: the seven tools (with «متابعة العرضات»), as an equal two-column grid, each opening its screen', async () => {
     mockState = signedIn(user({}));
     const router = await renderRouter(APP, { initialUrl: '/teacher' });
     const tiles = await screen.findAllByTestId('teacher-tool');
@@ -370,6 +370,7 @@ describe('teacher navigation through the real route tree', () => {
       ar.schedule.open,
       ar.memorization.open,
       ar.work.open,
+      ar.work.recitations,
       ar.notes.open,
       ar.resources.open,
       ar.announcements.open,
@@ -379,6 +380,10 @@ describe('teacher navigation through the real route tree', () => {
     expect(screen.queryByText(ar.teacher.comingSoon)).toBeNull();
     await fireEvent.press(tiles[2]!);
     expect(router).toHavePathname('/teacher/work');
+    const again = await renderRouter(APP, { initialUrl: '/teacher' });
+    await fireEvent.press((await screen.findAllByTestId('teacher-tool'))[3]!);
+    expect(again).toHavePathname('/teacher/recitations');
+    expect((await screen.findAllByText(ar.work.recitationsPick)).length).toBeGreaterThan(0);
   });
 
   it('logout moved to «حسابي» (header button): confirmation first, then the EXISTING session logout', async () => {

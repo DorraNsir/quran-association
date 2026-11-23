@@ -453,7 +453,7 @@ describe("«متابعة العمل» — structured Quranic assignments (Qalun,
     routeFetch({ get: () => json(200, { ...program, items: [tracked] }) })
     renderIn(<WorkProgramDetails programId="p1" />)
     const history = await screen.findByRole("link", { name: "سجل العرضات — سورة البقرة · 4 عرضات" })
-    expect(history.getAttribute("href")).toBe(`/teacher/students/${program.student.id}?tab=recitations&surah=2`)
+    expect(history.getAttribute("href")).toBe(`/teacher/recitations?student=${program.student.id}&surah=2`)
     expect(history.querySelector("[data-recitation-count]")!.textContent).toBe("4 عرضات")
     // no attempt table inside the item
     expect(document.querySelectorAll("[data-entry]")).toHaveLength(0)

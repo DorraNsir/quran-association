@@ -333,7 +333,14 @@ function MemorizationRow({ item: m, onPress }: { item: MemorizationProgress; onP
 /** Modules that do not exist yet: listed so the roadmap is visible, clearly inactive (none left today). */
 const COMING: { icon: IconName; label: string }[] = [];
 
-type ToolPath = '/teacher/schedule' | '/teacher/memorization' | '/teacher/notes' | '/teacher/work' | '/teacher/resources' | '/teacher/announcements';
+type ToolPath =
+  | '/teacher/schedule'
+  | '/teacher/memorization'
+  | '/teacher/notes'
+  | '/teacher/work'
+  | '/teacher/recitations'
+  | '/teacher/resources'
+  | '/teacher/announcements';
 
 /** Teacher tools: working shortcuts first, then the clearly inactive roadmap (no fake buttons). */
 /** «حسابي» in the green header: account, other workspaces, logout. */
@@ -357,6 +364,7 @@ function ToolsCard({ onOpen }: { onOpen: (path: ToolPath) => void }) {
     { icon: 'calendar', label: ar.schedule.open, path: '/teacher/schedule' },
     { icon: 'classes', label: ar.memorization.open, path: '/teacher/memorization' },
     { icon: 'workFollowup', label: ar.work.open, path: '/teacher/work' },
+    { icon: 'recitation', label: ar.work.recitations, path: '/teacher/recitations' },
     { icon: 'notes', label: ar.notes.open, path: '/teacher/notes' },
     { icon: 'resources', label: ar.resources.open, path: '/teacher/resources' },
     { icon: 'announcements', label: ar.announcements.open, path: '/teacher/announcements' },

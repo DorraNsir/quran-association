@@ -95,7 +95,7 @@ export function WorkFollowupScreen() {
         title="متابعة العمل"
         description="تخطيط ومتابعة أعمال الطلبة في كل حصة"
         actions={
-          <Button onClick={openCreate}>
+          <Button onClick={() => openCreate()}>
             <Plus />
             إضافة برنامج عمل
           </Button>
@@ -191,7 +191,7 @@ export function WorkFollowupScreen() {
                 title="لا توجد برامج عمل بعد"
                 description="أضف برنامج عمل لطالب في إحدى حصصه القادمة."
                 action={
-                  <Button onClick={openCreate}>
+                  <Button onClick={() => openCreate()}>
                     <Plus />
                     إضافة برنامج عمل
                   </Button>

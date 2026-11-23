@@ -208,6 +208,14 @@ export const blankItem = (): DraftItem => ({
   recitationNumber: '',
   assignment: emptyDraft('REVISION'),
 });
+/** «إضافة عرضة» from «متابعة العرضات»: a structured عرضة of that whole surah (the server numbers it). */
+export const recitationItem = (surah: number): DraftItem => ({
+  key: `d${++draftSeq}`,
+  type: 'RECITATION',
+  description: '',
+  recitationNumber: '',
+  assignment: { ...emptyDraft('RECITATION'), fromSurah: surah, toSurah: surah },
+});
 export const toDraft = (i: WorkItem): DraftItem => ({
   key: i.id,
   saved: i,

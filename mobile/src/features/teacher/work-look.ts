@@ -1,7 +1,7 @@
 import type { IconName } from '@/components/ui';
 import type { ColorTokens } from '@/theme';
 
-import type { WorkItemStatus, WorkPerformance, WorkType } from '../quran-reference/work-assignment';
+import type { RecitationEntry, WorkItemStatus, WorkPerformance, WorkType } from '../quran-reference/work-assignment';
 
 /*
  * «متابعة برنامج العمل» — one look per meaning, shared by the list cards and the program screen.
@@ -34,4 +34,15 @@ export const RESULT_LOOK: Record<WorkItemStatus, Look> = {
   POSTPONED: { icon: 'clock', bg: 'infoSoft', fg: 'infoSoftForeground' },
   CANCELLED: { icon: 'ban', bg: 'muted', fg: 'mutedForeground' },
   NOT_EVALUATED: { icon: 'pending', bg: 'muted', fg: 'mutedForeground' },
+};
+
+/** «متابعة العرضات»: one look per recitation result (the same status colours, never the عرضة purple). */
+export const RECITATION_LOOK: Record<RecitationEntry, Look> = {
+  COMPLETED: RESULT_LOOK.COMPLETED,
+  PARTIAL: RESULT_LOOK.PARTIAL,
+  NOT_COMPLETED: RESULT_LOOK.NOT_COMPLETED,
+  CANCELLED: RESULT_LOOK.CANCELLED,
+  POSTPONED: RESULT_LOOK.POSTPONED,
+  PENDING: RESULT_LOOK.NOT_EVALUATED,
+  SESSION_CANCELLED: { icon: 'ban', bg: 'muted', fg: 'mutedForeground' },
 };

@@ -45,6 +45,11 @@ interface DraftItem {
   assignment: AssignmentDraft
 }
 
+export interface WorkFormPreset {
+  studentId: ID
+  recitationSurah?: number
+}
+
 let draftSeq = 0
 const blankItem = (): DraftItem => ({
   key: `d${++draftSeq}`,
@@ -52,6 +57,14 @@ const blankItem = (): DraftItem => ({
   description: "",
   recitationNumber: "",
   assignment: emptyDraft("REVISION"),
+})
+/** «إضافة عرضة» from «متابعة العرضات»: a structured عرضة of that whole surah (the server numbers it). */
+const recitationItem = (surah: number): DraftItem => ({
+  key: `d${++draftSeq}`,
+  type: "RECITATION",
+  description: "",
+  recitationNumber: "",
+  assignment: { ...emptyDraft("RECITATION"), fromSurah: surah, toSurah: surah },
 })
 const toDraft = (i: WorkItem): DraftItem => ({
   key: i.id,
@@ -107,6 +120,7 @@ export function WorkProgramForm({
   students,
   classes,
   program,
+  preset,
   onOpenExisting,
 }: {
   open: boolean
@@ -115,12 +129,18 @@ export function WorkProgramForm({
   classes: WorkClassOption[]
   /** Editing an existing program (its student and session are fixed) */
   program?: WorkProgram
+  /** A new program prefilled from «متابعة العرضات»: the student, and a عرضة of the surah */
+  preset?: WorkFormPreset
   onOpenExisting: (programId: ID) => void
 }) {
   const editing = Boolean(program)
-  const [studentId, setStudentId] = useState(program?.student.id ?? "")
+  const [studentId, setStudentId] = useState(
+    program?.student.id ?? (preset && students.some((s) => s.id === preset.studentId) ? preset.studentId : "")
+  )
   const [sessionId, setSessionId] = useState(program?.session.id ?? "")
-  const [items, setItems] = useState<DraftItem[]>(() => (program ? program.items.map(toDraft) : [blankItem()]))
+  const [items, setItems] = useState<DraftItem[]>(() =>
+    program ? program.items.map(toDraft) : [preset?.recitationSurah ? recitationItem(preset.recitationSurah) : blankItem()]
+  )
   const [notes, setNotes] = useState(program?.generalNotes ?? "")
   const [submitted, setSubmitted] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)

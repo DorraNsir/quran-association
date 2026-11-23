@@ -10,7 +10,6 @@ import { ltr } from '@/i18n/format';
 import { errorMessage } from '@/services/api';
 import { fontFamilies, radius, spacing, touchTarget, useAppTheme } from '@/theme';
 
-import { teacherClasses } from './dashboard-model';
 import { isUnavailable } from './teacher-work-program';
 import type { TeacherWorkspace } from './types';
 import { useConfirmThenBack } from './use-confirm-then-back';
@@ -19,10 +18,11 @@ import { useCreateWorkProgram, useEligibleSessions, useUpdateWorkProgram, useWor
 import { WorkStatusBadge } from './work-badges';
 import { adaptDraft, recitationTitle } from '../quran-reference/work-assignment';
 import { QuranAssignmentEditor } from './quran-assignment-editor';
-import { StudentOptionRow } from './student-option-row';
+import { StudentPickerSheet, studentOptions } from './student-picker-sheet';
 import {
   assignmentError,
   blankItem,
+  recitationItem,
   classifyWorkError,
   isLegacyFreeText,
   isManagedNumber,
@@ -30,7 +30,6 @@ import {
   isUntouched,
   DESCRIPTION_MAX,
   existingProgramId,
-  filterStudentGroups,
   newItemsOf,
   NOTES_MAX,
   sessionDay,
@@ -39,7 +38,6 @@ import {
   validatePlan,
   WORK_TYPES,
   type DraftItem,
-  type StudentGroup,
 } from './work-model';
 import type { EligibleSession, WorkProgram } from './work-types';
 
@@ -49,20 +47,6 @@ const w = ar.work;
 export const sessionOptionLabel = (s: EligibleSession) =>
   `${sessionDay(s)} · ${ltr(s.startTime)} – ${ltr(s.endTime)}${s.programId ? ` · ${w.hasProgram}` : ''}`;
 
-/** Students I may plan for: current, active students of my classes (the web's options; the server re-checks). */
-function studentOptions(ws: TeacherWorkspace): StudentGroup[] {
-  const classes = teacherClasses(ws);
-  return classes.map((c) => ({
-    id: c.id,
-    label: c.groupName,
-    students: ws.students
-      .filter((s) => s.groupClassId === c.id && s.status === 'ACTIVE')
-      // the workspace's own photo URL (private file, shown with the token by InitialsAvatar)
-      .map((s) => ({ id: s.id, name: `${s.firstName} ${s.lastName}`, photoUrl: s.photoUrl }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'ar')),
-  }));
-}
-
 /**
  * «إضافة برنامج عمل» (POST) / «تعديل برنامج العمل» (PATCH), as the web form:
  * the session is picked among the student's EXISTING upcoming sessions (no
@@ -71,7 +55,7 @@ function studentOptions(ws: TeacherWorkspace): StudentGroup[] {
  * evaluated «ملغى»). Only what changed is sent, with the versions it was
  * edited from.
  */
-export function TeacherWorkFormScreen({ programId, studentId }: { programId?: string; studentId?: string }) {
+export function TeacherWorkFormScreen({ programId, studentId, surah }: { programId?: string; studentId?: string; surah?: number }) {
   const { user } = useSession();
   const teacherId = user?.teacherId ?? '';
   const router = useRouter();
@@ -98,7 +82,7 @@ export function TeacherWorkFormScreen({ programId, studentId }: { programId?: st
       </Screen>
     );
   }
-  if (workspace.data) return <PlanForm teacherId={teacherId} workspace={workspace.data} initialStudentId={studentId} />;
+  if (workspace.data) return <PlanForm teacherId={teacherId} workspace={workspace.data} initialStudentId={studentId} initialSurah={surah} />;
   return (
     <Screen>
       <Stack.Screen options={{ title: w.newTitle }} />
@@ -112,11 +96,14 @@ function PlanForm({
   program,
   workspace,
   initialStudentId,
+  initialSurah,
 }: {
   teacherId: string;
   program?: WorkProgram;
   workspace?: TeacherWorkspace;
   initialStudentId?: string;
+  /** «إضافة عرضة» from «متابعة العرضات»: the first item is a عرضة of this surah */
+  initialSurah?: number;
 }) {
   const router = useRouter();
   const { colors } = useAppTheme();
@@ -126,16 +113,11 @@ function PlanForm({
     program?.student.id ?? (allStudents.some((s) => s.id === initialStudentId) ? initialStudentId! : ''),
   );
   const [sessionId, setSessionId] = useState(program?.session.id ?? '');
-  const [items, setItems] = useState<DraftItem[]>(() => (program ? program.items.map(toDraft) : [blankItem()]));
+  const [items, setItems] = useState<DraftItem[]>(() =>
+    program ? program.items.map(toDraft) : [initialSurah ? recitationItem(initialSurah) : blankItem()],
+  );
   const [notes, setNotes] = useState(program?.generalNotes ?? '');
-  const [picking, setPickingRaw] = useState(false);
-  const [studentQuery, setStudentQuery] = useState('');
-  // A fresh search each time the sheet opens
-  const setPicking = (open: boolean) => {
-    setPickingRaw(open);
-    if (!open) setStudentQuery('');
-  };
-  const shownGroups = filterStudentGroups(groups, studentQuery);
+  const [picking, setPicking] = useState(false);
   const [pickingSession, setPickingSession] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -345,59 +327,18 @@ function PlanForm({
       ) : null}
 
       {!program ? (
-        <BottomSheet
+        <StudentPickerSheet
           visible={picking}
-          title={w.pickStudent}
-          closeLabel={w.closePicker}
+          groups={groups}
+          selectedId={studentId}
           onClose={() => setPicking(false)}
-          header={
-            // stays above the scrolling list
-            <View style={[styles.search, { borderColor: colors.input, backgroundColor: colors.background }]}>
-              <Icon name="search" size={16} color={colors.mutedForeground} />
-              <TextInput
-                value={studentQuery}
-                onChangeText={setStudentQuery}
-                placeholder={w.searchStudent}
-                placeholderTextColor={colors.mutedForeground}
-                accessibilityLabel={w.searchStudentLabel}
-                autoCorrect={false}
-                returnKeyType="search"
-                style={[styles.searchInput, { color: colors.foreground }]}
-              />
-              {studentQuery ? (
-                <Pressable onPress={() => setStudentQuery('')} accessibilityRole="button" accessibilityLabel={w.clearStudentSearch} hitSlop={8}>
-                  <Icon name="close" size={16} color={colors.mutedForeground} />
-                </Pressable>
-              ) : null}
-            </View>
-          }>
-          {shownGroups.length === 0 ? (
-            <EmptyState icon="search" title={w.noStudentMatch} description={studentQuery ? w.noStudentMatchHint : undefined} />
-          ) : (
-            shownGroups.map((g) => (
-              <View key={g.id} accessibilityRole="radiogroup" accessibilityLabel={g.label} style={styles.group}>
-                <AppText variant="small" tone="muted" accessibilityRole="header">
-                  {g.label}
-                </AppText>
-                {g.students.map((s, i) => (
-                  <StudentOptionRow
-                    key={s.id}
-                    name={s.name}
-                    photoUrl={s.photoUrl}
-                    selected={s.id === studentId}
-                    divider={i > 0}
-                    onPress={() => {
-                      setStudentId(s.id);
-                      setSessionId('');
-                      setRaced(null);
-                      setPicking(false);
-                    }}
-                  />
-                ))}
-              </View>
-            ))
-          )}
-        </BottomSheet>
+          onPick={(id) => {
+            setStudentId(id);
+            setSessionId('');
+            setRaced(null);
+            setPicking(false);
+          }}
+        />
       ) : null}
     </Screen>
   );
@@ -516,18 +457,7 @@ const styles = StyleSheet.create({
   section: { gap: spacing.sm },
   inline: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   options: { gap: spacing.xs },
-  group: { gap: 2 },
   chosen: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  search: {
-    minHeight: touchTarget,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    borderWidth: 1,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.md,
-  },
-  searchInput: { flex: 1, minHeight: touchTarget, fontFamily: fontFamilies.regular, fontSize: 15, textAlign: 'right', writingDirection: 'rtl' },
   picker: {
     minHeight: touchTarget,
     flexDirection: 'row',

@@ -608,6 +608,61 @@ export const nextRecitationText = (n: number) => `التالية: ${recitationTi
 /** A structured عرضة's compact line: «سورة المجادلة · 3 عرضات». */
 export const recitationSummaryText = (surahName: string, attempts: number) => `${surahName} · ${recitationsCount(attempts)}`;
 
+// ───────────────────────── «متابعة العرضات» module (display only) ─────────────────────────
+
+/** Short result words for a table cell / a badge (the long ones above stay for sentences). */
+export const RECITATION_RESULT_SHORT: Record<RecitationEntry, string> = {
+  COMPLETED: 'منجز',
+  PARTIAL: 'جزئي',
+  NOT_COMPLETED: 'غير منجز',
+  CANCELLED: 'ملغى',
+  POSTPONED: 'مؤجل',
+  PENDING: 'بانتظار التقييم',
+  SESSION_CANCELLED: 'حصة ملغاة',
+};
+
+/** Order of the result filter and legend. */
+export const RECITATION_RESULTS: RecitationEntry[] = ['COMPLETED', 'PARTIAL', 'NOT_COMPLETED', 'CANCELLED', 'POSTPONED', 'PENDING'];
+
+/** One displayed recitation of a surah: its stored number, its latest state, and what came before. */
+export interface RecitationColumn<E> {
+  key: string;
+  number: number | null;
+  /** The latest entry of this number (its result, or its pending / postponed state) */
+  result: E;
+  /** Earlier entries with the SAME number: postponed (or a cancelled session's) — never attempts */
+  earlier: E[];
+}
+
+/**
+ * A surah's chronological history (server order) as displayed recitations: entries sharing a stored
+ * number are ONE recitation — a postponed one and its rescheduled continuation keep the number, so
+ * no extra attempt appears. An old entry without a number stays its own recitation. The numbers
+ * are the server's; nothing is renumbered here.
+ */
+export function recitationColumns<E extends { itemId: string; number: number | null }>(entries: E[]): RecitationColumn<E>[] {
+  const columns: RecitationColumn<E>[] = [];
+  const byNumber = new Map<number, RecitationColumn<E>>();
+  for (const e of entries) {
+    const existing = e.number !== null ? byNumber.get(e.number) : undefined;
+    if (existing) {
+      existing.earlier.push(existing.result);
+      existing.result = e;
+      continue;
+    }
+    const column: RecitationColumn<E> = { key: e.number !== null ? `n${e.number}` : `i${e.itemId}`, number: e.number, result: e, earlier: [] };
+    if (e.number !== null) byNumber.set(e.number, column);
+    columns.push(column);
+  }
+  return columns;
+}
+
+/** «أُجّلت مرة» / «أُجّلت مرتين» / «أُجّلت 3 مرات» — how often a recitation did not take place. */
+export function postponedTimes(n: number): string | null {
+  if (n <= 0) return null;
+  return n === 1 ? 'أُجّلت مرة' : n === 2 ? 'أُجّلت مرتين' : `أُجّلت ${n} ${n <= 10 ? 'مرات' : 'مرة'}`;
+}
+
 // ───────────────────────── compact Work Program rows (display only) ─────────────────────────
 
 const TYPE_ORDER: WorkType[] = ['MEMORIZATION', 'REVISION', 'RECITATION', 'EXAM'];

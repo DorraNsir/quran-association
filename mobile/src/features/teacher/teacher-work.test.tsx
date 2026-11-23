@@ -24,6 +24,7 @@ import { lightColors } from '@/theme/colors';
 import { eligible, workItem, workPage, workProgram, workSession } from './__fixtures__/work';
 import { workspaceFixture } from './__fixtures__/workspace';
 import { TeacherStudentScreen } from './teacher-student';
+import { TeacherRecitationsScreen } from './teacher-recitations';
 import { TeacherStudentRecitationsScreen } from './teacher-student-recitations';
 import { TeacherWorkScreen } from './teacher-work';
 import { TeacherWorkEvaluateScreen } from './teacher-work-evaluate';
@@ -1497,7 +1498,8 @@ describe('«متابعة العرضات» (mobile): each surah its numbered reci
     expect((await screen.findByTestId('recitation-line')).props.children).toBe('3 عرضات');
     expect(screen.getAllByTestId('recitation-line')).toHaveLength(1);
     await fireEvent.press(screen.getByLabelText(`${w.recitationHistory} — سورة المجادلة · 3 عرضات`));
-    expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/students/[id]/recitations', params: { id: 'st1', surah: '58' } });
+    // «سجل العرضات» opens «متابعة العرضات» on this student and surah
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/teacher/recitations', params: { studentId: 'st1', surah: '58' } });
   });
 
   it('list card: simple — the «عرضة» badge only, no recitation history (that stays on the program screen)', async () => {
@@ -1924,5 +1926,121 @@ describe('«تفاصيل برنامج العمل» (mobile redesign)', () => {
     expect(bg(screen.getByLabelText(`${w.carry}: العرضة الثانية من سورة التوبة`))).toBe(lightColors.card);
     expect(bg(screen.getByLabelText(w.evaluate))).toBe(lightColors.primary);
     expect(bg(screen.getByLabelText(w.edit))).toBe(lightColors.card);
+  });
+});
+
+describe('«متابعة العرضات» — the module (mobile)', () => {
+  const HISTORY = '/teacher/students/st1/recitations';
+  let n = 0;
+  const entry = (number: number | null, e: string, status: string, date: string) => {
+    n++;
+    return { itemId: `m${n}`, programId: `wp${n}`, sessionId: `ms${n}`, sessionDate: date, number, entry: e, status, evaluationComment: null, evaluatedAt: null, evaluatedBy: null };
+  };
+  // al-Mujadila: 1 ملغاة, 2 postponed twice then منجزة (one recitation), 3 جزئي, 4 pending
+  const mujadila = {
+    surah: 58,
+    attempts: 3,
+    nextNumber: 5,
+    entries: [
+      entry(1, 'CANCELLED', 'CANCELLED', '2026-11-02'),
+      entry(2, 'POSTPONED', 'POSTPONED', '2026-11-09'),
+      entry(2, 'POSTPONED', 'POSTPONED', '2026-11-16'),
+      entry(2, 'COMPLETED', 'COMPLETED', '2026-11-23'),
+      entry(3, 'PARTIAL', 'PARTIAL', '2026-11-30'),
+      entry(4, 'PENDING', 'NOT_EVALUATED', '2026-12-07'),
+    ],
+  };
+  // unlimited, numbered on their own
+  const baqara = { surah: 2, attempts: 12, nextNumber: 13, entries: Array.from({ length: 12 }, (_, i) => entry(i + 1, 'COMPLETED', 'COMPLETED', '2026-10-01')) };
+  const history = { studentId: 'st1', surahs: [baqara, mujadila] };
+  const entries = () => screen.queryAllByTestId(/^entry-/).map((v) => v.props.accessibilityLabel as string);
+  const cards = () => screen.queryAllByTestId(/^surah-\d+$/).map((v) => v.props.accessibilityLabel as string);
+
+  it('no student yet: a prompt; the picker lists my students (photos / first letters); choosing one loads only theirs', async () => {
+    stub((c) => (c.path.endsWith(HISTORY) ? ok(history) : undefined));
+    await renderScreen(<TeacherRecitationsScreen />);
+    expect((await screen.findAllByText(w.recitationsPick)).length).toBeGreaterThan(0);
+    expect(calls.some((c) => c.path.includes('/recitations'))).toBe(false);
+    await fireEvent.press(screen.getByLabelText(w.recitationsPick));
+    await fireEvent.press(await screen.findByRole('radio', { name: 'محمد التونسي' }));
+    expect(await screen.findByLabelText('سورة المجادلة — 3 عرضات')).toBeTruthy();
+    expect(calls.filter((c) => c.path.includes('/recitations')).map((c) => c.path.replace(/^\/api/, ''))).toEqual([HISTORY]);
+  });
+
+  it('collapsed: one card per surah with recitations and «3 عرضات»; open: numbered recitations, a postponed one and its continuation as ONE', async () => {
+    stub((c) => (c.path.endsWith(HISTORY) ? ok(history) : undefined));
+    await renderScreen(<TeacherRecitationsScreen initialStudentId="st1" />);
+    await screen.findByLabelText('سورة المجادلة — 3 عرضات');
+    expect(cards()).toEqual(['سورة البقرة — 12 عرضة', 'سورة المجادلة — 3 عرضات']);
+    expect(entries()).toEqual([]);
+    await fireEvent.press(screen.getByLabelText('سورة المجادلة — 3 عرضات'));
+    expect(entries().map((l) => l.split(' · ').slice(0, 2).join(' · '))).toEqual([
+      'سورة المجادلة — العرضة 1 · ملغى',
+      'سورة المجادلة — العرضة 2 · منجز',
+      'سورة المجادلة — العرضة 3 · جزئي',
+      'سورة المجادلة — العرضة 4 · بانتظار التقييم',
+    ]);
+    expect(screen.getByTestId('postponed-note').props.children).toBe(w.postponedOn('9 نوفمبر 2026، 16 نوفمبر 2026'));
+    expect(screen.getByTestId('next-recitation').props.children).toBe('التالية: العرضة 5');
+    expect(screen.queryByText(/دورة|محتسب|من 4/)).toBeNull();
+    // an entry opens its program
+    await fireEvent.press(screen.getAllByTestId('entry-COMPLETED')[0]!);
+    expect(mockPush).toHaveBeenLastCalledWith({ pathname: '/teacher/work/[id]', params: { id: 'wp4' } });
+  });
+
+  it('unlimited recitations in another surah; totals by result', async () => {
+    stub((c) => (c.path.endsWith(HISTORY) ? ok(history) : undefined));
+    await renderScreen(<TeacherRecitationsScreen initialStudentId="st1" />);
+    await fireEvent.press(await screen.findByLabelText('سورة البقرة — 12 عرضة'));
+    expect(entries()).toHaveLength(12);
+    expect(within(screen.getByTestId('total-attempts')).getByText('15')).toBeTruthy();
+    expect(within(screen.getByTestId('total-COMPLETED')).getByText('13')).toBeTruthy();
+    expect(screen.queryByTestId('total-POSTPONED')).toBeNull();
+  });
+
+  it('all 114 surahs on request; surah search (Arabic tolerant)', async () => {
+    stub((c) => (c.path.endsWith(HISTORY) ? ok(history) : undefined));
+    await renderScreen(<TeacherRecitationsScreen initialStudentId="st1" />);
+    await screen.findByLabelText('سورة المجادلة — 3 عرضات');
+    await fireEvent.press(screen.getByRole('radio', { name: w.scopeAll }));
+    expect(cards()).toHaveLength(114);
+    expect(screen.getByLabelText('سورة الناس — لا عرضات بعد')).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText(w.searchSurahLabel), 'المجادله');
+    expect(cards()).toEqual(['سورة المجادلة — 3 عرضات']);
+  });
+
+  it('deep link («سجل العرضات»): the student chosen, the surah open — even one without recitations', async () => {
+    stub((c) => (c.path.endsWith(HISTORY) ? ok(history) : undefined));
+    await renderScreen(<TeacherRecitationsScreen initialStudentId="st1" initialSurah={110} />);
+    const card = await screen.findByLabelText('سورة النصر — لا عرضات بعد');
+    expect(card.props.accessibilityState).toMatchObject({ expanded: true });
+  });
+
+  it('«إضافة عرضة»: the Work Program form for this student (and this surah from its card); the button is GREEN', async () => {
+    stub((c) => (c.path.endsWith(HISTORY) ? ok(history) : undefined));
+    await renderScreen(<TeacherRecitationsScreen initialStudentId="st1" initialSurah={58} />);
+    await fireEvent.press(await screen.findByLabelText(w.addRecitationFor('سورة المجادلة')));
+    expect(mockPush).toHaveBeenLastCalledWith({ pathname: '/teacher/work/new', params: { studentId: 'st1', surah: '58' } });
+    const main = screen.getByLabelText(w.addRecitation);
+    expect(StyleSheet.flatten(main.props.style).backgroundColor).toBe(lightColors.primary);
+    await fireEvent.press(main);
+    expect(mockPush).toHaveBeenLastCalledWith({ pathname: '/teacher/work/new', params: { studentId: 'st1' } });
+  });
+
+  it('the form opened for a surah starts with a عرضة of it (the server numbers it)', async () => {
+    stub();
+    await renderScreen(<TeacherWorkFormScreen studentId="st1" surah={58} />);
+    expect((await screen.findAllByText(/المجادلة/)).length).toBeGreaterThan(0);
+    expect(screen.getByRole('radio', { name: w.type.RECITATION }).props.accessibilityState.selected).toBe(true);
+  });
+
+  it('no recitations yet: an empty state that points to «كل السور»; an API refusal: its message', async () => {
+    stub((c) => (c.path.endsWith(HISTORY) ? ok({ studentId: 'st1', surahs: [] }) : undefined));
+    await renderScreen(<TeacherRecitationsScreen initialStudentId="st1" />);
+    expect(await screen.findByText(w.recitationsEmpty)).toBeTruthy();
+    expect(screen.getByText(w.recitationsEmptyHint)).toBeTruthy();
+    stub((c) => (c.path.endsWith(HISTORY) ? { status: 403, body: { code: 'FORBIDDEN', message: 'لا يمكنك عرض هذا الطالب' } } : undefined));
+    await renderScreen(<TeacherRecitationsScreen initialStudentId="st1" />);
+    expect(await screen.findByText('لا يمكنك عرض هذا الطالب')).toBeTruthy();
   });
 });

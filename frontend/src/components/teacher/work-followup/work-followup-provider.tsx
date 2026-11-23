@@ -14,7 +14,7 @@ import type { ID } from "@/types/domain"
 import type { WorkItem, WorkProgram } from "@/types/work-followup"
 
 import { WorkEvaluationSheet } from "./work-evaluation-sheet"
-import { WorkProgramForm } from "./work-program-form"
+import { WorkProgramForm, type WorkFormPreset } from "./work-program-form"
 import { WorkScheduleDialog, type ScheduleMode } from "./work-schedule-dialog"
 
 /** A student the teacher may plan work for (a current, active student of their classes). */
@@ -35,7 +35,8 @@ interface WorkFollowupContextValue {
   /** The teacher's current classes and their active students (GET /api/teacher/workspace) */
   students: WorkStudentOption[]
   classes: WorkClassOption[]
-  openCreate: () => void
+  /** A new program; `preset` prefills the student and a عرضة of a surah («متابعة العرضات») */
+  openCreate: (preset?: WorkFormPreset) => void
   openEdit: (program: WorkProgram) => void
   openEvaluate: (program: WorkProgram) => void
   openSchedule: (mode: ScheduleMode, item: WorkItem, source: WorkProgram) => void
@@ -58,7 +59,7 @@ export function WorkFollowupProvider({ children }: { children: React.ReactNode }
   const queryClient = useQueryClient()
   const workspace = useTeacherWorkspace()
   // `key` remounts a sheet / dialog on each opening (fresh draft), never while it closes
-  const [form, setForm] = useState<{ key: number; open: boolean; program?: WorkProgram } | null>(null)
+  const [form, setForm] = useState<{ key: number; open: boolean; program?: WorkProgram; preset?: WorkFormPreset } | null>(null)
   const [evaluating, setEvaluating] = useState<{ key: number; open: boolean; program: WorkProgram } | null>(null)
   const [scheduling, setScheduling] = useState<{ key: number; open: boolean; mode: ScheduleMode; item: WorkItem; source: WorkProgram } | null>(null)
 
@@ -77,7 +78,7 @@ export function WorkFollowupProvider({ children }: { children: React.ReactNode }
     .filter((s) => s.status === "ACTIVE" && s.groupClassId)
     .map((s) => ({ id: s.id, firstName: s.firstName, lastName: s.lastName, groupClassId: s.groupClassId!, photoUrl: s.photoUrl ?? null }))
 
-  const openForm = (program?: WorkProgram) => setForm((f) => ({ key: (f?.key ?? 0) + 1, open: true, program }))
+  const openForm = (program?: WorkProgram, preset?: WorkFormPreset) => setForm((f) => ({ key: (f?.key ?? 0) + 1, open: true, program, preset }))
 
   /** «تعديل البرنامج الموجود» from the create form: load it, then edit it. */
   async function openExisting(programId: string) {
@@ -95,7 +96,7 @@ export function WorkFollowupProvider({ children }: { children: React.ReactNode }
   const value: WorkFollowupContextValue = {
     students,
     classes,
-    openCreate: () => openForm(),
+    openCreate: (preset) => openForm(undefined, preset),
     openEdit: (program) => openForm(program),
     openEvaluate: (program) => {
       // The buttons are disabled then; a last guard for any other entry point
@@ -118,6 +119,7 @@ export function WorkFollowupProvider({ children }: { children: React.ReactNode }
           students={students}
           classes={classes}
           program={form.program}
+          preset={form.preset}
           onOpenExisting={openExisting}
         />
       )}

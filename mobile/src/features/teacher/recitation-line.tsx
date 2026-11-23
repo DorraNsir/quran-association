@@ -26,7 +26,8 @@ export function RecitationLine({ recitation, studentId }: { recitation: Recitati
       accessibilityRole="link"
       accessibilityLabel={`${ar.work.recitationHistory} — ${text}`}
       onPress={() =>
-        router.push({ pathname: '/teacher/students/[id]/recitations', params: { id: studentId, surah: String(recitation.surah) } })
+        // «متابعة العرضات»: this student chosen, this surah open
+        router.push({ pathname: '/teacher/recitations', params: { studentId, surah: String(recitation.surah) } })
       }
       style={({ pressed }) => [styles.row, { backgroundColor: colors.recitationSoft }, pressed && styles.pressed]}>
       <Icon name="history" size={18} color={colors.recitationForeground} />

@@ -8,8 +8,8 @@ import { surahByNumber } from "@/lib/quran/surahs"
 import { cn } from "@/lib/utils"
 import type { RecitationSummary } from "@/types/work-followup"
 
-/** The student profile tab with this surah's recitations open. */
-export const recitationsHref = (studentId: string, surah: number) => `/teacher/students/${studentId}?tab=recitations&surah=${surah}`
+/** «متابعة العرضات» with this student chosen and this surah highlighted. */
+export const recitationsHref = (studentId: string, surah: number) => `/teacher/recitations?student=${studentId}&surah=${surah}`
 
 /**
  * «متابعة العرضات» of one structured عرضة, compact: «سورة المجادلة · 3 عرضات» (server values), with a
