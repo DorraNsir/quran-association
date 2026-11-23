@@ -1980,20 +1980,25 @@ describe('«متابعة العرضات» — the module (mobile)', () => {
     expect(calls.filter((c) => c.path.includes('/recitations')).map((c) => c.path.replace(/^\/api/, ''))).toEqual([HISTORY]);
   });
 
-  it('collapsed: one card per surah with recitations and «3 عرضات»; open: numbered recitations, a postponed one and its continuation as ONE', async () => {
+  it('collapsed: one card per surah with recitations and «3 عرضات»; open: the chronological history, each postponement its own row with the number of the recitation continuing it', async () => {
     stub((c) => (c.path.endsWith(HISTORY) ? ok(history) : undefined));
     await renderScreen(<TeacherRecitationsScreen initialStudentId="st1" />);
     await screen.findByLabelText('سورة المجادلة — 3 عرضات');
     expect(cards()).toEqual(['سورة البقرة — 12 عرضة', 'سورة المجادلة — 3 عرضات']);
     expect(entries()).toEqual([]);
     await fireEvent.press(screen.getByLabelText('سورة المجادلة — 3 عرضات'));
-    expect(entries().map((l) => l.split(' · ').slice(0, 2).join(' · '))).toEqual([
-      'سورة المجادلة — العرضة 1 · ملغى',
-      'سورة المجادلة — العرضة 2 · منجز',
-      'سورة المجادلة — العرضة 3 · جزئي',
-      'سورة المجادلة — العرضة 4 · بانتظار التقييم',
+    expect(entries().map((l) => l.split(' · ').slice(0, 3).join(' · '))).toEqual([
+      'سورة المجادلة — العرضة 1 · ملغى · 2 نوفمبر 2020',
+      'سورة المجادلة — العرضة 2 · مؤجل · لا تحتسب',
+      'سورة المجادلة — العرضة 2 · مؤجل · لا تحتسب',
+      'سورة المجادلة — العرضة 2 · منجز · 23 نوفمبر 2020',
+      'سورة المجادلة — العرضة 3 · جزئي · 30 نوفمبر 2020',
+      'سورة المجادلة — العرضة 4 · بانتظار التقييم · 7 ديسمبر 2020',
     ]);
-    expect(screen.getByTestId('postponed-note').props.children).toBe(w.postponedOn('9 نوفمبر 2020، 16 نوفمبر 2020'));
+    // «لا تحتسب» only on the postponed rows (with their own dates)
+    expect(screen.getAllByText('مؤجل · لا تحتسب')).toHaveLength(2);
+    expect(entries().filter((l) => l.includes('تحتسب')).every((l) => l.includes('مؤجل'))).toBe(true);
+    expect(entries()[1]).toContain('9 نوفمبر 2020');
     expect(screen.getByTestId('next-recitation').props.children).toBe('التالية: العرضة 5');
     expect(screen.queryByText(/دورة|محتسب|من 4/)).toBeNull();
     // an entry opens its program
@@ -2008,7 +2013,8 @@ describe('«متابعة العرضات» — the module (mobile)', () => {
     expect(entries()).toHaveLength(12);
     expect(within(screen.getByTestId('total-attempts')).getByText('15')).toBeTruthy();
     expect(within(screen.getByTestId('total-COMPLETED')).getByText('13')).toBeTruthy();
-    expect(screen.queryByTestId('total-POSTPONED')).toBeNull();
+    // the two postponements: counted apart, never in the recitations performed (15)
+    expect(within(screen.getByTestId('total-POSTPONED')).getByText('2')).toBeTruthy();
   });
 
   it('all 114 surahs on request; surah search (Arabic tolerant)', async () => {

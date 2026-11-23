@@ -36,17 +36,17 @@ import {
   sessionOfClass,
 } from '../scheduling/participants.js';
 import { expectedOnDate } from '../scheduling/roster.sql.js';
+import { surahName } from '../memorization/surahs.js';
 import { orderByWorkload, type OrderedProgram } from './workload-order.js';
 import {
   isAttempt,
-  keepsNumber,
-  lockSurah,
-  nextRecitationNumber,
-  numberedRecitations,
-  orderConflict,
-  recitationOutOfOrder,
-  recitationWindow,
+  lockRecitations,
+  lockSessionWork,
+  numberSurah,
+  recitationContradiction,
   sessionStart,
+  startAr,
+  type HistoryRow,
   recitationEntry,
   recitationsOf,
   trackedSurah,
@@ -135,6 +135,12 @@ export function nextRecitationDescription(description: string, number: number) {
     ? base.replace(pattern, `العرضة ${recitationOrdinal(number)}`)
     : `العرضة ${recitationOrdinal(number)} — ${base}`;
 }
+
+/** A planning change (creation, edit, transfer, next recitation) contradicting a performed recitation. */
+const PLANNING_REFUSAL = {
+  code: 'WORK_RECITATION_ORDER',
+  lead: 'لا يمكن برمجة هذه العرضة هنا',
+};
 
 const personName = {
   select: { person: { select: { firstName: true, lastName: true } } },
@@ -721,24 +727,21 @@ export class WorkFollowupService {
     let after = afterSession
       ? sessionStart(afterSession.date, afterSession.startTime)
       : null;
-    let before: string | null = null;
-    // Transfer / next recitation of an item: later than its session — and, for a whole-surah
-    // عرضة, only where its number keeps the surah's chronology (the write checks it again)
+    // Transfer / next recitation of an item: later than its session (a postponed عرضة whose
+    // continuation is already planned: none — the write checks it again)
     if (query.forItemId) {
       const bounds = await this.scheduleBounds(
         query.forItemId,
         query.studentId,
         query.purpose ?? 'TRANSFER',
       );
-      if (bounds.after && (!after || bounds.after > after))
-        after = bounds.after;
-      before = bounds.before;
+      if (bounds.none) return [];
+      if (!after || bounds.after > after) after = bounds.after;
     }
     const ids = await this.eligibleSessionIds(this.prisma, {
       studentId: query.studentId,
       teacherId,
       after,
-      before,
     });
     const [sessions, programs] = await Promise.all([
       this.prisma.session.findMany({
@@ -827,6 +830,9 @@ export class WorkFollowupService {
           select: { id: true },
         });
         if (!student) throw notFound('STUDENT_NOT_FOUND', 'الطالب غير موجود');
+        await lockSessionWork(tx, [dto.sessionId]);
+        await lockRecitations(tx, [dto.studentId]);
+        const before = await snapshotRecitations(tx, [dto.studentId]);
         await this.assertTarget(tx, actor, dto.studentId, dto.sessionId);
         const existing = await tx.workProgram.findUnique({
           where: {
@@ -861,6 +867,7 @@ export class WorkFollowupService {
           dto.studentId,
           created.map((c) => c.id),
         );
+        await settleRecitations(tx, [dto.studentId], before, PLANNING_REFUSAL);
         return program.id;
       });
       return await this.build(this.prisma, id);
@@ -890,6 +897,7 @@ export class WorkFollowupService {
   ): Promise<WorkProgramDto> {
     await this.prisma.$transaction(async (tx) => {
       const program = await this.lockProgram(tx, actor, id);
+      const before = await snapshotRecitations(tx, [program.studentId]);
       if (dto.generalNotes !== undefined) {
         if (dto.version === undefined)
           throw badRequest(
@@ -922,6 +930,12 @@ export class WorkFollowupService {
           dto.newItems,
         );
       }
+      await settleRecitations(
+        tx,
+        [program.studentId],
+        before,
+        PLANNING_REFUSAL,
+      );
       await this.touch(tx, actor, program.id, dto.generalNotes);
     });
     return this.build(this.prisma, id);
@@ -966,6 +980,9 @@ export class WorkFollowupService {
       const program = await this.lockProgram(tx, actor, id);
       const blocked = evaluationBlock(program.session, await this.clock(tx));
       if (blocked) throw evaluationRefused(blocked);
+      const before = await snapshotRecitations(tx, [program.studentId]);
+      // recitations performed by this evaluation: their number becomes definitive here
+      const performed = new Set<string>();
       // The program's own fields (notes, «التقييم العام»): version checked — no lost update
       if (dto.generalNotes !== undefined || dto.overall !== undefined) {
         if (dto.version === undefined)
@@ -984,6 +1001,10 @@ export class WorkFollowupService {
           select: { id: true, status: true, evaluationComment: true },
         });
         if (!current) throw itemNotFound();
+        const attempt = (st: WorkStatus) =>
+          isAttempt(recitationEntry(st, program.session.status));
+        if (!attempt(current.status) && attempt(line.status))
+          performed.add(line.id);
         const comment =
           line.evaluationComment === undefined
             ? current.evaluationComment
@@ -1003,6 +1024,15 @@ export class WorkFollowupService {
         if (count === 0) stale.push(line.id);
       }
       if (stale.length) throw itemChanged(stale);
+      // «متابعة العرضات»: a postponement / a correction renumbers what follows — never a
+      // recitation already performed
+      await settleRecitations(
+        tx,
+        [program.studentId],
+        before,
+        { code: 'WORK_RECITATION_ORDER', lead: 'لا يمكن حفظ هذا التقييم' },
+        performed,
+      );
       // «التقييم العام»: the teacher's own choice, never derived from the items; the same
       // level sent again changes nothing (who and when stay those of the real decision)
       const overall =
@@ -1174,6 +1204,8 @@ export class WorkFollowupService {
       studentId,
       surahs: surahs.map((surah) => {
         const own = items.filter((i) => i.quranFromSurah === surah);
+        // the chronological numbers (the same rule as every change: numberSurah)
+        const numbering = numberSurah(own.map(historyRow));
         const entries = own.map((i): RecitationAttemptDto => {
           const entry = recitationEntry(i.status, i.program.session.status);
           return {
@@ -1181,7 +1213,7 @@ export class WorkFollowupService {
             programId: i.program.id,
             sessionId: i.program.session.id,
             sessionDate: fromDbDate(i.program.session.date),
-            number: i.recitationNumber,
+            number: numbering.numbers.get(i.id) ?? i.recitationNumber,
             entry,
             status: i.status,
             evaluationComment: i.evaluationComment,
@@ -1192,8 +1224,7 @@ export class WorkFollowupService {
         return {
           surah,
           attempts: entries.filter((e) => isAttempt(e.entry as never)).length,
-          nextNumber:
-            Math.max(0, ...own.map((i) => i.recitationNumber ?? 0)) + 1,
+          nextNumber: numbering.next,
           entries,
         };
       }),
@@ -1219,6 +1250,16 @@ export class WorkFollowupService {
   ): Promise<WorkProgramDto> {
     try {
       const targetProgramId = await this.prisma.$transaction(async (tx) => {
+        // the student's «متابعة العرضات» lock first, then everything is read under it
+        const owner = await tx.workItem.findUnique({
+          where: { id: itemId },
+          select: { program: { select: { studentId: true } } },
+        });
+        if (!owner) throw itemNotFound();
+        const studentId = owner.program.studentId;
+        await lockSessionWork(tx, [targetSessionId]);
+        await lockRecitations(tx, [studentId]);
+        const before = await snapshotRecitations(tx, [studentId]);
         const source = await tx.workItem.findUnique({
           where: { id: itemId },
           select: {
@@ -1299,6 +1340,53 @@ export class WorkFollowupService {
         });
         if (duplicate)
           throw alreadyScheduled(Boolean(fields.carriedFromItemId));
+        // A postponed recitation (or a cancelled session's) is continued by the next one of its
+        // surah already planned: no second copy of it
+        const surah = trackedSurah(source);
+        const sourceEntry = recitationEntry(
+          source.status,
+          source.program.session.status,
+        );
+        if (
+          fields.carriedFromItemId &&
+          surah !== null &&
+          (sourceEntry === 'POSTPONED' || sourceEntry === 'SESSION_CANCELLED')
+        ) {
+          const planned = (
+            await tx.workItem.findMany({
+              where: {
+                ...recitationsOf([studentId], [surah]),
+                status: WorkStatus.NOT_EVALUATED,
+                program: {
+                  studentId,
+                  session: { status: { not: SessionStatus.CANCELLED } },
+                },
+              },
+              select: {
+                recitationNumber: true,
+                program: {
+                  select: {
+                    session: { select: { date: true, startTime: true } },
+                  },
+                },
+              },
+            })
+          )
+            .map((i) => ({
+              number: i.recitationNumber,
+              start: sessionStart(
+                i.program.session.date,
+                i.program.session.startTime,
+              ),
+            }))
+            .filter((i) => i.start > sourceStart)
+            .sort((a, b) => a.start.localeCompare(b.start))[0];
+          if (planned)
+            throw conflict(
+              'WORK_RECITATION_CONTINUED',
+              `${planned.number ? `العرضة ${planned.number}` : 'عرضة'} من سورة ${surahName(surah) ?? surah} مبرمجة يوم ${startAr(planned.start)}: هي التي تُكمل العرضة المؤجلة، فلا حاجة إلى نقلها`,
+            );
+        }
         const created = await tx.workItem.create({
           data: {
             ...fields,
@@ -1309,10 +1397,10 @@ export class WorkFollowupService {
           },
           select: { id: true },
         });
-        // A carried / next recitation is an attempt of the surah's current cycle
         await this.numberRecitations(tx, source.program.studentId, [
           created.id,
         ]);
+        await settleRecitations(tx, [studentId], before, PLANNING_REFUSAL);
         await this.touch(tx, actor, program.id);
         return program.id;
       });
@@ -1457,7 +1545,6 @@ export class WorkFollowupService {
       teacherId: string | null;
       /** strict bounds "YYYY-MM-DDTHH:mm" */
       after: string | null;
-      before?: string | null;
     },
   ) {
     const { today, now } = await this.clock(db);
@@ -1482,40 +1569,34 @@ export class WorkFollowupService {
             ? Prisma.sql`AND (s.date, s."startTime") > (${input.after.slice(0, 10)}::date, ${input.after.slice(11, 16)}::time)`
             : Prisma.empty
         }
-        ${
-          input.before
-            ? Prisma.sql`AND (s.date, s."startTime") < (${input.before.slice(0, 10)}::date, ${input.before.slice(11, 16)}::time)`
-            : Prisma.empty
-        }
       ORDER BY s.date, s."startTime"
       LIMIT 60`;
     return rows.map((r) => r.id);
   }
 
   /**
-   * Where an item may be transferred / continued: after its own session, and for a whole-surah
-   * عرضة inside its number's window — a transferred postponed (or cancelled-session) recitation
-   * keeps its number (after the lower ones, before the higher ones); any other gets a new number
-   * (the highest + 1): after every recitation of the surah. Read-only (the write re-checks).
+   * Where an item may be transferred / continued: any upcoming session after its own (the
+   * numbers then follow the chronology by themselves). `none`: a postponed (or a cancelled
+   * session's) whole-surah عرضة whose surah already has its next recitation planned — that one
+   * continues it, there is nothing to transfer. Read-only (the write checks again).
    */
   private async scheduleBounds(
     itemId: string,
     studentId: string,
     purpose: 'TRANSFER' | 'NEXT',
-  ): Promise<{ after: string; before: string | null }> {
+  ): Promise<{ after: string; none: boolean }> {
     const item = await this.prisma.workItem.findUnique({
       where: { id: itemId },
       select: {
         id: true,
         type: true,
         status: true,
-        recitationNumber: true,
         quranAssignmentKind: true,
         quranFromSurah: true,
         program: {
           select: {
             studentId: true,
-            session: { select: { date: true, startTime: true } },
+            session: { select: { date: true, startTime: true, status: true } },
           },
         },
       },
@@ -1526,27 +1607,51 @@ export class WorkFollowupService {
       item.program.session.startTime,
     );
     const surah = trackedSurah(item);
-    if (surah === null) return { after: own, before: null };
-    const rows = await numberedRecitations(this.prisma, studentId, surah);
-    const keeps =
-      purpose === 'TRANSFER' &&
-      keepsNumber(item.status) &&
-      item.recitationNumber !== null;
-    const number = keeps
-      ? (item.recitationNumber as number)
-      : Math.max(0, ...rows.map((r) => r.number)) + 1;
-    const window = recitationWindow(
-      number,
-      rows.filter((r) => r.id !== item.id || !keeps),
-    );
+    const entry = recitationEntry(item.status, item.program.session.status);
+    if (
+      purpose !== 'TRANSFER' ||
+      surah === null ||
+      (entry !== 'POSTPONED' && entry !== 'SESSION_CANCELLED')
+    )
+      return { after: own, none: false };
+    const planned = await this.prisma.workItem.findMany({
+      where: {
+        ...recitationsOf([studentId], [surah]),
+        status: WorkStatus.NOT_EVALUATED,
+        program: {
+          studentId,
+          session: { status: { not: SessionStatus.CANCELLED } },
+        },
+      },
+      select: {
+        program: {
+          select: { session: { select: { date: true, startTime: true } } },
+        },
+      },
+    });
     return {
-      after: window.after && window.after > own ? window.after : own,
-      before: window.before,
+      after: own,
+      none: planned.some(
+        (p) =>
+          sessionStart(p.program.session.date, p.program.session.startTime) >
+          own,
+      ),
     };
   }
 
-  /** The program row locked for this transaction, after the access check. */
+  /**
+   * The program row locked for this transaction, after the access check. The student's
+   * «متابعة العرضات» lock comes first (the order every change of their recitations follows).
+   */
   private async lockProgram(tx: Tx, actor: WorkActor, id: string) {
+    const owner = await tx.workProgram.findUnique({
+      where: { id },
+      select: { studentId: true, sessionId: true },
+    });
+    if (owner) {
+      await lockSessionWork(tx, [owner.sessionId]);
+      await lockRecitations(tx, [owner.studentId]);
+    }
     await tx.$queryRaw`SELECT id FROM work_programs WHERE id = ${id}::uuid FOR UPDATE`;
     const program = await tx.workProgram.findUnique({
       where: { id },
@@ -1699,7 +1804,7 @@ export class WorkFollowupService {
       newSurah !== null &&
       current.status === WorkStatus.NOT_EVALUATED
     )
-      await this.numberRecitations(tx, studentId, [itemId], { renumber: true });
+      await this.numberRecitations(tx, studentId, [itemId]);
     return 'ok';
   }
 
@@ -1727,17 +1832,14 @@ export class WorkFollowupService {
   }
 
   /**
-   * «متابعة العرضات»: numbers new structured recitations (one whole surah) in their surah's
-   * history — the highest number + 1, or, for a postponed recitation rescheduled (or a cancelled
-   * session's unevaluated one carried), the number it already had. A server-written description
-   * follows the number. The same surah twice in one session's program is refused (an accidental
-   * duplicate); any number of recitations across sessions is allowed.
+   * «متابعة العرضات»: new / moved structured recitations (one whole surah). The same surah twice
+   * in one session's program is refused (an accidental duplicate); any number of recitations
+   * across sessions is allowed. Their numbers come from settleRecitations (the chronology).
    */
   private async numberRecitations(
     tx: Tx,
     studentId: string,
     itemIds: string[],
-    options: { renumber?: boolean } = {},
   ) {
     const items = (
       await tx.workItem.findMany({
@@ -1746,25 +1848,14 @@ export class WorkFollowupService {
           id: true,
           workProgramId: true,
           type: true,
-          description: true,
-          recitationNumber: true,
-          carriedFromStatus: true,
           ...ASSIGNMENT_SELECT,
         },
       })
     ).filter((i) => trackedSurah(i) !== null);
-    if (!items.length) return;
-    for (const surah of [
-      ...new Set(items.map((i) => trackedSurah(i) as number)),
-    ].sort((a, b) => a - b))
-      await lockSurah(tx, studentId, surah);
-    for (const id of itemIds) {
-      const item = items.find((i) => i.id === id);
-      if (!item) continue;
-      const surah = trackedSurah(item) as number;
+    for (const item of items) {
       const twice = await tx.workItem.count({
         where: {
-          ...recitationsOf([studentId], [surah]),
+          ...recitationsOf([studentId], [trackedSurah(item) as number]),
           workProgramId: item.workProgramId,
           id: { not: item.id },
         },
@@ -1774,26 +1865,6 @@ export class WorkFollowupService {
           'WORK_RECITATION_DUPLICATE',
           'عرضة هذه السورة مبرمجة في هذه الحصة من قبل',
         );
-      const keep =
-        !options.renumber &&
-        keepsNumber(item.carriedFromStatus) &&
-        item.recitationNumber !== null;
-      const number = keep
-        ? (item.recitationNumber as number)
-        : await nextRecitationNumber(tx, studentId, surah, item.id);
-      if (number !== item.recitationNumber || !keep)
-        await tx.workItem.update({
-          where: { id: item.id },
-          data: {
-            recitationNumber: number,
-            description: renumbered(item, number),
-          },
-        });
-      // Chronology (under the lock): a lower number strictly before, a higher one strictly after
-      const rows = await numberedRecitations(tx, studentId, surah);
-      const placed = rows.find((r) => r.id === item.id);
-      const clash = placed ? orderConflict(placed, rows) : null;
-      if (clash) throw recitationOutOfOrder(number, surah, clash);
     }
   }
 
@@ -1890,6 +1961,158 @@ function renumbered(
 }
 
 /** A new item: unevaluated; a number only for a recitation; a structured assignment if sent. */
+// ───────────────────────── «متابعة العرضات»: numbering ─────────────────────────
+
+const HISTORY_ROW_SELECT = {
+  id: true,
+  status: true,
+  createdAt: true,
+  recitationNumber: true,
+  type: true,
+  description: true,
+  ...ASSIGNMENT_SELECT,
+  program: {
+    select: {
+      studentId: true,
+      student: personName,
+      session: { select: { date: true, startTime: true, status: true } },
+    },
+  },
+} as const;
+type LoadedRow = Prisma.WorkItemGetPayload<{
+  select: typeof HISTORY_ROW_SELECT;
+}>;
+
+const historyRow = (i: {
+  id: string;
+  status: WorkStatus;
+  createdAt: Date;
+  recitationNumber: number | null;
+  program: { session: { date: Date; startTime: Date; status: SessionStatus } };
+}): HistoryRow => ({
+  id: i.id,
+  status: i.status,
+  sessionStatus: i.program.session.status,
+  start: sessionStart(i.program.session.date, i.program.session.startTime),
+  createdAt: i.createdAt,
+  stored: i.recitationNumber,
+});
+
+/** These students' histories, one group per (student, surah). */
+async function loadHistories(tx: Tx, studentIds: string[]) {
+  const rows = await tx.workItem.findMany({
+    where: recitationsOf(studentIds),
+    select: HISTORY_ROW_SELECT,
+  });
+  const groups = new Map<string, LoadedRow[]>();
+  for (const r of rows) {
+    const key = `${r.program.studentId}:${r.quranFromSurah}`;
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  }
+  return groups;
+}
+
+/** The contradictions that already exist (legacy data): never a reason to refuse a change. */
+export type RecitationSnapshot = ReadonlySet<string>;
+
+/**
+ * «متابعة العرضات» before a change: call right after lockRecitations, before writing. Returns
+ * the performed attempts whose number ALREADY contradicts their place (old data).
+ */
+export async function snapshotRecitations(
+  tx: Tx,
+  studentIds: string[],
+): Promise<RecitationSnapshot> {
+  const known = new Set<string>();
+  for (const rows of (await loadHistories(tx, studentIds)).values())
+    for (const id of numberSurah(rows.map(historyRow)).contradictions.keys())
+      known.add(id);
+  return known;
+}
+
+/**
+ * «متابعة العرضات» after a change (same transaction, same lock): every history of these students
+ * is numbered again — provisional numbers (and the server-written descriptions that name them)
+ * follow; `settling` attempts (performed in this change) take their place's number for good. A
+ * NEW contradiction of a performed attempt's number refuses the whole change (409 `code`).
+ */
+export async function settleRecitations(
+  tx: Tx,
+  studentIds: string[],
+  before: RecitationSnapshot,
+  refusal: { code: string; lead: string },
+  settling: ReadonlySet<string> = new Set(),
+) {
+  const writes: { row: LoadedRow; number: number }[] = [];
+  for (const [key, rows] of await loadHistories(tx, studentIds)) {
+    const { numbers, contradictions } = numberSurah(
+      rows.map(historyRow),
+      settling,
+    );
+    for (const id of contradictions.keys()) {
+      if (before.has(id)) continue;
+      const row = rows.find((r) => r.id === id)!;
+      const { firstName, lastName } = row.program.student.person;
+      throw recitationContradiction(refusal.code, refusal.lead, {
+        number: row.recitationNumber as number,
+        surah: Number(key.split(':')[1]),
+        start: sessionStart(
+          row.program.session.date,
+          row.program.session.startTime,
+        ),
+        student: `${firstName} ${lastName}`,
+      });
+    }
+    for (const row of rows) {
+      const entry = recitationEntry(row.status, row.program.session.status);
+      // a performed attempt's number is history: written once (when performed), never again
+      if (isAttempt(entry) && !settling.has(row.id)) continue;
+      const number = numbers.get(row.id)!;
+      if (number !== row.recitationNumber) writes.push({ row, number });
+    }
+  }
+  for (const { row, number } of writes)
+    await tx.workItem.update({
+      where: { id: row.id },
+      data: {
+        recitationNumber: number,
+        description: renumbered(row, number),
+        // a form opened before sees the change (stale edits refused, as usual)
+        version: { increment: 1 },
+      },
+    });
+}
+
+/**
+ * A change of sessions (a move, a cancellation, a restoration) around `change`: the sessions'
+ * work and the students with whole-surah recitations there are locked (in the global order),
+ * the histories numbered again afterwards; a performed recitation contradicted refuses it all.
+ */
+export async function aroundSessionChange<T>(
+  tx: Tx,
+  sessionIds: string[],
+  refusal: { code: string; lead: string },
+  change: () => Promise<T>,
+): Promise<T> {
+  if (!sessionIds.length) return change();
+  await lockSessionWork(tx, sessionIds);
+  const rows = await tx.workItem.findMany({
+    where: {
+      program: { sessionId: { in: sessionIds } },
+      type: WorkType.RECITATION,
+      quranAssignmentKind: WorkAssignmentKind.SURAH_RANGE,
+    },
+    select: { program: { select: { studentId: true } } },
+  });
+  const students = [...new Set(rows.map((r) => r.program.studentId))];
+  if (!students.length) return change();
+  await lockRecitations(tx, students);
+  const before = await snapshotRecitations(tx, students);
+  const result = await change();
+  await settleRecitations(tx, students, before, refusal);
+  return result;
+}
+
 function newItem(item: NewWorkItemDto, userId: string) {
   const recitationNumber =
     item.type === WorkType.RECITATION ? (item.recitationNumber ?? null) : null;

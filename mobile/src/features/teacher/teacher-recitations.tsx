@@ -14,7 +14,6 @@ import {
   ayahCount,
   nextRecitationText,
   postponedTimes,
-  recitationColumns,
   recitationsCount,
   recitationTitle,
   type RecitationColumn,
@@ -32,6 +31,9 @@ import { RECITATION_STATE_SHORT, RECITATION_STATES, recitationState, type Recita
 import type { RecitationAttempt, RecitationSurahHistory } from './work-types';
 
 const w = ar.work;
+
+/** One history entry as a row (no grouping: each postponement stays visible on its own date). */
+const asRow = (e: RecitationAttempt): RecitationColumn<RecitationAttempt> => ({ key: e.itemId, number: e.number, result: e, earlier: [] });
 type Scope = 'history' | 'all';
 
 interface SurahRow {
@@ -44,9 +46,10 @@ interface SurahRow {
 /**
  * «متابعة العرضات» — the module (teachers): one of MY students (photo, searchable by class), then
  * one expandable card per surah — those with recitations, or all 114 — collapsed: the surah and
- * «3 عرضات»; open: its numbered recitations in order (a postponed one and its rescheduled
- * continuation are ONE recitation, same number), each with its result and session, opening its
- * program. Values from GET /teacher/students/:id/recitations (one student; the API checks access);
+ * «3 عرضات»; open: its history in chronological order, one row per entry — its number, result
+ * (or «مجدولة» / «بانتظار التقييم») and session date, opening its program. The numbers are the
+ * server's: they follow the chronology, and a postponed entry («لا تحتسب») shows the number of
+ * the recitation that continues it. Values from GET /teacher/students/:id/recitations (one student; the API checks access);
  * «إضافة عرضة» opens the usual Work Program form, prefilled.
  */
 export function TeacherRecitationsScreen({ initialStudentId, initialSurah }: { initialStudentId?: string; initialSurah?: number }) {
@@ -157,7 +160,9 @@ function StudentRecitations({
     () =>
       SURAHS.map((s) => {
         const history = histories.get(s.number) ?? null;
-        return { surah: s.number, name: `سورة ${s.nameAr}`, history, columns: history ? recitationColumns(history.entries) : [] };
+        // every entry its own row, in the server's chronological order and with its numbers (a
+        // postponed one and the one continuing it show the same number: two rows, one recitation)
+        return { surah: s.number, name: `سورة ${s.nameAr}`, history, columns: history ? history.entries.map(asRow) : [] };
       }),
     [histories],
   );

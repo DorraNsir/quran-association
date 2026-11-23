@@ -215,7 +215,10 @@ function StudentRecitationsTable({
   const width = Math.max(1, ...visible.map((r) => r.columns.length))
 
   // Totals of the student's recitations (server counts; one per displayed recitation, by its state)
-  const totals = RECITATION_STATES.map((state) => ({ state, count: all.filter((c) => stateOf(c) === state).length })).filter((t) => t.count > 0)
+  // one count per history ENTRY (each postponement apart), like the mobile screen
+  const entryState = (e: RecitationAttempt) => recitationState(e.entry, e.sessionDate, startTimes.get(e.sessionId))
+  const entries = [...histories.values()].flatMap((h) => h.entries)
+  const totals = RECITATION_STATES.map((state) => ({ state, count: entries.filter((e) => entryState(e) === state).length })).filter((t) => t.count > 0)
   const attempts = [...histories.values()].reduce((n, h) => n + h.attempts, 0)
 
   const focusRef = useRef<HTMLTableRowElement>(null)
@@ -370,11 +373,15 @@ function StudentRecitationsTable({
   )
 }
 
-/** One recitation: its result and session date; postponements noted; opens its program. */
+/**
+ * One recitation: its result and session date, opening its program; when it was postponed before,
+ * ONE line under it — «أُجّلت في: 9 نوفمبر، 16 نوفمبر» (as on mobile), never hidden.
+ */
 function RecitationCell({ column, state, surah }: { column: RecitationColumn<RecitationAttempt>; state: RecitationState; surah: string }) {
   const e = column.result
   const { icon: Icon, tone } = RESULT_LOOK[state]
-  const postponed = postponedTimes(column.earlier.filter((x) => x.entry === "POSTPONED" || x.entry === "SESSION_CANCELLED").length)
+  const skipped = column.earlier.filter((x) => x.entry === "POSTPONED" || x.entry === "SESSION_CANCELLED")
+  const postponed = skipped.length ? `أُجّلت في: ${skipped.map((x) => formatDate(x.sessionDate)).join("، ")}` : null
   const label = [
     `${surah} — ${recitationTitle(column.number)}`,
     RECITATION_STATE_SHORT[state],
@@ -398,7 +405,16 @@ function RecitationCell({ column, state, surah }: { column: RecitationColumn<Rec
         {state === "POSTPONED" && <span className="opacity-80">· لا تحتسب</span>}
       </span>
       <span className="text-[0.7rem] text-muted-foreground tabular-nums">{formatDate(e.sessionDate)}</span>
-      {postponed && <span className="text-[0.7rem] text-sky-700 dark:text-sky-300">{postponed}</span>}
+      {postponed && (
+        <span
+          data-postponed
+          title={postponedTimes(skipped.length) ?? undefined}
+          className="inline-flex max-w-44 items-center gap-1 truncate rounded-full bg-sky-50 px-2 py-0.5 text-[0.7rem] whitespace-nowrap text-sky-800 dark:bg-sky-950/50 dark:text-sky-300"
+        >
+          <CalendarClock className="size-3 shrink-0" aria-hidden />
+          <span className="truncate">{postponed}</span>
+        </span>
+      )}
     </Link>
   )
 }

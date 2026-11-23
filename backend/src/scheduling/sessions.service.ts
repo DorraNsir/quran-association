@@ -1,4 +1,4 @@
-import { assertSessionMoveKeepsRecitationOrder } from '../work-followup/recitations.js';
+import { aroundSessionChange } from '../work-followup/work-followup.service.js';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 
 import { fromDbDate, toDbDate } from '../common/dates.js';
@@ -590,16 +590,6 @@ export class SessionsService {
         extraIds,
         slot.date,
       );
-      // «متابعة العرضات»: its numbered recitations keep their surahs' chronology at the new time
-      if (
-        slot.date !== fromDbDate(session.date) ||
-        slot.start !== fromDbTime(session.startTime)
-      )
-        await assertSessionMoveKeepsRecitationOrder(
-          tx,
-          id,
-          `${slot.date}T${slot.start}`,
-        );
       const occupancy = refresh?.occupancy ?? this.snapshotOccupancy(session);
       this.conflicts.throwIfAny(
         await this.conflicts.sessionConflicts(tx, occupancy, [slot], {
@@ -608,15 +598,29 @@ export class SessionsService {
         }),
         'SESSION',
       );
-      await tx.session.update({
-        where: { id },
-        data: {
-          date: toDbDate(slot.date),
-          startTime: toDbTime(slot.start),
-          endTime: toDbTime(slot.end),
-          roomId: slot.roomId,
+      // «متابعة العرضات»: moved, its recitations take their new place in their surahs' order —
+      // never one that contradicts a recitation already performed
+      const moved =
+        slot.date !== fromDbDate(session.date) ||
+        slot.start !== fromDbTime(session.startTime);
+      await aroundSessionChange(
+        tx,
+        moved ? [id] : [],
+        {
+          code: 'SESSION_RECITATION_ORDER',
+          lead: 'لا يمكن نقل الحصة إلى هذا الموعد',
         },
-      });
+        () =>
+          tx.session.update({
+            where: { id },
+            data: {
+              date: toDbDate(slot.date),
+              startTime: toDbTime(slot.start),
+              endTime: toDbTime(slot.end),
+              roomId: slot.roomId,
+            },
+          }),
+      );
       if (participantsChanged)
         await this.conflicts.writeSessionExtras(tx, [id], extraIds);
       if (refresh) await this.conflicts.writeSessionTeams(tx, [id], refresh);
@@ -892,24 +896,38 @@ export class SessionsService {
           'SESSION',
         );
       }
-      await tx.session.update({
-        where: { id },
-        data: {
-          status: to,
-          cancellationReason:
+      // «متابعة العرضات»: cancelled (or restored), its unevaluated recitations stop (or start
+      // again) taking a number — never contradicting a recitation already performed
+      await aroundSessionChange(
+        tx,
+        from !== to ? [id] : [],
+        {
+          code: 'SESSION_RECITATION_ORDER',
+          lead:
             to === SessionStatus.CANCELLED
-              ? (dto.cancellationReason ?? null)
-              : null,
-          ...(to === SessionStatus.COMPLETED
-            ? this.completion(CompletionSource.ADMIN_OVERRIDE, actorUserId)
-            : {
-                completedAt: null,
-                completedByUserId: null,
-                completionSource: null,
-              }),
-          roomId,
+              ? 'لا يمكن إلغاء هذه الحصة'
+              : 'لا يمكن تغيير حالة هذه الحصة',
         },
-      });
+        () =>
+          tx.session.update({
+            where: { id },
+            data: {
+              status: to,
+              cancellationReason:
+                to === SessionStatus.CANCELLED
+                  ? (dto.cancellationReason ?? null)
+                  : null,
+              ...(to === SessionStatus.COMPLETED
+                ? this.completion(CompletionSource.ADMIN_OVERRIDE, actorUserId)
+                : {
+                    completedAt: null,
+                    completedByUserId: null,
+                    completionSource: null,
+                  }),
+              roomId,
+            },
+          }),
+      );
       if (refresh) await this.conflicts.writeSessionTeams(tx, [id], refresh);
       // Cancelled, or scheduled again: an upcoming lesson's people are told
       // (a completion, or a new cancellation reason, is not announced)

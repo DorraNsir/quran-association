@@ -143,7 +143,12 @@ describe("«متابعة العرضات» — the module (web)", () => {
     expect(cells(58).map((c) => c.getAttribute("data-cell"))).toEqual(["CANCELLED", "COMPLETED", "PARTIAL", "PENDING"])
     const second = cells(58)[1]!
     expect(second.getAttribute("aria-label")).toContain("سورة المجادلة — العرضة 2")
-    expect(second.textContent).toContain("أُجّلت مرتين")
+    expect(second.getAttribute("aria-label")).toContain("أُجّلت في: 9 ")
+    // the postponements: ONE line under the recitation (as on mobile), never hidden
+    const line = second.querySelectorAll("[data-postponed]")
+    expect(line).toHaveLength(1)
+    expect(line[0]!.textContent).toMatch(/^أُجّلت في: 9 .+ 2020، 16 .+ 2020$/)
+    expect(document.querySelectorAll("[data-earlier]")).toHaveLength(0)
     expect(second.getAttribute("href")).toBe("/teacher/work-followup/p4")
     // no cycles, no targets, «لا تحتسب» never on a done recitation
     expect(document.body.textContent).not.toMatch(/دورة|محتسب|من 4/)
@@ -161,7 +166,8 @@ describe("«متابعة العرضات» — the module (web)", () => {
     expect(totals.textContent).toContain("12")
     expect(totals.querySelector("[data-total='COMPLETED']")!.textContent).toContain("7")
     expect(totals.querySelector("[data-total='PENDING']")!.textContent).toContain("1")
-    expect(totals.querySelector("[data-total='POSTPONED']")).toBeNull() // the postponed ones became recitation 2
+    // each postponement counted apart (like the mobile screen) — never in the recitations performed (12)
+    expect(totals.querySelector("[data-total='POSTPONED']")!.textContent).toContain("2")
   })
 
   it("all 114 surahs on request; surah search; a result filter", async () => {

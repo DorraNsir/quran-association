@@ -2876,14 +2876,35 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
         .expect(404);
     });
 
-    describe('chronology: numbers follow the sessions (actual date AND start time)', () => {
-      // free slots of class C: days 40–50 at 07:00 (other tests use 16:00 / days 60+)
+    describe('automatic numbering: numbers follow the chronology; a postponement takes none; performed numbers are history', () => {
+      // free slots of class C: days 40–59 at 07:00 / 09:00 / 11:00 (others use 16:00 / days 60+)
       const at = (offset: number, time = '07:00') =>
         session('C', addDays(TODAY, offset), time);
       const plan = (surah: number, sessionId: string) =>
         create('sup', 's2', '', [recite(surah)], { sessionId });
-      const numbers = async (surah: number) =>
-        surahIn(await history(), surah).entries.map((e) => e.number);
+      const planned = async (surah: number, sessionId: string) =>
+        (await plan(surah, sessionId).expect(201)).body as Program;
+      const itemOf = (p: Program) => p.items[0]!;
+      const result = async (p: Program, status: string) => {
+        await started(p.session.id);
+        const fresh = await programOf('sup', p.id);
+        return evaluate('sup', fresh, itemOf(fresh).id, status).expect(200);
+      };
+      /** [number, entry] in chronological order, and the same numbers on the items themselves */
+      const sequence = async (surah: number) => {
+        const h = surahIn(await history(), surah);
+        for (const e of h.entries) {
+          const p = await programOf(
+            'sup',
+            (e as unknown as { programId: string }).programId,
+          );
+          // one source of truth: the program shows the number the history shows (web + mobile)
+          expect(p.items.find((i) => i.id === e.itemId)!.recitationNumber).toBe(
+            e.number,
+          );
+        }
+        return h.entries.map((e) => [e.number, e.entry]);
+      };
       const eligibleFor = async (
         itemId: string,
         purpose: 'TRANSFER' | 'NEXT',
@@ -2900,135 +2921,232 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
           ).body as { id: string }[]
         ).map((x) => x.id);
 
-      it('valid ordering: each new number in a later session — a later day, or the same day at a later time', async () => {
-        await plan(80, await at(40)).expect(201);
-        await plan(80, await at(41)).expect(201);
-        const third = (await plan(80, await at(41, '09:00')).expect(201))
-          .body as Program;
-        expect(third.items[0]!.recitationNumber).toBe(3);
-        expect(shape(await history(), 80)).toEqual([
+      it('1 · three future recitations show 1, 2, 3 — by session date and time, whatever the order of planning', async () => {
+        const third = await planned(80, await at(44));
+        const first = await planned(80, await at(40));
+        const second = await planned(80, await at(40, '09:00')); // same day, later
+        expect(await sequence(80)).toEqual([
           [1, 'PENDING'],
           [2, 'PENDING'],
           [3, 'PENDING'],
         ]);
+        // the server-written descriptions follow (the record ids never change)
+        expect(itemOf(await programOf('sup', third.id))).toMatchObject({
+          id: itemOf(third).id,
+          recitationNumber: 3,
+          description: 'العرضة الثالثة من سورة عبس',
+        });
+        expect(itemOf(await programOf('sup', first.id)).recitationNumber).toBe(
+          1,
+        );
+        expect(itemOf(await programOf('sup', second.id)).recitationNumber).toBe(
+          2,
+        );
+        expect(surahIn(await history(), 80).nextNumber).toBe(4);
       });
 
-      it('invalid backdating: before the previous number (an earlier day, or earlier the same day) is refused, nothing created', async () => {
-        await plan(81, await at(43)).expect(201);
-        const earlierDay = await plan(81, await at(42)).expect(409);
-        expect(earlierDay.body.code).toBe('WORK_RECITATION_ORDER');
-        expect(earlierDay.body.message).toMatch(
-          /^العرضة 2 من سورة التكوير يجب أن تكون بعد العرضة 1 \(.+ على الساعة 07:00\): اختر حصة بعدها$/,
-        );
-        expect(
-          (await plan(81, await at(43, '06:00')).expect(409)).body.code,
-        ).toBe('WORK_RECITATION_ORDER');
-        expect(await numbers(81)).toEqual([1]);
-      });
-
-      it('postponement keeps its number (no number consumed): rescheduled after the lower ones and before the next number — the picker offers only those', async () => {
-        const first = (await plan(82, await at(44)).expect(201))
-          .body as Program;
-        const item = first.items[0]!;
-        await started(first.session.id);
-        await evaluate(
-          'sup',
-          await programOf('sup', first.id),
-          item.id,
-          'POSTPONED',
-        ).expect(200);
-        const between = await at(45);
-        const second = (await plan(82, await at(46)).expect(201))
-          .body as Program;
-        expect(second.items[0]!.recitationNumber).toBe(2);
-        const late = await at(47);
-        // «نقل»: keeps 1 → only before العرضة 2; «التالية»: a new number → only after العرضة 2
-        const transfer = await eligibleFor(item.id, 'TRANSFER');
-        expect(transfer).toContain(between);
-        expect(transfer).not.toContain(second.session.id);
-        expect(transfer).not.toContain(late);
-        const next = await eligibleFor(item.id, 'NEXT');
-        expect(next).toContain(late);
-        expect(next).not.toContain(between);
-        // the writes check it again
-        const refused = await api
-          .post('sup', `work-items/${item.id}/transfer`, {
-            targetSessionId: late,
-          })
-          .expect(409);
-        expect(refused.body.code).toBe('WORK_RECITATION_ORDER');
-        expect(refused.body.message).toMatch(
-          /^العرضة 1 من سورة الانفطار يجب أن تسبق العرضة 2 \(.+\): اختر حصة قبلها$/,
-        );
-        await api
-          .post('sup', `work-items/${item.id}/transfer`, {
-            targetSessionId: between,
-          })
-          .expect(201);
-        expect(shape(await history(), 82)).toEqual([
+      it('2/3/6 · postponing the first: 1 مؤجل · 1 · 2 (same records); postponed again: still 1; nothing to transfer while the next one is planned', async () => {
+        const a = await planned(81, await at(41));
+        const b = await planned(81, await at(42));
+        const c = await planned(81, await at(43));
+        await result(a, 'POSTPONED');
+        expect(await sequence(81)).toEqual([
           [1, 'POSTPONED'],
           [1, 'PENDING'],
           [2, 'PENDING'],
         ]);
+        const bNow = itemOf(await programOf('sup', b.id));
+        expect(bNow).toMatchObject({
+          id: itemOf(b).id,
+          recitationNumber: 1,
+          description: 'العرضة الأولى من سورة التكوير',
+        });
+        expect(bNow.version).toBeGreaterThan(itemOf(b).version); // a stale form is refused
+        // the next planned recitation continues it: no copy offered, none accepted
+        expect(await eligibleFor(itemOf(a).id, 'TRANSFER')).toEqual([]);
+        const refused = await api
+          .post('sup', `work-items/${itemOf(a).id}/transfer`, {
+            targetSessionId: await at(45),
+          })
+          .expect(409);
+        expect(refused.body.code).toBe('WORK_RECITATION_CONTINUED');
+        expect(refused.body.message).toMatch(
+          /^العرضة 1 من سورة التكوير مبرمجة يوم .+: هي التي تُكمل العرضة المؤجلة، فلا حاجة إلى نقلها$/,
+        );
+        // postponed again: the same logical number
+        await result(b, 'POSTPONED');
+        expect(await sequence(81)).toEqual([
+          [1, 'POSTPONED'],
+          [1, 'POSTPONED'],
+          [1, 'PENDING'],
+        ]);
+        expect(itemOf(await programOf('sup', c.id)).id).toBe(itemOf(c).id);
       });
 
-      it('editing adjacent attempts: a session moved past its neighbour is refused (admin); within the window it moves', async () => {
-        const s1 = await at(48);
-        const s2 = await at(50);
-        await plan(83, s1).expect(201);
-        await plan(83, s2).expect(201);
+      it('a postponed recitation without a later one: transferred, it keeps its number', async () => {
+        const a = await planned(82, await at(46));
+        await result(a, 'POSTPONED');
+        const target = await at(47);
+        expect(await eligibleFor(itemOf(a).id, 'TRANSFER')).toContain(target);
+        await api
+          .post('sup', `work-items/${itemOf(a).id}/transfer`, {
+            targetSessionId: target,
+          })
+          .expect(201);
+        expect(await sequence(82)).toEqual([
+          [1, 'POSTPONED'],
+          [1, 'PENDING'],
+        ]);
+      });
+
+      it('4/5 · ملغى, غير منجز, جزئي and منجز each take a number; the next one follows', async () => {
+        for (const [i, status] of [
+          'CANCELLED',
+          'NOT_COMPLETED',
+          'PARTIAL',
+          'COMPLETED',
+        ].entries())
+          await result(await planned(83, await at(48 + i)), status);
+        await planned(83, await at(52));
+        expect(await sequence(83)).toEqual([
+          [1, 'CANCELLED'],
+          [2, 'NOT_COMPLETED'],
+          [3, 'PARTIAL'],
+          [4, 'COMPLETED'],
+          [5, 'PENDING'],
+        ]);
+        expect(surahIn(await history(), 83).attempts).toBe(4);
+      });
+
+      it('7/9 · performed numbers are history: a correction that would renumber them is refused; one that keeps them is fine', async () => {
+        const a = await planned(84, await at(53));
+        const b = await planned(84, await at(54));
+        await result(a, 'COMPLETED');
+        await result(b, 'COMPLETED');
+        const fresh = await programOf('sup', a.id);
+        const refused = await evaluate(
+          'sup',
+          fresh,
+          itemOf(fresh).id,
+          'POSTPONED',
+        ).expect(409);
+        expect(refused.body.code).toBe('WORK_RECITATION_ORDER');
+        expect(refused.body.message).toMatch(
+          /^لا يمكن حفظ هذا التقييم: العرضة 2 من سورة الانشقاق للطالب .+ \(.+ على الساعة 00:00\) أُدِّيت وقُيِّمت، وهذا التغيير يجعل ترقيم عرضات السورة غير صحيح\. لا تتغيّر أرقام العرضات التي أُدِّيت$/,
+        );
+        await evaluate('sup', fresh, itemOf(fresh).id, 'PARTIAL').expect(200);
+        expect(await sequence(84)).toEqual([
+          [1, 'PARTIAL'],
+          [2, 'COMPLETED'],
+        ]);
+      });
+
+      it('8/9 · moving a session (admin): before a performed recitation refused; among planned ones they renumber; a performed one never moves past another', async () => {
+        const done = await planned(85, await at(55));
+        // performed 10 days ago (within the student's enrolment, so a session may move before it)
+        await startNow(done.session.id, addDays(TODAY, -10));
+        await evaluate(
+          'sup',
+          await programOf('sup', done.id),
+          itemOf(done).id,
+          'COMPLETED',
+        ).expect(200);
+        const later = await planned(85, await at(56));
+        const last = await planned(85, await at(57));
         const move = (sessionId: string, offset: number, start: string) =>
           admin.patch(`sessions/${sessionId}`, {
             date: addDays(TODAY, offset),
             startTime: start,
             endTime: `${String(Number(start.slice(0, 2)) + 1).padStart(2, '0')}:00`,
           });
-        // العرضة 2 before العرضة 1 (an earlier day / earlier the same day): refused
-        const r = await move(s2, 47, '07:00').expect(409);
+        // the planned one put before the performed one (backdating): refused
+        // (a regular lesson of the weekly schedule: an extra one never moves into the past)
+        await prisma.session.update({
+          where: { id: later.session.id },
+          data: { isExtra: false },
+        });
+        const r = await move(later.session.id, -20, '07:00').expect(409);
         expect(r.body.code).toBe('SESSION_RECITATION_ORDER');
         expect(r.body.message).toMatch(
-          /^لا يمكن نقل الحصة إلى هذا الموعد: العرضة 2 من سورة المطففين يجب أن تكون بعد العرضة 1 \(.+\) للطالب .+\. اختر موعدًا آخر$/,
+          /^لا يمكن نقل الحصة إلى هذا الموعد: العرضة 1 من سورة البروج/,
         );
-        await move(s2, 48, '06:00').expect(409);
-        // the same day, later: allowed (time counts, not only the date)
-        await move(s2, 48, '10:00').expect(200);
-        // العرضة 1 after العرضة 2: refused
-        expect((await move(s1, 49, '07:00').expect(409)).body.code).toBe(
-          'SESSION_RECITATION_ORDER',
+        // the planned ones swapped: they simply renumber (same records)
+        await move(later.session.id, 58, '07:00').expect(200);
+        expect(await sequence(85)).toEqual([
+          [1, 'COMPLETED'],
+          [2, 'PENDING'],
+          [3, 'PENDING'],
+        ]);
+        expect(itemOf(await programOf('sup', last.id)).recitationNumber).toBe(
+          2,
         );
-        expect(await numbers(83)).toEqual([1, 2]); // never renumbered
+        expect(itemOf(await programOf('sup', later.id)).recitationNumber).toBe(
+          3,
+        );
       });
 
-      it('editing: a pending recitation moved into another surah is numbered there — refused before that surah’s last one', async () => {
-        await plan(84, await at(46, '11:00')).expect(201);
-        const early = (await plan(85, await at(42, '11:00')).expect(201))
-          .body as Program;
-        const r = await api
-          .patch('sup', `work-items/${early.items[0]!.id}`, {
-            version: early.items[0]!.version,
-            assignment: { kind: 'SURAH_RANGE', fromSurah: 84 },
-          })
-          .expect(409);
-        expect(r.body.code).toBe('WORK_RECITATION_ORDER');
-        expect(await numbers(84)).toEqual([1]);
-        expect(await numbers(85)).toEqual([1]); // the edit rolled back
+      it('a cancelled session: its planned recitation takes no number; restored, it takes it again', async () => {
+        const a = await planned(86, await at(59));
+        await planned(86, await at(59, '09:00'));
+        await admin
+          .patch(`sessions/${a.session.id}/status`, { status: 'CANCELLED' })
+          .expect(200);
+        expect(await sequence(86)).toEqual([
+          [1, 'SESSION_CANCELLED'],
+          [1, 'PENDING'],
+        ]);
+        await admin
+          .patch(`sessions/${a.session.id}/status`, { status: 'SCHEDULED' })
+          .expect(200);
+        expect(await sequence(86)).toEqual([
+          [1, 'PENDING'],
+          [2, 'PENDING'],
+        ]);
       });
 
-      it('an old inconsistency elsewhere never blocks valid work, is never renumbered — and the audit reports it', async () => {
-        const a = (await plan(86, await at(40, '11:00')).expect(201))
-          .body as Program;
-        await plan(86, await at(41, '11:00')).expect(201);
-        // legacy data, written directly: 5 on day 40, 2 on day 41
+      it('10 · different surahs are numbered independently', async () => {
+        await planned(87, await at(41, '11:00'));
+        await planned(88, await at(42, '11:00'));
+        await planned(87, await at(43, '11:00'));
+        await planned(88, await at(44, '11:00'));
+        expect((await sequence(87)).map(([n]) => n)).toEqual([1, 2]);
+        expect((await sequence(88)).map(([n]) => n)).toEqual([1, 2]);
+      });
+
+      it('11 · concurrent scheduling (two teachers at once): one consistent sequence', async () => {
+        const [s1, s2, s3] = [
+          await at(45, '11:00'),
+          await at(46, '11:00'),
+          await at(47, '11:00'),
+        ];
+        const results = await Promise.all([
+          plan(89, s3),
+          plan(89, s1),
+          plan(89, s2),
+        ]);
+        expect(results.map((r) => r.status)).toEqual([201, 201, 201]);
+        expect(await sequence(89)).toEqual([
+          [1, 'PENDING'],
+          [2, 'PENDING'],
+          [3, 'PENDING'],
+        ]);
+      });
+
+      it('legacy data: an old inconsistency never blocks valid work, is never renumbered — and the audit reports it', async () => {
+        const a = await planned(90, await at(48, '11:00'));
+        const b = await planned(90, await at(49, '11:00'));
+        await result(a, 'COMPLETED');
+        await result(b, 'COMPLETED');
+        // written directly (old data): 5 then 2
         await prisma.workItem.update({
-          where: { id: a.items[0]!.id },
+          where: { id: itemOf(a).id },
           data: { recitationNumber: 5 },
         });
-        const c = (await plan(86, await at(49, '11:00')).expect(201))
-          .body as Program;
-        expect(c.items[0]!.recitationNumber).toBe(6);
-        expect(await numbers(86)).toEqual([5, 2, 6]);
+        await planned(90, await at(50, '11:00')); // valid new work: accepted
+        // never a number already used: what follows comes after the highest one
+        expect((await sequence(90)).map(([n]) => n)).toEqual([5, 2, 7]);
         const audit = await prisma.$queryRawUnsafe<
-          { surah: number; lower_number: number; higher_number: number }[]
+          { surah: number; earlier_number: number; later_number: number }[]
         >(
           readFileSync(
             new URL('../scripts/audit-recitation-order.sql', import.meta.url),
@@ -3037,12 +3155,10 @@ describe('Work follow-up — متابعة العمل (e2e)', () => {
         );
         expect(
           audit
-            .filter((x) => x.surah === 86)
-            .map((x) => [x.lower_number, x.higher_number]),
-        ).toEqual([[2, 5]]);
-        expect(audit.some((x) => [80, 81, 82, 83].includes(x.surah))).toBe(
-          false,
-        );
+            .filter((x) => x.surah === 90)
+            .map((x) => [x.earlier_number, x.later_number]),
+        ).toEqual([[5, 2]]);
+        expect(audit.some((x) => x.surah >= 80 && x.surah <= 89)).toBe(false);
       });
     });
   });

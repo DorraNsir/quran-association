@@ -6,13 +6,11 @@ import {
 } from '../generated/prisma/enums.js';
 import {
   isAttempt,
-  keepsNumber,
-  orderConflict,
-  orderConflictMessage,
+  chronological,
+  numberSurah,
   recitationEntry,
-  recitationWindow,
   trackedSurah,
-  type NumberedRecitation,
+  type HistoryRow,
 } from './recitations.js';
 
 describe('«متابعة العرضات» (simple model): pure rules', () => {
@@ -37,19 +35,6 @@ describe('«متابعة العرضات» (simple model): pure rules', () => {
     expect(isAttempt('PENDING')).toBe(false);
   });
 
-  it('a carried copy keeps its number only when the recitation did not take place (postponed / cancelled session)', () => {
-    expect(keepsNumber(WorkStatus.POSTPONED)).toBe(true);
-    expect(keepsNumber(WorkStatus.NOT_EVALUATED)).toBe(true);
-    for (const s of [
-      WorkStatus.NOT_COMPLETED,
-      WorkStatus.PARTIAL,
-      WorkStatus.CANCELLED,
-      WorkStatus.COMPLETED,
-      null,
-    ])
-      expect(keepsNumber(s)).toBe(false);
-  });
-
   it('only a structured عرضة of one surah has a history', () => {
     const item = (
       type: WorkType,
@@ -68,66 +53,165 @@ describe('«متابعة العرضات» (simple model): pure rules', () => {
   });
 });
 
-describe('«متابعة العرضات»: chronology (pure)', () => {
-  const r = (
+describe('«متابعة العرضات»: chronological numbering (numberSurah, pure)', () => {
+  let t = 0;
+  const row = (
     id: string,
-    number: number,
+    status: WorkStatus,
     start: string,
-  ): NumberedRecitation => ({
+    stored: number | null = null,
+    sessionStatus: SessionStatus = SessionStatus.SCHEDULED,
+  ): HistoryRow => ({
     id,
-    number,
-    sessionId: `s-${id}`,
+    status,
+    sessionStatus,
     start,
+    createdAt: new Date(2026, 0, 1, 0, 0, t++),
+    stored,
   });
-  const history = [
-    r('a', 1, '2026-11-02T16:00'),
-    r('b', 2, '2026-11-09T16:00'), // postponed
-    r('c', 2, '2026-11-16T16:00'), // its continuation: same number, never compared
-    r('d', 3, '2026-11-23T16:00'),
-  ];
+  const {
+    NOT_EVALUATED: PLANNED,
+    POSTPONED,
+    COMPLETED,
+    PARTIAL,
+    NOT_COMPLETED,
+    CANCELLED,
+  } = WorkStatus;
+  const shown = (rows: HistoryRow[], settling?: Set<string>) => {
+    const { numbers } = numberSurah(rows, settling);
+    return chronological(rows).map((r) => [r.id, numbers.get(r.id)]);
+  };
 
-  it('a consistent history has no conflict; same-number entries are one recitation', () => {
-    for (const x of history) expect(orderConflict(x, history)).toBeNull();
-  });
-
-  it('backdating: the latest lower number not strictly earlier; time counts, not only the date', () => {
-    expect(orderConflict(r('n', 4, '2026-11-20T16:00'), history)).toEqual({
-      other: history[3],
-      must: 'after',
-    });
-    // the same day: earlier refused, the same minute refused, later accepted
-    expect(orderConflict(r('n', 4, '2026-11-23T15:00'), history)?.must).toBe(
-      'after',
-    );
-    expect(orderConflict(r('n', 4, '2026-11-23T16:00'), history)?.must).toBe(
-      'after',
-    );
-    expect(orderConflict(r('n', 4, '2026-11-23T17:00'), history)).toBeNull();
-  });
-
-  it('a recitation moved past the next number: the earliest higher one', () => {
-    expect(orderConflict(r('c', 2, '2026-11-30T16:00'), history)).toEqual({
-      other: history[3],
-      must: 'before',
-    });
-  });
-
-  it('windows: a kept number between its neighbours; a new number after all', () => {
-    expect(recitationWindow(2, history)).toEqual({
-      after: '2026-11-02T16:00',
-      before: '2026-11-23T16:00',
-    });
-    expect(recitationWindow(4, history)).toEqual({
-      after: '2026-11-23T16:00',
-      before: null,
-    });
-    expect(recitationWindow(1, [])).toEqual({ after: null, before: null });
+  it('three planned recitations: 1, 2, 3 (by session date AND time, whatever the order of planning)', () => {
+    const rows = [
+      row('c', PLANNED, '2026-12-03T16:00'),
+      row('a', PLANNED, '2026-11-26T16:00'),
+      row('b', PLANNED, '2026-11-28T16:00'),
+    ];
+    expect(shown(rows)).toEqual([
+      ['a', 1],
+      ['b', 2],
+      ['c', 3],
+    ]);
+    expect(numberSurah(rows).next).toBe(4);
+    // the same day: the time decides
+    expect(
+      shown([
+        row('x', PLANNED, '2026-11-26T18:00'),
+        row('y', PLANNED, '2026-11-26T09:00'),
+      ]),
+    ).toEqual([
+      ['y', 1],
+      ['x', 2],
+    ]);
   });
 
-  it('the Arabic message names the surah, both numbers and the date / time', () => {
-    const clash = orderConflict(r('n', 4, '2026-11-20T16:00'), history)!;
-    expect(orderConflictMessage(4, 58, clash)).toMatch(
-      /^العرضة 4 من سورة المجادلة يجب أن تكون بعد العرضة 3 \(23 .+ 2026 على الساعة 16:00\)$/,
-    );
+  it('a postponement takes no number: 1 مؤجل · 1 · 2 — repeated, still the same number', () => {
+    expect(
+      shown([
+        row('a', POSTPONED, '2026-11-26T16:00', 1),
+        row('b', PLANNED, '2026-11-28T16:00', 2),
+        row('c', PLANNED, '2026-12-03T16:00', 3),
+      ]),
+    ).toEqual([
+      ['a', 1],
+      ['b', 1],
+      ['c', 2],
+    ]);
+    expect(
+      shown([
+        row('a', POSTPONED, '2026-11-26T16:00'),
+        row('b', POSTPONED, '2026-11-28T16:00'),
+        row('c', PLANNED, '2026-12-03T16:00'),
+      ]),
+    ).toEqual([
+      ['a', 1],
+      ['b', 1],
+      ['c', 1],
+    ]);
+    // a cancelled session's unevaluated recitation: the same (it did not take place)
+    expect(
+      shown([
+        row('a', PLANNED, '2026-11-26T16:00', 1, SessionStatus.CANCELLED),
+        row('b', PLANNED, '2026-11-28T16:00'),
+      ]),
+    ).toEqual([
+      ['a', 1],
+      ['b', 1],
+    ]);
+  });
+
+  it('every performed result takes a number: منجز, جزئي, غير منجز and ملغى (too many mistakes)', () => {
+    expect(
+      shown([
+        row('a', CANCELLED, '2026-11-02T16:00', 1),
+        row('b', NOT_COMPLETED, '2026-11-09T16:00', 2),
+        row('c', PARTIAL, '2026-11-16T16:00', 3),
+        row('d', COMPLETED, '2026-11-23T16:00', 4),
+        row('e', PLANNED, '2026-11-30T16:00'),
+      ]),
+    ).toEqual([
+      ['a', 1],
+      ['b', 2],
+      ['c', 3],
+      ['d', 4],
+      ['e', 5],
+    ]);
+  });
+
+  it('a performed number is definitive; a change contradicting it is detected (never renumbered)', () => {
+    // 1 منجز, then 2 منجز: consistent
+    const ok = [
+      row('a', COMPLETED, '2026-11-02T16:00', 1),
+      row('b', COMPLETED, '2026-11-09T16:00', 2),
+    ];
+    expect(numberSurah(ok).contradictions.size).toBe(0);
+    // the first corrected into «مؤجل»: the second would become 1 — contradiction, its number kept
+    const corrected = [
+      row('a', POSTPONED, '2026-11-02T16:00', 1),
+      row('b', COMPLETED, '2026-11-09T16:00', 2),
+    ];
+    const n = numberSurah(corrected);
+    expect(n.numbers.get('b')).toBe(2);
+    expect([...n.contradictions]).toEqual([['b', 1]]);
+    // a planned recitation moved before a performed one: contradiction
+    expect([
+      ...numberSurah([
+        row('p', PLANNED, '2026-11-01T16:00'),
+        ...ok,
+      ]).contradictions.keys(),
+    ]).toEqual(['a', 'b']);
+  });
+
+  it('performed now (settling): it takes its place number, even over an outdated stored one', () => {
+    const rows = [
+      row('a', POSTPONED, '2026-11-02T16:00', 1),
+      row('b', COMPLETED, '2026-11-09T16:00', 2),
+    ];
+    const n = numberSurah(rows, new Set(['b']));
+    expect(n.numbers.get('b')).toBe(1);
+    expect(n.contradictions.size).toBe(0);
+    expect(n.next).toBe(2);
+  });
+
+  it('legacy data: a performed number out of sequence stays as it is; what follows continues from it', () => {
+    expect(
+      shown([
+        row('a', COMPLETED, '2026-11-02T16:00', 5),
+        row('b', PLANNED, '2026-11-09T16:00'),
+      ]),
+    ).toEqual([
+      ['a', 5],
+      ['b', 6],
+    ]);
+    expect(
+      shown([
+        row('a', COMPLETED, '2026-11-02T16:00', null),
+        row('b', PLANNED, '2026-11-09T16:00'),
+      ]),
+    ).toEqual([
+      ['a', 1],
+      ['b', 2],
+    ]);
   });
 });

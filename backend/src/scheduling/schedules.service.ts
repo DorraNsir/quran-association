@@ -1,3 +1,4 @@
+import { aroundSessionChange } from '../work-followup/work-followup.service.js';
 import { ConflictException, Injectable } from '@nestjs/common';
 
 import { badRequest, conflict, notFound } from '../common/errors.js';
@@ -155,6 +156,12 @@ function assertTimeRange(start: string, end: string) {
  * team (the supervisor + every participant's assistants); every participant
  * counts for CLASS conflicts. Its generated lessons copy the participants.
  */
+
+/** A slot change cancelling lessons whose recitations' numbers are already history. */
+const SLOT_RECITATION_REFUSAL = {
+  code: 'SESSION_RECITATION_ORDER',
+  lead: 'لا يمكن إلغاء حصص هذا الموعد',
+};
 @Injectable()
 export class SchedulesService {
   constructor(
@@ -651,16 +658,27 @@ export class SchedulesService {
       replannedUntil = last ? fromDbDate(last.date) : null;
       // A lesson with work planned («متابعة العمل») is kept, cancelled:
       // its work programs are history and are never deleted with it
-      await tx.session.updateMany({
-        where: { ...neverHeld, workPrograms: { some: {} } },
-        // Unlinked like a deleted slot's lessons: the slot plans its new
-        // lesson on that date (one session per slot and date)
-        data: {
-          status: SessionStatus.CANCELLED,
-          cancellationReason: SLOT_MOVED_REASON,
-          weeklyScheduleId: null,
-        },
-      });
+      const kept = { ...neverHeld, workPrograms: { some: {} } };
+      // «متابعة العرضات»: their unevaluated recitations stop taking a number (what follows
+      // is numbered again) — never contradicting a recitation already performed
+      await aroundSessionChange(
+        tx,
+        (await tx.session.findMany({ where: kept, select: { id: true } })).map(
+          (x) => x.id,
+        ),
+        SLOT_RECITATION_REFUSAL,
+        () =>
+          tx.session.updateMany({
+            where: kept,
+            // Unlinked like a deleted slot's lessons: the slot plans its new
+            // lesson on that date (one session per slot and date)
+            data: {
+              status: SessionStatus.CANCELLED,
+              cancellationReason: SLOT_MOVED_REASON,
+              weeklyScheduleId: null,
+            },
+          }),
+      );
       await tx.session.deleteMany({
         where: { ...neverHeld, workPrograms: { none: {} } },
       });
@@ -820,19 +838,32 @@ export class SchedulesService {
     });
     if (!slot) throw scheduleNotFound();
     const today = await platformToday(tx);
-    await tx.session.updateMany({
-      where: {
-        weeklyScheduleId: scheduleId,
-        status: SessionStatus.SCHEDULED,
-        date: { gte: toDbDate(today) },
-        studentAttendance: { none: {} },
-        teacherAttendance: { none: {} },
-      },
-      data: {
-        status: SessionStatus.CANCELLED,
-        cancellationReason: SLOT_DELETED_REASON,
-      },
-    });
+    const cancelled = {
+      weeklyScheduleId: scheduleId,
+      status: SessionStatus.SCHEDULED,
+      date: { gte: toDbDate(today) },
+      studentAttendance: { none: {} },
+      teacherAttendance: { none: {} },
+    } satisfies Prisma.SessionWhereInput;
+    // «متابعة العرضات»: as for a cancelled session (recitations numbered again)
+    await aroundSessionChange(
+      tx,
+      (
+        await tx.session.findMany({
+          where: { ...cancelled, workPrograms: { some: {} } },
+          select: { id: true },
+        })
+      ).map((x) => x.id),
+      SLOT_RECITATION_REFUSAL,
+      () =>
+        tx.session.updateMany({
+          where: cancelled,
+          data: {
+            status: SessionStatus.CANCELLED,
+            cancellationReason: SLOT_DELETED_REASON,
+          },
+        }),
+    );
     await tx.weeklySchedule.delete({ where: { id: scheduleId } });
   }
 

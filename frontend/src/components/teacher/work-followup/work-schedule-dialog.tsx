@@ -115,7 +115,7 @@ export function WorkScheduleDialog({
             ) : options.length === 0 ? (
               <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
                 لا توجد حصص قادمة متاحة لهذا الطالب
-                {item.recitation ? ". تُعرض فقط الحصص التي تحافظ على ترتيب عرضات هذه السورة: كل عرضة بعد التي قبلها وقبل التي بعدها." : null}
+                {item.recitation ? ". إن كانت العرضة القادمة لهذه السورة مبرمجة، فهي التي تُكمل العرضة المؤجلة ولا حاجة إلى نقلها." : null}
               </p>
             ) : (
               <Select value={targetId} onValueChange={setPicked}>
