@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { EmptyState, QueryState } from '@/components/feedback';
 import { AppText, Button, Card, ChipRow, Icon, InitialsAvatar, Screen } from '@/components/ui';
 import { useSession } from '@/features/auth/auth-provider';
+import { usePreferences } from '@/features/preferences/preferences';
 import { ar } from '@/i18n/ar';
 import { formatDate } from '@/i18n/format';
 import { fontFamilies, radius, spacing, touchTarget, useAppTheme } from '@/theme';
@@ -13,19 +14,21 @@ import {
   ayahCount,
   nextRecitationText,
   postponedTimes,
-  RECITATION_RESULT_SHORT,
-  RECITATION_RESULTS,
   recitationColumns,
   recitationsCount,
   recitationTitle,
   type RecitationColumn,
 } from '../quran-reference/work-assignment';
 import { normalizeArabic, SURAHS } from '../quran/surahs';
+import { platformClock } from './dashboard-model';
+import { tabQuery } from './sessions-model';
 import { StudentPickerSheet, studentOptions } from './student-picker-sheet';
 import { useTeacherWorkspace } from './use-teacher-dashboard';
 import { usePullToRefresh } from './use-refresh';
+import { useTeacherSessionPages } from './use-teacher-sessions';
 import { useRecitationHistory, workKey } from './use-work';
-import { RECITATION_LOOK } from './work-look';
+import { RECITATION_STATE_LOOK } from './work-look';
+import { RECITATION_STATE_SHORT, RECITATION_STATES, recitationState, type RecitationState } from './work-model';
 import type { RecitationAttempt, RecitationSurahHistory } from './work-types';
 
 const w = ar.work;
@@ -164,8 +167,16 @@ function StudentRecitations({
       (scope === 'all' || r.history || r.surah === open) &&
       (!needle || normalizeArabic(r.name).includes(needle) || String(r.surah) === search.trim()),
   );
+  // «مجدولة» vs «بانتظار التقييم»: has the recitation's session started (platform clock)? Only a
+  // session of TODAY needs its start time — from my sessions of today (the «الحصص» tab's query)
+  const preferences = usePreferences();
+  const clock = platformClock(preferences.data?.timezone);
   const columns = rows.flatMap((r) => r.columns);
-  const totals = RECITATION_RESULTS.map((entry) => ({ entry, count: columns.filter((c) => c.result.entry === entry).length })).filter((t) => t.count > 0);
+  const pendingToday = columns.some((c) => c.result.entry === 'PENDING' && c.result.sessionDate === clock.today);
+  const todaySessions = useTeacherSessionPages(teacherId, pendingToday ? tabQuery('today', clock.today) : null);
+  const startTimes = new Map((todaySessions.data?.pages ?? []).flatMap((p) => p.data).map((x) => [x.id, x.startTime]));
+  const stateOf = (c: RecitationColumn<RecitationAttempt>) => recitationState(c.result.entry, c.result.sessionDate, startTimes.get(c.result.sessionId), clock);
+  const totals = RECITATION_STATES.map((state) => ({ state, count: columns.filter((c) => stateOf(c) === state).length })).filter((t) => t.count > 0);
   const attempts = [...histories.values()].reduce((n, h) => n + h.attempts, 0);
 
   return (
@@ -178,10 +189,10 @@ function StudentRecitations({
             {w.recitationsTotal}
           </AppText>
         </View>
-        {totals.map(({ entry, count }) => {
-          const look = RECITATION_LOOK[entry];
+        {totals.map(({ state, count }) => {
+          const look = RECITATION_STATE_LOOK[state];
           return (
-            <View key={entry} style={[styles.total, { backgroundColor: colors[look.bg] }]} testID={`total-${entry}`}>
+            <View key={state} style={[styles.total, { backgroundColor: colors[look.bg] }]} testID={`total-${state}`}>
               <View style={styles.inline}>
                 <Icon name={look.icon} size={16} color={colors[look.fg]} />
                 <AppText variant="heading" style={{ color: colors[look.fg] }}>
@@ -189,7 +200,7 @@ function StudentRecitations({
                 </AppText>
               </View>
               <AppText variant="small" style={{ color: colors[look.fg] }}>
-                {RECITATION_RESULT_SHORT[entry]}
+                {RECITATION_STATE_SHORT[state]}
               </AppText>
             </View>
           );
@@ -218,6 +229,7 @@ function StudentRecitations({
         label={w.surahScope}
         value={scope}
         onChange={setScope}
+        size="lg"
         options={[
           { value: 'history', label: w.scopeHistory },
           { value: 'all', label: w.scopeAll },
@@ -240,6 +252,7 @@ function StudentRecitations({
               onToggle={() => setOpen(open === r.surah ? null : r.surah)}
               onAdd={() => onAdd(r.surah)}
               onOpen={onOpen}
+              stateOf={stateOf}
             />
           ))}
         </View>
@@ -254,12 +267,14 @@ function SurahCard({
   onToggle,
   onAdd,
   onOpen,
+  stateOf,
 }: {
   row: SurahRow;
   open: boolean;
   onToggle: () => void;
   onAdd: () => void;
   onOpen: (programId: string) => void;
+  stateOf: (column: RecitationColumn<RecitationAttempt>) => RecitationState;
 }) {
   const { colors } = useAppTheme();
   const attempts = row.history?.attempts ?? 0;
@@ -292,7 +307,7 @@ function SurahCard({
       {open ? (
         <View style={styles.panel}>
           {row.columns.map((c) => (
-            <Entry key={c.key} column={c} surah={row.name} onOpen={onOpen} />
+            <Entry key={c.key} column={c} state={stateOf(c)} surah={row.name} onOpen={onOpen} />
           ))}
           {row.history ? (
             <AppText variant="caption" tone="muted" testID="next-recitation">
@@ -307,13 +322,23 @@ function SurahCard({
 }
 
 /** One recitation: «العرضة 2», its session date, its result; postponements noted; opens its program. */
-function Entry({ column, surah, onOpen }: { column: RecitationColumn<RecitationAttempt>; surah: string; onOpen: (programId: string) => void }) {
+function Entry({
+  column,
+  state,
+  surah,
+  onOpen,
+}: {
+  column: RecitationColumn<RecitationAttempt>;
+  state: RecitationState;
+  surah: string;
+  onOpen: (programId: string) => void;
+}) {
   const { colors } = useAppTheme();
   const e = column.result;
-  const look = RECITATION_LOOK[e.entry];
+  const look = RECITATION_STATE_LOOK[state];
   const skipped = column.earlier.filter((x) => x.entry === 'POSTPONED' || x.entry === 'SESSION_CANCELLED');
   const postponed = skipped.length ? w.postponedOn(skipped.map((x) => formatDate(x.sessionDate)).join('، ')) : null;
-  const result = `${RECITATION_RESULT_SHORT[e.entry]}${e.entry === 'POSTPONED' ? ' · لا تحتسب' : ''}`;
+  const result = `${RECITATION_STATE_SHORT[state]}${state === 'POSTPONED' ? ' · لا تحتسب' : ''}`;
   const label = [`${surah} — ${recitationTitle(column.number)}`, result, formatDate(e.sessionDate), postponedTimes(skipped.length), e.evaluatedBy]
     .filter(Boolean)
     .join(' · ');
@@ -323,7 +348,7 @@ function Entry({ column, surah, onOpen }: { column: RecitationColumn<RecitationA
       accessibilityRole="link"
       accessibilityLabel={label}
       accessibilityHint={w.openLinked}
-      testID={`entry-${e.entry}`}
+      testID={`entry-${state}`}
       style={({ pressed }) => [styles.entry, { backgroundColor: colors[look.bg] }, pressed && styles.pressed]}>
       <View style={styles.flex}>
         <AppText variant="bodyStrong">{recitationTitle(column.number)}</AppText>

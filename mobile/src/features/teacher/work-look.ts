@@ -2,6 +2,7 @@ import type { IconName } from '@/components/ui';
 import type { ColorTokens } from '@/theme';
 
 import type { RecitationEntry, WorkItemStatus, WorkPerformance, WorkType } from '../quran-reference/work-assignment';
+import type { RecitationState } from './work-model';
 
 /*
  * «متابعة برنامج العمل» — one look per meaning, shared by the list cards and the program screen.
@@ -45,4 +46,10 @@ export const RECITATION_LOOK: Record<RecitationEntry, Look> = {
   POSTPONED: RESULT_LOOK.POSTPONED,
   PENDING: RESULT_LOOK.NOT_EVALUATED,
   SESSION_CANCELLED: { icon: 'ban', bg: 'muted', fg: 'mutedForeground' },
+};
+
+/** «مجدولة» (a session not started yet): a neutral badge with a calendar — beside the results above. */
+export const RECITATION_STATE_LOOK: Record<RecitationState, Look> = {
+  ...RECITATION_LOOK,
+  SCHEDULED: { icon: 'calendar', bg: 'secondary', fg: 'secondaryForeground' },
 };

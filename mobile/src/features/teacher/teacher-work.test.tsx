@@ -33,6 +33,7 @@ import { TeacherWorkProgramScreen } from './teacher-work-program';
 import { TeacherWorkScheduleScreen } from './teacher-work-schedule';
 import { CONFIRMATION_MS } from './use-confirm-then-back';
 import { workProgramKey } from './use-work';
+import { platformClock } from './dashboard-model';
 import { progressOf } from './work-model';
 import type { WorkItem, WorkProgram } from './work-types';
 
@@ -1936,22 +1937,22 @@ describe('«متابعة العرضات» — the module (mobile)', () => {
     n++;
     return { itemId: `m${n}`, programId: `wp${n}`, sessionId: `ms${n}`, sessionDate: date, number, entry: e, status, evaluationComment: null, evaluatedAt: null, evaluatedBy: null };
   };
-  // al-Mujadila: 1 ملغاة, 2 postponed twice then منجزة (one recitation), 3 جزئي, 4 pending
+  // past sessions (2020), whatever today is — al-Mujadila: 1 ملغاة, 2 postponed twice then منجزة (one recitation), 3 جزئي, 4 pending
   const mujadila = {
     surah: 58,
     attempts: 3,
     nextNumber: 5,
     entries: [
-      entry(1, 'CANCELLED', 'CANCELLED', '2026-11-02'),
-      entry(2, 'POSTPONED', 'POSTPONED', '2026-11-09'),
-      entry(2, 'POSTPONED', 'POSTPONED', '2026-11-16'),
-      entry(2, 'COMPLETED', 'COMPLETED', '2026-11-23'),
-      entry(3, 'PARTIAL', 'PARTIAL', '2026-11-30'),
-      entry(4, 'PENDING', 'NOT_EVALUATED', '2026-12-07'),
+      entry(1, 'CANCELLED', 'CANCELLED', '2020-11-02'),
+      entry(2, 'POSTPONED', 'POSTPONED', '2020-11-09'),
+      entry(2, 'POSTPONED', 'POSTPONED', '2020-11-16'),
+      entry(2, 'COMPLETED', 'COMPLETED', '2020-11-23'),
+      entry(3, 'PARTIAL', 'PARTIAL', '2020-11-30'),
+      entry(4, 'PENDING', 'NOT_EVALUATED', '2020-12-07'),
     ],
   };
   // unlimited, numbered on their own
-  const baqara = { surah: 2, attempts: 12, nextNumber: 13, entries: Array.from({ length: 12 }, (_, i) => entry(i + 1, 'COMPLETED', 'COMPLETED', '2026-10-01')) };
+  const baqara = { surah: 2, attempts: 12, nextNumber: 13, entries: Array.from({ length: 12 }, (_, i) => entry(i + 1, 'COMPLETED', 'COMPLETED', '2020-10-01')) };
   const history = { studentId: 'st1', surahs: [baqara, mujadila] };
   const entries = () => screen.queryAllByTestId(/^entry-/).map((v) => v.props.accessibilityLabel as string);
   const cards = () => screen.queryAllByTestId(/^surah-\d+$/).map((v) => v.props.accessibilityLabel as string);
@@ -1980,7 +1981,7 @@ describe('«متابعة العرضات» — the module (mobile)', () => {
       'سورة المجادلة — العرضة 3 · جزئي',
       'سورة المجادلة — العرضة 4 · بانتظار التقييم',
     ]);
-    expect(screen.getByTestId('postponed-note').props.children).toBe(w.postponedOn('9 نوفمبر 2026، 16 نوفمبر 2026'));
+    expect(screen.getByTestId('postponed-note').props.children).toBe(w.postponedOn('9 نوفمبر 2020، 16 نوفمبر 2020'));
     expect(screen.getByTestId('next-recitation').props.children).toBe('التالية: العرضة 5');
     expect(screen.queryByText(/دورة|محتسب|من 4/)).toBeNull();
     // an entry opens its program
@@ -2042,5 +2043,68 @@ describe('«متابعة العرضات» — the module (mobile)', () => {
     stub((c) => (c.path.endsWith(HISTORY) ? { status: 403, body: { code: 'FORBIDDEN', message: 'لا يمكنك عرض هذا الطالب' } } : undefined));
     await renderScreen(<TeacherRecitationsScreen initialStudentId="st1" />);
     expect(await screen.findByText('لا يمكنك عرض هذا الطالب')).toBeTruthy();
+  });
+
+  it('«مجدولة» (session not started) vs «بانتظار التقييم» (started or past, unevaluated); results unchanged', async () => {
+    const today = platformClock(PREFS.timezone).today;
+    const nas = {
+      surah: 114,
+      attempts: 2,
+      nextNumber: 7,
+      entries: [
+        entry(1, 'COMPLETED', 'COMPLETED', '2020-11-02'),
+        entry(2, 'NOT_COMPLETED', 'NOT_COMPLETED', '2020-11-09'),
+        entry(3, 'PENDING', 'NOT_EVALUATED', '2020-11-16'), // past, not evaluated
+        { ...entry(4, 'PENDING', 'NOT_EVALUATED', today), sessionId: 'started' }, // today, started 00:00
+        { ...entry(5, 'PENDING', 'NOT_EVALUATED', today), sessionId: 'later' }, // today, starts 23:59
+        entry(6, 'PENDING', 'NOT_EVALUATED', '2099-01-04'), // a future session
+      ],
+    };
+    const todaySessions = { data: [{ id: 'started', date: today, startTime: '00:00' }, { id: 'later', date: today, startTime: '23:59' }], meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 } };
+    stub((c) => (c.path.endsWith(HISTORY) ? ok({ studentId: 'st1', surahs: [nas] }) : c.path.endsWith('/teacher/sessions') ? ok(todaySessions) : undefined));
+    await renderScreen(<TeacherRecitationsScreen initialStudentId="st1" initialSurah={114} />);
+    // today's start times come from my sessions of today (the «الحصص» tab's query)
+    await screen.findByLabelText(/العرضة 5 · مجدولة/);
+    expect(calls.some((c) => c.path.endsWith('/teacher/sessions') && c.params.get('from') === today && c.params.get('to') === today)).toBe(true);
+    expect(entries().map((l) => l.split(' · ').slice(0, 2).join(' · '))).toEqual([
+      'سورة الناس — العرضة 1 · منجز',
+      'سورة الناس — العرضة 2 · غير منجز',
+      'سورة الناس — العرضة 3 · بانتظار التقييم',
+      'سورة الناس — العرضة 4 · بانتظار التقييم',
+      'سورة الناس — العرضة 5 · مجدولة',
+      'سورة الناس — العرضة 6 · مجدولة',
+    ]);
+    // a neutral badge with a calendar; the totals count each state apart, the attempts unchanged
+    const scheduled = screen.getAllByTestId('entry-SCHEDULED')[0]!;
+    expect(StyleSheet.flatten(scheduled.props.style).backgroundColor).toBe(lightColors.secondary);
+    expect(within(screen.getByTestId('total-SCHEDULED')).getByText('2')).toBeTruthy();
+    expect(within(screen.getByTestId('total-SCHEDULED')).getByText('مجدولة')).toBeTruthy();
+    expect(within(screen.getByTestId('total-PENDING')).getByText('2')).toBeTruthy();
+    expect(within(screen.getByTestId('total-attempts')).getByText('2')).toBeTruthy();
+    expect(within(screen.getByTestId('total-COMPLETED')).getByText('1')).toBeTruthy();
+    expect(within(screen.getByTestId('total-NOT_COMPLETED')).getByText('1')).toBeTruthy();
+  });
+
+  it('filters stay compact (never stretched by spare height): own height, centred, 40 dp — cards open or closed', async () => {
+    stub((c) => (c.path.endsWith(HISTORY) ? ok(history) : undefined));
+    await renderScreen(<TeacherRecitationsScreen initialStudentId="st1" />);
+    await screen.findByLabelText('سورة المجادلة — 3 عرضات');
+    const check = () => {
+      const group = screen.getByLabelText(w.surahScope);
+      expect(StyleSheet.flatten(group.props.style)).toMatchObject({ flexGrow: 0, flexShrink: 0 });
+      expect(StyleSheet.flatten(group.props.contentContainerStyle)).toMatchObject({ alignItems: 'center' });
+      for (const name of [w.scopeHistory, w.scopeAll]) {
+        const chip = StyleSheet.flatten(screen.getByRole('radio', { name }).props.style);
+        expect(chip.minHeight).toBe(40);
+        expect(chip.height).toBeUndefined();
+        expect(chip.flex ?? chip.flexGrow).toBeUndefined();
+      }
+    };
+    check(); // collapsed
+    await fireEvent.press(screen.getByLabelText('سورة المجادلة — 3 عرضات'));
+    check(); // expanded
+    await fireEvent.press(screen.getByRole('radio', { name: w.scopeAll }));
+    expect(cards()).toHaveLength(114); // filtering unchanged
+    check();
   });
 });

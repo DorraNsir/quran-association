@@ -9,6 +9,9 @@ import {
   validateItemDraft,
   type AssignmentPayload,
   type AssignmentDraft,
+  RECITATION_RESULT_SHORT,
+  RECITATION_RESULTS,
+  type RecitationEntry,
 } from '@/features/quran-reference/work-assignment';
 import { ApiError } from '@/services/api';
 
@@ -88,12 +91,43 @@ export function evaluationBlockOf(
 ): EvaluationBlock | null {
   const { session, evaluation } = program;
   if (session.status === 'CANCELLED' || evaluation?.blockedReason === 'SESSION_CANCELLED') return 'CANCELLED';
-  const clock = platformClock(timeZone, now);
-  const started = session.date < clock.today || (session.date === clock.today && session.startTime <= clock.time);
+  const started = sessionStarted(session.date, session.startTime, platformClock(timeZone, now));
   // Without the server's verdict (an older API): the clock alone
   if (!evaluation) return started ? null : 'NOT_STARTED';
   return evaluation.blockedReason === 'SESSION_NOT_STARTED' && !started ? 'NOT_STARTED' : null;
 }
+
+/** Has a session started (its date and start time, platform clock)? The evaluation rule above. */
+export const sessionStarted = (date: string, startTime: string, clock: { today: string; time: string }) =>
+  date < clock.today || (date === clock.today && startTime <= clock.time);
+
+/** «متابعة العرضات»: what a displayed recitation is now — its result, or «مجدولة» (display only, nothing stored). */
+export type RecitationState = RecitationEntry | 'SCHEDULED';
+
+/**
+ * An unevaluated recitation (PENDING) of a session that has NOT STARTED is «مجدولة» — nothing to
+ * evaluate yet; once its session has started (or passed) it is «بانتظار التقييم». The same rule as
+ * the evaluation (sessionStarted). A session of today whose start time is not known yet counts as
+ * started: «بانتظار التقييم», as before — the server decides the evaluation anyway. Results
+ * (منجز، جزئي، غير منجز، ملغى، مؤجل) and a cancelled session's are kept as they are.
+ */
+export function recitationState(
+  entry: RecitationEntry,
+  sessionDate: string,
+  startTime: string | undefined,
+  clock: { today: string; time: string },
+): RecitationState {
+  if (entry !== 'PENDING') return entry;
+  if (sessionDate > clock.today) return 'SCHEDULED';
+  if (sessionDate === clock.today && startTime !== undefined && !sessionStarted(sessionDate, startTime, clock)) return 'SCHEDULED';
+  return 'PENDING';
+}
+
+/** The words of the states: the shared short results, and «مجدولة». */
+export const RECITATION_STATE_SHORT: Record<RecitationState, string> = { ...RECITATION_RESULT_SHORT, SCHEDULED: 'مجدولة' };
+
+/** Counters' order: the shared results' order, «مجدولة» right after «بانتظار التقييم». */
+export const RECITATION_STATES: RecitationState[] = RECITATION_RESULTS.flatMap((r): RecitationState[] => (r === 'PENDING' ? ['PENDING', 'SCHEDULED'] : [r]));
 
 /** The API refused an evaluation because of the session (not started / cancelled): reload its state. */
 export const isEvaluationClosedError = (error: unknown) =>
