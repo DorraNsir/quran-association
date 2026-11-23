@@ -62,7 +62,11 @@ function ScheduleForm({ teacherId, source, item, mode }: { teacherId: string; so
   const { colors } = useAppTheme();
   const proposal = mode === 'next' ? nextRecitation(item) : undefined;
   const [description, setDescription] = useState(proposal?.description ?? item.description);
-  const eligible = useEligibleSessions(teacherId, source.student.id, source.session.id);
+  // only sessions where this item may go (its surah's chronology, for a عرضة): the server's list
+  const eligible = useEligibleSessions(teacherId, source.student.id, source.session.id, {
+    itemId: item.id,
+    purpose: mode === 'next' ? 'NEXT' : 'TRANSFER',
+  });
   const options = eligible.data ?? [];
   const [picked, setPicked] = useState<string | null>(null);
   const targetId = picked ?? options[0]?.id ?? '';
@@ -157,7 +161,7 @@ function ScheduleForm({ teacherId, source, item, mode }: { teacherId: string; so
           <AlertBox message={errorMessage(eligible.error)} />
         ) : options.length === 0 ? (
           <AppText variant="small" tone="muted">
-            {w.noEligible}
+            {item.recitation ? `${w.noEligible}. ${w.noEligibleOrder}` : w.noEligible}
           </AppText>
         ) : (
           <View accessibilityRole="radiogroup" accessibilityLabel={w.target} style={styles.options}>

@@ -437,6 +437,24 @@ export class EligibleSessionsQueryDto {
   @IsOptional()
   @IsUUID()
   afterSessionId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "The item to transfer / continue: only sessions later than its own, and — for a recitation of a whole surah — where its number keeps the surah's chronology",
+  })
+  @IsOptional()
+  @IsUUID()
+  forItemId?: string;
+
+  @ApiPropertyOptional({
+    enum: ['TRANSFER', 'NEXT'],
+    description:
+      'With forItemId: «نقل إلى الحصة القادمة» (default) or «إضافة العرضة التالية»',
+  })
+  @IsOptional()
+  @IsIn(['TRANSFER', 'NEXT'])
+  purpose?: 'TRANSFER' | 'NEXT';
 }
 
 // ───────────────────────── responses ─────────────────────────

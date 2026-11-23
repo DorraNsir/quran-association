@@ -7,8 +7,12 @@ import {
 import {
   isAttempt,
   keepsNumber,
+  orderConflict,
+  orderConflictMessage,
   recitationEntry,
+  recitationWindow,
   trackedSurah,
+  type NumberedRecitation,
 } from './recitations.js';
 
 describe('«متابعة العرضات» (simple model): pure rules', () => {
@@ -61,5 +65,69 @@ describe('«متابعة العرضات» (simple model): pure rules', () => {
     expect(
       trackedSurah(item(WorkType.REVISION, WorkAssignmentKind.SURAH_RANGE, 58)),
     ).toBeNull();
+  });
+});
+
+describe('«متابعة العرضات»: chronology (pure)', () => {
+  const r = (
+    id: string,
+    number: number,
+    start: string,
+  ): NumberedRecitation => ({
+    id,
+    number,
+    sessionId: `s-${id}`,
+    start,
+  });
+  const history = [
+    r('a', 1, '2026-11-02T16:00'),
+    r('b', 2, '2026-11-09T16:00'), // postponed
+    r('c', 2, '2026-11-16T16:00'), // its continuation: same number, never compared
+    r('d', 3, '2026-11-23T16:00'),
+  ];
+
+  it('a consistent history has no conflict; same-number entries are one recitation', () => {
+    for (const x of history) expect(orderConflict(x, history)).toBeNull();
+  });
+
+  it('backdating: the latest lower number not strictly earlier; time counts, not only the date', () => {
+    expect(orderConflict(r('n', 4, '2026-11-20T16:00'), history)).toEqual({
+      other: history[3],
+      must: 'after',
+    });
+    // the same day: earlier refused, the same minute refused, later accepted
+    expect(orderConflict(r('n', 4, '2026-11-23T15:00'), history)?.must).toBe(
+      'after',
+    );
+    expect(orderConflict(r('n', 4, '2026-11-23T16:00'), history)?.must).toBe(
+      'after',
+    );
+    expect(orderConflict(r('n', 4, '2026-11-23T17:00'), history)).toBeNull();
+  });
+
+  it('a recitation moved past the next number: the earliest higher one', () => {
+    expect(orderConflict(r('c', 2, '2026-11-30T16:00'), history)).toEqual({
+      other: history[3],
+      must: 'before',
+    });
+  });
+
+  it('windows: a kept number between its neighbours; a new number after all', () => {
+    expect(recitationWindow(2, history)).toEqual({
+      after: '2026-11-02T16:00',
+      before: '2026-11-23T16:00',
+    });
+    expect(recitationWindow(4, history)).toEqual({
+      after: '2026-11-23T16:00',
+      before: null,
+    });
+    expect(recitationWindow(1, [])).toEqual({ after: null, before: null });
+  });
+
+  it('the Arabic message names the surah, both numbers and the date / time', () => {
+    const clash = orderConflict(r('n', 4, '2026-11-20T16:00'), history)!;
+    expect(orderConflictMessage(4, 58, clash)).toMatch(
+      /^العرضة 4 من سورة المجادلة يجب أن تكون بعد العرضة 3 \(23 .+ 2026 على الساعة 16:00\)$/,
+    );
   });
 });

@@ -190,9 +190,27 @@ export const fetchWorkProgram = (id: string, signal?: AbortSignal) =>
 /** GET session-options — the sessions that have programs (the «الحصة» filter, as on the web). */
 export const fetchWorkSessionOptions = (signal?: AbortSignal) => api<WorkSession[]>(`${WORK}/session-options`, { signal });
 
-/** GET eligible-sessions — the student's existing UPCOMING sessions that may receive work (never a free date). */
-export const fetchEligibleSessions = (studentId: string, afterSessionId: string | undefined, signal?: AbortSignal) =>
-  api<EligibleSession[]>(`${WORK}/eligible-sessions`, { query: clean({ studentId, afterSessionId }), signal });
+/** What an item is scheduled for: «نقل إلى الحصة القادمة» or «إضافة العرضة التالية». */
+export interface ScheduleFor {
+  itemId: string;
+  purpose: 'TRANSFER' | 'NEXT';
+}
+
+/**
+ * GET eligible-sessions — the student's existing UPCOMING sessions that may receive work (never a
+ * free date). For an item (`forItem`): later than its session and, for a whole-surah عرضة, only
+ * where its number keeps the surah's chronology (the server decides).
+ */
+export const fetchEligibleSessions = (
+  studentId: string,
+  afterSessionId: string | undefined,
+  signal?: AbortSignal,
+  forItem?: ScheduleFor,
+) =>
+  api<EligibleSession[]>(`${WORK}/eligible-sessions`, {
+    query: clean({ studentId, afterSessionId, forItemId: forItem?.itemId, purpose: forItem?.purpose }),
+    signal,
+  });
 
 /** POST — CreateWorkProgramDto (one program per student per session; 409 WORK_PROGRAM_EXISTS + programId). */
 export const createWorkProgram = (body: { studentId: string; sessionId: string; generalNotes: string | null; items: NewWorkItem[] }) =>

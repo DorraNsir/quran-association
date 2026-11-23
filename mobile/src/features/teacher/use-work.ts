@@ -12,6 +12,7 @@ import {
   fetchWorkSessionOptions,
   scheduleWorkItem,
   updateWorkProgram,
+  type ScheduleFor,
 } from './teacher.api';
 import { teacherKey } from './use-teacher-dashboard';
 import type { EvaluationLine, NewWorkItem, WorkItemPatch, WorkProgram, WorkProgramFilters } from './work-types';
@@ -51,10 +52,10 @@ export function useWorkSessionOptions(teacherId: string) {
 }
 
 /** The student's existing upcoming sessions that may receive work (optionally later than a source session). */
-export function useEligibleSessions(teacherId: string, studentId: string | null, afterSessionId?: string) {
+export function useEligibleSessions(teacherId: string, studentId: string | null, afterSessionId?: string, forItem?: ScheduleFor) {
   return useQuery({
-    queryKey: [...workKey(teacherId), 'eligible', studentId, afterSessionId ?? null],
-    queryFn: ({ signal }) => fetchEligibleSessions(studentId!, afterSessionId, signal),
+    queryKey: [...workKey(teacherId), 'eligible', studentId, afterSessionId ?? null, forItem?.itemId ?? null, forItem?.purpose ?? null],
+    queryFn: ({ signal }) => fetchEligibleSessions(studentId!, afterSessionId, signal, forItem),
     enabled: !!teacherId && !!studentId,
   });
 }

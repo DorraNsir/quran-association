@@ -44,7 +44,11 @@ export function WorkScheduleDialog({
 }) {
   const proposal = mode === "next" ? nextRecitation(item) : undefined
   const [description, setDescription] = useState(proposal?.description ?? item.description)
-  const eligible = useEligibleSessions(source.student.id, source.session.id)
+  // only sessions where this item may go (its surah's chronology, for a عرضة): the server's list
+  const eligible = useEligibleSessions(source.student.id, source.session.id, {
+    itemId: item.id,
+    purpose: mode === "next" ? "NEXT" : "TRANSFER",
+  })
   const options = eligible.data ?? []
   const [picked, setPicked] = useState<string | null>(null)
   const targetId = picked ?? options[0]?.id ?? ""
@@ -109,7 +113,10 @@ export function WorkScheduleDialog({
             ) : eligible.isError ? (
               <p role="alert" className="text-sm text-destructive">{errorMessage(eligible.error)}</p>
             ) : options.length === 0 ? (
-              <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">لا توجد حصص قادمة متاحة لهذا الطالب</p>
+              <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
+                لا توجد حصص قادمة متاحة لهذا الطالب
+                {item.recitation ? ". تُعرض فقط الحصص التي تحافظ على ترتيب عرضات هذه السورة: كل عرضة بعد التي قبلها وقبل التي بعدها." : null}
+              </p>
             ) : (
               <Select value={targetId} onValueChange={setPicked}>
                 <SelectTrigger id="wf-target" className="w-full">

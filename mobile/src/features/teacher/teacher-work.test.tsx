@@ -640,7 +640,7 @@ describe('transfer / next recitation', () => {
     await renderScreen(<TeacherWorkScheduleScreen programId="w1" itemId="i1" mode="carry" />);
     expect(await screen.findByText(w.alreadyCarried)).toBeTruthy(); // first option already received it
     const q = calls.find((c) => c.path.endsWith('/eligible-sessions'))!.params;
-    expect([q.get('studentId'), q.get('afterSessionId')]).toEqual(['st1', 's9']);
+    expect([q.get('studentId'), q.get('afterSessionId'), q.get('forItemId'), q.get('purpose')]).toEqual(['st1', 's9', 'i1', 'TRANSFER']);
     await fireEvent.press(screen.getByRole('radio', { name: /^الأربعاء 18 نوفمبر 2026/ }));
     expect(screen.getByText(w.createsNew)).toBeTruthy();
     await fireEvent.press(screen.getByLabelText(w.confirm));
@@ -651,6 +651,15 @@ describe('transfer / next recitation', () => {
     expect(screen.getByRole('alert', { name: `${w.carried} — الأربعاء 18 نوفمبر 2026` })).toBeTruthy();
   });
 
+  it('no session keeps the chronology of a whole-surah عرضة: the list is empty, and says why', async () => {
+    const tracked = workProgram('w1', {
+      items: [workItem('r1', { type: 'RECITATION', recitationNumber: 2, recitation: { surah: 58, attempts: 1 }, status: 'POSTPONED' })],
+    });
+    stub((c) => (c.path.endsWith('/eligible-sessions') ? ok([]) : undefined), tracked);
+    await renderScreen(<TeacherWorkScheduleScreen programId="w1" itemId="r1" mode="carry" />);
+    expect(await screen.findByText(`${w.noEligible}. ${w.noEligibleOrder}`)).toBeTruthy();
+  });
+
   it('next recitation: the proposed «العرضة الثالثة…» text, editable, sent with the target', async () => {
     stub((c) => {
       if (c.path.endsWith('/eligible-sessions')) return ok([eligible('s20', '2026-11-18')]);
@@ -659,6 +668,9 @@ describe('transfer / next recitation', () => {
     }, p);
     await renderScreen(<TeacherWorkScheduleScreen programId="w1" itemId="i2" mode="next" />);
     const input = await screen.findByLabelText(w.nextDescription('الثالثة'));
+    // only the sessions where the next number keeps the surah's chronology (the server's list)
+    const nq = calls.find((c) => c.path.endsWith('/eligible-sessions'))!.params;
+    expect([nq.get('forItemId'), nq.get('purpose')]).toEqual(['i2', 'NEXT']);
     expect(input.props.value).toBe('العرضة الثالثة من سورة التوبة');
     await fireEvent.press(await screen.findByLabelText(w.confirm));
     await settle();

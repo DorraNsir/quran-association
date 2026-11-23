@@ -17,7 +17,8 @@ export const workKeys = {
   list: (filters: object, page: number, pageSize: number) => ["work-followup", "list", filters, page, pageSize] as const,
   one: (id: string) => ["work-followup", "program", id] as const,
   sessionOptions: ["work-followup", "session-options"] as const,
-  eligible: (studentId: string, afterSessionId?: string) => ["work-followup", "eligible", studentId, afterSessionId ?? null] as const,
+  eligible: (studentId: string, afterSessionId?: string, forItem?: ScheduleFor) =>
+    ["work-followup", "eligible", studentId, afterSessionId ?? null, forItem?.itemId ?? null, forItem?.purpose ?? null] as const,
   recitations: (studentId: string) => ["work-followup", "recitations", studentId] as const,
 }
 
@@ -61,13 +62,23 @@ export function useWorkSessionOptions() {
   })
 }
 
-/** The student's existing upcoming sessions that may receive work (optionally later than a source session). */
-export function useEligibleSessions(studentId: string | undefined, afterSessionId?: string) {
+/** What an item is scheduled for: «نقل إلى الحصة القادمة» or «إضافة العرضة التالية». */
+export interface ScheduleFor {
+  itemId: string
+  purpose: "TRANSFER" | "NEXT"
+}
+
+/**
+ * The student's existing upcoming sessions that may receive work (optionally later than a source
+ * session). For an item (`forItem`): only where it may go — for a whole-surah عرضة, where its number
+ * keeps the surah's chronology (the server decides).
+ */
+export function useEligibleSessions(studentId: string | undefined, afterSessionId?: string, forItem?: ScheduleFor) {
   return useQuery({
-    queryKey: workKeys.eligible(studentId ?? "", afterSessionId),
+    queryKey: workKeys.eligible(studentId ?? "", afterSessionId, forItem),
     queryFn: ({ signal }) =>
       api<(WorkSession & { programId: string | null })[]>(`${BASE}/eligible-sessions`, {
-        query: clean({ studentId, afterSessionId }),
+        query: clean({ studentId, afterSessionId, forItemId: forItem?.itemId, purpose: forItem?.purpose }),
         signal,
       }),
     enabled: Boolean(studentId),

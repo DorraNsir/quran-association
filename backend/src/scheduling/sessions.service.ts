@@ -1,3 +1,4 @@
+import { assertSessionMoveKeepsRecitationOrder } from '../work-followup/recitations.js';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 
 import { fromDbDate, toDbDate } from '../common/dates.js';
@@ -589,6 +590,16 @@ export class SessionsService {
         extraIds,
         slot.date,
       );
+      // «متابعة العرضات»: its numbered recitations keep their surahs' chronology at the new time
+      if (
+        slot.date !== fromDbDate(session.date) ||
+        slot.start !== fromDbTime(session.startTime)
+      )
+        await assertSessionMoveKeepsRecitationOrder(
+          tx,
+          id,
+          `${slot.date}T${slot.start}`,
+        );
       const occupancy = refresh?.occupancy ?? this.snapshotOccupancy(session);
       this.conflicts.throwIfAny(
         await this.conflicts.sessionConflicts(tx, occupancy, [slot], {

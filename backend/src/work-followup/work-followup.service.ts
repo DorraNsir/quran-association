@@ -42,6 +42,11 @@ import {
   keepsNumber,
   lockSurah,
   nextRecitationNumber,
+  numberedRecitations,
+  orderConflict,
+  recitationOutOfOrder,
+  recitationWindow,
+  sessionStart,
   recitationEntry,
   recitationsOf,
   trackedSurah,
@@ -705,18 +710,35 @@ export class WorkFollowupService {
       select: { id: true },
     });
     if (!student) throw notFound('STUDENT_NOT_FOUND', 'الطالب غير موجود');
-    const after = query.afterSessionId
+    const afterSession = query.afterSessionId
       ? await this.prisma.session.findUnique({
           where: { id: query.afterSessionId },
           select: { date: true, startTime: true },
         })
       : null;
-    if (query.afterSessionId && !after)
+    if (query.afterSessionId && !afterSession)
       throw notFound('SESSION_NOT_FOUND', 'الحصة غير موجودة');
+    let after = afterSession
+      ? sessionStart(afterSession.date, afterSession.startTime)
+      : null;
+    let before: string | null = null;
+    // Transfer / next recitation of an item: later than its session — and, for a whole-surah
+    // عرضة, only where its number keeps the surah's chronology (the write checks it again)
+    if (query.forItemId) {
+      const bounds = await this.scheduleBounds(
+        query.forItemId,
+        query.studentId,
+        query.purpose ?? 'TRANSFER',
+      );
+      if (bounds.after && (!after || bounds.after > after))
+        after = bounds.after;
+      before = bounds.before;
+    }
     const ids = await this.eligibleSessionIds(this.prisma, {
       studentId: query.studentId,
       teacherId,
       after,
+      before,
     });
     const [sessions, programs] = await Promise.all([
       this.prisma.session.findMany({
@@ -1433,7 +1455,9 @@ export class WorkFollowupService {
     input: {
       studentId: string;
       teacherId: string | null;
-      after: { date: Date; startTime: Date } | null;
+      /** strict bounds "YYYY-MM-DDTHH:mm" */
+      after: string | null;
+      before?: string | null;
     },
   ) {
     const { today, now } = await this.clock(db);
@@ -1455,12 +1479,70 @@ export class WorkFollowupService {
         )
         ${
           input.after
-            ? Prisma.sql`AND (s.date, s."startTime") > (${fromDbDate(input.after.date)}::date, ${fromDbTime(input.after.startTime)}::time)`
+            ? Prisma.sql`AND (s.date, s."startTime") > (${input.after.slice(0, 10)}::date, ${input.after.slice(11, 16)}::time)`
+            : Prisma.empty
+        }
+        ${
+          input.before
+            ? Prisma.sql`AND (s.date, s."startTime") < (${input.before.slice(0, 10)}::date, ${input.before.slice(11, 16)}::time)`
             : Prisma.empty
         }
       ORDER BY s.date, s."startTime"
       LIMIT 60`;
     return rows.map((r) => r.id);
+  }
+
+  /**
+   * Where an item may be transferred / continued: after its own session, and for a whole-surah
+   * عرضة inside its number's window — a transferred postponed (or cancelled-session) recitation
+   * keeps its number (after the lower ones, before the higher ones); any other gets a new number
+   * (the highest + 1): after every recitation of the surah. Read-only (the write re-checks).
+   */
+  private async scheduleBounds(
+    itemId: string,
+    studentId: string,
+    purpose: 'TRANSFER' | 'NEXT',
+  ): Promise<{ after: string; before: string | null }> {
+    const item = await this.prisma.workItem.findUnique({
+      where: { id: itemId },
+      select: {
+        id: true,
+        type: true,
+        status: true,
+        recitationNumber: true,
+        quranAssignmentKind: true,
+        quranFromSurah: true,
+        program: {
+          select: {
+            studentId: true,
+            session: { select: { date: true, startTime: true } },
+          },
+        },
+      },
+    });
+    if (!item || item.program.studentId !== studentId) throw itemNotFound();
+    const own = sessionStart(
+      item.program.session.date,
+      item.program.session.startTime,
+    );
+    const surah = trackedSurah(item);
+    if (surah === null) return { after: own, before: null };
+    const rows = await numberedRecitations(this.prisma, studentId, surah);
+    const keeps =
+      purpose === 'TRANSFER' &&
+      keepsNumber(item.status) &&
+      item.recitationNumber !== null;
+    const number = keeps
+      ? (item.recitationNumber as number)
+      : Math.max(0, ...rows.map((r) => r.number)) + 1;
+    const window = recitationWindow(
+      number,
+      rows.filter((r) => r.id !== item.id || !keeps),
+    );
+    return {
+      after: window.after && window.after > own ? window.after : own,
+      before: window.before,
+    };
   }
 
   /** The program row locked for this transaction, after the access check. */
@@ -1707,6 +1789,11 @@ export class WorkFollowupService {
             description: renumbered(item, number),
           },
         });
+      // Chronology (under the lock): a lower number strictly before, a higher one strictly after
+      const rows = await numberedRecitations(tx, studentId, surah);
+      const placed = rows.find((r) => r.id === item.id);
+      const clash = placed ? orderConflict(placed, rows) : null;
+      if (clash) throw recitationOutOfOrder(number, surah, clash);
     }
   }
 

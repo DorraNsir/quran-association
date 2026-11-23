@@ -254,6 +254,9 @@ describe("«متابعة العمل» — program page (API)", () => {
     await within(dialog).findByRole("combobox")
     // Sessions later than the source only
     expect(calls.find((c) => c.path.endsWith("/eligible-sessions"))!.search.get("afterSessionId")).toBe("ses1")
+    // only sessions where this item may go (a عرضة keeps its surah's chronology): the server's list
+    const q = calls.find((c) => c.path.endsWith("/eligible-sessions"))!.search
+    expect([q.get("forItemId"), q.get("purpose")]).toEqual(["i3", "TRANSFER"])
     fireEvent.click(within(dialog).getByRole("button", { name: "تأكيد" }))
     await waitFor(() => expect(calls.some((c) => c.path === "/api/teacher/work-items/i3/transfer")).toBe(true))
     expect(calls.find((c) => c.path === "/api/teacher/work-items/i3/transfer")!.body).toEqual({ targetSessionId: "ses2" })
