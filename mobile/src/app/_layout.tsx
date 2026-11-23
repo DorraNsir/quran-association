@@ -8,10 +8,10 @@ import {
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider, type Theme } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
 
 import { AuthProvider, useSession } from '@/features/auth/auth-provider';
 import { OfflineGate, RestoringGate } from '@/features/auth/session-gates';
+import { SplashGate } from '@/features/auth/splash-gate';
 import { canUseWorkspace } from '@/features/auth/workspaces';
 import { ar } from '@/i18n/ar';
 import { ensureRTL } from '@/i18n/rtl';
@@ -21,6 +21,7 @@ import { useStackScreenOptions } from '@/theme/navigation';
 
 ensureRTL();
 void SplashScreen.preventAutoHideAsync();
+SplashScreen.setOptions({ fade: true, duration: 250 });
 
 function navigationTheme({ dark, colors }: AppTheme): Theme {
   const base = dark ? DarkTheme : DefaultTheme;
@@ -98,15 +99,13 @@ export default function RootLayout() {
   // A font failure must not block the app: fall back to the system font
   const ready = fontsLoaded || fontError !== null;
 
-  useEffect(() => {
-    if (ready) void SplashScreen.hideAsync();
-  }, [ready]);
-
+  // Fonts not ready yet: the native splash is still showing (SplashGate hides it)
   if (!ready) return null;
 
   return (
     <AppProviders>
       <AuthProvider>
+        <SplashGate />
         <ThemeProvider value={navigationTheme(theme)}>
           <StatusBar style={theme.dark ? 'light' : 'dark'} />
           <RootNavigator />

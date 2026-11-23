@@ -26,6 +26,7 @@ jest.mock('@expo-google-fonts/ibm-plex-sans-arabic', () => ({ useFonts: () => [t
 jest.mock('expo-splash-screen', () => ({
   preventAutoHideAsync: jest.fn(async () => true),
   hideAsync: jest.fn(async () => true),
+  setOptions: jest.fn(),
 }));
 jest.mock('@/i18n/rtl', () => ({ ensureRTL: jest.fn() }));
 
